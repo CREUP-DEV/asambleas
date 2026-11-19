@@ -48,3 +48,7 @@ data/
 
 # Clones of production (scripts/clone-prod-db.sh): personal data
 /backups/
+
+# Local private documentation (docs/private/README.md): operations, the
+# Intranet's internals and working reports. Never published.
+/docs/private/

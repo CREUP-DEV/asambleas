@@ -53,9 +53,7 @@ export function roleSyncOutcome(lookup: IntranetRoleLookup): RoleSyncOutcome {
 const INTRANET_DELETED: AccessRevokedReason = "intranet_deleted";
 
 function getInitialAdminEmail(): string {
-  return (process.env.INITIAL_ADMIN_EMAIL || "tic@creup.example")
-    .trim()
-    .toLowerCase();
+  return (process.env.INITIAL_ADMIN_EMAIL || "").trim().toLowerCase();
 }
 
 /**

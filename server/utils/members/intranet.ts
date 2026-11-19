@@ -9,7 +9,7 @@ import {
 } from "./roster";
 
 /**
- * Client for the CREUP intranet API (docs/intranet.md, section 4.3; the
+ * Client for the CREUP intranet API (docs/intranet.md, section 3; the
  * private group is `/api/asambleas/v1`):
  * - `GET {base}/usuarios/asociados`, `.../sectoriales`, `.../cea` (one
  *   account per place in the CEA) and `.../cas` (the Coordinación del CAS,
@@ -58,7 +58,7 @@ export function resetIntranetConfigLogForTests(): void {
 
 /**
  * A host reachable only inside the Docker network: one label with no dot,
- * such as the service name `intranet` (docs/intranet.md, 5.8). An IP address
+ * such as the service name `intranet` (docs/intranet.md, section 1). An IP address
  * never counts: IPv4 has dots and IPv6 literals come in brackets.
  */
 function isInternalServiceHost(hostname: string): boolean {

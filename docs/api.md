@@ -190,7 +190,7 @@ neither is an email: logs carry `accountRef`. The role lookup also sends
 `NUXT_ROLE_API_URL` must be `https:`, or `http:` to a host with no dot
 (`http://intranet`); anything else counts as unset. A `NUXT_ROLE_API_URL` on
 another origin than `NUXT_INTRANET_API_URL` never receives the token. Details
-in [`intranet.md`](./intranet.md), section 1.
+in [`intranet.md`](./intranet.md), sections 1 and 2.
 
 **Sign-in and access.** The role lookup runs once per sign-in, before the
 session is created. An account the Intranet deleted (an authenticated 404

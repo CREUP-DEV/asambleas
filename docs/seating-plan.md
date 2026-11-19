@@ -78,13 +78,12 @@ Answers to the first questions (2026-11-14):
 - **The `asambleas/v1` group** is token-only, closed CORS, `no-store`, 30
   requests a minute per route and token (300 for `user/role`), closed key
   lists, never paginated, and so far carries nothing personal
-  (`docs/intranet.md` §4.3 and §4.4). This plan changes that last point on
+  (`docs/intranet.md`, section 3.1). This plan changes that last point on
   the user's decision.
 - **This platform** has no person, attendee, seat or Intranet event concept;
   members carry no image; the CSP `img-src` is `'self'`, `data:`, `blob:`
   and Google. `@vueuse/core` 14.4 is installed; no drag, zoom or canvas
-  library is; `sortablejs` is unused and slated for removal
-  (`docs/informe-mejoras-2026-11.md`). No SVG drawing exists in `app/`.
+  library is; `sortablejs` is unused and slated for removal. No SVG drawing exists in `app/`.
 - **The control sheet** (committed in `f8abfc4`, not deployed yet) takes
   migration 0033 and touches `-sections.ts`, `permissions.ts`, `actor.ts` and
   `visibility.ts`. It is deployed before this view (user, 2026-11-15); this
@@ -154,202 +153,11 @@ Answers to the first questions (2026-11-14):
 
 ## 2. Intranet changes (`CREUP/Intranet`, deployed first)
 
-### 2.1 Assembly identity on events
-
-- Columns on `events`, named and typed as in `assembly_minutes` so a later
-  join is trivial: `assembly_type` (`string(4)` null) and `assembly_number`
-  (`integer` null), after `event_category`; in `$fillable`, the number cast
-  to integer. Unique index `events_assembly_type_number_unique` on the pair
-  (MariaDB allows any number of null pairs).
-- Types: `Event::ASSEMBLY_TYPES = ['AGO', 'AGE', 'AGET']`, the three separate
-  numberings and exactly this platform's types. **AGOT is left out**: the
-  Library shows it is an AGO held online on the AGO numbering (the 68th is
-  "68 AGO" in minutes, agreements and regulations and "68 AGOT" in motions,
-  positionings and resolutions), and a unique index could not stop "68 AGO"
-  and "68 AGOT" being two events. A comment says so.
-- Both set or both null. Only an `Asamblea` event carries them; saving writes
-  null for any other category, whatever was posted (hidden inputs still
-  post with the script off).
-- **Never inferred from the name**, at creation or later: `duplicateForm`
-  copies last year's economic event name ("79.ª Asamblea General
-  Ordinaria"), so a value derived from it would be wrong until someone edits
-  it.
-- Form (create and update): "Tipo de asamblea" (select) and "Número de
-  asamblea" (number, min 1) in a `data-assembly-fields` row after the
-  category, shown and enabled only when the category is Asamblea (the
-  `data-public-only-section` pattern). They stay editable when the event is
-  linked to an economic event (they belong to Organización, unlike the
-  name). Rules in `getEventFormValidationRules()` mirror
-  `LibraryController.php:1402-1406`: required when the category that will be
-  stored is Asamblea, type in the list, number integer ≥ 1, unique per type
-  ignoring the event itself. Spanish messages ("Ya existe un evento para esa
-  asamblea."). The category `<select>` gets its missing
-  `id="event-category"`, which also fixes its label.
-- **The name and the slug stay as they are.** Nothing that reads them today
-  changes (section 2.4).
-- `/api/eventos` gains `assembly_type` and `assembly_number` (the web's
-  schema strips unknown keys).
-- Backfill in the same migration (section 2.5): guarded by
-  `Schema::hasColumn` as `2026_11_12_100000_add_university_acronym…`; reads
-  the name people see (`economic_events.name` for a linked event, else
-  `events.name`, compared in PHP because the collations differ); skips rows
-  already filled; an override map keyed by id **and** exact name (the
-  `EXPECTED_NAMES` precedent of `2026_07_06_110000`); then three anchored
-  regexes (ordinal "80.ª", plain "74", canonical Roman numerals) over
-  "Asamblea General Ordinaria|Extraordinaria( Telemática)?": Ordinaria is
-  AGO, Extraordinaria AGE, "Extraordinaria Telemática" AGET, "Ordinaria
-  Telemática" nothing. A pair claimed twice or already taken leaves every
-  claimant null with a warning; it never dies on the constraint; anything
-  unread is logged for a person to fill in the form. Never writes a name,
-  slug or category, nor touches another category. `down()` drops the index
-  and the columns.
-- Tests (`DatabaseTransactions`, since `events` is a legacy table):
-  `EventAssemblyFieldsMigrationTest` (each pattern by data provider, numbers
-  from 900; non-canonical numerals, "Ordinaria Telemática" and combined names
-  stay null; a linked event is read through its economic event; filled rows
-  and names untouched; a double claim leaves both null; id 2 with another
-  name does not take AGO 73; another category stays null) and
-  `EventAssemblyFieldsFormTest` (required together for an Asamblea, invalid
-  values, duplicates refused, own pair accepted on edit, other categories
-  store null, a linked event's form still submits the pair).
-- Separate small fix in the same pull: on update, a POST without
-  `event-category` keeps the stored category instead of clearing it (today
-  it would also clear the pair).
-
-### 2.2 Attendees of an assembly
-
-`GET /api/asambleas/v1/asambleas/{type}/{number}/asistentes`
-(`api.asambleas.attendees`), same middleware and conventions as the group
-(token, `no-store`, JSON only, closed key lists, whole list, counts-only
-logs, out of CORS).
-
-- `{type}` in `AGO|AGE|AGET`, `{number}` 1 to 999. 404
-  `{"error":"not_found"}` when no event has those fields. Drafts and private
-  events included (the plan is made before publication).
-- Answer:
-
-```json
-{
-  "event": {
-    "id": 98,
-    "name": "80.ª Asamblea General Ordinaria",
-    "start_date": "2026-11-18",
-    "end_date": "2026-11-22"
-  },
-  "accounts": [
-    {
-      "id": 412,
-      "type": "Asociado",
-      "category": "Multiusuario",
-      "initials": "CdEUB",
-      "designation": "…",
-      "university_acronym": "UB",
-      "order": null,
-      "logo_version": "9f2c…"
-    }
-  ],
-  "attendees": [
-    {
-      "id": 5012,
-      "account_id": 412,
-      "name": "…",
-      "surname": "…",
-      "status": "Confirmada",
-      "photo_version": "1be0…"
-    }
-  ],
-  "generated_at": "2026-11-14T18:00:00+01:00"
-}
-```
-
-- `accounts`: every account with at least one listed attendee. `type` is
-  `users.type`, except the Coordinación del CAS, sent as `CAS` with initials
-  `CAS` (the same remap as `user/role` and `usuarios/cas`). `order` is the
-  canonical CEA order (`CeaSortingService`) for CEA accounts, null
-  otherwise. `logo_version` is the md5 of the stored path (the Intranet's own
-  `?v=`), null without a logo.
-- `attendees`: `Pendiente` and `Confirmada` only. `name` and `surname` only:
-  never DNI, email, phone, birthdate, diet, needs, travel or accreditation.
-  `photo_version` is the md5 of `public_profile_photo_path`, null without a
-  photo or after a removal.
-- Resource classes `AssemblyEventAttendeesResource` and friends with fixed
-  keys; the docblock and `docs/intranet.md` say plainly that this route
-  carries personal data, on the platform's request, for the seating view.
-
-### 2.3 Images
-
-- `GET /api/asambleas/v1/asistentes/{attendee}/foto`
-  (`api.asambleas.attendee_photo`): the attendee's photo bytes when the
-  attendee is `Pendiente` or `Confirmada` in an event with assembly fields
-  and has a photo; 404 otherwise. Raster only (jpeg, png, webp, avif), with
-  `X-Content-Type-Options: nosniff`.
-- `GET /api/asambleas/v1/cuentas/{user}/logo` (`api.asambleas.account_logo`):
-  the account's `profile_photo_path` (SVG allowed) when the account has an
-  attendee in an event with assembly fields; 404 otherwise.
-- Both get their own limiter branch (600 a minute per token) and a
-  per-address budget of their own (600 a minute), apart from the one the role
-  lookup, the rosters and the list share, so a burst of images never starves
-  sign-ins: the platform fetches a photo per attendee and a logo per account
-  when a plan is first synced.
-- Both serve a file only when its bytes are an allowed type, never by its
-  extension. `photo_version` and `logo_version` in the list are non-null only
-  when the route would serve the image.
-- Tests: the data provider of `AssembliesApiTest` gains the three routes;
-  exact-keys contract test; personal fields never present; Rechazada and
-  non-assembly attendees 404; the CAS remap; logs never carry names.
-
-### 2.4 Code that reads assembly events by name
-
-Reviewed across `app/`, views, routes, migrations, tests, the public web and
-17 production dumps (July to October 2026). **Nothing at run time reads an
-assembly's number or type out of an event's name or slug**, and nothing
-joins `events` to the Library's tables. What makes an event an assembly is
-only `event_category === 'Asamblea'`. What does use the name or slug, and
-stays as it is:
-
-| What                                                                                                                                          | Where                                                                                                       | With the new fields                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| The name a linked event shows is its economic event's (`Event::name()`); `events.name` is frozen or null meanwhile                            | `Event.php:218-225`, `EconomicEventController.php:296,725`                                                  | The backfill reads the resolved name                                                                                    |
-| Billing view strips the **current** name off bill lines stored with the name at billing time                                                  | `event/partials/billing.blade.php:31-37`                                                                    | Unchanged; the one "works by coincidence" spot (a rename shows the full reference)                                      |
-| Bill concepts, budget labels, certificate titles, mail subjects copy the name                                                                 | `EventsController.php` 4614-4942, 5980-6284, 3729…; `BudgetsController.php`; `ServiceCommission*`           | Unchanged (stored text, display)                                                                                        |
-| The slug is made from the name once and is a public key: attendee directory, emailed links, the web's `/conocenos/eventos/{slug}` and sitemap | `EventsController.php:892,923,2714`; `routes/web.php:85-101`; `web/server/utils/external/events.ts:220-227` | Never regenerated from the fields; the Intranet slug (`80-asamblea-general-ordinaria`) is not the platform's (`80-ago`) |
-| Applied migrations look events up by name (seed idempotency and `down()`, CEA events, the 79.ª link)                                          | `2026_05_05_000001…:29,93-97`; `2026_07_06_110000…:72-76`                                                   | No rename, so they keep working on a restored database                                                                  |
-| Rules keyed on the category (first-registration discount, accreditation, the web's `types=Asamblea` filter)                                   | `EventsController.php:692,4719`; `2026_05_14_100003…:28-30`                                                 | Unchanged                                                                                                               |
-| The Library's own "{n} {TYPE}" strings (motions, resolutions, agreements, minutes, Doc. Asamblea)                                             | `LibraryController.php`, `AgreementsController.php:586-593`                                                 | A separate vocabulary, not linked to events; a later join can use the fields                                            |
-
-Seen on the way, out of scope: the Doc. Asamblea Drive lookup uses
-`str_contains($folder, "{n} {TYPE}")`, so "8 AGO" also matches "68 AGO" and
-"78 AGO" (`LibraryController.php:174-177`); the Library mixes "68 AGO" and
-"68 AGOT" for the same assembly.
-
-### 2.5 Backfill mapping
-
-All 63 `Asamblea` events of the public list (2026-11-14) and of the
-2026-10-27 dump map to a distinct pair; the dump holds no private or draft
-assembly event, and **no event exists for any AGET**.
-
-- 55 canonical Roman numerals: 28 AGO (the archive seed plus id 19, "I
-  Asamblea General Ordinaria", added by hand) and 27 AGE.
-- 6 ordinals (ids 8, 10, 12, 15, 18 and 98: AGO 75 to 80) and 1 plain number
-  (id 6: AGO 74).
-- 1 override: id 2, "XX Aniversario CREUP y 73 Asamblea General Ordinaria",
-  AGO 73. It is checked against the exact name, because the id alone means
-  this event only in production: a database built from the schema dump has no
-  events, and any other database may hold another event under id 2. An id 2
-  with another name falls through to the patterns.
-- Id 27, "LXVIII Asamblea General Ordinaria" (2020, online), is AGO 68.
-- 14 AGEs held next to or inside an AGO are already events of their own
-  (ids 20 and 10 for the XXXIV AGE and the 76.ª AGO, 2024-11-21).
-- Linked events 18 (79.ª) and 98 (80.ª) are read through their economic
-  events (same names today).
-- Expected in production: 63 rows filled, 0 warnings. The 80.ª AGO is event
-  98 → (AGO, 80) → this platform's `80-ago`.
-- Left as they are (dates and numbers in the data, not in this change): II
-  AGE (id 70, 2011) dated after the III and IV AGE of 2010 (its name and PDF
-  say 2), and XXX AGE (id 30) ending a day after its AGO.
-
-The full table (id, name, slug, dates, place, pair, pattern) is the review's
-working file; the migration's test covers each pattern.
+The Intranet gained, for this view, an assembly identity on its events (type
+and number, unique, never read from the event's name) and three routes of its
+`/api/asambleas/v1` group: the attendees of an assembly and their photos and
+account logos. Their contract is in `docs/intranet.md` («Rutas de la vista de
+la sala»); how the Intranet implements them lives in its own repository.
 
 ## 3. Data model (migration 0034)
 
@@ -689,16 +497,10 @@ before it.
 
 **Before 18 November** (the first day's room):
 
-1. **Intranet: assembly identity** on events, form, backfill and the
-   category fix (2.1, 2.4, 2.5). Tests, Pint. Intranet commits carry no
-   `Co-Authored-By` trailer (its `CLAUDE.md`).
-2. **Intranet: attendees and images routes** (2.2, 2.3), limiter branch,
-   tests, Intranet `AGENTS.md`. Deploy the Intranet and check the 80.ª AGO
-   answers with the token.
-
-   Phases 1 and 2 were built in the Intranet's working tree on
-   2026-11-14/15. They are not committed or deployed yet. The contract is in
-   `docs/intranet.md` ("Rutas de la vista de la sala").
+1. **Intranet: assembly identity** on events (section 2).
+2. **Intranet: attendees and images routes** (section 2). Deploy the
+   Intranet and check the 80.ª AGO answers with the token. The contract is
+   in `docs/intranet.md` ("Rutas de la vista de la sala").
 
 3. **Platform: data and server**: migration 0034, permissions and seed,
    section, DTOs, schemas, sync (optional route: it works with manual groups

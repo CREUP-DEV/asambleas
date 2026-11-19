@@ -19,6 +19,7 @@ coverage
 .idea
 # Runtime data and dumps: no build step reads them, and they carry personal data.
 private
+docs/private
 storage
 data
 backups

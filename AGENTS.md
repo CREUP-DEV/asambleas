@@ -1,6 +1,6 @@
 # CREUP Assemblies - Agent Instructions
 
-These instructions are the source of truth for agents editing this repository. The domain model and the API live in [`docs/design.md`](docs/design.md), [`docs/api.md`](docs/api.md) and [`shared/types/api.ts`](shared/types/api.ts); [`docs/proceso-asambleas.md`](docs/proceso-asambleas.md) records how CREUP assemblies work today.
+These instructions are the source of truth for agents editing this repository. [`docs/README.md`](docs/README.md) indexes the rest of the documentation. The domain model and the API live in [`docs/design.md`](docs/design.md), [`docs/api.md`](docs/api.md) and [`shared/types/api.ts`](shared/types/api.ts); [`docs/proceso-asambleas.md`](docs/proceso-asambleas.md) records how CREUP assemblies work today.
 
 ## Non-Negotiable Rules
 
@@ -16,6 +16,7 @@ These instructions are the source of truth for agents editing this repository. T
 - Store amendments as operations anchored to the document's frozen base version. Never store modified copies of the text.
 - Use optimistic locking on shared PUT/PATCH mutations.
 - Run the verification checklist before finishing code changes.
+- This repository is public. Anything that identifies the production server (user, paths, networks, what else runs there), describes an open security weakness of the platform or of the Intranet, or carries real people's data or real email addresses goes to `docs/private/` (local only, ignored by git and Docker; its `README.md` says what goes there), never to a tracked file or a commit message. Examples and tests use `example` domains. Working reports, audits and one-off plans go to `docs/private/` too.
 
 ## Project Overview
 
@@ -83,7 +84,8 @@ shared/
   constants/        roles, permissions, domain enums and security constants
   types/            content (blocks, amendment operations) and the API contract
   utils/            amendment engine (content/), schemas, calendar, votes, slug and config helpers
-docs/               design, API and research on how assemblies run
+docs/               design, API, integrations and how assemblies run (index: docs/README.md)
+docs/private/       local only, ignored: server values, Intranet internals, working reports
 i18n/locales/       es.json and en.json
 drizzle/            migrations and seed
 server/assets/      server-bundled fonts/assets
@@ -624,3 +626,5 @@ docs: update deployment runbook
 refactor: extract localized content helpers
 a11y: add diff display preferences
 ```
+
+Never add a `Co-Authored-By` trailer to a commit, nor a "Generated with" line to a pull request, unless `.claude/settings.json` sets `attribution.commit` (or `attribution.pr`). An agent that writes the change is the tool, not a co-author, even when the harness's default commit template suggests one. Commits are signed (`commit.gpgsign`); never bypass signing.

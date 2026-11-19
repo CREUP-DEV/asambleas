@@ -4,6 +4,8 @@ Runbook de producción para CREUP Asambleas. El README cubre desarrollo local; e
 
 El build ocurre siempre en local: `scripts/deploy.sh` construye la imagen, la publica en GHCR y el VPS solo la descarga y la ejecuta, igual que la web.
 
+Este documento usa marcadores para lo que identifica el VPS (`<usuario>`, `<host del VPS>`, `<proyecto>_default`, `<email del primer Admin>`, `<dominio de correo>`). Sus valores reales, y lo que corre en el VPS además de la plataforma, están en `docs/private/vps.md`, que solo existe en local (`docs/private/README.md`).
+
 ## Arquitectura
 
 ```text
@@ -23,12 +25,12 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 ```
 
 - En el VPS, todos los proyectos viven bajo un compose raíz compartido, `/home/<usuario>` (`COMPOSE_DIR`), que incluye el de cada proyecto (`include:`). La plataforma está en `asambleas/` (`REMOTE_DIR`) y usa los servicios `postgresql` y `nginx` del compose raíz.
-- Todo comparte la red de Docker `<usuario>_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
+- Todo comparte la red de Docker del compose raíz (`<proyecto>_default`): nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
 - La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `scripts/deploy.sh` y `scripts/rollback.sh`.
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
 - Los PDFs generados (`EXPORT_STORAGE_DIR`; dentro, `packages/` guarda los ZIP de «Descargar documentación» y sus piezas, que se pueden volver a generar y no necesitan copia) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`, las fotos y logos de la sala en `seating/` y las fotos de las cuentas en `avatars/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
-- La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
-- Los avisos por correo salen por SMTP hacia el servidor de correo del VPS (docker-mailserver), con una dirección de `creup.org` (sección «Correo»).
+- La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). El contrato: [docs/intranet.md](docs/intranet.md).
+- Los avisos por correo salen por SMTP hacia el servidor de correo del VPS (docker-mailserver), con un buzón propio (sección «Correo»).
 
 ## Requisitos
 
@@ -83,7 +85,7 @@ scp docker-compose.production.example.yml <usuario>@<host del VPS>:asambleas/doc
 NUXT_SITE_URL=https://asambleas.creup.es
 APP_SECRET=<openssl rand -base64 32>
 
-INITIAL_ADMIN_EMAIL=tic@creup.example
+INITIAL_ADMIN_EMAIL=<email del primer Admin>
 GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<client-secret>
 
@@ -98,9 +100,9 @@ DATABASE_MAX_CONNECTIONS=10
 NUXT_SMTP_HOST=<host del servidor de correo>
 NUXT_SMTP_PORT=587
 NUXT_SMTP_SECURE=false
-NUXT_SMTP_USER=asambleas@creup.example
+NUXT_SMTP_USER=asambleas@<dominio de correo>
 NUXT_SMTP_PASS=<contraseña del buzón>
-NUXT_SMTP_FROM_EMAIL=asambleas@creup.example
+NUXT_SMTP_FROM_EMAIL=asambleas@<dominio de correo>
 ```
 
 Notas:
@@ -113,7 +115,6 @@ Notas:
 - No definas `NUXT_ROLE_API_URL`: la consulta de rol usa `${NUXT_INTRANET_API_URL}/user/role`. La ruta pública vieja (`https://intranet.creup.es/api/user/role`) ya no existe: con ese valor, cada consulta de rol fallaría (nadie pierde el acceso, pero no se actualizan roles ni miembros).
 - Con `NODE_ENV=production`, las URL de la Intranet solo admiten `https:` o `http:` hacia un nombre sin punto (`http://intranet`). Cualquier otra cuenta como no configurada y deja un error `intranet.config` en los logs.
 - `NUXT_INTRANET_ROSTER_SYNC=false` apaga la sincronización diaria del listado; sin ella, o con otro valor, queda activa.
-- Para pasar de la configuración vieja a esta, seguir el orden de [docs/intranet.md](docs/intranet.md), sección 8.
 
 ### 4. Compose raíz
 
@@ -122,6 +123,7 @@ En `~/docker-compose.yml`, añadir el proyecto a `include:`:
 ```yaml
 include:
   - postgresql/docker-compose.yml
+  - otro-proyecto/docker-compose.yml
   - asambleas/docker-compose.yml
 ```
 
@@ -238,7 +240,7 @@ Antes de recrear nada, compara el diario de migraciones de la imagen (`drizzle/m
 curl -I https://asambleas.creup.es    # 302 a /login
 ```
 
-- Entra con `tic@creup.example`: queda como `Admin`.
+- Entra con `INITIAL_ADMIN_EMAIL`: queda como `Admin`.
 - Entra con una cuenta Asociado y otra CEA, y comprueba en Administración que tienen el rol y el miembro correctos.
 - Pulsa "Sincronizar" en Miembros.
 - Sube un PDF a un documento y exporta otro. Tras otro `bash ./scripts/deploy.sh`, los dos siguen ahí.
@@ -247,7 +249,7 @@ Tras desplegar por primera vez la versión que guarda el id de la Intranet (migr
 
 ## Llamar a la Intranet por dentro
 
-Como `asambleas-app` está en la red de la Intranet, puede usar `NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1`, sin pasar por Cloudflare. Por esa red la llamada es HTTP, así que la Intranet necesita `ASSEMBLIES_API_REQUIRE_HTTPS=false` en su `env_file` ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 3). Cambiar el `.env` exige recrear el contenedor:
+Como `asambleas-app` está en la red de la Intranet, puede usar `NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1`, sin pasar por Cloudflare. Por esa red la llamada es HTTP, así que la Intranet tiene que aceptar HTTP en ella (cómo, en `docs/private/vps.md`). Cambiar el `.env` exige recrear el contenedor:
 
 ```bash
 cd ~ && docker compose up -d --no-deps asambleas-app
@@ -259,16 +261,16 @@ cd ~ && docker compose up -d --no-deps asambleas-app
 
 Los avisos por correo (`/admin/notificaciones`, docs/design.md, «Email notifications») salen por SMTP con `nodemailer`, como los de la web. Sin `NUXT_SMTP_HOST` o sin `NUXT_SMTP_FROM_EMAIL` no se envía nada: los avisos quedan en el registro de envíos como «Sin servidor de correo», y no se acumulan para salir de golpe cuando se configure.
 
-En producción se usa el docker-mailserver del VPS, con un buzón propio de `creup.org`:
+En producción se usa el docker-mailserver del VPS, con un buzón propio (`asambleas@<dominio de correo>`):
 
 1. Crea el buzón (el nombre del contenedor puede ser otro; `docker ps` lo dice):
 
    ```bash
-   docker exec -it mailserver setup email add asambleas@creup.example
+   docker exec -it mailserver setup email add asambleas@<dominio de correo>
    ```
 
 2. Pon en `~/asambleas/.env` las variables `NUXT_SMTP_*` de arriba: puerto 587 con STARTTLS (`NUXT_SMTP_SECURE=false`) o 465 con TLS directo (`NUXT_SMTP_SECURE=true`). Usa como host el nombre del certificado del servidor de correo (el `mail.` del dominio): si llamas al contenedor por su nombre de la red de Docker, el certificado no coincide y la conexión TLS falla.
-3. Comprueba que `creup.org` tiene SPF, DKIM y DMARC que cubran ese servidor, o los avisos acabarán en spam.
+3. Comprueba que el dominio de correo tiene SPF, DKIM y DMARC que cubran ese servidor, o los avisos acabarán en spam.
 4. Recrea el contenedor (`restart` conserva las variables viejas):
 
    ```bash
@@ -301,7 +303,7 @@ En los logs, `email.sent`, `email.send_failed` y `email.digest` (el resumen diar
 
 ## Backups
 
-No hace falta nada propio: `<script de volcado del VPS>` vuelca el clúster entero de PostgreSQL con `pg_dumpall` (incluida la base de datos `asambleas` y su rol) en `~/backups/`, y restic se lleva fuera esa carpeta y los ficheros del host, `~/asambleas/data/` incluido. Restic no entra en `/var/lib/docker`: los datos de la plataforma no pueden vivir en volúmenes de Docker.
+No hace falta nada propio: el volcado del VPS (`docs/private/vps.md`) guarda el clúster entero de PostgreSQL con `pg_dumpall` (incluida la base de datos `asambleas` y su rol) en `~/backups/`, y restic se lleva fuera esa carpeta y los ficheros del host, `~/asambleas/data/` incluido. Restic no entra en `/var/lib/docker`: los datos de la plataforma no pueden vivir en volúmenes de Docker.
 
 Además, cada `scripts/deploy.sh` vuelca la base de datos `asambleas` antes de migrar (`backups/db/asambleas-predeploy-<fecha>.dump`, formato custom de `pg_dump`, los 10 últimos), y restic se los lleva con el resto de `~/backups/`.
 
@@ -345,7 +347,7 @@ restic restore latest --include /home/<usuario>/asambleas/data --target /tmp/asa
 
 Los ficheros quedan en `/tmp/asambleas-restore/home/<usuario>/asambleas/data/`. Cópialos a `~/asambleas/data/` conservando el uid 1000.
 
-Un volcado del clúster entero (`<script de volcado del VPS>`) es SQL de `pg_dumpall`: de él se restaura solo la base `asambleas` recortando su parte, así que para un despliegue es mejor el volcado previo.
+Un volcado del clúster entero es SQL de `pg_dumpall`: de él se restaura solo la base `asambleas` recortando su parte, así que para un despliegue es mejor el volcado previo.
 
 ## Clonar producción en local
 
@@ -433,7 +435,7 @@ docker compose run -T --rm --no-deps asambleas-app /app/ops/recode-amendments.mj
 docker compose run -T --rm --no-deps asambleas-app /app/ops/recode-amendments.mjs </dev/null
 ```
 
-Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxima vez que inicia sesión o, si mantiene una sesión abierta, en la revisión de las 05:30; desde ese momento cada petición suya recibe 401 en todos sus dispositivos ([docs/intranet.md](docs/intranet.md), sección 1). Administración > Usuarios, con "Solo cuentas sin acceso", las lista. No hay forma de devolver el acceso a mano: lo recupera sola cuando la Intranet vuelve a tener la cuenta. Las cuentas `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca lo pierden; en su lugar queda `user.intranet_missing` en Actividad.
+Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxima vez que inicia sesión o, si mantiene una sesión abierta, en la revisión de las 05:30; desde ese momento cada petición suya recibe 401 en todos sus dispositivos ([docs/intranet.md](docs/intranet.md), sección 2). Administración > Usuarios, con "Solo cuentas sin acceso", las lista. No hay forma de devolver el acceso a mano: lo recupera sola cuando la Intranet vuelve a tener la cuenta. Las cuentas `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca lo pierden; en su lugar queda `user.intranet_missing` en Actividad.
 
 ## Problemas Frecuentes
 
@@ -457,7 +459,7 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 | Jobs no avanzan                                                 | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                                             |
 | PDFs o descargas 404 tras recrear                               | Los dos montajes de `asambleas/docker-compose.yml`: `docker inspect asambleas-app -f '{{range .Mounts}}{{.Destination}} {{end}}'`                                                                                                                                                                                                    |
 | "Sincronizar" responde 503                                      | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                                                  |
-| "Sincronizar" responde 502                                      | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en la Intranet ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8)                          |
+| "Sincronizar" responde 502                                      | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, la Intranet sin aceptar HTTP en su red (`docs/private/vps.md`)                                                                             |
 | Miembros pide confirmar la sincronización                       | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                                               |
 | Una cuenta no puede entrar: "ya no existe en la Intranet"       | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                                                |
 | Nadie puede entrar y los logs muestran `auth.hook.access`       | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                                          |

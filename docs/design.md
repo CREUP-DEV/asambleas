@@ -844,8 +844,8 @@ from the internet (`https://intranet.creup.es/api/asambleas/v1`, which the
 development server also uses, with real data) and, on the VPS, over the
 Intranet's Docker network (`http://intranet/api/asambleas/v1`). In production the base URL must be `https:`, or `http:` to a
 host with no dot (`http://intranet`); anything else counts as unconfigured.
-Logs never carry an email, only `accountRef` (a keyed HMAC of it). What the
-Intranet has to implement, and how, is in [`intranet.md`](intranet.md).
+Logs never carry an email, only `accountRef` (a keyed HMAC of it). The contract
+with the Intranet is in [`intranet.md`](intranet.md).
 
 **Access and deleted accounts.** Every Google account may sign in, except one
 the Intranet deleted. The role lookup runs once per sign-in, before the

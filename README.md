@@ -9,7 +9,7 @@ Este repositorio está separado de la web pública `creup/web`, pero comparte id
 - Autenticación obligatoria con Google mediante `better-auth`.
 - Sincronización de rol y de miembros con la Intranet de CREUP (el listado, a mano y cada día); una cuenta borrada en la Intranet pierde el acceso.
 - RBAC con roles de sistema y matriz de permisos editable.
-- Asambleas con estados `draft`, `provisional` y `definitive`.
+- Asambleas con estados `draft`, `convened`, `in_session` y `closed`, y un orden del día que pasa a definitivo con su fecha del calendario.
 - Orden del día recursivo con rutas por slug legibles.
 - Documentos de plataforma con editor TipTap y documentos PDF subidos.
 - Enmiendas por patches `diff-match-patch`, incluidas transaccionales.
@@ -110,10 +110,10 @@ server/assets/    Fuentes y assets empaquetados para servidor
 
 ## Documentación Relacionada
 
+- [docs/README.md](docs/README.md): índice de la documentación y orden de lectura (proceso, diseño, API, integraciones).
 - [DEPLOYMENT.md](DEPLOYMENT.md): despliegue de producción, backups y operación.
-- [docs/intranet.md](docs/intranet.md): integración con la Intranet de CREUP (rol, listado de miembros, cuentas borradas).
+- [docs/intranet.md](docs/intranet.md): contrato con la Intranet de CREUP (rol, listado de miembros, inscritos, cuentas borradas).
 - [AGENTS.md](AGENTS.md): reglas obligatorias para agentes que editen el código.
-- [PLAN.md](PLAN.md): plan histórico por fases. No sustituye a `AGENTS.md`.
 
 ## Verificación Antes De PR
 
