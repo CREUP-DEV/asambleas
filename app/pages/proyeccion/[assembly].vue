@@ -834,7 +834,7 @@ useHead(() => ({
     <!-- An amendment or a document fits the screen (its box scrolls
          itself): the page then takes the screen's height exactly. -->
     <header
-      class="border-default flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-[clamp(1rem,3vw,3rem)] py-[clamp(0.75rem,1.5vw,1.5rem)]"
+      class="border-default flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-[clamp(1rem,3vw,3rem)] py-[clamp(0.5rem,1vw,1rem)]"
     >
       <img
         src="/marca/vertical-granate.svg"
@@ -1355,9 +1355,10 @@ useHead(() => ({
  * a margin inside the square, which the negative margins give back.
  */
 .projection-logo {
-  height: clamp(3.5rem, 6vw, 6.5rem);
+  /* The vertical logos are trimmed to their drawing: about two lines of
+     the assembly's label, so the header takes no more than its text. */
+  height: clamp(2.5rem, 4vw, 4.25rem);
   width: auto;
-  margin-block: calc(clamp(3.5rem, 6vw, 6.5rem) * -0.12);
 }
 
 /* A whole document never fits: one readable size, and the box scrolls. */

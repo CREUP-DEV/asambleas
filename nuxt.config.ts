@@ -320,10 +320,13 @@ export default defineNuxtConfig({
       xContentTypeOptions: "nosniff",
       xFrameOptions: "DENY",
       referrerPolicy: "strict-origin-when-cross-origin",
+      // nuxt-security's default also sends `fullscreen=()`, which keeps the
+      // page itself out of full screen: the projection's button needs it.
       permissionsPolicy: {
         camera: [],
         microphone: [],
         geolocation: [],
+        fullscreen: ["self"],
       },
     },
   },
