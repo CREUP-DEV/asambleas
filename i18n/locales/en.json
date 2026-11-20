@@ -3272,10 +3272,6 @@
       "noDocuments": "This item has no documents.",
       "noOwnDocuments": "The documents are in its sub-items.",
       "subItems": "Sub-items",
-      "submissions": {
-        "any": "Members submit their documents here.",
-        "kinds": "Members submit here: {kinds}."
-      },
       "neighbours": "Previous and next item",
       "unpublished": "Not published",
       "previousItem": "Previous item",
@@ -3430,7 +3426,8 @@
       "editOf": "Edit item {number}: {title}",
       "addSubItemOf": "Add sub-item to item {number}: {title}",
       "addDocumentsOf": "Add several documents to item {number}: {title}",
-      "deleteOf": "Delete item {number}: {title}"
+      "deleteOf": "Delete item {number}: {title}",
+      "moreOf": "More actions for item {number}: {title}"
     },
     "container": {
       "question": "Do members submit documents here?",

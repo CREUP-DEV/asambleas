@@ -17,11 +17,12 @@ import { useAgendaItemBreadcrumb } from "~/composables/shell/useBreadcrumbs";
  * fetched.
  *
  * Top to bottom: the reading bar of a document's page (DocumentReadBar),
- * for the document its reader has on show; number and title, with "Punto anterior" / "Punto
- * siguiente" beside it, which walk the agenda in reading order across
- * levels; the description; the manage bar
- * (AgendaItemManageBar: edit, add a sub-item, add documents, delete), which
- * shows itself to managers only; the item's published documents in a
+ * for the document its reader has on show; number and title, with the
+ * manage bar beside it (AgendaItemManageBar in `menu` mode: "Editar" and
+ * "Más", managers only) and the arrows to the previous and next items,
+ * which walk the agenda in reading order across levels; the description
+ * (no note on who presents here: user's decision of 2026-11-20); the
+ * item's published documents in a
  * reader (AgendaItemReader): one on show at a time, in place, with tabs to
  * move between them; the ones that are not published (a draft of the
  * user's member, what managers see before publication) as rows under it,
@@ -251,20 +252,6 @@ const showMemberSubmit = computed(
   () => memberMaySubmitHere.value && submitBlockedReason.value === null,
 );
 
-/** "Los miembros presentan aquí: resoluciones, mociones internas." */
-const submissionsNote = computed(() => {
-  const value = item.value;
-  if (!value?.acceptsSubmissions) return null;
-  if (value.submissionKinds.length === 0) {
-    return t("agenda.item.submissions.any");
-  }
-  return t("agenda.item.submissions.kinds", {
-    kinds: value.submissionKinds
-      .map((kind) => t(`agenda.documentKinds.${kind}`))
-      .join(", "),
-  });
-});
-
 // Sub-items and neighbours -------------------------------------------------------
 
 const totals = computed(() =>
@@ -365,6 +352,9 @@ async function onDeleted() {
       />
 
       <header class="space-y-2">
+        <!-- One row (user's decision of 2026-11-20): the title, then what
+             managers do with the item ("Editar" and "Más") and the items
+             before and after it as arrows. -->
         <div
           class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
         >
@@ -377,54 +367,62 @@ async function onDeleted() {
               class="text-primary me-2"
             />{{ item.title }}
           </h2>
-          <!-- The items before and after this one, in reading order: always
+          <div class="flex shrink-0 flex-wrap items-center gap-2">
+            <AgendaItemManageBar :item="node" menu @deleted="onDeleted" />
+            <!-- The items before and after this one, in reading order: always
                here, whatever the item holds -->
-          <nav
-            v-if="neighbours.previous || neighbours.next"
-            class="flex shrink-0 items-center gap-1"
-            :aria-label="t('agenda.item.neighbours')"
-            data-testid="agenda-item-neighbours"
-          >
-            <UButton
-              icon="i-lucide-arrow-left"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              rel="prev"
-              :to="
-                neighbours.previous
-                  ? itemPath(neighbours.previous.item.id)
-                  : undefined
-              "
-              :disabled="!neighbours.previous"
-              :label="t('agenda.item.previousItem')"
-              :title="
-                neighbours.previous
-                  ? numbered(
-                      neighbours.previous.number,
-                      neighbours.previous.item.title,
-                    )
-                  : undefined
-              "
-            />
-            <UButton
-              trailing-icon="i-lucide-arrow-right"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              rel="next"
-              :to="
-                neighbours.next ? itemPath(neighbours.next.item.id) : undefined
-              "
-              :disabled="!neighbours.next"
-              :label="t('agenda.item.nextItem')"
-              :title="
-                neighbours.next
-                  ? numbered(neighbours.next.number, neighbours.next.item.title)
-                  : undefined
-              "
-            />
-          </nav>
+            <nav
+              v-if="neighbours.previous || neighbours.next"
+              class="flex shrink-0 items-center gap-1"
+              :aria-label="t('agenda.item.neighbours')"
+              data-testid="agenda-item-neighbours"
+            >
+              <UButton
+                icon="i-lucide-arrow-left"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                rel="prev"
+                :to="
+                  neighbours.previous
+                    ? itemPath(neighbours.previous.item.id)
+                    : undefined
+                "
+                :disabled="!neighbours.previous"
+                :aria-label="t('agenda.item.previousItem')"
+                :title="
+                  neighbours.previous
+                    ? numbered(
+                        neighbours.previous.number,
+                        neighbours.previous.item.title,
+                      )
+                    : undefined
+                "
+              />
+              <UButton
+                icon="i-lucide-arrow-right"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                rel="next"
+                :to="
+                  neighbours.next
+                    ? itemPath(neighbours.next.item.id)
+                    : undefined
+                "
+                :disabled="!neighbours.next"
+                :aria-label="t('agenda.item.nextItem')"
+                :title="
+                  neighbours.next
+                    ? numbered(
+                        neighbours.next.number,
+                        neighbours.next.item.title,
+                      )
+                    : undefined
+                "
+              />
+            </nav>
+          </div>
         </div>
         <p
           v-if="item.description"
@@ -432,22 +430,7 @@ async function onDeleted() {
         >
           {{ item.description }}
         </p>
-        <p
-          v-if="submissionsNote"
-          class="text-muted flex items-start gap-2 text-sm"
-          data-testid="agenda-item-submissions"
-        >
-          <UIcon
-            name="i-lucide-file-up"
-            class="mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span>{{ submissionsNote }}</span>
-        </p>
       </header>
-
-      <!-- Edit, add a sub-item, add documents, delete: managers only -->
-      <AgendaItemManageBar :item="node" @deleted="onDeleted" />
 
       <!-- Documents -->
       <section class="space-y-3" aria-labelledby="agenda-item-documents-title">

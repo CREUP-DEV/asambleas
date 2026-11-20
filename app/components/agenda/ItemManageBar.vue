@@ -38,14 +38,18 @@ import {
  * Item managers (assembly.can.manage) get the item actions and document
  * managers (document:manage) the documents; with neither, nothing renders.
  * `compact` is for the organize mode of the agenda, one bar per item.
+ * `menu` is for the item's page, beside its title (user's decision of
+ * 2026-11-20): "Editar" as a button and the rest in "Más", or a lone
+ * "Añadir varios documentos" for a document manager alone.
  * Emits `deleted` once the item is gone, before the agenda reloads.
  */
 const props = withDefaults(
   defineProps<{
     item: AgendaTreeNode<AgendaItemDto>;
     compact?: boolean;
+    menu?: boolean;
   }>(),
-  { compact: false },
+  { compact: false, menu: false },
 );
 
 const emit = defineEmits<{ deleted: [] }>();
@@ -73,6 +77,41 @@ const canAddDocuments = computed(
 const agendaFinal = computed(() => Boolean(assembly.value?.agendaFinalizedAt));
 
 const size = computed(() => (props.compact ? "xs" : "sm"));
+
+/** "Más" in `menu` mode: everything but "Editar". */
+const menuItems = computed(() => {
+  const add = [
+    ...(manage.value
+      ? [
+          {
+            label: t("agenda.actions.addSubItem"),
+            icon: "i-lucide-list-plus",
+            onSelect: () => openAddChild(),
+          },
+        ]
+      : []),
+    ...(canAddDocuments.value
+      ? [
+          {
+            label: t("agenda.manage.addDocuments"),
+            icon: "i-lucide-files",
+            onSelect: () => openBulk(),
+          },
+        ]
+      : []),
+  ];
+  const remove = manage.value
+    ? [
+        {
+          label: t("common.delete"),
+          icon: "i-lucide-trash-2",
+          color: "error" as const,
+          onSelect: () => askDelete(),
+        },
+      ]
+    : [];
+  return [add, remove].filter((group) => group.length > 0);
+});
 
 // Final agenda: confirm a change to a root item -----------------------------------
 
@@ -307,50 +346,86 @@ async function confirmDelete(): Promise<void> {
     :aria-label="t('agenda.manage.group', named)"
     data-testid="agenda-item-manage"
   >
+    <template v-if="menu && manage">
+      <UButton
+        color="neutral"
+        variant="outline"
+        size="sm"
+        icon="i-lucide-pencil"
+        :label="t('common.edit')"
+        :aria-label="t('agenda.manage.editOf', named)"
+        data-testid="agenda-item-edit"
+        @click="openEdit"
+      />
+      <UDropdownMenu :items="menuItems" :content="{ align: 'end' }">
+        <UButton
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-ellipsis"
+          :label="t('agenda.more')"
+          :aria-label="t('agenda.manage.moreOf', named)"
+          data-testid="agenda-item-more"
+        />
+      </UDropdownMenu>
+    </template>
     <UButton
-      v-if="manage"
+      v-else-if="menu"
       color="neutral"
       variant="outline"
-      :size="size"
-      icon="i-lucide-pencil"
-      :label="t('common.edit')"
-      :aria-label="t('agenda.manage.editOf', named)"
-      data-testid="agenda-item-edit"
-      @click="openEdit"
-    />
-    <UButton
-      v-if="manage"
-      color="neutral"
-      variant="outline"
-      :size="size"
-      icon="i-lucide-list-plus"
-      :label="t('agenda.actions.addSubItem')"
-      :aria-label="t('agenda.manage.addSubItemOf', named)"
-      data-testid="agenda-item-add-child"
-      @click="openAddChild"
-    />
-    <UButton
-      v-if="canAddDocuments"
-      color="neutral"
-      variant="outline"
-      :size="size"
+      size="sm"
       icon="i-lucide-files"
       :label="t('agenda.manage.addDocuments')"
       :aria-label="t('agenda.manage.addDocumentsOf', named)"
       data-testid="agenda-item-add-documents"
       @click="openBulk"
     />
-    <UButton
-      v-if="manage"
-      color="error"
-      :variant="compact ? 'ghost' : 'outline'"
-      :size="size"
-      icon="i-lucide-trash-2"
-      :label="t('common.delete')"
-      :aria-label="t('agenda.manage.deleteOf', named)"
-      data-testid="agenda-item-delete"
-      @click="askDelete"
-    />
+    <template v-else>
+      <UButton
+        v-if="manage"
+        color="neutral"
+        variant="outline"
+        :size="size"
+        icon="i-lucide-pencil"
+        :label="t('common.edit')"
+        :aria-label="t('agenda.manage.editOf', named)"
+        data-testid="agenda-item-edit"
+        @click="openEdit"
+      />
+      <UButton
+        v-if="manage"
+        color="neutral"
+        variant="outline"
+        :size="size"
+        icon="i-lucide-list-plus"
+        :label="t('agenda.actions.addSubItem')"
+        :aria-label="t('agenda.manage.addSubItemOf', named)"
+        data-testid="agenda-item-add-child"
+        @click="openAddChild"
+      />
+      <UButton
+        v-if="canAddDocuments"
+        color="neutral"
+        variant="outline"
+        :size="size"
+        icon="i-lucide-files"
+        :label="t('agenda.manage.addDocuments')"
+        :aria-label="t('agenda.manage.addDocumentsOf', named)"
+        data-testid="agenda-item-add-documents"
+        @click="openBulk"
+      />
+      <UButton
+        v-if="manage"
+        color="error"
+        :variant="compact ? 'ghost' : 'outline'"
+        :size="size"
+        icon="i-lucide-trash-2"
+        :label="t('common.delete')"
+        :aria-label="t('agenda.manage.deleteOf', named)"
+        data-testid="agenda-item-delete"
+        @click="askDelete"
+      />
+    </template>
 
     <AgendaItemFormModal
       v-if="formMounted"

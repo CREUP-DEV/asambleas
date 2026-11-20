@@ -269,16 +269,19 @@ watch(() => route.path, revealActiveSection);
   <UDashboardPanel
     v-else
     id="assembly-hub"
-    class="lg:[--shell-breadcrumb-height:0px]"
+    class="[--shell-breadcrumb-height:0px]"
   >
     <template #header>
-      <!-- From lg the label gives way to the breadcrumb, which names the
-           assembly as its second step and takes the whole width; the label
-           stays the page's heading for screen readers. -->
+      <!-- Where the page is goes in the navbar, never in a row of its own
+           (user's decision of 2026-11-20). From md the label gives way to
+           the whole breadcrumb, which names the assembly as its second step
+           and takes the whole width; the label stays the page's heading for
+           screen readers. On phones the label stays, followed by the link
+           to the level above. -->
       <UDashboardNavbar
         :ui="{
           left: 'min-w-0 flex-1',
-          title: assembly ? 'shrink-0 lg:sr-only' : 'shrink-0',
+          title: assembly ? 'shrink-0 md:sr-only' : 'shrink-0',
         }"
       >
         <template #leading>
@@ -288,8 +291,11 @@ watch(() => route.path, revealActiveSection);
           {{ assembly?.label ?? t("assembly.hub.loading") }}
         </template>
         <template #trailing>
-          <div v-if="assembly" class="hidden min-w-0 flex-1 lg:flex">
+          <div v-if="assembly" class="hidden min-w-0 flex-1 md:flex">
             <ShellBreadcrumbs placement="inline" />
+          </div>
+          <div v-if="assembly" class="flex min-w-0 flex-1 md:hidden">
+            <ShellBreadcrumbs placement="back" />
           </div>
           <template v-if="assembly">
             <!-- Only a draft says so (user's decision of 2026-11-20): the
@@ -367,16 +373,11 @@ watch(() => route.path, revealActiveSection);
         </template>
       </UDashboardNavbar>
 
-      <!-- Where this page is, below lg (the navbar shows it from lg).
-           Section pages register nothing: the trail comes from the route,
-           and a document page adds its own name. -->
-      <ShellBreadcrumbs placement="compact" />
-
       <!-- On large screens the sidebar lists these same sections; repeating
            them here only crowded the header. Phones keep them, since the
            sidebar is a drawer there. Child pages that size themselves to the
-           viewport (session console, document workspace) assume this, and
-           take the breadcrumb row off with `--shell-breadcrumb-height`. -->
+           viewport (session console, document workspace) assume this; the
+           hub has no breadcrumb row (`--shell-breadcrumb-height` is 0). -->
       <UDashboardToolbar v-if="assembly" ref="sectionToolbar" class="lg:hidden">
         <UNavigationMenu
           :items="sectionItems"

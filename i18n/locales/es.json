@@ -3272,10 +3272,6 @@
       "noDocuments": "Este punto no tiene documentos.",
       "noOwnDocuments": "Los documentos están en sus subpuntos.",
       "subItems": "Subpuntos",
-      "submissions": {
-        "any": "Los miembros presentan aquí sus documentos.",
-        "kinds": "Los miembros presentan aquí: {kinds}."
-      },
       "neighbours": "Punto anterior y siguiente",
       "unpublished": "Sin publicar",
       "previousItem": "Punto anterior",
@@ -3430,7 +3426,8 @@
       "editOf": "Editar el punto {number}: {title}",
       "addSubItemOf": "Añadir subpunto al punto {number}: {title}",
       "addDocumentsOf": "Añadir varios documentos al punto {number}: {title}",
-      "deleteOf": "Eliminar el punto {number}: {title}"
+      "deleteOf": "Eliminar el punto {number}: {title}",
+      "moreOf": "Más acciones del punto {number}: {title}"
     },
     "container": {
       "question": "¿Los miembros presentan documentos aquí?",
