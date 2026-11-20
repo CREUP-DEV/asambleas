@@ -8,10 +8,12 @@ import {
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel";
+import { amendmentSheetKind } from "~/components/control-sheet/-model";
 
 /**
  * One amendment of the queue, kept to a single line: its code, who presents
- * it and one status (which says when the assembly cannot read it yet). The
+ * it, whether it is «De forma» or «De contenido» (as the control sheet's
+ * «Tipo», amendmentSheetKind) and one status (which says when the assembly cannot read it yet). The
  * amendment the Mesa can decide gets one action, "Debatir"; everything else
  * (its changes, the proponent's position, every other action) opens under
  * the row. The row is the anchor the keyboard shortcuts (j/k) and the
@@ -99,6 +101,9 @@ const authors = computed(() =>
 const authorNames = computed(() =>
   props.amendment.authors.map((author) => author.name).join(", "),
 );
+/** «De forma» outlined, «De contenido» filled, in grey as on the sheet. */
+const kind = computed(() => amendmentSheetKind(props.amendment));
+const kindLabel = computed(() => t(`session.queue.kind.${kind.value}`));
 
 /**
  * Makes the row the target of the shortcuts, except for amendments the
@@ -146,6 +151,7 @@ function focusRow(): void {
         :aria-label="
           t('session.queue.rowLabel', {
             code,
+            kind: kindLabel,
             who: authorNames || '-',
             status: rowStatus,
           })
@@ -171,6 +177,14 @@ function focusRow(): void {
         >
           {{ authors }}
         </span>
+        <UBadge
+          color="neutral"
+          :variant="kind === 'formal' ? 'outline' : 'subtle'"
+          size="sm"
+          class="shrink-0"
+          :label="kindLabel"
+          aria-hidden="true"
+        />
         <span
           class="text-muted flex min-w-0 items-center gap-1.5 text-xs"
           aria-hidden="true"

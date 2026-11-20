@@ -3920,7 +3920,11 @@
       "openValidationNewTab": "Revisar en Validación (se abre en una pestaña nueva)",
       "debate": "Debatir",
       "debateNamed": "Poner {code} en debate",
-      "rowLabel": "{code}, de {who}: {status}. Ver detalles",
+      "rowLabel": "{code}, {kind}, de {who}: {status}. Ver detalles",
+      "kind": {
+        "formal": "De forma",
+        "content": "De contenido"
+      },
       "lateTitle": "Fuera de plazo ({count})",
       "lateDecide": "Decidir si se trata | Decidir si se tratan",
       "lateHint": "Se presentaron después del plazo. La asamblea decide si las trata; hasta entonces no se pueden debatir ni decidir.",

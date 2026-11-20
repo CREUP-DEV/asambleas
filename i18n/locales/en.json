@@ -3920,7 +3920,11 @@
       "openValidationNewTab": "Review in Validation (opens in a new tab)",
       "debate": "Debate",
       "debateNamed": "Put {code} under debate",
-      "rowLabel": "{code}, by {who}: {status}. Show details",
+      "rowLabel": "{code}, {kind}, by {who}: {status}. Show details",
+      "kind": {
+        "formal": "Formal",
+        "content": "Content"
+      },
       "lateTitle": "Late ({count})",
       "lateDecide": "Decide whether to treat it | Decide whether to treat them",
       "lateHint": "They were presented after the deadline. The assembly decides whether to treat them; until then they cannot be debated or decided.",
