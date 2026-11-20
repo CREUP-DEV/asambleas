@@ -4153,6 +4153,8 @@ export async function declareInadmissibleOnReview(
   ctx: AmendmentContext,
   body: CorrectionBody,
 ): Promise<AmendmentDto> {
+  // Optional when it cannot be corrected (user's decision of 2026-11-20).
+  const note = body.note.trim() || null;
   const { actor, amendment, now } = ctx;
   assertReviewer(actor);
   assertNotFinal(ctx);
@@ -4197,7 +4199,7 @@ export async function declareInadmissibleOnReview(
         status: "inadmissible",
         admission: "inadmissible",
         decidedAt: now,
-        outcomeNote: body.note,
+        outcomeNote: note,
         ...(footing === "returned"
           ? {
               submittedAt: presented?.at ?? amendment.correctionRequestedAt,
@@ -4235,7 +4237,7 @@ export async function declareInadmissibleOnReview(
       method: "secretaria",
       voteId: null,
       subjectIds: [amendment.id],
-      note: body.note,
+      note: note,
       decidedByUserId: actor.user.id,
     });
     await recordEvent(tx, {
@@ -4260,7 +4262,7 @@ export async function declareInadmissibleOnReview(
       payload: {
         decisionId,
         method: "secretaria",
-        note: body.note,
+        note: note,
         onReview: true,
         ...(validated
           ? {

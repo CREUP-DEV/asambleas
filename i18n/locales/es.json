@@ -1942,7 +1942,7 @@
       "no": "No: no se admite. Queda cerrada y no se debatirá",
       "noPublished": "Está publicada: la nota se verá con ella.",
       "description": "{subject} no se admitirá: sus autores no podrán corregirla ni volver a presentarla.",
-      "noteLabel": "¿Por qué no se admite?",
+      "noteLabel": "¿Por qué no se admite? (opcional)",
       "noteHelp": "Lo leerán sus autores tal cual. La Mesa puede volver a admitirla.",
       "noteRequired": "Escribe por qué no se admite.",
       "send": "No admitirla",
@@ -4097,6 +4097,7 @@
       "announce": "En pantalla, el bloque {codes}",
       "otherDocumentTitle": "¿Proyectar el bloque de otro documento?",
       "assentTitle": "Aprobar en bloque por asentimiento",
+      "assentOnScreen": "Se aprueba el bloque que está en pantalla, que es lo que la sala ve. Para aprobar otras, cambia primero el bloque en pantalla.",
       "assentDescription": "Enmiendas que la Mesa propone aprobar juntas. Si nadie se opone, se aprueban una tras otra.",
       "assentEmpty": "Ninguna enmienda de la selección se puede aprobar ahora"
     },
@@ -4646,6 +4647,14 @@
     "forbiddenTitle": "No tienes acceso a la validación",
     "forbiddenDescription": "Solo la Secretaría valida los documentos y las enmiendas que se presentan.",
     "toTracking": "Ver el seguimiento",
+    "filters": {
+      "document": "Documento",
+      "allDocuments": "Todos los documentos",
+      "member": "Quién presenta",
+      "allMembers": "Todos",
+      "search": "Buscar…",
+      "clear": "Quitar filtros"
+    },
     "presentedBy": "Lo presenta",
     "noPresenter": "Sin asignar",
     "askCorrection": "Pedir corrección",
@@ -4754,6 +4763,7 @@
       "unvalidatedHint": "Vuelve a estar en «Por revisar»."
     },
     "validated": {
+      "filtered": "Ninguna coincide con los filtros.",
       "help": "Las enmiendas que ya validaste y publicaste y que aún no se han decidido. Si validaste alguna por error, deshaz la validación: vuelve a «Por revisar» tal como está. Para devolverla a sus autores con una nota, ábrela.",
       "none": "No hay enmiendas validadas y publicadas pendientes de decidir.",
       "loading": "Cargando las enmiendas validadas",

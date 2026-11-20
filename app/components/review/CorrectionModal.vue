@@ -44,17 +44,13 @@ watch(
   },
 );
 
+/** The note is needed to send it back; not to close it (2026-11-20). */
 const schema = computed(() =>
   z.object({
     note: z
       .string()
       .trim()
-      .min(
-        1,
-        closing.value
-          ? t("amendment.inadmissibleOnReview.noteRequired")
-          : t("review.correction.noteRequired"),
-      )
+      .min(closing.value ? 0 : 1, t("review.correction.noteRequired"))
       .max(
         CORRECTION_NOTE_MAX_LENGTH,
         t("review.correction.noteTooLong", {
@@ -129,7 +125,7 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
               : t('review.correction.noteHelp')
           "
           name="note"
-          required
+          :required="!closing"
         >
           <UTextarea
             v-model="state.note"

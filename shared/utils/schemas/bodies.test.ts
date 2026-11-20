@@ -135,4 +135,25 @@ describe("amendment correction body", () => {
       }),
     ).toEqual({ note: "Corrige", updatedAt: at });
   });
+
+  it("needs a note only when it goes back to be corrected (2026-11-20)", () => {
+    expect(
+      amendmentCorrectionBodySchema.safeParse({
+        note: "  ",
+        updatedAt: at,
+        correctable: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      amendmentCorrectionBodySchema.safeParse({ note: "", updatedAt: at })
+        .success,
+    ).toBe(false);
+    expect(
+      amendmentCorrectionBodySchema.safeParse({
+        note: "",
+        updatedAt: at,
+        correctable: true,
+      }).success,
+    ).toBe(false);
+  });
 });

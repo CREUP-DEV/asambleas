@@ -1942,7 +1942,7 @@
       "no": "No: it is not admitted. It is closed and will not be debated",
       "noPublished": "It is published: the note will show with it.",
       "description": "{subject} will not be admitted: its authors will not be able to fix it or present it again.",
-      "noteLabel": "Why is it not admitted?",
+      "noteLabel": "Why is it not admitted? (optional)",
       "noteHelp": "Its authors will read it as written. The Mesa can admit it again.",
       "noteRequired": "Write why it is not admitted.",
       "send": "Do not admit it",
@@ -4097,6 +4097,7 @@
       "announce": "On screen, the bloc {codes}",
       "otherDocumentTitle": "Project the bloc of another document?",
       "assentTitle": "Approve as a bloc by assent",
+      "assentOnScreen": "This approves the bloc on screen, which is what the room sees. To approve others, change the bloc on screen first.",
       "assentDescription": "Amendments the Mesa proposes to approve together. If nobody objects, they are approved one after another.",
       "assentEmpty": "No amendment of the selection can be approved now"
     },
@@ -4646,6 +4647,14 @@
     "forbiddenTitle": "You do not have access to validation",
     "forbiddenDescription": "Only the Secretariat validates the documents and amendments that are presented.",
     "toTracking": "See tracking",
+    "filters": {
+      "document": "Document",
+      "allDocuments": "All documents",
+      "member": "Presented by",
+      "allMembers": "Everyone",
+      "search": "Search…",
+      "clear": "Clear filters"
+    },
     "presentedBy": "Presented by",
     "noPresenter": "Not assigned",
     "askCorrection": "Ask for a correction",
@@ -4754,6 +4763,7 @@
       "unvalidatedHint": "It is in “To review” again."
     },
     "validated": {
+      "filtered": "None matches the filters.",
       "help": "The amendments you validated and published that are not decided yet. If you validated one by mistake, undo the validation: it goes back to “To review” as it is. To send it back to its authors with a note, open it.",
       "none": "There are no validated and published amendments still to be decided.",
       "loading": "Loading the validated amendments",

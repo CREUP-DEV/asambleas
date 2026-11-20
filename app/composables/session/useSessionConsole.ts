@@ -1484,6 +1484,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     open: false,
     ids: [] as string[],
     bloc: false,
+    /** It approves the bloc on screen (roomBlocOpen), whatever opened it. */
+    onScreen: false,
   });
   // The shortcut keeps its whole plan: the accepted ones held back say why.
   const assentDialogPlan = computed(() =>
@@ -1491,11 +1493,31 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       ? sessionAssentPlan(amendments.value, assentDialog.ids)
       : assentPlan.value,
   );
-  /** Opens it on the accepted ones (the shortcut), or on a bloc. */
+  /**
+   * The bloc the room has on screen for this document, still open, whatever
+   * this console follows (one without control has no bloc in its own
+   * `debate`): what the room was asked to approve.
+   */
+  const roomBlocOpen = computed<string[]>(() => {
+    const state = liveState.value;
+    if (!state || state.documentId !== documentId.value) return [];
+    return (state.amendmentBloc ?? []).filter((id) => {
+      const amendment = byId.value.get(id);
+      return amendment !== undefined && isSessionOpen(amendment);
+    });
+  });
+  /**
+   * Opens it on the accepted ones (the shortcut), or on a bloc. While a bloc
+   * is on screen with amendments still open, every way in approves that one
+   * (user's decision of 2026-11-20): in the 80.ª AGO a console approved its
+   * own selection of 17 while the room read a bloc of 12 on screen.
+   */
   function openAssent(ids?: string[]): void {
+    const target = roomBlocOpen.value.length > 0 ? roomBlocOpen.value : ids;
     assentDialog.ids =
-      ids ?? assentPlan.value.ready.map((amendment) => amendment.id);
-    assentDialog.bloc = ids !== undefined;
+      target ?? assentPlan.value.ready.map((amendment) => amendment.id);
+    assentDialog.bloc = target !== undefined;
+    assentDialog.onScreen = roomBlocOpen.value.length > 0;
     assentDialog.open = true;
   }
   const lapseDialog = reactive<SessionLapseDialog>({

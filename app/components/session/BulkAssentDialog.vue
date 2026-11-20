@@ -70,6 +70,14 @@ async function submit(): Promise<void> {
   >
     <template #body>
       <div class="space-y-4">
+        <!-- Whatever opened it, a bloc on screen is what gets approved. -->
+        <UAlert
+          v-if="session.assentDialog.onScreen"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-monitor"
+          :title="t('session.bloc.assentOnScreen')"
+        />
         <CommonEmptyState
           v-if="plan.ready.length === 0"
           icon="i-lucide-check-check"

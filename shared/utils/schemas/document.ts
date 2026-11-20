@@ -122,11 +122,19 @@ export const correctionBodySchema = z.object({
  * Body of POST .../amendments/[amendment]/correction
  * (AmendmentCorrectionBody): the same note, and whether the amendment can be
  * corrected (`correctable`, true when absent); false declares it not
- * admitted instead.
+ * admitted instead, and then the note may be left empty (user's decision
+ * of 2026-11-20).
  */
-export const amendmentCorrectionBodySchema = correctionBodySchema.extend({
-  correctable: z.boolean().optional(),
-});
+export const amendmentCorrectionBodySchema = z
+  .object({
+    note: z.string().trim().max(CORRECTION_NOTE_MAX_LENGTH),
+    updatedAt: isoDateSchema,
+    correctable: z.boolean().optional(),
+  })
+  .refine((body) => body.correctable === false || body.note.length > 0, {
+    message: "note_required",
+    path: ["note"],
+  });
 
 /** Body of PUT .../documents/[document]/positions (PositionsPublicationBody). */
 export const positionsPublicationBodySchema = z.object({

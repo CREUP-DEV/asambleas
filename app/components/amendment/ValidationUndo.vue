@@ -70,7 +70,8 @@ const consequences = computed(() =>
     answered.value ? t("amendment.validationUndo.clearsAnswer") : null,
   ].filter((line): line is string => line !== null),
 );
-const noteMissing = computed(() => !note.value.trim());
+/** The note is needed to send it back; not to close it (user's decision of 2026-11-20). */
+const noteMissing = computed(() => !closing.value && !note.value.trim());
 /**
  * What else the form does: sending it back also hides it; declaring it not
  * admitted leaves it as public as it was, and only clears the answer.
@@ -246,7 +247,7 @@ async function sendCorrection(): Promise<void> {
               : t('amendment.review.correctionRequired')
             : undefined
         "
-        required
+        :required="!closing"
       >
         <template v-if="formConsequences.length > 0" #description>
           <span class="text-default">{{ formConsequences.join(" ") }}</span>

@@ -224,7 +224,8 @@ const publishesOnValidation = computed(
   () => props.amendment.kind === "transactional",
 );
 const canPublish = computed(() => props.amendment.can.publish);
-const noteMissing = computed(() => !note.value.trim());
+/** The note is needed to send it back; not to close it (user's decision of 2026-11-20). */
+const noteMissing = computed(() => !closing.value && !note.value.trim());
 /** The Secretaría may declare it not admitted instead of sending it back. */
 const inadmissibleOffered = computed(() =>
   amendmentInadmissibleOnReview(props.amendment, props.finalVoted),
@@ -566,7 +567,7 @@ async function askCorrection(): Promise<void> {
               : t('amendment.review.correctionRequired')
             : undefined
         "
-        required
+        :required="!closing"
       >
         <UTextarea
           ref="noteInput"

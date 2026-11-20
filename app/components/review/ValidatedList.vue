@@ -28,6 +28,9 @@ const props = defineProps<{
   apiBase: string;
   /** Localized path of a document of the assembly, by its slug. */
   documentPath: (slug: string) => string;
+  /** The page's filters: one document, or one member among the authors. */
+  documentId?: string;
+  memberId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -60,7 +63,6 @@ async function load(): Promise<void> {
       `${props.apiBase}/review/validated`,
     );
     rows.value = data.amendments;
-    emit("count", data.amendments.length);
     loadedOnce = true;
   } catch {
     failed.value = true;
@@ -89,13 +91,30 @@ onLive((events) => {
   else if (loadedOnce) rows.value = null;
 });
 
+/** The rows the page's filters keep; the tab counts these. */
+const shownRows = computed(() =>
+  (rows.value ?? []).filter(
+    (row) =>
+      (props.documentId === undefined ||
+        row.document.id === props.documentId) &&
+      (props.memberId === undefined ||
+        row.amendment.authors.some((author) => author.id === props.memberId)),
+  ),
+);
+watch(
+  () => (rows.value === null ? null : shownRows.value.length),
+  (count) => {
+    if (count !== null) emit("count", count);
+  },
+);
+
 /** By document, in the order the server sends them (agenda, then text). */
 const groups = computed(() => {
   const result: {
     document: ReviewQueueAmendmentDto["document"];
     amendments: AmendmentDto[];
   }[] = [];
-  for (const row of rows.value ?? []) {
+  for (const row of shownRows.value) {
     const last = result.at(-1);
     if (last && last.document.id === row.document.id) {
       last.amendments.push(row.amendment);
@@ -163,7 +182,6 @@ async function undo(): Promise<void> {
     rows.value = (rows.value ?? []).filter(
       (row) => row.amendment.id !== amendment.id,
     );
-    emit("count", rows.value.length);
     const title = t("review.amendments.done.unvalidated", {
       label: labelOf(amendment),
     });
@@ -218,7 +236,11 @@ async function undo(): Promise<void> {
       />
     </div>
     <p v-else-if="groups.length === 0" class="text-muted text-sm">
-      {{ t("review.validated.none") }}
+      {{
+        (rows?.length ?? 0) > 0
+          ? t("review.validated.filtered")
+          : t("review.validated.none")
+      }}
     </p>
 
     <div v-else class="space-y-6">

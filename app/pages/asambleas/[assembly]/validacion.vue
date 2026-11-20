@@ -8,6 +8,7 @@ import {
 import type {
   AmendmentDto,
   CorrectionBody,
+  MemberRef,
   DocumentDto,
   DocumentSummaryDto,
   ReviewQueueDto,
@@ -84,13 +85,93 @@ onLive((events) => {
   if (affectsReviewQueue(events)) void refresh();
 });
 
-const documents = computed<DocumentSummaryDto[]>(() =>
+const allDocuments = computed<DocumentSummaryDto[]>(() =>
   canDocuments.value ? (queue.value?.documents ?? []) : [],
 );
+const allAmendments = computed(() =>
+  canAmendments.value ? (queue.value?.amendments ?? []) : [],
+);
+
+// Filters (user's decision of 2026-11-20) ----------------------------------------
+
+/** One document, or one member who presents (a document or an amendment). */
+const filterDocumentId = ref<string | undefined>(undefined);
+const filterMemberId = ref<string | undefined>(undefined);
+const filtering = computed(
+  () =>
+    filterDocumentId.value !== undefined || filterMemberId.value !== undefined,
+);
+function clearFilters(): void {
+  filterDocumentId.value = undefined;
+  filterMemberId.value = undefined;
+}
+
+/** Every document with something here, by its reference and title. */
+const documentFilterItems = computed(() => {
+  const seen = new Map<string, string>();
+  for (const document of allDocuments.value) {
+    seen.set(document.id, documentFilterLabel(document));
+  }
+  for (const row of allAmendments.value) {
+    if (!seen.has(row.document.id)) {
+      seen.set(row.document.id, documentFilterLabel(row.document));
+    }
+  }
+  return [...seen].map(([value, label]) => ({ value, label }));
+});
+function documentFilterLabel(document: {
+  title: string;
+  reference: string | null;
+}): string {
+  return document.reference
+    ? `${document.reference} · ${document.title}`
+    : document.title;
+}
+
+/** Every member presenting something here, by acronym. */
+const memberFilterItems = computed(() => {
+  const seen = new Map<string, { label: string; acronym: string }>();
+  const add = (member: MemberRef | null | undefined) => {
+    if (member && !seen.has(member.id)) {
+      seen.set(member.id, {
+        label: `${member.acronym} · ${member.name}`,
+        acronym: member.acronym,
+      });
+    }
+  };
+  for (const document of allDocuments.value) {
+    add(document.proponent);
+    document.coProponents.forEach(add);
+  }
+  for (const row of allAmendments.value) row.amendment.authors.forEach(add);
+  return [...seen]
+    .map(([value, entry]) => ({ value, ...entry }))
+    .sort((a, b) => a.acronym.localeCompare(b.acronym));
+});
+
+const documents = computed<DocumentSummaryDto[]>(() =>
+  allDocuments.value.filter(
+    (document) =>
+      (filterDocumentId.value === undefined ||
+        document.id === filterDocumentId.value) &&
+      (filterMemberId.value === undefined ||
+        [document.proponent, ...document.coProponents].some(
+          (member) => member?.id === filterMemberId.value,
+        )),
+  ),
+);
 const groups = computed(() =>
-  canAmendments.value
-    ? groupReviewAmendments(queue.value?.amendments ?? [])
-    : [],
+  groupReviewAmendments(
+    allAmendments.value.filter(
+      (row) =>
+        (filterDocumentId.value === undefined ||
+          row.document.id === filterDocumentId.value) &&
+        (filterMemberId.value === undefined ||
+          row.amendment.authors.some(
+            (author) => author.id === filterMemberId.value,
+          )),
+    ),
+  ),
 );
 /** Documents with amendments to check now (validate, publish, wait). */
 const reviewGroups = computed(() =>
@@ -194,8 +275,10 @@ const transactionalsListed = computed(() =>
 const lateCount = computed(() =>
   lateGroups.value.reduce((total, group) => total + group.late.length, 0),
 );
+/** Nothing waits at all; filtered away, the sections say so one by one. */
 const empty = computed(
   () =>
+    !filtering.value &&
     documents.value.length === 0 &&
     amendmentCount.value === 0 &&
     lateCount.value === 0,
@@ -480,6 +563,45 @@ async function confirmBulkPublish() {
         {{ statusMessage }}
       </p>
 
+      <!-- Narrow everything below to one document or one presenter. -->
+      <div
+        v-if="queue && (documentFilterItems.length > 1 || filtering)"
+        class="flex flex-wrap items-end gap-3"
+      >
+        <UFormField
+          :label="t('review.filters.document')"
+          class="w-full sm:w-80"
+        >
+          <USelectMenu
+            v-model="filterDocumentId"
+            :items="documentFilterItems"
+            value-key="value"
+            :placeholder="t('review.filters.allDocuments')"
+            :search-input="{ placeholder: t('review.filters.search') }"
+            class="w-full"
+          />
+        </UFormField>
+        <UFormField :label="t('review.filters.member')" class="w-full sm:w-64">
+          <USelectMenu
+            v-model="filterMemberId"
+            :items="memberFilterItems"
+            value-key="value"
+            :filter-fields="['label', 'acronym']"
+            :placeholder="t('review.filters.allMembers')"
+            :search-input="{ placeholder: t('review.filters.search') }"
+            class="w-full"
+          />
+        </UFormField>
+        <UButton
+          v-if="filtering"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-x"
+          :label="t('review.filters.clear')"
+          @click="clearFilters"
+        />
+      </div>
+
       <div v-if="pending && !queue" class="space-y-3" role="status">
         <span class="sr-only">{{ t("review.loading") }}</span>
         <USkeleton
@@ -542,6 +664,8 @@ async function confirmBulkPublish() {
             active
             :api-base="apiBase"
             :document-path="documentPath"
+            :document-id="filterDocumentId"
+            :member-id="filterMemberId"
             @undone="refresh"
             @announce="announce"
           />
@@ -764,6 +888,8 @@ async function confirmBulkPublish() {
             :active="amendmentTab === 'validated'"
             :api-base="apiBase"
             :document-path="documentPath"
+            :document-id="filterDocumentId"
+            :member-id="filterMemberId"
             @count="validatedCount = $event"
             @undone="refresh"
             @announce="announce"
