@@ -600,6 +600,20 @@
           }
         }
       },
+      "transactionalProposers": {
+        "label": "Who may present transactionals",
+        "help": "The Mesa may always present them in session.",
+        "options": {
+          "involved": {
+            "label": "Only the parties",
+            "description": "Those who presented the amendments it combines (the original ones, when it combines a transactional) and the document's presenters."
+          },
+          "anyone": {
+            "label": "Any member",
+            "description": "Any member who may present amendments, even without having presented any of those it combines."
+          }
+        }
+      },
       "acceptedPerDocument": "Whether amendments accepted by the document's presenter are voted or added without a vote is set on each document, under “Advanced options”."
     },
     "danger": {
@@ -1498,6 +1512,7 @@
       "presented": "Amendment presented",
       "presentedDescription": "The whole assembly can see it now.",
       "transact": "Propose a transactional amendment with this one",
+      "transactStandIn": "Propose a transactional amendment with {code}",
       "transactOverlaps": "Combine them into a transactional amendment",
       "mainAuthor": "main author",
       "approvedByPresenter": "Approved without a vote: the document's presenter accepted it",
@@ -5102,6 +5117,7 @@
       "leadField": "First",
       "leadHint": "That state goes on top; the rest, in the column's order.",
       "treatment": "Order of treatment",
+      "document": "Order in the document",
       "presentation": "Order of presentation",
       "lead": "What goes first in {column}",
       "leadNone": "the column's order",
@@ -5924,6 +5940,13 @@
       "noCandidates": "No amendments to combine",
       "noCandidatesHint": "Once the Secretariat publishes amendments that are not decided yet, you can combine them here.",
       "blockedTitle": "Some amendments can no longer be combined",
+      "widenBefore": "Take in the paragraph before",
+      "ownMissing": "Only those who presented one of the amendments it combines and the document's presenters may present a transactional: include one of your amendments.",
+      "widenAfter": "Take in the paragraph after",
+      "standIn": "Transactional {to} already replaces {from}: {to} is combined instead.",
+      "replacedTitle": "A transactional already replaces it",
+      "replaced": "Transactional {to} already replaces {from}: combine {to} instead.",
+      "useStandIns": "Combine the transactional instead | Combine the transactionals instead",
       "blocked": "{labels} has already been decided or withdrawn. Remove it from the list to continue. | {labels} have already been decided or withdrawn. Remove them from the list to continue.",
       "skippedTitle": "Some amendments do not fit together",
       "skipped": "{labels} clashes with another amendment and was not applied to the starting text. Adjust it by hand. | {labels} clash with other amendments and were not applied to the starting text. Adjust it by hand.",

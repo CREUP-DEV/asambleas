@@ -1820,6 +1820,12 @@ export function sessionTransactionalSeed(
   base: Block[],
   sources: AmendmentInput[],
   newId: () => string,
+  /**
+   * Paragraphs taken in before and after what the sources touch (user's
+   * decision of 2026-11-20): a transactional may need to change text
+   * around them too. None by default.
+   */
+  widen: { before: number; after: number } = { before: 0, after: 0 },
 ): SessionTransactionalSeed {
   const index = new Map(base.map((block, i) => [block.id, i]));
   const positions: number[] = [];
@@ -1844,8 +1850,11 @@ export function sessionTransactionalSeed(
     };
   }
 
-  const lo = Math.min(...positions);
-  const hi = Math.max(...positions);
+  const lo = Math.max(0, Math.min(...positions) - Math.max(0, widen.before));
+  const hi = Math.min(
+    base.length - 1,
+    Math.max(...positions) + Math.max(0, widen.after),
+  );
   const result = consolidate(base, sources);
 
   const seed: Block[] = [];
@@ -1939,20 +1948,39 @@ export interface SessionParty {
 /**
  * Parties that must accept a transactional before it replaces its sources:
  * the main author of each source (sessionMainAuthor), once each, in the
- * order of the sources. A preview for the composer: once the transactional
- * exists, its `acceptances` are what counts.
+ * order of the sources. With the document's amendments (`byId`), a source
+ * that is itself a transactional counts by what it combines, down to the
+ * originals, as the server asks (user's decision of 2026-11-20). A preview
+ * for the composer: once the transactional exists, its `acceptances` are
+ * what counts.
  */
 export function sessionTransactionalParties(
   sources: AmendmentDto[],
+  byId?: ReadonlyMap<string, AmendmentDto>,
 ): SessionParty[] {
   const parties = new Map<string, SessionParty>();
-  for (const source of sources) {
+  const visited = new Set<string>();
+  const visit = (source: AmendmentDto) => {
+    if (visited.has(source.id)) return;
+    visited.add(source.id);
+    if (
+      byId &&
+      source.kind === "transactional" &&
+      source.sourceIds.length > 0
+    ) {
+      for (const id of source.sourceIds) {
+        const original = byId.get(id);
+        if (original) visit(original);
+      }
+      return;
+    }
     const main = sessionMainAuthor(source);
-    if (!main) continue;
+    if (!main) return;
     const party = parties.get(main.id);
     if (party) party.sourceIds.push(source.id);
     else parties.set(main.id, { member: main, sourceIds: [source.id] });
-  }
+  };
+  sources.forEach(visit);
   return [...parties.values()];
 }
 

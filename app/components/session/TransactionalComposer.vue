@@ -15,6 +15,7 @@ import {
   type SessionTransactionalSeed,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { widenedEdit } from "~/composables/amendment/transactional";
 
 /**
  * Builds a transactional amendment in the room. The editor starts from the
@@ -60,6 +61,11 @@ const mainAuthorId = ref<string | null>(null);
 const createdId = ref<string | null>(null);
 const seed = shallowRef<SessionTransactionalSeed | null>(null);
 const editorKey = ref(0);
+/**
+ * Paragraphs taken in around what the amendments touch (user's decision of
+ * 2026-11-20), as in the members' composer.
+ */
+const widen = ref({ before: 0, after: 0 });
 const editor = useTemplateRef<{ flush: () => void }>("editor");
 /** Set when the Mesa discards the draft: the next opening starts afresh. */
 let discarded = false;
@@ -119,10 +125,26 @@ const sources = computed<AmendmentDto[]>(() =>
 );
 
 /** The main author of each source: who has to accept it. */
-const parties = computed(() => sessionTransactionalParties(sources.value));
-const partyItems = computed(() =>
-  parties.value.map((party) => memberMenuItem(party.member)),
+/** Who accepts it: the originals' main authors (2026-11-20). */
+const parties = computed(() =>
+  sessionTransactionalParties(sources.value, session.byId.value),
 );
+/**
+ * Who may sign it: those parties and the main authors of what it combines
+ * directly (a transactional's own author included), as the server allows.
+ */
+const partyItems = computed(() => {
+  const seen = new Map<string, ReturnType<typeof memberMenuItem>>();
+  for (const party of [
+    ...parties.value,
+    ...sessionTransactionalParties(sources.value),
+  ]) {
+    if (!seen.has(party.member.id)) {
+      seen.set(party.member.id, memberMenuItem(party.member));
+    }
+  }
+  return [...seen.values()];
+});
 /** The authors chosen, as the main author select lists them. */
 const mainAuthorItems = computed(() =>
   partyItems.value.filter((item) => authorIds.value.includes(item.value)),
@@ -139,15 +161,53 @@ watch(
   { immediate: true },
 );
 
+/** What the seed applies: the chosen amendments. */
+function seedSources() {
+  return sources.value.map((amendment) => ({
+    id: amendment.id,
+    ops: amendment.ops,
+  }));
+}
+
+/** Whether there is text before or after the passage to take in. */
+const passageEdges = computed(() => {
+  const passage = seed.value?.passage ?? [];
+  const base = session.base.value;
+  if (passage.length === 0) return { first: true, last: true };
+  const index = base.findIndex((block) => block.id === passage[0]!.id);
+  return {
+    first: index <= 0,
+    last: index + passage.length >= base.length,
+  };
+});
+
+/** Takes in the paragraph before or after, keeping what was written. */
+function widenPassage(side: "before" | "after"): void {
+  editor.value?.flush();
+  const previous = seed.value;
+  if (!previous) return;
+  const next = { ...widen.value, [side]: widen.value[side] + 1 };
+  const wider = sessionTransactionalSeed(
+    session.base.value,
+    seedSources(),
+    createId,
+    next,
+  );
+  const kept = widenedEdit(previous, wider, edited.value);
+  if (!kept) return;
+  widen.value = next;
+  seed.value = wider;
+  edited.value = kept;
+  editorKey.value += 1;
+}
+
 /** Restarts the text from the current sources (the editor is remounted). */
 function reseed(): void {
   seed.value = sessionTransactionalSeed(
     session.base.value,
-    sources.value.map((amendment) => ({
-      id: amendment.id,
-      ops: amendment.ops,
-    })),
+    seedSources(),
     createId,
+    widen.value,
   );
   edited.value = seed.value.seed.map((block) => ({
     ...block,
@@ -265,6 +325,7 @@ function onSourcesChange(value: string[] | null | undefined): void {
     return;
   }
   sourceIds.value = next;
+  widen.value = { before: 0, after: 0 };
   reseed();
 }
 
@@ -277,6 +338,7 @@ function resetText(): void {
   if (textEdited() && !window.confirm(t("session.composer.resetConfirm"))) {
     return;
   }
+  widen.value = { before: 0, after: 0 };
   reseed();
 }
 
@@ -447,6 +509,15 @@ function voteCreated(): void {
             <h3 class="text-highlighted text-sm font-medium">
               {{ t("session.composer.text") }}
             </h3>
+            <UButton
+              v-if="!passageEdges.first"
+              icon="i-lucide-arrow-up-to-line"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :label="t('transactional.composer.widenBefore')"
+              @click="widenPassage('before')"
+            />
             <ClientOnly>
               <ContentBlockEditor
                 :key="editorKey"
@@ -459,14 +530,25 @@ function voteCreated(): void {
                 <USkeleton aria-hidden="true" class="h-48 w-full" />
               </template>
             </ClientOnly>
-            <UButton
-              icon="i-lucide-rotate-ccw"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :label="t('session.composer.reset')"
-              @click="resetText"
-            />
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-if="!passageEdges.last"
+                icon="i-lucide-arrow-down-to-line"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :label="t('transactional.composer.widenAfter')"
+                @click="widenPassage('after')"
+              />
+              <UButton
+                icon="i-lucide-rotate-ccw"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :label="t('session.composer.reset')"
+                @click="resetText"
+              />
+            </div>
           </section>
           <section class="min-w-0 space-y-2" aria-live="polite">
             <h3 class="text-highlighted text-sm font-medium">

@@ -197,6 +197,12 @@ export function transactionalComposerSeed(
   base: Block[],
   sources: AmendmentInput[],
   newId: () => string,
+  /**
+   * Paragraphs taken in before and after what the sources touch (user's
+   * decision of 2026-11-20): a transactional may need to change text
+   * around them too. None by default.
+   */
+  widen: { before: number; after: number } = { before: 0, after: 0 },
 ): TransactionalComposerSeed {
   const index = new Map(base.map((block, i) => [block.id, i]));
   const positions: number[] = [];
@@ -221,8 +227,11 @@ export function transactionalComposerSeed(
     };
   }
 
-  const lo = Math.min(...positions);
-  const hi = Math.max(...positions);
+  const lo = Math.max(0, Math.min(...positions) - Math.max(0, widen.before));
+  const hi = Math.min(
+    base.length - 1,
+    Math.max(...positions) + Math.max(0, widen.after),
+  );
   const result = consolidate(base, sources);
 
   const seed: Block[] = [];
@@ -256,6 +265,43 @@ export function transactionalComposerSeed(
     seed: seedListStarts(before, seed),
     skipped: result.conflicts.map((conflict) => conflict.amendmentId),
   };
+}
+
+/**
+ * The text after taking in more paragraphs around the passage (user's
+ * decision of 2026-11-20), keeping what was written: the paragraphs the
+ * wider seed adds before and after the old passage, as they are in the
+ * text, around the edited blocks. Null when nothing was added (already at
+ * the start or the end).
+ */
+export function widenedEdit(
+  previous: Pick<TransactionalComposerSeed, "passage">,
+  wider: Pick<TransactionalComposerSeed, "passage" | "seed">,
+  edited: Block[],
+): Block[] | null {
+  const had = new Set(previous.passage.map((block) => block.id));
+  const added = new Set(
+    wider.passage.filter((block) => !had.has(block.id)).map((b) => b.id),
+  );
+  if (added.size === 0) return null;
+  let lead = 0;
+  while (lead < wider.seed.length && added.has(wider.seed[lead]!.id)) lead++;
+  let trail = 0;
+  while (
+    trail < wider.seed.length - lead &&
+    added.has(wider.seed[wider.seed.length - 1 - trail]!.id)
+  ) {
+    trail++;
+  }
+  const copy = (block: Block): Block => ({
+    ...block,
+    marks: block.marks.map((mark) => ({ ...mark })),
+  });
+  return [
+    ...wider.seed.slice(0, lead).map(copy),
+    ...edited,
+    ...wider.seed.slice(wider.seed.length - trail).map(copy),
+  ];
 }
 
 /**
@@ -748,18 +794,45 @@ export function transactionalNextSteps(
  * Secretaría.
  */
 export function transactionalAuthorsToAsk(
-  sources: Pick<AmendmentDto, "authors" | "mainAuthorId">[],
+  sources: TransactionalPartySource[],
   proposerMemberId: string | null,
+  /**
+   * The document's amendments: a source that is itself a transactional
+   * counts by what it combines, down to the originals (user's decision of
+   * 2026-11-20, as the server's originalMainAuthors).
+   */
+  byId?: ReadonlyMap<string, TransactionalPartySource>,
 ): MemberRef[] {
   const seen = new Map<string, MemberRef>();
-  for (const source of sources) {
+  const visited = new Set<string>();
+  const visit = (source: TransactionalPartySource) => {
+    if (visited.has(source.id)) return;
+    visited.add(source.id);
+    if (
+      byId &&
+      source.kind === "transactional" &&
+      source.sourceIds.length > 0
+    ) {
+      for (const id of source.sourceIds) {
+        const original = byId.get(id);
+        if (original) visit(original);
+      }
+      return;
+    }
     const main = amendmentMainAuthor(source);
     if (main && main.id !== proposerMemberId && !seen.has(main.id)) {
       seen.set(main.id, main);
     }
-  }
+  };
+  sources.forEach(visit);
   return [...seen.values()];
 }
+
+/** What transactionalAuthorsToAsk reads of an amendment. */
+export type TransactionalPartySource = Pick<
+  AmendmentDto,
+  "id" | "kind" | "sourceIds" | "authors" | "mainAuthorId"
+>;
 
 /**
  * The acceptance a source's main author gives on a transactional over it:
@@ -858,6 +931,54 @@ export interface TransactionalLinks {
   replacedBy: string[];
   /** Open transactionals proposed over it (it is still `submitted`). */
   proposed: string[];
+}
+
+/**
+ * Whether the member presented one of the original amendments behind this
+ * one (itself, or what a transactional combines, down to the originals):
+ * with `transactionalProposers: "involved"` (the default, user's decision
+ * of 2026-11-20) only such members, the document's presenters and the Mesa
+ * may propose a transactional over it, as the server checks.
+ */
+export function presentsOriginal(
+  amendment: Pick<AmendmentDto, "id" | "kind" | "sourceIds" | "authors">,
+  memberId: string | null,
+  byId: ReadonlyMap<
+    string,
+    Pick<AmendmentDto, "id" | "kind" | "sourceIds" | "authors">
+  >,
+  seen: Set<string> = new Set(),
+): boolean {
+  if (memberId === null || seen.has(amendment.id)) return false;
+  seen.add(amendment.id);
+  if (amendment.kind === "transactional" && amendment.sourceIds.length > 0) {
+    return amendment.sourceIds.some((id) => {
+      const source = byId.get(id);
+      return (
+        source !== undefined && presentsOriginal(source, memberId, byId, seen)
+      );
+    });
+  }
+  return amendment.authors.some((author) => author.id === memberId);
+}
+
+/**
+ * The transactional that stands in for an amendment a transactional already
+ * replaced (user's decision of 2026-11-20): that one, when it can be
+ * combined in turn. Transacting the original makes no sense any more, so
+ * the composer and the amendment's page offer this one instead. Null
+ * otherwise.
+ */
+export function transactionalStandIn<T extends AmendmentDto>(
+  amendment: T,
+  byId: ReadonlyMap<string, T>,
+): T | null {
+  if (amendment.status !== "transacted") return null;
+  for (const id of sessionReplacingIds(amendment, byId)) {
+    const replacing = byId.get(id);
+    if (replacing && transactionalSourceEligible(replacing)) return replacing;
+  }
+  return null;
 }
 
 /**

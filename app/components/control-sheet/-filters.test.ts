@@ -714,6 +714,26 @@ describe("shownAmendmentRows", () => {
     expect(by("treatment", "desc")).toEqual(["a1", "a3", "a2"]);
   });
 
+  it("sorts by where they act in the text, by «Orden del documento» (2026-11-20)", () => {
+    // Treatment (the rows' own order) puts the accepted a2 first; in the
+    // text a3 comes first, then a1 and a2 on the same block, by number.
+    const rows = [
+      amendment("a2", {}, { positionKey: 5, number: 4 }),
+      amendment("a3", {}, { positionKey: 1, number: 9 }),
+      amendment("a1", {}, { positionKey: 5, number: 2 }),
+    ];
+    const by = (dir: "asc" | "desc") =>
+      amendmentIds(
+        shownAmendmentRows(
+          rows,
+          { key: "document", dir },
+          EMPTY_AMENDMENT_FILTERS,
+        ),
+      );
+    expect(by("asc")).toEqual(["a3", "a1", "a2"]);
+    expect(by("desc")).toEqual(["a2", "a1", "a3"]);
+  });
+
   it("puts any state first, the rest in the column's order", () => {
     const states = (key: "result" | "position", lead: string) =>
       amendmentIds(

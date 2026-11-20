@@ -836,6 +836,7 @@ const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
 };
 const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   treatment: "controlSheet.sort.treatment",
+  document: "controlSheet.sort.document",
   code: "controlSheet.sort.presentation",
   authors: "controlSheet.columns.authors",
   kind: "controlSheet.columns.kind",
@@ -1982,27 +1983,6 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           {{ t(internal ? "controlSheet.intro" : "controlSheet.introPublic") }}
         </p>
       </div>
-      <!-- One button: it says when the sheet follows the debate, and
-           takes it back there when it does not (user's decision of
-           2026-11-20). -->
-      <UTooltip
-        :text="
-          follow
-            ? t('controlSheet.followingHint')
-            : t('controlSheet.followHint')
-        "
-      >
-        <UButton
-          :color="follow ? 'primary' : 'neutral'"
-          :variant="follow ? 'soft' : 'outline'"
-          icon="i-lucide-radio"
-          :label="
-            follow ? t('controlSheet.following') : t('controlSheet.follow')
-          "
-          :aria-pressed="follow"
-          @click="follow = !follow"
-        />
-      </UTooltip>
     </div>
 
     <div v-if="loading" class="space-y-3" role="status">
@@ -2038,14 +2018,40 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         negative offset takes back), so changing tab never needs scrolling
         up. The heading above them tells whether they are stuck.
       -->
-      <div ref="tabsBar" class="bg-default sticky -top-4 z-20 pt-1 sm:-top-6">
+      <div
+        ref="tabsBar"
+        class="bg-default sticky -top-4 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 sm:-top-6"
+      >
         <UTabs
           v-model="tab"
           :items="tabItems"
           :content="false"
           variant="link"
+          class="min-w-0"
           :aria-label="t('controlSheet.tabs.label')"
         />
+        <!-- In the bar that stays on top (user's decision of 2026-11-20):
+             it says when the sheet follows the debate, and takes it back
+             there when it does not. -->
+        <UTooltip
+          :text="
+            follow
+              ? t('controlSheet.followingHint')
+              : t('controlSheet.followHint')
+          "
+        >
+          <UButton
+            :color="follow ? 'primary' : 'neutral'"
+            :variant="follow ? 'soft' : 'outline'"
+            size="sm"
+            icon="i-lucide-radio"
+            :label="
+              follow ? t('controlSheet.following') : t('controlSheet.follow')
+            "
+            :aria-pressed="follow"
+            @click="follow = !follow"
+          />
+        </UTooltip>
       </div>
 
       <template v-if="tab === 'general'">
@@ -2419,24 +2425,5 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         </div>
       </template>
     </UModal>
-
-    <!-- Away from the debate, the way back stays at hand at the bottom of
-         the screen (the button above may be far up the sheet). -->
-    <div
-      v-if="
-        !follow &&
-        assembly.status === 'in_session' &&
-        live?.agendaItemId &&
-        tab !== 'turns'
-      "
-      class="pointer-events-none sticky bottom-4 z-20 flex justify-center print:hidden"
-    >
-      <UButton
-        class="pointer-events-auto shadow-lg"
-        icon="i-lucide-radio"
-        :label="t('controlSheet.follow')"
-        @click="follow = true"
-      />
-    </div>
   </div>
 </template>

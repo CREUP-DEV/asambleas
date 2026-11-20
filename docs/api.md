@@ -417,6 +417,13 @@ window, the `document`.
 `DEFAULT_ASSEMBLY_SETTINGS`, reading only the keys the defaults have. Keys of
 removed policies, such as the old `amendmentVisibility`, are neither returned
 nor kept: the next `PUT` writes the settings back without them.
+`transactionalProposers` (user's decision of 2026-11-20) says who may present
+a transactional: `involved` (the default), the authors of the original
+amendments it combines (down through any transactional it combines) and the
+document's presenters; `anyone`, also any member account with
+`amendment:create`. The Mesa always may. A transactional's parties are the
+main authors of those original amendments, never a combined transactional's
+own author.
 
 ## Calendar rules
 

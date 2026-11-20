@@ -92,6 +92,7 @@ const assemblySettingsPatchSchema = z
   .object({
     tieRule: z.enum(["rejected", "repeat"]),
     denominator: z.enum(["valid_votes", "present"]),
+    transactionalProposers: z.enum(["involved", "anyone"]),
   })
   .partial();
 

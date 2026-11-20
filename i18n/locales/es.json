@@ -600,6 +600,20 @@
           }
         }
       },
+      "transactionalProposers": {
+        "label": "Quién puede presentar transaccionales",
+        "help": "La Mesa siempre puede presentarlas en la sesión.",
+        "options": {
+          "involved": {
+            "label": "Solo las partes",
+            "description": "Quienes presentaron las enmiendas que se combinan (las originales, si se combina una transaccional) y quienes presentan el documento."
+          },
+          "anyone": {
+            "label": "Cualquier miembro",
+            "description": "Cualquier miembro que pueda presentar enmiendas, aunque no haya presentado ninguna de las que se combinan."
+          }
+        }
+      },
       "acceptedPerDocument": "Si las enmiendas que acepta quien presenta el documento se votan o se incorporan sin votación lo decide cada documento, en sus «Opciones avanzadas»."
     },
     "danger": {
@@ -1498,6 +1512,7 @@
       "presented": "Enmienda presentada",
       "presentedDescription": "Ya la puede ver toda la asamblea.",
       "transact": "Proponer una transaccional con esta enmienda",
+      "transactStandIn": "Proponer una transaccional con {code}",
       "transactOverlaps": "Combinarlas en una transaccional",
       "mainAuthor": "autor principal",
       "approvedByPresenter": "Aprobada sin votación: la aceptó quien presenta el documento",
@@ -5102,6 +5117,7 @@
       "leadField": "Primero",
       "leadHint": "Ese estado va arriba; el resto, en el orden de la columna.",
       "treatment": "Orden de tratamiento",
+      "document": "Orden del documento",
       "presentation": "Orden de presentación",
       "lead": "Qué va primero en {column}",
       "leadNone": "el orden de la columna",
@@ -5924,6 +5940,13 @@
       "noCandidates": "No hay enmiendas que combinar",
       "noCandidatesHint": "Cuando Secretaría publique enmiendas que aún no se hayan decidido, podrás combinarlas aquí.",
       "blockedTitle": "Algunas enmiendas ya no se pueden combinar",
+      "widenBefore": "Incluir el párrafo anterior",
+      "ownMissing": "Solo pueden presentar una transaccional quienes presentaron alguna de las enmiendas que combina y quienes presentan el documento: incluye una de tus enmiendas.",
+      "widenAfter": "Incluir el párrafo siguiente",
+      "standIn": "{from} ya la sustituye la transaccional {to}: se combina {to} en su lugar.",
+      "replacedTitle": "Ya la sustituye una transaccional",
+      "replaced": "{from} ya la sustituye la transaccional {to}: combina {to} en su lugar.",
+      "useStandIns": "Combinar la transaccional en su lugar | Combinar las transaccionales en su lugar",
       "blocked": "{labels} ya se ha decidido o retirado. Quítala de la lista para seguir. | {labels} ya se han decidido o retirado. Quítalas de la lista para seguir.",
       "skippedTitle": "Algunas enmiendas no encajan juntas",
       "skipped": "{labels} choca con otra enmienda y no se ha aplicado al texto inicial. Ajústalo a mano. | {labels} chocan con otras enmiendas y no se han aplicado al texto inicial. Ajústalo a mano.",

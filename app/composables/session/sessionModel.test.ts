@@ -1538,6 +1538,26 @@ describe("session model", () => {
       expect(sessionPartySourceIds(t, "A", byId)).toEqual(["x", "z"]);
       expect(sessionPartySourceIds(t, "B", byId)).toEqual([]);
     });
+
+    it("asks the originals' main authors through a transactional (2026-11-20)", () => {
+      const original = am("uex1", { authors: [m("UEX")] });
+      const t12 = am("t12", {
+        kind: "transactional",
+        sourceIds: ["uex1"],
+        authors: [m("UCO")],
+      });
+      const byId = new Map([original, t12].map((a) => [a.id, a]));
+      expect(
+        sessionTransactionalParties([t12], byId).map((p) => [
+          p.member.id,
+          p.sourceIds,
+        ]),
+      ).toEqual([["UEX", ["uex1"]]]);
+      // Without the document's amendments it reads the source itself.
+      expect(
+        sessionTransactionalParties([t12]).map((p) => p.member.id),
+      ).toEqual(["UCO"]);
+    });
   });
 
   describe("debate", () => {

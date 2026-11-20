@@ -32,6 +32,9 @@ import {
   transactionalSourceBlockers,
   transactionalSourceCandidates,
   transactionalSourceEligible,
+  transactionalStandIn,
+  widenedEdit,
+  presentsOriginal,
   transactionalSourceLimit,
   transactionalSourcesInOrder,
   transactionalSourcesReplaced,
@@ -1221,6 +1224,28 @@ describe("main authors of a transactional", () => {
     );
   });
 
+  it("asks the originals' main authors through a transactional (2026-11-20)", () => {
+    // T12 (proposed by UCO) replaced UEX1; T13 over T12 asks UEX, not UCO.
+    const uex1 = source("uex1", ["uex"], "uex");
+    const t12 = amendment("t12", [], {
+      kind: "transactional",
+      sourceIds: ["uex1"],
+      authors: [member("uco")],
+      mainAuthorId: "uco",
+    });
+    const byId = new Map([
+      ["uex1", uex1],
+      ["t12", t12],
+    ]);
+    expect(
+      transactionalAuthorsToAsk([t12], "ceuib", byId).map((m) => m.id),
+    ).toEqual(["uex"]);
+    // Without the document's amendments it reads the source itself.
+    expect(transactionalAuthorsToAsk([t12], "ceuib").map((m) => m.id)).toEqual([
+      "uco",
+    ]);
+  });
+
   it("finds a party's answer and the amendments it answers for", () => {
     const sources = [
       source("a", ["ceum", "caub"], "caub"),
@@ -1592,5 +1617,79 @@ describe("transactional links of an amendment", () => {
         proposed: [],
       });
     }
+  });
+});
+
+describe("transactionalStandIn (2026-11-20)", () => {
+  it("offers the open transactional that replaced an amendment", () => {
+    const original = amendment("uex1", [], { status: "transacted" });
+    const t12 = amendment("t12", [replace("b2", 3, 10, "Comité")], {
+      kind: "transactional",
+      sourceIds: ["uex1"],
+    });
+    const byId = new Map([
+      ["uex1", { ...original, transactionalIds: ["t12"] }],
+      ["t12", t12],
+    ]);
+    expect(transactionalSourceEligible(t12)).toBe(true);
+    expect(transactionalStandIn(byId.get("uex1")!, byId)?.id).toBe("t12");
+    // Not replaced: nothing stands in.
+    expect(transactionalStandIn(t12, byId)).toBeNull();
+  });
+});
+
+describe("taking in text around the passage (2026-11-20)", () => {
+  const source = {
+    id: "s",
+    ops: [replace("b2", 3, 10, "Comité")],
+  };
+
+  it("widens the passage by paragraphs, never past the text", () => {
+    const narrow = transactionalComposerSeed(base, [source], newId);
+    expect(narrow.passage.map((b) => b.id)).toEqual(["b2"]);
+    const wide = transactionalComposerSeed(base, [source], newId, {
+      before: 1,
+      after: 5,
+    });
+    expect(wide.passage.map((b) => b.id)).toEqual(["b1", "b2", "b3", "b4"]);
+    expect(wide.anchorBefore).toBeNull();
+  });
+
+  it("keeps what was written around the new paragraphs", () => {
+    const narrow = transactionalComposerSeed(base, [source], newId);
+    const written = [{ ...narrow.seed[0]!, text: "Texto reescrito." }];
+    const wide = transactionalComposerSeed(base, [source], newId, {
+      before: 1,
+      after: 1,
+    });
+    expect(
+      widenedEdit(narrow, wide, written)?.map((b) => [b.id, b.text]),
+    ).toEqual([
+      ["b1", "Primer párrafo del texto."],
+      ["b2", "Texto reescrito."],
+      ["b3", "Tercer párrafo con más contenido."],
+    ]);
+    // Nothing more to take in: nothing changes.
+    expect(widenedEdit(wide, wide, written)).toBeNull();
+  });
+});
+
+describe("presentsOriginal (2026-11-20)", () => {
+  it("finds the member among the originals' authors, through transactionals", () => {
+    const uex1 = amendment("uex1", [], { authors: [member("uex")] });
+    const t12 = amendment("t12", [], {
+      kind: "transactional",
+      sourceIds: ["uex1"],
+      authors: [member("uco")],
+    });
+    const byId = new Map([
+      ["uex1", uex1],
+      ["t12", t12],
+    ]);
+    expect(presentsOriginal(uex1, "uex", byId)).toBe(true);
+    expect(presentsOriginal(t12, "uex", byId)).toBe(true);
+    // Who proposed the transactional is not an original's author.
+    expect(presentsOriginal(t12, "uco", byId)).toBe(false);
+    expect(presentsOriginal(uex1, null, byId)).toBe(false);
   });
 });

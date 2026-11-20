@@ -20,7 +20,9 @@ import {
   transactionalRejectedBy,
   transactionalRejectedByAuthors,
   transactionalSourceEligible,
+  transactionalStandIn,
   transactionalsOverSource,
+  presentsOriginal,
 } from "~/composables/amendment/transactional";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
@@ -115,12 +117,19 @@ const props = withDefaults(
     decisionsUrl?: string;
     /** The viewer may propose a transactional on this document. */
     canTransact?: boolean;
+    /**
+     * It may combine anyone's amendments; otherwise only those whose
+     * originals include the viewer's own (transactionalProposers, user's
+     * decision of 2026-11-20).
+     */
+    transactAny?: boolean;
   }>(),
   {
     overlaps: () => [],
     nav: null,
     decisionsUrl: undefined,
     canTransact: false,
+    transactAny: true,
   },
 );
 
@@ -294,8 +303,27 @@ const showKind = computed(() => props.amendment.kind !== "partial");
 
 /** This amendment can be combined into a transactional by the viewer. */
 const transactable = computed(
-  () => props.canTransact && transactionalSourceEligible(props.amendment),
+  () =>
+    props.canTransact &&
+    transactionalSourceEligible(props.amendment) &&
+    ownsForTransaction(props.amendment),
 );
+/** Anyone's, or one whose originals include the viewer's own. */
+function ownsForTransaction(amendment: AmendmentDto): boolean {
+  return (
+    props.transactAny ||
+    presentsOriginal(amendment, member.value?.id ?? null, byId.value)
+  );
+}
+/**
+ * A transactional already replaced it: that one is transacted instead
+ * (user's decision of 2026-11-20), when the viewer may and it can be.
+ */
+const standIn = computed(() => {
+  if (!props.canTransact) return null;
+  const replacing = transactionalStandIn(props.amendment, byId.value);
+  return replacing && ownsForTransaction(replacing) ? replacing : null;
+});
 
 /**
  * Whether the viewer may include amendments in this transactional (user's
@@ -1068,6 +1096,21 @@ async function remove(): Promise<void> {
                 : t("amendment.detail.replacedByUnknown")
             }}
           </p>
+          <UButton
+            v-if="amendment.status === 'transacted' && standIn"
+            icon="i-lucide-git-merge"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            class="self-start"
+            :label="
+              t('amendment.detail.transactStandIn', {
+                code: labelOf(standIn.id),
+              })
+            "
+            :disabled="busy !== null"
+            @click="emit('transact', [standIn.id])"
+          />
           <!-- Closed by a main author's rejection: who said no. -->
           <p v-if="rejectedByAuthors && rejectedBy" class="text-sm">
             {{

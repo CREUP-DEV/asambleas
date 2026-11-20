@@ -32,6 +32,9 @@ import {
   transactionalSourceEligible,
   transactionalSourceLimit,
   transactionalSourcesInOrder,
+  transactionalStandIn,
+  widenedEdit,
+  presentsOriginal,
   type TransactionalComposerSeed,
   type TransactionalNextStep,
 } from "~/composables/amendment/transactional";
@@ -77,8 +80,14 @@ const props = withDefaults(
      * (POST .../[amendment]/revisions) that every party answers again.
      */
     revise?: AmendmentDto | null;
+    /**
+     * It may combine anyone's amendments; otherwise one of those it combines
+     * must be the viewer's own (transactionalProposers, user's decision of
+     * 2026-11-20).
+     */
+    transactAny?: boolean;
   }>(),
-  { initialSourceIds: () => [], revise: null },
+  { initialSourceIds: () => [], revise: null, transactAny: true },
 );
 
 const emit = defineEmits<{
@@ -125,17 +134,36 @@ const candidates = computed(() =>
   ),
 );
 
+/**
+ * Amendments asked for that a transactional already replaced, each with the
+ * one that stands in for it (transactionalStandIn): that one is combined
+ * instead, and the composer says so (user's decision of 2026-11-20).
+ */
+const swapped = props.initialSourceIds.flatMap((id) => {
+  const amendment = byId.value.get(id);
+  const standIn = amendment
+    ? transactionalStandIn(amendment, byId.value)
+    : null;
+  return amendment && standIn ? [{ from: amendment, to: standIn }] : [];
+});
+const standInNotice = ref(
+  swapped.map((entry) => ({ from: entry.from.id, to: entry.to.id })),
+);
 const sourceIds = ref<string[]>([
   ...(props.revise?.sourceIds ?? []),
-  ...props.initialSourceIds.filter((id) => {
-    const amendment = byId.value.get(id);
-    return (
-      amendment !== undefined &&
-      id !== props.revise?.id &&
-      !fixedIds.value.has(id) &&
-      transactionalSourceEligible(amendment)
-    );
-  }),
+  ...new Set(
+    props.initialSourceIds
+      .map((id) => swapped.find((entry) => entry.from.id === id)?.to.id ?? id)
+      .filter((id) => {
+        const amendment = byId.value.get(id);
+        return (
+          amendment !== undefined &&
+          id !== props.revise?.id &&
+          !fixedIds.value.has(id) &&
+          transactionalSourceEligible(amendment)
+        );
+      }),
+  ),
 ]);
 /** The amendments an inclusion adds (all of them otherwise). */
 const addedIds = computed(() =>
@@ -148,6 +176,33 @@ const choosing = ref(addedIds.value.length === 0);
 const blockers = computed(() =>
   transactionalSourceBlockers(addedIds.value, byId.value),
 );
+/**
+ * Of those, the ones a transactional replaced meanwhile, with the one that
+ * stands in for each: the notice offers to combine that one instead.
+ */
+const standIns = computed(() =>
+  blockers.value.flatMap((id) => {
+    const amendment = byId.value.get(id);
+    const standIn = amendment
+      ? transactionalStandIn(amendment, byId.value)
+      : null;
+    return amendment && standIn ? [{ from: amendment, to: standIn }] : [];
+  }),
+);
+/** Blocked for any other reason (decided, withdrawn, gone). */
+const plainBlockers = computed(() => {
+  const replaced = new Set(standIns.value.map((entry) => entry.from.id));
+  return blockers.value.filter((id) => !replaced.has(id));
+});
+/** Swaps every replaced one for the transactional that stands in for it. */
+function useStandIns(): void {
+  const swap = new Map(
+    standIns.value.map((entry) => [entry.from.id, entry.to.id]),
+  );
+  onSourcesChange([
+    ...new Set(sourceIds.value.map((id) => swap.get(id) ?? id)),
+  ]);
+}
 /** The most a transactional can combine (the server's limit). */
 const sourceLimit = computed(() => transactionalSourceLimit(sourceIds.value));
 /** Nothing to combine and nothing chosen: the empty state says so. */
@@ -225,22 +280,68 @@ const sourceItems = computed(() => {
 const seed = shallowRef<TransactionalComposerSeed | null>(null);
 const edited = ref<Block[]>([]);
 const editorKey = ref(0);
+/**
+ * Paragraphs taken in around what the amendments touch (user's decision of
+ * 2026-11-20): a transactional may need to change text around them.
+ */
+const widen = ref({ before: 0, after: 0 });
+
+/** What the seed applies: the transactional and what it adds, or the sources. */
+function seedSources() {
+  return props.revise
+    ? [
+        { id: props.revise.id, ops: props.revise.ops },
+        ...addedIds.value
+          .map((id) => byId.value.get(id))
+          .filter((amendment) => amendment !== undefined)
+          .map(({ id, ops }) => ({ id, ops })),
+      ]
+    : sources.value.map(({ id, ops }) => ({ id, ops }));
+}
+
+/** Where the passage sits in the text: whether there is more around it. */
+const passageEdges = computed(() => {
+  const passage = seed.value?.passage ?? [];
+  if (passage.length === 0) return { first: true, last: true };
+  const index = props.base.findIndex((block) => block.id === passage[0]!.id);
+  return {
+    first: index <= 0,
+    last: index + passage.length >= props.base.length,
+  };
+});
+
+/** Takes in the paragraph before or after, keeping what was written. */
+function widenPassage(side: "before" | "after"): void {
+  editor.value?.flush();
+  const previous = seed.value;
+  if (!previous) return;
+  const next = { ...widen.value, [side]: widen.value[side] + 1 };
+  const wider = transactionalComposerSeed(
+    props.base,
+    seedSources(),
+    createId,
+    next,
+  );
+  const kept = widenedEdit(previous, wider, edited.value);
+  if (!kept) return;
+  widen.value = next;
+  seed.value = wider;
+  edited.value = kept;
+  editorKey.value += 1;
+  emit(
+    "passage",
+    wider.passage.map((block) => block.id),
+  );
+}
 
 function reseed(): void {
   // An inclusion starts from the transactional's text as it is, with the
   // amendments it adds applied.
   seed.value = transactionalComposerSeed(
     props.base,
-    props.revise
-      ? [
-          { id: props.revise.id, ops: props.revise.ops },
-          ...addedIds.value
-            .map((id) => byId.value.get(id))
-            .filter((amendment) => amendment !== undefined)
-            .map(({ id, ops }) => ({ id, ops })),
-        ]
-      : sources.value.map(({ id, ops }) => ({ id, ops })),
+    seedSources(),
     createId,
+    widen.value,
   );
   edited.value = seed.value.seed.map((block) => ({
     ...block,
@@ -313,6 +414,8 @@ function onSourcesChange(value: unknown): void {
   }
   sourceIds.value = next;
   serverReasons.value = [];
+  // Other amendments: the passage starts again from what they touch.
+  widen.value = { before: 0, after: 0 };
   // A new choice starts over: the next fields have not been reached yet.
   attempted.value = false;
   reseed();
@@ -325,6 +428,7 @@ function resetText(): void {
   ) {
     return;
   }
+  widen.value = { before: 0, after: 0 };
   reseed();
 }
 
@@ -453,6 +557,21 @@ const createdNow = computed(() =>
 const justificationMissing = computed(() => !justification.value.trim());
 const sourcesMissing = computed(() => addedIds.value.length === 0);
 /**
+ * Only the parties may present it (the default): one of the amendments it
+ * combines must be the viewer's own, as the server checks. An inclusion is
+ * its main author's, the Mesa's or the Secretaría's: never asked.
+ */
+const ownMissing = computed(
+  () =>
+    !props.transactAny &&
+    !props.revise &&
+    !isMesa.value &&
+    sources.value.length > 0 &&
+    !sources.value.some((source) =>
+      presentsOriginal(source, member.value?.id ?? null, byId.value),
+    ),
+);
+/**
  * The Mesa presents it on behalf of someone: with nobody picked, the server
  * would create it without authors.
  */
@@ -470,6 +589,7 @@ const canSend = computed(
   () =>
     !busy.value &&
     !sourcesMissing.value &&
+    !ownMissing.value &&
     !sourceLimit.value.over &&
     blockers.value.length === 0 &&
     ops.value.length > 0 &&
@@ -490,6 +610,7 @@ const nextNotice = computed(() => {
     const toAsk = transactionalAuthorsToAsk(
       sources.value,
       isMesa.value ? null : (member.value?.id ?? null),
+      byId.value,
     );
     return toAsk.length === 0
       ? t("transactional.composer.revise.nextSelf")
@@ -504,6 +625,7 @@ const nextNotice = computed(() => {
   const toAsk = transactionalAuthorsToAsk(
     sources.value,
     member.value?.id ?? null,
+    byId.value,
   );
   return toAsk.length === 0
     ? t("transactional.composer.next.self")
@@ -889,6 +1011,14 @@ const stepBadge =
             </span>
           </p>
         </div>
+        <UAlert
+          v-if="ownMissing"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-user-x"
+          role="alert"
+          :description="t('transactional.composer.ownMissing')"
+        />
         <p
           v-if="attempted && sourcesMissing"
           class="text-error text-sm"
@@ -906,8 +1036,53 @@ const stepBadge =
             t('transactional.composer.tooMany', { max: sourceLimit.max })
           "
         />
+        <!-- Asked for one a transactional already replaced: that one is
+             combined instead (user's decision of 2026-11-20). -->
         <UAlert
-          v-if="blockers.length > 0"
+          v-if="standInNotice.length > 0"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-git-merge"
+          :description="
+            standInNotice
+              .map((entry) =>
+                t('transactional.composer.standIn', {
+                  from: labelOf(entry.from),
+                  to: labelOf(entry.to),
+                }),
+              )
+              .join(' ')
+          "
+        />
+        <!-- Replaced meanwhile: offer the transactional that replaced it. -->
+        <UAlert
+          v-if="standIns.length > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-git-merge"
+          role="alert"
+          :title="t('transactional.composer.replacedTitle')"
+          :description="
+            standIns
+              .map((entry) =>
+                t('transactional.composer.replaced', {
+                  from: labelOf(entry.from.id),
+                  to: labelOf(entry.to.id),
+                }),
+              )
+              .join(' ')
+          "
+          :actions="[
+            {
+              label: t('transactional.composer.useStandIns', standIns.length),
+              color: 'neutral',
+              variant: 'outline',
+              onClick: useStandIns,
+            },
+          ]"
+        />
+        <UAlert
+          v-if="plainBlockers.length > 0"
           color="warning"
           variant="subtle"
           icon="i-lucide-circle-alert"
@@ -916,8 +1091,8 @@ const stepBadge =
           :description="
             t(
               'transactional.composer.blocked',
-              { labels: blockers.map(labelOf).join(', ') },
-              blockers.length,
+              { labels: plainBlockers.map(labelOf).join(', ') },
+              plainBlockers.length,
             )
           "
         />
@@ -969,6 +1144,18 @@ const stepBadge =
           :title="t('transactional.composer.noPassage')"
         />
         <template v-else>
+          <!-- Text around the amendments may need changing too: take in
+               the paragraph before or after (user's decision of 2026-11-20). -->
+          <UButton
+            v-if="!passageEdges.first"
+            icon="i-lucide-arrow-up-to-line"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            class="self-start"
+            :label="t('transactional.composer.widenBefore')"
+            @click="widenPassage('before')"
+          />
           <ClientOnly>
             <ContentBlockEditor
               :key="editorKey"
@@ -981,6 +1168,16 @@ const stepBadge =
               <USkeleton aria-hidden="true" class="h-32 w-full" />
             </template>
           </ClientOnly>
+          <UButton
+            v-if="!passageEdges.last"
+            icon="i-lucide-arrow-down-to-line"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            class="self-start"
+            :label="t('transactional.composer.widenAfter')"
+            @click="widenPassage('after')"
+          />
           <p class="text-dimmed text-xs">
             {{ t("transactional.composer.writeHint") }}
           </p>

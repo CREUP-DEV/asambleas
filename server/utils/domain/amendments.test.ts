@@ -239,17 +239,22 @@ describe("canProposeTransactional", () => {
     canCreate: true,
     actorMemberId: "m1",
     isParty: false,
+    anyone: false,
   };
 
-  it("lets any member account that presents amendments propose one", () => {
-    expect(canProposeTransactional(input)).toBe(true);
-  });
-
-  it("lets the parties propose one without amendment:create", () => {
+  it("lets only the parties propose one by default (2026-11-20)", () => {
+    expect(canProposeTransactional(input)).toBe(false);
+    expect(canProposeTransactional({ ...input, isParty: true })).toBe(true);
     expect(
       canProposeTransactional({ ...input, canCreate: false, isParty: true }),
     ).toBe(true);
-    expect(canProposeTransactional({ ...input, canCreate: false })).toBe(false);
+  });
+
+  it("lets any member that presents amendments when the assembly opens it", () => {
+    expect(canProposeTransactional({ ...input, anyone: true })).toBe(true);
+    expect(
+      canProposeTransactional({ ...input, anyone: true, canCreate: false }),
+    ).toBe(false);
   });
 
   it("needs a member, except for the Mesa", () => {
@@ -262,6 +267,7 @@ describe("canProposeTransactional", () => {
         canCreate: false,
         actorMemberId: null,
         isParty: false,
+        anyone: false,
       }),
     ).toBe(true);
   });

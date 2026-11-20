@@ -175,6 +175,7 @@ type SettingKey = keyof AssemblySettings;
 const SETTING_OPTIONS: { [K in SettingKey]: AssemblySettings[K][] } = {
   tieRule: ["rejected", "repeat"],
   denominator: ["valid_votes", "present"],
+  transactionalProposers: ["involved", "anyone"],
 };
 const SETTING_KEYS = Object.keys(SETTING_OPTIONS) as SettingKey[];
 

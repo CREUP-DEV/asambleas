@@ -478,9 +478,17 @@ export interface AssemblySettings {
   tieRule: "rejected" | "repeat";
   /** Denominator for majorities. */
   denominator: "valid_votes" | "present";
+  /**
+   * Who may present a transactional (user's decision of 2026-11-20):
+   * `involved`, the authors of the original amendments it combines and the
+   * document's presenters (the default); `anyone`, any member who may
+   * present amendments. The Mesa always may.
+   */
+  transactionalProposers: "involved" | "anyone";
 }
 
 export const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   tieRule: "rejected",
   denominator: "present",
+  transactionalProposers: "involved",
 };

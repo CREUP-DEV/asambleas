@@ -794,6 +794,57 @@ export type LoadedAmendment = Awaited<
 >[number];
 
 /**
+ * The original amendments behind these sources (user's decisions of
+ * 2026-11-20): a source that is itself a transactional counts by what it
+ * combines, down to the originals. Its parties are their main authors
+ * (originalMainAuthors), and who may propose one is among their authors.
+ */
+async function originalAmendments(
+  documentId: string,
+  sources: LoadedAmendment[],
+): Promise<LoadedAmendment[]> {
+  const result: LoadedAmendment[] = [];
+  const seen = new Set<string>();
+  let frontier = sources;
+  while (frontier.length > 0) {
+    const deeper: string[] = [];
+    for (const source of frontier) {
+      if (seen.has(source.id)) continue;
+      seen.add(source.id);
+      if (source.kind === "transactional" && source.sources.length > 0) {
+        deeper.push(...source.sources.map((link) => link.sourceId));
+      } else {
+        result.push(source);
+      }
+    }
+    const next = unique(deeper).filter((id) => !seen.has(id));
+    frontier =
+      next.length > 0
+        ? await findAmendments(
+            db,
+            and(
+              eq(amendments.documentId, documentId),
+              inArray(amendments.id, next),
+            ),
+          )
+        : [];
+  }
+  return result;
+}
+
+/**
+ * The main authors who accept a transactional over these sources: those of
+ * the original amendments, never who proposed a transactional it combines
+ * (T13 over T12 over UEX1 asks UEX1's main author, not T12's).
+ */
+async function originalMainAuthors(
+  documentId: string,
+  sources: LoadedAmendment[],
+): Promise<(string | null)[]> {
+  return (await originalAmendments(documentId, sources)).map(loadedMainAuthor);
+}
+
+/**
  * The parties of a transactional: the main authors of the amendments it
  * would replace (rows with the role "author"; rows with the role
  * "proponent" come from the earlier rule and are ignored).
@@ -5687,20 +5738,25 @@ export async function applyAmendmentOutcome(
 // Transactionals -------------------------------------------------------------
 
 /**
- * Whether the actor may propose a transactional: any member account that
- * presents amendments (amendment:create), the document's main presenter and
- * the authors of the amendments it groups, or the Mesa. docs/design.md,
- * "Transactionals".
+ * Whether the actor may propose a transactional: the Mesa always; a member,
+ * when it is a party (`isParty`: it presents the document, or it is an
+ * author of an original amendment the transactional combines, through any
+ * transactional it combines); any member account that presents amendments
+ * (amendment:create) only when the assembly opens it to anyone
+ * (`transactionalProposers: "anyone"`; user's decision of 2026-11-20, the
+ * default being only the parties). docs/design.md, "Transactionals".
  */
 export function canProposeTransactional(input: {
   moderate: boolean;
   canCreate: boolean;
   actorMemberId: string | null;
   isParty: boolean;
+  anyone: boolean;
 }): boolean {
   if (input.moderate) return true;
   if (!input.actorMemberId) return false;
-  return input.canCreate || input.isParty;
+  if (input.isParty) return true;
+  return input.anyone && input.canCreate;
 }
 
 /**
@@ -5766,7 +5822,15 @@ export async function createTransactionalAmendment(
       moderate,
       canCreate,
       actorMemberId: actor.memberId,
-      isParty: ctx.isPresenter || actsFor(actor, sourceAuthorIds),
+      isParty:
+        ctx.isPresenter ||
+        actsFor(
+          actor,
+          (await originalAmendments(document.id, sources)).flatMap((row) =>
+            row.authors.map((author) => author.memberId),
+          ),
+        ),
+      anyone: ctx.settings.transactionalProposers === "anyone",
     })
   ) {
     fail(403, "No tienes permiso para proponer transaccionales");
@@ -5812,7 +5876,10 @@ export async function createTransactionalAmendment(
   );
 
   const sourceMainAuthors = sources.map(loadedMainAuthor);
-  const parties = buildAcceptanceParties(sourceMainAuthors, actor.memberId);
+  const parties = buildAcceptanceParties(
+    await originalMainAuthors(document.id, sources),
+    actor.memberId,
+  );
   const allAccepted = parties.every((party) => party.accepted);
   const submit = body.submit ?? true;
   // Proposed by the Mesa in session: validated, admitted and published at
@@ -6465,7 +6532,7 @@ export async function proposeTransactionalRevision(
   );
   if (unopen) fail(409, unopen);
   const parties = buildAcceptanceParties(
-    [...currentRows, ...addedRows].map(loadedMainAuthor),
+    await originalMainAuthors(document.id, [...currentRows, ...addedRows]),
     moderate || review ? null : actor.memberId,
   );
   const staffProposed = moderate || review;

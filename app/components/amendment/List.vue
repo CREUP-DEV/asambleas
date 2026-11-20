@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
-import { transactionalGroupSources } from "~/composables/amendment/transactional";
+import {
+  presentsOriginal,
+  transactionalGroupSources,
+} from "~/composables/amendment/transactional";
 import type { AmendmentGroup } from "~/composables/amendment/workspace";
 
 /**
@@ -19,6 +22,12 @@ const props = withDefaults(
     labelOf: (id: string) => string;
     /** The viewer may propose a transactional on this document. */
     canTransact?: boolean;
+    /**
+     * It may combine anyone's amendments; otherwise a group needs one of
+     * the viewer's own (transactionalProposers, user's decision of
+     * 2026-11-20).
+     */
+    transactAny?: boolean;
     /** Status of any amendment of the document, for transactionals. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
     /**
@@ -30,6 +39,7 @@ const props = withDefaults(
   {
     selectedId: null,
     canTransact: false,
+    transactAny: true,
     statusOf: undefined,
     byAnswer: false,
   },
@@ -42,15 +52,33 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const { member } = useMe();
 
 /** Per overlap group, the amendments a transactional can combine. */
 const groupSources = computed(() => {
   const map = new Map<string, string[]>();
   if (!props.canTransact) return map;
+  const byId = new Map(
+    props.groups.flatMap((group) =>
+      group.amendments.map((amendment) => [amendment.id, amendment] as const),
+    ),
+  );
+  const memberId = member.value?.id ?? null;
   for (const group of props.groups) {
     if (group.kind !== "overlap") continue;
     const ids = transactionalGroupSources(group.amendments);
-    if (ids.length >= 2) map.set(group.key, ids);
+    if (ids.length < 2) continue;
+    // Only the parties: one of them must be the viewer's own.
+    if (
+      !props.transactAny &&
+      !ids.some((id) => {
+        const amendment = byId.get(id);
+        return amendment && presentsOriginal(amendment, memberId, byId);
+      })
+    ) {
+      continue;
+    }
+    map.set(group.key, ids);
   }
   return map;
 });

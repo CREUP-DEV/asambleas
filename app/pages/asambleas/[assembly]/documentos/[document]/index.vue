@@ -27,6 +27,8 @@ import {
   proponentReviewBacklog,
   transactionalSourceCandidates,
   transactionalSourceEligible,
+  transactionalStandIn,
+  presentsOriginal,
 } from "~/composables/amendment/transactional";
 import {
   amendmentNeighbours,
@@ -286,8 +288,28 @@ const canTransact = computed(() => {
   }
   if (doc.can.moderate) return true;
   if (!member.value) return false;
-  return doc.can.amend || isDocumentPresenter.value;
+  if (transactAny.value) return doc.can.amend || isDocumentPresenter.value;
+  // Only the parties (user's decision of 2026-11-20): one of the
+  // amendments it would combine must be the member's own.
+  const memberId = member.value.id;
+  return list.listed.value.some(
+    (amendment) =>
+      transactionalSourceEligible(amendment) &&
+      presentsOriginal(amendment, memberId, list.byId.value),
+  );
 });
+/**
+ * Whether the viewer may combine anyone's amendments in a transactional:
+ * the Mesa, the document's presenters, or anyone when the assembly opens
+ * it (`transactionalProposers: "anyone"`). Otherwise only those whose
+ * originals include one the viewer's member presented.
+ */
+const transactAny = computed(
+  () =>
+    Boolean(document.value?.can.moderate) ||
+    isDocumentPresenter.value ||
+    assembly.value?.settings?.transactionalProposers === "anyone",
+);
 const transactionalCandidates = computed(() =>
   canTransact.value ? transactionalSourceCandidates(list.listed.value) : [],
 );
@@ -1197,8 +1219,12 @@ function landOnAmendment(): void {
     startTransactional(
       transact.split(",").filter((id) => {
         const amendment = list.byId.value.get(id);
+        // One a transactional already replaced: the composer combines
+        // the one that stands in for it, and says so.
         return (
-          amendment !== undefined && transactionalSourceEligible(amendment)
+          amendment !== undefined &&
+          (transactionalSourceEligible(amendment) ||
+            transactionalStandIn(amendment, list.byId.value) !== null)
         );
       }),
     );
@@ -2366,6 +2392,7 @@ const filteredBlockLabel = computed(() =>
                 :amendments-url="amendmentsUrl"
                 :amendments="list.listed.value"
                 :label-of="list.labelOf"
+                :transact-any="transactAny"
                 :initial-source-ids="transactional.sourceIds"
                 :revise="
                   transactional.reviseId
@@ -2395,6 +2422,7 @@ const filteredBlockLabel = computed(() =>
                 :overlaps="selectedOverlaps"
                 :decisions-url="decisionsUrl"
                 :can-transact="canTransact"
+                :transact-any="transactAny"
                 :nav="detailNav"
                 @close="closeDetail"
                 @select="selectAmendment"
@@ -2542,6 +2570,7 @@ const filteredBlockLabel = computed(() =>
                   :selected-id="selectedId"
                   :label-of="list.labelOf"
                   :can-transact="canTransact"
+                  :transact-any="transactAny"
                   :status-of="amendmentStatusOf"
                   by-answer
                   @select="selectAmendment"
@@ -2574,6 +2603,7 @@ const filteredBlockLabel = computed(() =>
               :overlaps="selectedOverlaps"
               :decisions-url="decisionsUrl"
               :can-transact="canTransact"
+              :transact-any="transactAny"
               :nav="detailNav"
               @close="closeDetail"
               @select="selectAmendment"

@@ -60,11 +60,15 @@ export type GeneralSortKey = (typeof GENERAL_SORT_KEYS)[number];
 /**
  * The orders «Enmiendas» sorts by. `treatment` is the order they are dealt
  * with, the console's (text order, by answer once public: the default, no
- * column of its own); `code`, the «Enmienda» column, is the order they were
- * presented in (user's decision of 2026-11-19).
+ * column of its own); `document`, where each acts in the text, whatever
+ * the answers (user's decision of 2026-11-20: the treatment order puts the
+ * accepted ones first), no column of its own either; `code`, the
+ * «Enmienda» column, is the order they were presented in (user's decision
+ * of 2026-11-19).
  */
 export const AMENDMENT_SORT_KEYS = [
   "treatment",
+  "document",
   "code",
   "authors",
   "kind",
@@ -256,6 +260,13 @@ function amendmentSortValue(
   switch (key) {
     case "treatment":
       return position;
+    case "document":
+      // Where it acts in the text, then the order presented in: one key, so
+      // amendments on the same block never fall back to the treatment order.
+      return (
+        row.amendment.positionKey * 1_000_000 +
+        (row.amendment.number ?? 999_999)
+      );
     case "code":
       // The order they were presented in; drafts never reach the sheet,
       // one presented before numbering existed goes last.
@@ -665,6 +676,7 @@ const GENERAL_SORT_SLUGS: Record<GeneralSortKey, string> = {
 };
 const AMENDMENT_SORT_SLUGS: Record<AmendmentSortKey, string> = {
   treatment: "tratamiento",
+  document: "documento",
   code: "presentacion",
   authors: "presenta",
   kind: "tipo",
