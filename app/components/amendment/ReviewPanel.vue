@@ -6,16 +6,18 @@ import {
 import type {
   AdmissionBody,
   AmendmentAdmissionDto,
+  AmendmentCorrectionBody,
   AmendmentDto,
-  CorrectionBody,
   DocumentAmendmentsDto,
   PublishAmendmentsBody,
   ValidateAmendmentsBody,
 } from "~~/shared/types/api";
+import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
 import { transactionalProgressOf } from "~/composables/amendment/transactional";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   amendmentDisplayLabel,
+  amendmentInadmissibleOnReview,
   amendmentReviewSentenceKey,
   amendmentReviewView,
   isAmendmentPresenter,
@@ -35,7 +37,12 @@ import {
  *   note (POST .../validate, POST .../[amendment]/correction). A
  *   transactional is always published when validated (it replaces
  *   amendments everyone can read), so it offers no private validation and
- *   says why;
+ *   says why. The correction form asks «¿Puede corregirla?»: «No» declares
+ *   it not admitted with the note instead (`correctable: false`, user's
+ *   decision of 2026-11-19);
+ * - the Secretaría, on a draft it already sent back: «No admitirla», the
+ *   same form with the note it sent, to close one that cannot be fixed
+ *   (amendmentInadmissibleOnReview);
  * - the Secretaría, once validated (can.publish), also after the amendment
  *   was decided: publish it (POST .../publish);
  * - the Secretaría or the Mesa, on a late one validated and waiting for the
@@ -43,7 +50,9 @@ import {
  *   inbox (POST .../amendments/admission). It sits next to "Publicar" while
  *   the amendment is private, and is the main action once it is public.
  * Validation and publication answer with the whole list (`replaced`); a
- * correction answers with the amendment, now a draft again (`corrected`).
+ * correction answers with the amendment, now a draft again (`corrected`),
+ * and declaring it not admitted with the amendment as it is now
+ * (`updated`).
  * A published amendment needs no note, except for its authors (so they know
  * everyone sees it now) or while the assembly still has to decide whether
  * to treat it (a late one).
@@ -68,8 +77,10 @@ const props = withDefaults(
     labelOf?: (id: string) => string;
     /** Status of another amendment, to tell whether a transactional replaced them. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /** The document's final vote is on record: nothing is declared any more. */
+    finalVoted?: boolean;
   }>(),
-  { labelOf: undefined, statusOf: undefined },
+  { labelOf: undefined, statusOf: undefined, finalVoted: false },
 );
 
 const emit = defineEmits<{
@@ -79,6 +90,8 @@ const emit = defineEmits<{
   replaced: [dto: DocumentAmendmentsDto];
   /** The amendment went back to its authors as a draft. */
   corrected: [amendment: AmendmentDto];
+  /** Declared not admitted: the amendment as it is now. */
+  updated: [amendment: AmendmentDto];
   /** Something moved meanwhile (409): refetch. */
   changed: [];
   /** An action left nothing to show here: the parent should take focus. */
@@ -95,20 +108,31 @@ type Busy =
   "validate_publish" | "validate" | "publish" | "correction" | "admission";
 const busy = ref<Busy | null>(null);
 const asking = ref(false);
+/** «¿Puede corregirla?»: yes unless the Secretaría says otherwise. */
+const correctable = ref(true);
 const note = ref("");
 const noteAttempted = ref(false);
+/**
+ * The amendment's `updatedAt` when the form opened: the optimistic lock
+ * sent with it, so a validation or a new presentation made meanwhile by
+ * someone else answers 409 instead of being undone or sent back unseen.
+ */
+const openedAt = ref<string | null>(null);
 const noteInput = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
   "noteInput",
 );
 const statusEl = useTemplateRef<HTMLElement>("statusEl");
+const correctionForm = useTemplateRef<HTMLFormElement>("correctionForm");
 const askButton = useTemplateRef<{ $el?: HTMLElement }>("askButton");
 
 watch(
   () => props.amendment.id,
   () => {
     asking.value = false;
+    correctable.value = true;
     note.value = "";
     noteAttempted.value = false;
+    openedAt.value = null;
     admissionOpen.value = false;
     admissionSaved.value = false;
   },
@@ -201,6 +225,21 @@ const publishesOnValidation = computed(
 );
 const canPublish = computed(() => props.amendment.can.publish);
 const noteMissing = computed(() => !note.value.trim());
+/** The Secretaría may declare it not admitted instead of sending it back. */
+const inadmissibleOffered = computed(() =>
+  amendmentInadmissibleOnReview(props.amendment, props.finalVoted),
+);
+/** A draft it already sent back: «No admitirla» is all that is left. */
+const returned = computed(
+  () =>
+    !canValidate.value &&
+    view.value?.key === "correction_sent" &&
+    inadmissibleOffered.value,
+);
+/** The form declares it not admitted rather than asking for a correction. */
+const closing = computed(
+  () => returned.value || (inadmissibleOffered.value && !correctable.value),
+);
 
 /** Late, validated and waiting for the assembly; the actor may record it. */
 const canAdmit = computed(() => canRecordAdmission(props.amendment));
@@ -219,6 +258,25 @@ watch(canAdmit, (value) => {
   if (value || !admissionSaved.value) return;
   admissionSaved.value = false;
   void focusStatus();
+});
+
+/**
+ * Someone else validated it, or its authors presented it again, while the
+ * form was open: what the form would send changed meaning (a correction
+ * became undoing a validation, «No admitirla» a correction), so it closes
+ * and the panel shows what there is to do now. The note stays, as on
+ * cancelling. Not while it is being sent: that send's own answer moves it.
+ */
+watch([canValidate, returned], () => {
+  if (!asking.value || busy.value !== null) return;
+  const hadFocus =
+    import.meta.client &&
+    Boolean(correctionForm.value?.contains(document.activeElement));
+  asking.value = false;
+  correctable.value = true;
+  noteAttempted.value = false;
+  openedAt.value = null;
+  if (hadFocus) void focusStatus();
 });
 
 function fail(error: unknown, key: string): void {
@@ -320,8 +378,16 @@ async function recordAdmission(choice: AdmissionChoice): Promise<void> {
 
 function startCorrection(): void {
   asking.value = true;
+  correctable.value = true;
   noteAttempted.value = false;
+  openedAt.value = props.amendment.updatedAt;
   void nextTick(() => noteInput.value?.textareaRef?.focus());
+}
+
+/** On a draft already sent back: the note it went back with, to adjust. */
+function startInadmission(): void {
+  note.value = props.amendment.correctionNote ?? "";
+  startCorrection();
 }
 
 function cancelCorrection(): void {
@@ -336,10 +402,12 @@ async function askCorrection(): Promise<void> {
     return;
   }
   busy.value = "correction";
+  const inadmissible = closing.value;
   try {
-    const body: CorrectionBody = {
+    const body: AmendmentCorrectionBody = {
       note: note.value.trim(),
-      updatedAt: props.amendment.updatedAt,
+      updatedAt: openedAt.value ?? props.amendment.updatedAt,
+      ...(inadmissible ? { correctable: false } : {}),
     };
     const updated = await api.send<AmendmentDto>(
       `${props.amendmentsUrl}/${props.amendment.id}/correction`,
@@ -347,6 +415,17 @@ async function askCorrection(): Promise<void> {
     );
     asking.value = false;
     note.value = "";
+    if (inadmissible) {
+      toast.add({
+        title: t("amendment.inadmissibleOnReview.done"),
+        description: t("amendment.inadmissibleOnReview.doneDescription"),
+        color: "success",
+        icon: "i-lucide-ban",
+      });
+      emit("updated", updated);
+      void focusStatus();
+      return;
+    }
     toast.add({
       title: t("amendment.review.toasts.correctionSent"),
       description: t("amendment.review.toasts.correctionSentDescription"),
@@ -355,7 +434,19 @@ async function askCorrection(): Promise<void> {
     });
     emit("corrected", updated);
   } catch (error) {
-    fail(error, "amendment.review.toasts.correctionFailed");
+    // It changed since the form opened: the form closes (keeping the
+    // note), so it is not sent again on the old version.
+    if (api.isConflict(error)) {
+      asking.value = false;
+      openedAt.value = null;
+      void focusStatus();
+    }
+    fail(
+      error,
+      inadmissible
+        ? "amendment.inadmissibleOnReview.failed"
+        : "amendment.review.toasts.correctionFailed",
+    );
   } finally {
     busy.value = null;
   }
@@ -440,91 +531,135 @@ async function askCorrection(): Promise<void> {
       />
     </div>
 
-    <!-- Secretaría: validate, or ask for a correction. -->
-    <template v-if="canValidate">
-      <form
-        v-if="asking"
-        class="flex flex-col gap-2"
-        novalidate
-        @submit.prevent="askCorrection"
+    <!--
+      Secretaría: the note for a correction, or why it is not admitted when
+      it cannot be corrected.
+    -->
+    <form
+      v-if="asking"
+      ref="correctionForm"
+      class="flex flex-col gap-3"
+      novalidate
+      @submit.prevent="askCorrection"
+    >
+      <AmendmentCorrectableChoice
+        v-if="inadmissibleOffered && !returned"
+        v-model="correctable"
+        :published="amendment.publishedAt !== null"
+        :disabled="busy !== null"
+      />
+      <UFormField
+        :label="
+          closing
+            ? t('amendment.inadmissibleOnReview.noteLabel')
+            : t('amendment.review.correctionNote')
+        "
+        :help="
+          closing
+            ? t('amendment.inadmissibleOnReview.noteHelp')
+            : t('amendment.review.correctionHelp')
+        "
+        :error="
+          noteAttempted && noteMissing
+            ? closing
+              ? t('amendment.inadmissibleOnReview.noteRequired')
+              : t('amendment.review.correctionRequired')
+            : undefined
+        "
+        required
       >
-        <UFormField
-          :label="t('amendment.review.correctionNote')"
-          :help="t('amendment.review.correctionHelp')"
-          :error="
-            noteAttempted && noteMissing
-              ? t('amendment.review.correctionRequired')
-              : undefined
+        <UTextarea
+          ref="noteInput"
+          v-model="note"
+          :rows="3"
+          autoresize
+          :maxrows="10"
+          :maxlength="CORRECTION_NOTE_MAX_LENGTH"
+          class="w-full"
+          :placeholder="
+            closing ? undefined : t('amendment.review.correctionPlaceholder')
           "
-          required
-        >
-          <UTextarea
-            ref="noteInput"
-            v-model="note"
-            :rows="3"
-            autoresize
-            :maxrows="10"
-            :maxlength="5000"
-            class="w-full"
-            :placeholder="t('amendment.review.correctionPlaceholder')"
-          />
-        </UFormField>
-        <div class="flex flex-wrap items-center gap-2">
-          <UButton
-            type="submit"
-            icon="i-lucide-send"
-            :loading="busy === 'correction'"
-            :disabled="busy !== null"
-            :label="t('amendment.review.actions.sendCorrection')"
-          />
-          <UButton
-            color="neutral"
-            variant="ghost"
-            :disabled="busy !== null"
-            :label="t('amendment.actions.cancel')"
-            @click="cancelCorrection"
-          />
-        </div>
-      </form>
-
-      <div v-else class="flex flex-col gap-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <UButton
-            icon="i-lucide-badge-check"
-            :loading="busy === 'validate_publish'"
-            :disabled="busy !== null"
-            :label="t('amendment.review.actions.validatePublish')"
-            @click="validate(true)"
-          />
-          <UButton
-            v-if="!publishesOnValidation"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-eye-off"
-            :loading="busy === 'validate'"
-            :disabled="busy !== null"
-            :label="t('amendment.review.actions.validateOnly')"
-            @click="validate(false)"
-          />
-          <UButton
-            ref="askButton"
-            color="warning"
-            variant="ghost"
-            icon="i-lucide-message-square-warning"
-            :disabled="busy !== null"
-            :label="t('amendment.review.actions.askCorrection')"
-            @click="startCorrection"
-          />
-        </div>
-        <p class="text-muted text-xs">
-          {{
-            publishesOnValidation
-              ? t("amendment.review.transactionalPublishHint")
-              : t("amendment.review.validateOnlyHint")
-          }}
-        </p>
+        />
+      </UFormField>
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          type="submit"
+          :color="closing ? 'error' : 'primary'"
+          :icon="closing ? 'i-lucide-ban' : 'i-lucide-send'"
+          :loading="busy === 'correction'"
+          :disabled="busy !== null"
+          :label="
+            closing
+              ? t('amendment.inadmissibleOnReview.send')
+              : t('amendment.review.actions.sendCorrection')
+          "
+        />
+        <UButton
+          color="neutral"
+          variant="ghost"
+          :disabled="busy !== null"
+          :label="t('amendment.actions.cancel')"
+          @click="cancelCorrection"
+        />
       </div>
-    </template>
+    </form>
+
+    <!-- Secretaría: validate, or ask for a correction. -->
+    <div v-else-if="canValidate" class="flex flex-col gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          icon="i-lucide-badge-check"
+          :loading="busy === 'validate_publish'"
+          :disabled="busy !== null"
+          :label="t('amendment.review.actions.validatePublish')"
+          @click="validate(true)"
+        />
+        <UButton
+          v-if="!publishesOnValidation"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-eye-off"
+          :loading="busy === 'validate'"
+          :disabled="busy !== null"
+          :label="t('amendment.review.actions.validateOnly')"
+          @click="validate(false)"
+        />
+        <UButton
+          ref="askButton"
+          color="warning"
+          variant="ghost"
+          icon="i-lucide-message-square-warning"
+          :disabled="busy !== null"
+          :label="t('amendment.review.actions.askCorrection')"
+          @click="startCorrection"
+        />
+      </div>
+      <p class="text-muted text-xs">
+        {{
+          publishesOnValidation
+            ? t("amendment.review.transactionalPublishHint")
+            : t("amendment.review.validateOnlyHint")
+        }}
+      </p>
+    </div>
+
+    <!-- Secretaría: a draft it sent back that cannot be fixed after all. -->
+    <div v-else-if="returned" class="flex flex-col gap-1.5">
+      <UButton
+        ref="askButton"
+        class="self-start"
+        color="error"
+        variant="ghost"
+        size="sm"
+        icon="i-lucide-ban"
+        :disabled="busy !== null"
+        :label="t('amendment.inadmissibleOnReview.action')"
+        @click="startInadmission"
+      />
+      <p class="text-muted text-xs">
+        {{ t("amendment.inadmissibleOnReview.actionHelp") }}
+      </p>
+    </div>
 
     <!--
       Secretaría: make a validated amendment public. Secretaría or Mesa:

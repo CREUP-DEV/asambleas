@@ -138,6 +138,13 @@ export const liveState = pgTable("live_state", {
     onDelete: "set null",
   }),
   amendmentId: text("amendment_id"),
+  /**
+   * Amendments of the document on screen the Mesa proposes to approve
+   * together (user's decision of 2026-11-19; screens list them in text
+   * order); null when there is no bloc. Never set with `amendmentId` or
+   * `voteId`.
+   */
+  amendmentBloc: jsonb("amendment_bloc").$type<string[]>(),
   voteId: text("vote_id"),
   message: text("message"),
   /** The Mesa shows who has the floor (and who is next) to attendees. */

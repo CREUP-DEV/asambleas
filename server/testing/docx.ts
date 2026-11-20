@@ -223,6 +223,9 @@ export async function convertTimed(data: Buffer, limits: DocxLimits) {
 }
 
 export const cell = (content: string) => `<w:tc>${content}</w:tc>`;
+/** A cell with its properties: what goes inside `<w:tcPr>`. */
+export const cellWith = (properties: string, content: string) =>
+  `<w:tc><w:tcPr>${properties}</w:tcPr>${content}</w:tc>`;
 export const row = (...cells: string[]) => `<w:tr>${cells.join("")}</w:tr>`;
 export const table = (...rows: string[]) => `<w:tbl>${rows.join("")}</w:tbl>`;
 

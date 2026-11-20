@@ -78,13 +78,18 @@ const inSession = computed(() =>
 /** The next few assemblies; the full list is one click away. */
 const UPCOMING_LIMIT = 4;
 
+/**
+ * Those not finished yet, the one in session included: it stays listed
+ * under the live banner as well, so the list never reads empty while an
+ * assembly is under way (user's decision of 2026-11-19).
+ */
 const upcoming = computed<AssemblySummaryDto[]>(() =>
   assemblies.value
     .filter(
       (item) =>
-        item.status !== "in_session" &&
         item.status !== "closed" &&
-        new Date(item.endDate).getTime() >= now.value,
+        (item.status === "in_session" ||
+          new Date(item.endDate).getTime() >= now.value),
     )
     .sort(
       (a, b) =>

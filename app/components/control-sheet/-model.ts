@@ -43,6 +43,7 @@ import {
   type SheetItemOwn,
   type SheetSpeaker,
 } from "~~/shared/utils/controlSheet";
+import { itemsAwaitingVote } from "~~/shared/utils/sessionProgress";
 import { buildAgendaTree, flattenAgendaTree } from "~/utils/agendaTree";
 import {
   liveAmendmentNote,
@@ -110,6 +111,13 @@ export interface GeneralSheetRow {
    * its documents, whatever the Mesa marks.
    */
   autoTreated: boolean;
+  /**
+   * It still waits for a vote (ControlSheetDto.awaitingItemIds with a sheet
+   * key, else itemsAwaitingVote over the agenda the reader gets): only its
+   * votes treat it, never the Mesa's mark nor a result by hand (user's
+   * decision of 2026-11-19).
+   */
+  awaitingVote: boolean;
   speakers: SheetSpeaker[];
   /** What the sheet noted about it; null while nothing was. */
   sheet: ControlSheetItemRowDto | null;
@@ -220,6 +228,32 @@ export function buildGeneralRows(
   const notes = new Map(
     (sheet?.itemRows ?? []).map((row) => [row.agendaItemId, row]),
   );
+  // Without a sheet key there are no rows: whether each was treated by hand
+  // comes as plain ids (ControlSheetDto.treated).
+  const treatedIds = new Set(sheet?.treated?.itemIds ?? []);
+  // The server's set when it sends one (a sheet key: over every document,
+  // those this reader cannot see included, as its 422 guard reads it);
+  // otherwise, or until the sheet loads, over the documents the reader gets.
+  const awaiting = sheet?.awaitingItemIds
+    ? new Set(sheet.awaitingItemIds)
+    : itemsAwaitingVote(
+        items,
+        documents.map((document) => ({
+          id: document.id,
+          agendaItemId: document.agendaItemId,
+          voted: document.voted,
+          status: document.status,
+          finalVoteId: finalVotes.get(document.id)?.id ?? null,
+        })),
+        new Set(
+          itemVotes
+            .filter(
+              (vote) =>
+                vote.subjectType === "agenda_item" && vote.voidedAt === null,
+            )
+            .map((vote) => vote.subjectId),
+        ),
+      );
   const ownListed = ownVoteItemIds(items, itemVotes);
   const listed = new Set(ownListed);
   for (const row of sheet?.itemRows ?? []) {
@@ -270,10 +304,14 @@ export function buildGeneralRows(
         sheetDocuments,
         note
           ? { manualResult: note.manualResult, treated: note.treated !== null }
-          : null,
+          : treatedIds.has(item.id)
+            ? { manualResult: null, treated: true }
+            : null,
         own,
+        awaiting.has(item.id),
       ),
       autoTreated: itemDocumentsOutcome(sheetDocuments, own).treated,
+      awaitingVote: awaiting.has(item.id),
       speakers: sheetSpeakers(turnsByItem.get(item.id) ?? []),
       sheet: note,
       live: item.id === liveItemId,
@@ -425,6 +463,12 @@ export function buildAmendmentRows(
   turns: readonly SpeakingTurnDto[] = [],
   /** The console's order: by answer once the answers are public. */
   order: AmendmentOrderOptions = {},
+  /**
+   * The amendments treated, as every reader gets them
+   * (ControlSheetDto.treated.amendmentIds): what decides a row the sheet
+   * has no row of its own for (always, without a sheet key).
+   */
+  treatedIds: ReadonlySet<string> = new Set(),
 ): AmendmentSheetRow[] {
   const notes = new Map(sheetRows.map((row) => [row.amendmentId, row]));
   const turnsByAmendment = new Map<string, SpeakingTurnDto[]>();
@@ -470,7 +514,9 @@ export function buildAmendmentRows(
       state: row.state,
       // «Fuera de plazo» says it all: the live view's sentence is left out.
       note: row.state === "late" ? null : liveAmendmentNote(row, rows),
-      treated: autoTreated || Boolean(sheet?.treated),
+      treated:
+        autoTreated ||
+        (sheet ? sheet.treated !== null : treatedIds.has(row.amendment.id)),
       autoTreated,
       sheet,
       position: newerPosition(
@@ -486,11 +532,13 @@ export function buildAmendmentRows(
 /**
  * Why the Mesa cannot change a row's treated mark by hand: `auto` when it
  * counts by itself (an item's documents' votes or what became of them; an
- * amendment the Mesa settled in session), `result` when an item's «Retirado»
- * or «Decaído» noted by hand makes it count. Null when the Mesa's mark
- * decides.
+ * amendment the Mesa settled in session), `vote` while only a vote or a
+ * decision will treat it (an item still waiting for a vote, an amendment
+ * still to be decided, user's decision of 2026-11-19), `result` when an
+ * item's «Retirado» or «Decaído» noted by hand makes it count. Null when
+ * the Mesa's mark decides.
  */
-export type TreatedLock = "auto" | "result" | null;
+export type TreatedLock = "auto" | "vote" | "result" | null;
 
 /** A row's treated mark as the panel edits it and the lists show it. */
 export interface TreatedControl {
@@ -510,9 +558,22 @@ export function itemTreatedControl(row: GeneralSheetRow): TreatedControl {
   const byResult =
     row.sheet?.manualResult === "withdrawn" ||
     row.sheet?.manualResult === "lapsed";
+  // A mark set before the item came to wait for a vote counts for nothing
+  // meanwhile, but stays undoable: it shows ticked and free, so the Mesa
+  // takes it away (only setting one is refused; a result by hand counts for
+  // nothing either while it waits, so it never locks it).
+  const staleMark = row.awaitingVote && Boolean(row.sheet?.treated);
   return {
-    treated: row.outcome.treated,
-    lock: row.autoTreated ? "auto" : byResult ? "result" : null,
+    treated: row.outcome.treated || staleMark,
+    lock: row.autoTreated
+      ? "auto"
+      : row.awaitingVote
+        ? staleMark
+          ? null
+          : "vote"
+        : byResult
+          ? "result"
+          : null,
     token: row.sheet?.progressUpdatedAt ?? null,
   };
 }
@@ -520,11 +581,44 @@ export function itemTreatedControl(row: GeneralSheetRow): TreatedControl {
 export function amendmentTreatedControl(
   row: AmendmentSheetRow,
 ): TreatedControl {
+  // A mark set before the rule stays undoable: only setting one is refused.
+  const undecided = row.amendment.status === "submitted" && !row.treated;
   return {
     treated: row.treated,
-    lock: row.autoTreated ? "auto" : null,
+    lock: row.autoTreated ? "auto" : undecided ? "vote" : null,
     token: row.sheet?.treatedUpdatedAt ?? null,
   };
+}
+
+/**
+ * The sheet's turns once a speaker note answered (`turns`, every turn that
+ * spoke in the assembly as the reader may read it), keeping only those of
+ * items the reader gets, or of no item, as GET .../control-sheet does: the
+ * column and the panel show the note at once.
+ */
+export function sheetTurnsFromNotes(
+  turns: readonly SpeakingTurnDto[],
+  itemIds: ReadonlySet<string>,
+): SpeakingTurnDto[] {
+  return turns.filter(
+    (turn) => turn.agendaItemId === null || itemIds.has(turn.agendaItemId),
+  );
+}
+
+/**
+ * The rows the floating preview of an amendment pages through
+ * (LiveViewAmendmentWindow), from rows of «Enmiendas»: each with the answer
+ * the row shows (the sheet's own, which its readers get before it is
+ * public), its state, and whether the Mesa has it on screen.
+ */
+export function previewAmendmentRows(
+  rows: readonly AmendmentSheetRow[],
+): LiveAmendmentRow[] {
+  return rows.map((row) => ({
+    amendment: { ...row.amendment, position: row.position },
+    state: row.state,
+    current: row.live,
+  }));
 }
 
 /**
@@ -641,6 +735,36 @@ export function affectsControlSheet(
     (event) =>
       event.type === "poll" ||
       (event.type !== "live_changed" && event.entityType !== "headcount"),
+  );
+}
+
+/**
+ * What never changes a document as the sheet's «Vista previa» reads it
+ * (DocumentDto: its text, its amendments' answers, its final vote): the
+ * speakers, the seating, the sheet's own notes (never in a shared DTO), the
+ * headcounts and what the Mesa has on screen.
+ */
+const PREVIEW_UNAFFECTED_ENTITIES: ReadonlySet<string> = new Set([
+  "speakers",
+  "seating",
+  "control_sheet",
+  "headcount",
+  "live",
+  "projection",
+]);
+
+/**
+ * Whether a batch of live events may change the document an open preview
+ * shows, so it is fetched again: anything but PREVIEW_UNAFFECTED_ENTITIES.
+ * "poll" (the stream was down) always does.
+ */
+export function affectsSheetPreview(
+  events: readonly Pick<LiveEventDto, "type" | "entityType">[],
+): boolean {
+  return events.some(
+    (event) =>
+      event.type === "poll" ||
+      !PREVIEW_UNAFFECTED_ENTITIES.has(event.entityType),
   );
 }
 

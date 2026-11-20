@@ -244,25 +244,37 @@ export interface SheetItemNotes {
   treated: boolean;
 }
 
+/** A result by hand that counts as treated: «Retirado» or «Decaído». */
+export function isSettledManualResult(
+  result: ControlSheetManualResult | null | undefined,
+): boolean {
+  return result === "withdrawn" || result === "lapsed";
+}
+
 /**
  * Where an agenda item stands: its votes first (its documents' or its own);
  * then what the sheet noted by hand (a «Decaído» or «Retirado» counts as
  * treated); then what its documents and «Se vota el punto» say otherwise.
+ * An item that still waits for a vote (`awaitingVote`, itemsAwaitingVote in
+ * sessionProgress.ts, over the whole agenda) is treated only by its votes
+ * (user's decision of 2026-11-19): the Mesa's mark and a result by hand
+ * count for nothing then, though the result still reads.
  */
 export function itemOutcome(
   documents: readonly SheetDocument[],
   notes: SheetItemNotes | null,
   own: SheetItemOwn | null = null,
+  awaitingVote = false,
 ): ItemOutcome {
   const base = itemDocumentsOutcome(documents, own);
+  const marked = !awaitingVote && Boolean(notes?.treated);
   if (base.byVote || !notes) {
-    return { ...base, treated: base.treated || Boolean(notes?.treated) };
+    return { ...base, treated: base.treated || marked };
   }
-  const settled =
-    notes.manualResult === "withdrawn" || notes.manualResult === "lapsed";
+  const settled = !awaitingVote && isSettledManualResult(notes.manualResult);
   return {
     result: notes.manualResult ?? base.result,
-    treated: base.treated || notes.treated || settled,
+    treated: base.treated || marked || settled,
     byVote: false,
   };
 }

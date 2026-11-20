@@ -231,7 +231,8 @@ export function isNewsEvent(
 
 /**
  * The decision in short (MeWorkNewsDto.value): the position, the answer to a
- * transactional, the admission a validation left, how an amendment was
+ * transactional, the admission a validation left, "review" for an amendment
+ * the Secretaría did not admit while reviewing it, how an amendment was
  * approved, the code of the transactional that replaced it (or that
  * replaced first what a lapsed transactional grouped), the code of the
  * amendment whose fate closed a transactional, the result of a document's
@@ -255,6 +256,9 @@ export function newsValue(
       return text(payload.code);
     case "amendment_approved":
       return text(payload.method);
+    case "amendment_inadmissible":
+      // The Secretaría's no while reviewing it: it cannot be corrected.
+      return payload.onReview === true ? "review" : null;
     case "amendment_transacted":
       return text(payload.code);
     case "amendment_lapsed":

@@ -1030,6 +1030,7 @@ export interface DocxImportDto {
     | "images_in_tables"
     | "images_without_alt"
     | "tables_flattened"
+    | "tables_split"
     | "highlight"
   )[];
 }
@@ -1400,9 +1401,15 @@ export interface PublishAmendmentsBody {
 
 /**
  * POST .../amendments/[amendment]/correction (amendment:review): a submitted,
- * not yet validated amendment goes back to draft with a note for its authors
- * (CorrectionBody). Returns AmendmentDto.
+ * undecided amendment goes back to draft with a note for its authors. With
+ * `correctable: false` (user's decision of 2026-11-19) it cannot be
+ * corrected: the Secretaría declares it not admitted with that note instead,
+ * also one it already sent back. Returns AmendmentDto.
  */
+export interface AmendmentCorrectionBody extends CorrectionBody {
+  /** It can be corrected and presented again; true when absent. */
+  correctable?: boolean;
+}
 
 export interface RelationBody {
   fromId: string;
@@ -1565,7 +1572,28 @@ export interface DecisionDto {
  */
 export interface SessionProgressDto {
   projectedDocumentIds: string[];
-  treatedItemIds: string[];
+  /**
+   * Where every agenda item stands, by the control sheet's own rule
+   * (sessionTreatedItems in shared/utils/sessionProgress.ts): treated or
+   * not, why (`auto` by its votes or its documents, `result` by a result
+   * by hand, `mark` the Mesa's mark, `children` a group whose items all
+   * are), whether it still waits for a vote, and the mark's lock token
+   * (`progressUpdatedAt`, null while the sheet has no row for it), which
+   * PATCH .../control-sheet/items/[item] takes to set or undo the mark.
+   */
+  items: {
+    id: string;
+    treated: boolean;
+    by: "auto" | "result" | "mark" | "children" | null;
+    awaitingVote: boolean;
+    /**
+     * The Mesa's mark is set, whether it counts or not: one set before the
+     * item came to wait for a vote counts for nothing meanwhile, yet the
+     * console still takes it away.
+     */
+    marked: boolean;
+    token: IsoDate | null;
+  }[];
 }
 
 /** A recess the Mesa called: since when and, if it said, until when. */
@@ -1578,6 +1606,12 @@ export interface LiveStateDto {
   agendaItemId: string | null;
   documentId: string | null;
   amendmentId: string | null;
+  /**
+   * Amendments of the document on screen the Mesa proposes to approve
+   * together («Se propone aprobar en bloque»); empty when there is no bloc.
+   * Never with `amendmentId` or `vote`.
+   */
+  amendmentBloc: string[];
   vote: VoteDto | null;
   message: string | null;
   /** Attendees see who has the floor and who is next. */
@@ -1593,6 +1627,13 @@ export interface LiveStateBody {
   agendaItemId?: string | null;
   documentId?: string | null;
   amendmentId?: string | null;
+  /**
+   * Puts a bloc on screen (published amendments of one document, which it
+   * selects with its agenda item), taking off the amendment and the vote;
+   * null or empty takes it off. A non-empty bloc with a non-null
+   * `amendmentId` or `voteId` is refused (422).
+   */
+  amendmentBloc?: string[] | null;
   voteId?: string | null;
   message?: string | null;
   speakersVisible?: boolean;
@@ -2015,13 +2056,34 @@ export interface ControlSheetDto {
    * (the same as GET .../item-votes).
    */
   itemVotes: VoteDto[];
+  /**
+   * Whether each row was treated, as plain ids for every reader (user's
+   * decision of 2026-11-19): never who marked it, when, nor the result by
+   * hand. `itemIds`: agenda items the reader gets that the Mesa marked or
+   * noted «Retirado» or «Decaído», never one still waiting for a vote
+   * (itemsAwaitingVote over the whole agenda); what their votes treat the
+   * client reads from the votes. `amendmentIds`: amendments the reader sees
+   * the Mesa marked or settled in session (amendmentTreatedInSession).
+   */
+  treated: { itemIds: string[]; amendmentIds: string[] };
+  /**
+   * With a sheet key (`can.internal`), the agenda items the reader gets
+   * that still wait for a vote (itemsAwaitingVote over every non-draft
+   * document, those it cannot see included: the set the 422
+   * `control_sheet_awaiting_vote` guard and the console read), so its sheet
+   * never honours a mark on one. Null for everyone else, who reads the
+   * treated items from `treated` (already without them) and must not learn
+   * of a document it cannot see.
+   */
+  awaitingItemIds: string[] | null;
   can: {
     /**
      * A sheet key (canViewControlSheet): reads what the sheet notes, its
      * turns and its history. Everyone else reads only the public part
      * (user's decision of 2026-11-19): `turns`, `itemRows` and
      * `amendmentRows` come empty, `sessionStartedAt` null, and `positions`
-     * only where the reader reads the answers anywhere (canSeePositions).
+     * only where the reader reads the answers anywhere (canSeePositions);
+     * whether each row was treated reaches it through `treated` alone.
      */
     internal: boolean;
     /** control_sheet:edit. */
@@ -2422,21 +2484,42 @@ export interface LivePointerDto extends LivePointerBody {
 }
 
 /**
- * A secret vote being counted, ballot by ballot, so the projection shows
- * the running count (user's decision of 2026-11-18). `present` is the base
- * the Mesa counts on (the latest headcount), null without one. Never
- * stored: the vote is recorded as usual once counted.
+ * How the room follows a secret vote's count (user's decision of
+ * 2026-11-19): `live`, ballot by ballot, or `end`, only with the result.
  */
-export interface LiveTally {
+export type LiveTallyReveal = "end" | "live";
+
+/** The ballots of a secret vote counted so far. */
+export interface LiveTallyCounts {
   inFavor: number;
   against: number;
   blank: number;
   invalid: number;
+}
+
+/**
+ * A secret vote the Mesa is counting, announced on the projection (user's
+ * decisions of 2026-11-18 and 2026-11-19): what is voted (`subject`, which
+ * the projection names from what the room may read; no id for an
+ * admission decision, which has no row yet), the question the Mesa wrote
+ * (an agenda item's vote only, dropped by the server when the public does
+ * not read the item's title), the method, how the count is shown and, in
+ * `live`, the running count (`counts`, null in `end`). `present` is the
+ * base the Mesa counts on (the latest headcount), null without one. Never
+ * stored: the vote is recorded as usual once counted, and its result takes
+ * over.
+ */
+export interface LiveTally {
+  subject: { type: VoteSubject; id: string | null } | null;
+  question: string | null;
+  method: VoteMethod;
+  reveal: LiveTallyReveal;
+  counts: LiveTallyCounts | null;
   present: number | null;
   majority: Majority;
 }
 
-/** POST .../live-tally (session:moderate): the count, or null when it ends. */
+/** POST .../live-tally (session:moderate): the announcement, or null when it ends. */
 export interface LiveTallyBody {
   tally: LiveTally | null;
 }

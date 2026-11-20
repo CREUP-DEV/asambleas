@@ -5,11 +5,13 @@ import type {
   ControlSheetDto,
   ControlSheetItemRowDto,
   DocumentSummaryDto,
+  SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
 import {
   affectsControlSheet,
   affectsLiveDebate,
+  affectsSheetPreview,
   amendedDocuments,
   amendmentSheetKind,
   amendmentTreatedControl,
@@ -18,7 +20,9 @@ import {
   buildGeneralRows,
   documentAgendaTrail,
   itemTreatedControl,
+  previewAmendmentRows,
   rowVoteEntries,
+  sheetTurnsFromNotes,
   staleSheetRow,
   type AmendmentSheetRow,
   itemVoteNeedsLabel,
@@ -83,6 +87,9 @@ const sheet = (over: Partial<ControlSheetDto> = {}): ControlSheetDto => ({
   amendmentRows: [],
   positions: [],
   itemVotes: [],
+  treated: { itemIds: [], amendmentIds: [] },
+  // Null: the rows compute the awaiting set from the documents they get.
+  awaitingItemIds: null,
   can: { internal: true, edit: true, moderate: false },
   ...over,
 });
@@ -421,8 +428,188 @@ describe("treated controls", () => {
     });
   });
 
+  const marked = (at: string) => ({
+    treated: { by: "Mesa", at },
+    progressUpdatedAt: at,
+  });
+
+  it("locks an unmarked item waiting for its own vote", () => {
+    const [row] = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [],
+      sheet({ itemRows: [itemRow({})] }),
+      null,
+    );
+    expect(row!.awaitingVote).toBe(true);
+    expect(itemTreatedControl(row!)).toEqual({
+      treated: false,
+      lock: "vote",
+      token: null,
+    });
+  });
+
+  it("ignores the mark of an item waiting for its own vote, but leaves it to undo", () => {
+    const at = "2026-11-20T11:00:00.000Z";
+    const [row] = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [],
+      sheet({ itemRows: [itemRow(marked(at))] }),
+      null,
+    );
+    expect(row!.awaitingVote).toBe(true);
+    expect(row!.outcome.treated).toBe(false);
+    // Ticked and free: switching it off sends `treated: false`.
+    expect(itemTreatedControl(row!)).toEqual({
+      treated: true,
+      lock: null,
+      token: at,
+    });
+  });
+
+  it("locks a voted document's item, and a listed group above it, until its final vote", () => {
+    const at = "2026-11-20T11:00:00.000Z";
+    const rows = buildGeneralRows(
+      [
+        item({ id: "1", order: 0 }),
+        item({ id: "1a", parentId: "1", generatedForDocumentId: "d1" }),
+      ],
+      [document({ id: "d1", agendaItemId: "1a" })],
+      sheet({
+        documents: [{ id: "d1", finalVote: null, amendments: 0, undecided: 0 }],
+        itemRows: [
+          itemRow({ manualResult: "lapsed" }),
+          itemRow({ id: "r2", agendaItemId: "1a" }),
+        ],
+      }),
+      null,
+    );
+    expect(
+      rows.map((row) => [row.id, itemTreatedControl(row).lock, row.outcome]),
+    ).toEqual([
+      ["1", "vote", { result: "lapsed", treated: false, byVote: false }],
+      ["1a", "vote", { result: null, treated: false, byVote: false }],
+    ]);
+    // Marked before: both free to undo, the result by hand locking nothing
+    // while it counts for nothing.
+    const marks = buildGeneralRows(
+      [
+        item({ id: "1", order: 0 }),
+        item({ id: "1a", parentId: "1", generatedForDocumentId: "d1" }),
+      ],
+      [document({ id: "d1", agendaItemId: "1a" })],
+      sheet({
+        documents: [{ id: "d1", finalVote: null, amendments: 0, undecided: 0 }],
+        itemRows: [
+          itemRow({ ...marked(at), manualResult: "lapsed" }),
+          itemRow({ id: "r2", agendaItemId: "1a", ...marked(at) }),
+        ],
+      }),
+      null,
+    );
+    expect(
+      marks.map((row) => [
+        row.id,
+        itemTreatedControl(row),
+        row.outcome.treated,
+      ]),
+    ).toEqual([
+      ["1", { treated: true, lock: null, token: at }, false],
+      ["1a", { treated: true, lock: null, token: at }, false],
+    ]);
+  });
+
+  it("reads the server's awaiting set with a sheet key, over documents it cannot see", () => {
+    const at = "2026-11-20T11:00:00.000Z";
+    // The voted document under «1» is not public: this reader does not get
+    // it, but the server counts it.
+    const [row] = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({
+        itemRows: [itemRow(marked(at))],
+        awaitingItemIds: ["1"],
+      }),
+      null,
+    );
+    expect(row!.awaitingVote).toBe(true);
+    expect(row!.outcome.treated).toBe(false);
+    const [local] = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({ itemRows: [itemRow(marked(at))] }),
+      null,
+    );
+    expect(local!.awaitingVote).toBe(false);
+    expect(local!.outcome.treated).toBe(true);
+    // An empty set from the server is the server's: nothing waits.
+    const [none] = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [],
+      sheet({ awaitingItemIds: [] }),
+      null,
+    );
+    expect(none!.awaitingVote).toBe(false);
+  });
+
+  it("reads a public sheet's treated ids, never while awaiting a vote", () => {
+    const rows = buildGeneralRows(
+      [item({ id: "1" }), item({ id: "2", voted: true, order: 1 })],
+      [],
+      sheet({
+        can: { internal: false, edit: false, moderate: false },
+        treated: { itemIds: ["1", "2"], amendmentIds: [] },
+      }),
+      null,
+    );
+    // «2» is on the sheet by «Se vota el punto»; «1» is not listed at all.
+    expect(rows.map((row) => [row.id, row.outcome.treated])).toEqual([
+      ["2", false],
+    ]);
+    const voted = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({
+        can: { internal: false, edit: false, moderate: false },
+        itemVotes: [
+          vote({ id: "v1", subjectType: "agenda_item", subjectId: "1" }),
+        ],
+        treated: { itemIds: ["1"], amendmentIds: [] },
+      }),
+      null,
+    );
+    expect(voted[0]!.outcome.treated).toBe(true);
+    const report = buildGeneralRows(
+      [item({ id: "1" })],
+      [document({ id: "d1", agendaItemId: "1", voted: false })],
+      sheet({
+        can: { internal: false, edit: false, moderate: false },
+        treated: { itemIds: ["1"], amendmentIds: [] },
+      }),
+      null,
+    );
+    expect(report[0]!.outcome).toEqual({
+      result: "not_applicable",
+      treated: true,
+      byVote: false,
+    });
+  });
+
+  it("locks an undecided amendment unless a mark is there to undo", () => {
+    const undecided = {
+      amendment: { status: "submitted" },
+      treated: false,
+      autoTreated: false,
+      sheet: null,
+    } as unknown as AmendmentSheetRow;
+    expect(amendmentTreatedControl(undecided).lock).toBe("vote");
+    expect(
+      amendmentTreatedControl({ ...undecided, treated: true }).lock,
+    ).toBeNull();
+  });
+
   it("locks an amendment the Mesa settled in session", () => {
     const row = {
+      amendment: { status: "rejected" },
       treated: true,
       autoTreated: true,
       sheet: null,
@@ -432,12 +619,13 @@ describe("treated controls", () => {
       lock: "auto",
       token: null,
     });
-    const marked = {
+    const unmarked = {
+      amendment: { status: "approved" },
       treated: false,
       autoTreated: false,
       sheet: { treatedUpdatedAt: "2026-11-20T11:00:00.000Z" },
     } as unknown as AmendmentSheetRow;
-    expect(amendmentTreatedControl(marked)).toEqual({
+    expect(amendmentTreatedControl(unmarked)).toEqual({
       treated: false,
       lock: null,
       token: "2026-11-20T11:00:00.000Z",
@@ -648,6 +836,29 @@ describe("live filters", () => {
     ).toBe(true);
   });
 
+  it("fetches an open preview again only for what may change its document", () => {
+    expect(
+      affectsSheetPreview([
+        { type: "speaker_added", entityType: "speakers" },
+        { type: "control_sheet_treated_changed", entityType: "control_sheet" },
+        { type: "seating_changed", entityType: "seating" },
+        { type: "headcount_taken", entityType: "headcount" },
+        { type: "live_changed", entityType: "live" },
+      ]),
+    ).toBe(false);
+    expect(
+      affectsSheetPreview([
+        { type: "amendment_updated", entityType: "amendment" },
+      ]),
+    ).toBe(true);
+    expect(
+      affectsSheetPreview([{ type: "vote_recorded", entityType: "vote" }]),
+    ).toBe(true);
+    expect(affectsSheetPreview([{ type: "poll", entityType: "live" }])).toBe(
+      true,
+    );
+  });
+
   it("follows the debate on screen moves", () => {
     expect(affectsLiveDebate([{ type: "live_changed" }])).toBe(true);
     expect(affectsLiveDebate([{ type: "vote_recorded" }])).toBe(false);
@@ -746,5 +957,92 @@ describe("itemVoteNeedsLabel", () => {
       true,
     );
     expect(itemVoteNeedsLabel(`1. ${title}`, title, 2)).toBe(true);
+  });
+});
+
+describe("buildAmendmentRows treated", () => {
+  it("takes the public ids where the sheet has no row of its own", () => {
+    const rows = buildAmendmentRows(
+      [
+        amendment({ id: "a1", status: "approved" }),
+        amendment({ id: "a2", status: "approved", positionKey: 1 }),
+      ],
+      null,
+      null,
+      [
+        {
+          id: "r2",
+          amendmentId: "a2",
+          documentId: "d",
+          treated: null,
+          treatedUpdatedAt: "2026-11-20T11:00:00.000Z",
+          observations: "",
+          observationsEdited: null,
+          observationsUpdatedAt: null,
+        },
+      ],
+      [],
+      [],
+      {},
+      new Set(["a1", "a2"]),
+    );
+    // A row of its own (the Mesa took its mark away) decides over the id.
+    expect(rows.map((row) => [row.amendment.id, row.treated])).toEqual([
+      ["a1", true],
+      ["a2", false],
+    ]);
+  });
+});
+
+describe("sheetTurnsFromNotes", () => {
+  const turn = (id: string, agendaItemId: string | null) =>
+    ({ id, agendaItemId, amendmentId: null }) as SpeakingTurnDto;
+
+  it("keeps the turns of items the reader gets, and those of no item", () => {
+    expect(
+      sheetTurnsFromNotes(
+        [turn("t1", "1"), turn("t2", "hidden"), turn("t3", null)],
+        new Set(["1"]),
+      ).map((entry) => entry.id),
+    ).toEqual(["t1", "t3"]);
+  });
+});
+
+describe("previewAmendmentRows", () => {
+  it("gives each amendment the answer its row shows, its state and whether it is on screen", () => {
+    const answer = {
+      position: "accept" as const,
+      comment: null,
+      recordedBy: "presenter" as const,
+      updatedAt: "2026-11-19T10:00:00.000Z",
+    };
+    const rows = [
+      {
+        amendment: amendment({ id: "a1" }),
+        state: "pending",
+        position: answer,
+        live: true,
+      },
+      {
+        amendment: amendment({ id: "a2" }),
+        state: "approved",
+        position: null,
+        live: false,
+      },
+    ] as unknown as AmendmentSheetRow[];
+    const preview = previewAmendmentRows(rows);
+    expect(
+      preview.map((row) => [
+        row.amendment.id,
+        row.amendment.position?.position ?? null,
+        row.state,
+        row.current,
+      ]),
+    ).toEqual([
+      ["a1", "accept", "pending", true],
+      ["a2", null, "approved", false],
+    ]);
+    // The row's own amendment is left untouched.
+    expect(rows[0]!.amendment.position).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import type {
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AmendmentReviewState } from "~~/shared/types/api";
 import { amendmentCodeSeq } from "~~/shared/utils/amendmentCode";
+import { answerableAfterDecision } from "~~/shared/utils/positions";
 
 /**
  * Pure rules of the Secretaría's review (docs/design.md, "Validation by the
@@ -258,6 +259,44 @@ export function validationReopenBlocker(
   return null;
 }
 
+/**
+ * Which amendments the Secretaría may declare not admitted while reviewing
+ * them, instead of sending them back for a correction (user's decision of
+ * 2026-11-19: «¿Puede corregirla?» «No»), and on which footing, or null when
+ * it may not:
+ * - "unvalidated": presented and waiting for its check (awaitsValidation;
+ *   never a transactional still waiting for its main authors), late or not;
+ * - "validated": validated and still reopenable (validationReopenBlocker:
+ *   undecided, not a transactional), except a late one: once validated, the
+ *   assembly decides whether to treat it («No tratarla»);
+ * - "returned": a draft it already sent back for a correction
+ *   (correctionRequestedAt), so one returned by mistake can be closed.
+ * The caller also refuses a validated one the Mesa has on screen or a
+ * transactional groups (assertValidationReopenable), and anything once the
+ * document's final vote is recorded.
+ */
+export function reviewInadmissionCase(
+  row: Pick<
+    AmendmentReviewFields,
+    "status" | "validatedAt" | "correctionRequestedAt" | "authorsApproval"
+  > & {
+    kind: AmendmentKind;
+    late: boolean;
+    admission: AdmissionStatus;
+  },
+): "unvalidated" | "validated" | "returned" | null {
+  if (row.status === "draft") {
+    return row.correctionRequestedAt !== null ? "returned" : null;
+  }
+  if (awaitsValidation(row)) return "unvalidated";
+  if (row.late || row.validatedAt === null) return null;
+  return validationReopenBlocker(row) === null ? "validated" : null;
+}
+
+/** The 409 when reviewInadmissionCase refuses. */
+export const REVIEW_INADMISSION_MESSAGE =
+  "Solo se puede declarar no admitida una enmienda presentada y sin decidir que la Secretaría está revisando, o una que ya devolvió para corregir";
+
 /** POST .../amendments/publish accepts any validated, unpublished amendment past draft. */
 export function isAmendmentPublishable(
   row: Pick<AmendmentReviewFields, "status" | "validatedAt" | "publishedAt">,
@@ -484,8 +523,12 @@ export function transactionalSourcesMessage(
  * seesValidatedAmendments). Under the
  * "incorporate" rule an amendment the presenter's acceptance approved
  * (approval method "proponent") can still be answered: changing the answer
- * reopens it. Once the document's final vote is recorded (`voted`) no
- * answer changes any more.
+ * reopens it. One the assembly approved otherwise (by a vote, by assent,
+ * or as a formal one: answerableAfterDecision) can still be answered while
+ * the main presenter reads it (user's decision of 2026-11-19): the answer
+ * is recorded and the approval stays (positionEffect). A rejected,
+ * withdrawn, lapsed, transacted or inadmissible one is "decided". Once the
+ * document's final vote is recorded (`voted`) no answer changes any more.
  */
 export function positionBlocker(
   row: {
@@ -517,6 +560,15 @@ export function positionBlocker(
     row.approvalMethod === "proponent"
   ) {
     return null;
+  }
+  if (answerableAfterDecision(row)) {
+    // Approved: nothing waits for the Secretaría any more, only whether the
+    // main presenter reads it (published, or validated for an office of the
+    // CEA). Never "on its way": it is decided.
+    const seen =
+      row.publishedAt !== null ||
+      (Boolean(row.presenterSeesValidated) && row.validatedAt !== null);
+    return seen ? null : "decided";
   }
   if (row.status !== "submitted") return "decided";
   // Admitted by the Mesa before the Secretaría validated it, published at

@@ -41,6 +41,7 @@ import {
   votes,
 } from "../../db/schema";
 import { getUploadDir } from "../core/uploadPaths";
+import { endLiveTally } from "../live/scroll";
 import { logError } from "../core/logger";
 import { assertOptimisticLock } from "../optimisticLock";
 import {
@@ -154,6 +155,11 @@ import {
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { pickDocumentSlug, slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
+import {
+  changedLiveFields,
+  normalizeBloc,
+  type LivePointerFields,
+} from "~~/shared/utils/liveBloc";
 
 /**
  * The document API (docs/api.md, "Documents"). Handlers resolve the route
@@ -2413,14 +2419,11 @@ export async function deleteDocument(
 
 // Live projection -----------------------------------------------------------
 
-const LIVE_FIELDS = [
-  "agendaItemId",
-  "documentId",
-  "amendmentId",
-  "voteId",
-] as const;
-
-type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
+/**
+ * What the projection points at (shared/utils/liveBloc.ts): the agenda item,
+ * the document, the amendment or the bloc, and the vote.
+ */
+type LivePointer = LivePointerFields;
 
 /**
  * Row locks. Every transaction that locks more than one of these rows takes
@@ -2490,12 +2493,15 @@ async function lockLiveState(
       agendaItemId: liveState.agendaItemId,
       documentId: liveState.documentId,
       amendmentId: liveState.amendmentId,
+      amendmentBloc: liveState.amendmentBloc,
       voteId: liveState.voteId,
     })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId))
     .for("no key update");
-  return row ?? null;
+  return row
+    ? { ...row, amendmentBloc: normalizeBloc(row.amendmentBloc) }
+    : null;
 }
 
 async function writeLiveState(
@@ -2505,7 +2511,7 @@ async function writeLiveState(
   next: LivePointer,
   actor: Actor,
 ): Promise<void> {
-  const changed = LIVE_FIELDS.filter((key) => next[key] !== previous[key]);
+  const changed = changedLiveFields(previous, next);
   if (changed.length === 0) return;
   await tx
     .update(liveState)
@@ -2536,7 +2542,9 @@ async function writeLiveState(
  * recorded it, when the session has a live_state row. An amendment or
  * document vote also points the projection at what was voted (choosing a new
  * document selects its agenda item, as PUT .../live-state does); a decision
- * vote only replaces the vote. Records `live_changed`.
+ * vote only replaces the vote. Records `live_changed`, and forgets a
+ * secret vote's count kept for the projection (endLiveTally), so none left
+ * behind covers the result.
  */
 export async function pointLiveVote(
   tx: Executor,
@@ -2553,7 +2561,12 @@ export async function pointLiveVote(
 ): Promise<void> {
   const previous = await lockLiveState(tx, input.assemblyId);
   if (!previous) return;
-  const next: LivePointer = { ...previous, voteId: input.voteId };
+  // A vote takes the bloc off the screen (nextLivePointer).
+  const next: LivePointer = {
+    ...previous,
+    voteId: input.voteId,
+    amendmentBloc: null,
+  };
   if (input.subject) {
     if (input.subject.documentId !== previous.documentId) {
       next.agendaItemId = input.subject.agendaItemId;
@@ -2562,6 +2575,9 @@ export async function pointLiveVote(
     next.amendmentId = input.subject.amendmentId;
   }
   await writeLiveState(tx, input.assemblyId, previous, next, input.actor);
+  // A result goes on screen: no count left behind may cover it (open
+  // projections drop theirs when the vote on screen changes).
+  endLiveTally(input.assemblyId);
 }
 
 /**
@@ -2569,7 +2585,7 @@ export async function pointLiveVote(
  * transaction that recorded it, only while the projection is still on that
  * item: it replaces the vote and nothing else. Answers whether it went on
  * screen (false without a live_state row or on another item). Records
- * `live_changed` when it does.
+ * `live_changed` and forgets a count kept for the projection when it does.
  */
 export async function projectItemVote(
   tx: Executor,
@@ -2586,9 +2602,10 @@ export async function projectItemVote(
     tx,
     input.assemblyId,
     previous,
-    { ...previous, voteId: input.voteId },
+    { ...previous, voteId: input.voteId, amendmentBloc: null },
     input.actor,
   );
+  endLiveTally(input.assemblyId);
   return true;
 }
 
@@ -2629,7 +2646,13 @@ async function clearLiveDocument(
     tx,
     input.assemblyId,
     previous,
-    { ...previous, documentId: null, amendmentId: null, voteId: null },
+    {
+      ...previous,
+      documentId: null,
+      amendmentId: null,
+      amendmentBloc: null,
+      voteId: null,
+    },
     input.actor,
   );
 }

@@ -11,8 +11,11 @@ import type {
   ControlSheetItemBody,
   ControlSheetItemRowDto,
   DocumentAmendmentsDto,
+  DocumentDto,
+  LiveEventDto,
   LiveStateDto,
   MemberDto,
+  SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
 import {
@@ -60,12 +63,15 @@ import {
 import {
   affectsControlSheet,
   affectsLiveDebate,
+  affectsSheetPreview,
   amendedDocuments,
   amendmentTreatedControl,
   buildAmendmentRows,
   buildGeneralRows,
   documentAgendaTrail,
   itemTreatedControl,
+  previewAmendmentRows,
+  sheetTurnsFromNotes,
   staleSheetRow,
   type AgendaTrailStep,
   type AmendmentSheetRow,
@@ -87,6 +93,16 @@ import {
   numberedAgendaTitle,
 } from "~/utils/agendaTree";
 import { positionsArePublic } from "~~/shared/utils/positions";
+import {
+  debateMoved,
+  firstRowInView,
+  readSheetReturn,
+  scrollTopForAnchor,
+  withSheetReturn,
+  type SheetReturnState,
+  type SheetReturnTab,
+} from "~/components/control-sheet/-return";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 
 /**
  * The control sheet of the assembly (hoja de control), for the Mesa, the
@@ -97,9 +113,10 @@ import { positionsArePublic } from "~~/shared/utils/positions";
  *
  * Everyone else who sees the assembly reads it too (user's decision of
  * 2026-11-19), only what is public (ControlSheetDto.can.internal false):
- * «General» and «Enmiendas» without the treated mark, who spoke and the
- * observations, the presenter's answers once public, and neither «Turnos de
- * palabra» nor «Historial».
+ * «General» and «Enmiendas» with whether each row was treated (its chips
+ * and its order too) but without who spoke and the observations, the
+ * presenter's answers once public, and neither «Turnos de palabra» nor
+ * «Historial».
  *
  * The agenda comes from the hub (useAssemblyAgenda); the sheet's own answer
  * adds the final votes, the votes on items, the amendment counts and who
@@ -107,7 +124,9 @@ import { positionsArePublic } from "~~/shared/utils/positions";
  * row; in «Enmiendas», the amendments of the document in debate. Each list
  * sorts by its columns and filters (-filters.ts), both kept in the query
  * next to the tab and the document. The tabs stay at hand while scrolling,
- * and «General» opens a document's amendments in «Enmiendas».
+ * and «General» opens a document's amendments in «Enmiendas». Every
+ * document and amendment opens in a floating window too («Vista previa»),
+ * and coming back to the sheet (Back) finds it as it was left (-return.ts).
  */
 
 const { t, locale } = useI18n();
@@ -405,6 +424,7 @@ const amendmentRows = computed(() =>
     sheet.value?.turns ?? [],
     // The console's order, by answer whether public or not yet.
     { byAnswer: true },
+    new Set(sheet.value?.treated?.amendmentIds ?? []),
   ),
 );
 
@@ -423,16 +443,16 @@ const showPositions = computed(
     amendmentRows.value.some((row) => row.position !== null),
 );
 
-/** Sort keys a reader without a sheet key has no column for. */
-const INTERNAL_SORT_KEYS: ReadonlySet<string> = new Set([
-  "treated",
-  "speakers",
-]);
+/**
+ * Sort keys a reader without a sheet key has no column for. «Tratado» is
+ * everyone's (user's decision of 2026-11-19).
+ */
+const INTERNAL_SORT_KEYS: ReadonlySet<string> = new Set(["speakers"]);
 
 /**
  * The state in the query as this reader may use it: without a sheet key,
- * no view but «Todas» and no sort by a column it does not have (a link
- * from someone else's sheet falls back to the defaults).
+ * no filter by observations and no sort by a column it does not have (a
+ * link from someone else's sheet falls back to the defaults).
  */
 const generalState = computed(() => {
   const state = parseGeneralSheetQuery(route.query);
@@ -442,11 +462,7 @@ const generalState = computed(() => {
     sort: INTERNAL_SORT_KEYS.has(state.sort.key)
       ? DEFAULT_GENERAL_SORT
       : state.sort,
-    filters: {
-      ...state.filters,
-      view: EMPTY_GENERAL_FILTERS.view,
-      observations: false,
-    },
+    filters: { ...state.filters, observations: false },
   };
 });
 const amendmentState = computed(() => {
@@ -460,7 +476,6 @@ const amendmentState = computed(() => {
     sort: hidden ? DEFAULT_AMENDMENT_SORT : state.sort,
     filters: {
       ...state.filters,
-      view: EMPTY_AMENDMENT_FILTERS.view,
       positions: showPositions.value ? state.filters.positions : [],
     },
   };
@@ -830,22 +845,19 @@ const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   speakers: "controlSheet.columns.speakers",
 };
 
-// The views tell rows apart by the sheet's marks: only with a sheet key.
+// «Todos / Pendientes / Tratados»: whether each row was treated is every
+// reader's (ControlSheetDto.treated).
 const generalViewItems = computed(() =>
-  internal.value
-    ? GENERAL_VIEWS.map((value) => ({
-        value,
-        label: t(`controlSheet.filters.views.general.${value}`),
-      }))
-    : [],
+  GENERAL_VIEWS.map((value) => ({
+    value,
+    label: t(`controlSheet.filters.views.general.${value}`),
+  })),
 );
 const amendmentViewItems = computed(() =>
-  internal.value
-    ? AMENDMENT_VIEWS.map((value) => ({
-        value,
-        label: t(`controlSheet.filters.views.amendments.${value}`),
-      }))
-    : [],
+  AMENDMENT_VIEWS.map((value) => ({
+    value,
+    label: t(`controlSheet.filters.views.amendments.${value}`),
+  })),
 );
 const resultItems = computed(() =>
   RESULT_FILTERS.map((value) => ({
@@ -1343,6 +1355,130 @@ function amendmentPath(amendment: AmendmentDto): string {
   return `${base}?enmienda=${encodeURIComponent(amendment.id)}`;
 }
 
+// The floating preview -------------------------------------------------------
+
+/**
+ * «Vista previa» (user's decision of 2026-11-19): a document or an amendment
+ * read in the live view's floating windows without leaving the sheet. Kept
+ * by its own ids, never by the selected document, which following the
+ * debate may switch while it is open; its full DocumentDto is fetched only
+ * while one is open.
+ */
+const previewDocumentId = ref<string | null>(null);
+const previewAmendment = ref<{
+  documentId: string;
+  amendmentId: string;
+} | null>(null);
+const previewFetchId = computed(
+  () => previewAmendment.value?.documentId ?? previewDocumentId.value,
+);
+const previewFetch = useAsyncData<DocumentDto | null>(
+  computed(() => `control-sheet-preview:${previewFetchId.value ?? "none"}`),
+  () => {
+    const id = previewFetchId.value;
+    return id
+      ? api.get<DocumentDto>(
+          `${apiBase.value}/documents/${encodeURIComponent(id)}`,
+        )
+      : Promise.resolve(null);
+  },
+  { default: () => null, lazy: true, server: false },
+);
+const { data: keptPreview } = keepLastGoodData(previewFetch, {
+  resetOn: previewFetchId,
+});
+const previewDocument = onlyForKey(
+  keptPreview,
+  () => previewFetchId.value,
+  (value) => value.id,
+);
+/**
+ * The document asked for could not be loaded (a 404 too: hidden or
+ * withdrawn meanwhile), and nothing of it is kept to show.
+ */
+const previewFailed = computed(
+  () =>
+    previewFetchId.value !== null &&
+    !previewDocument.value &&
+    previewFetch.status.value === "error",
+);
+/** One is open and its document is not here yet, nor failed. */
+const previewLoading = computed(
+  () =>
+    previewFetchId.value !== null &&
+    !previewDocument.value &&
+    !previewFailed.value,
+);
+
+const previewDocumentOpen = computed({
+  get: () => previewDocumentId.value !== null,
+  set: (value) => {
+    if (!value) previewDocumentId.value = null;
+  },
+});
+const previewDocumentPath = computed(() => {
+  const id = previewFetchId.value;
+  const summary = id
+    ? agendaDocuments.value.find((entry) => entry.id === id)
+    : undefined;
+  return summary
+    ? sectionPath(`documentos/${encodeURIComponent(summary.slug)}`)
+    : null;
+});
+
+function openDocumentPreview(document: { id: string }): void {
+  previewAmendment.value = null;
+  previewDocumentId.value = document.id;
+}
+
+function openAmendmentPreview(row: AmendmentSheetRow): void {
+  previewDocumentId.value = null;
+  previewAmendment.value = {
+    documentId: row.amendment.documentId,
+    amendmentId: row.amendment.id,
+  };
+}
+
+/** The amendment shown; the window closes when its row leaves the list. */
+const previewAmendmentId = computed<string | null>({
+  get: () => previewAmendment.value?.amendmentId ?? null,
+  set: (id) => {
+    const current = previewAmendment.value;
+    previewAmendment.value =
+      id && current ? { ...current, amendmentId: id } : null;
+  },
+});
+/** Paged as the list shows them; their notes read every amendment. */
+const previewRows = computed(() => previewAmendmentRows(shownAmendments.value));
+// The window's rows are the selected document's: following the debate (or
+// the selector) onto another document, or its row leaving the list (a
+// filter, a deleted amendment), hides it, which never runs its `update:open`.
+// Forget it then, so it neither keeps fetching its document nor opens again
+// by itself when the row comes back.
+watch(
+  () => selectedDocument.value?.id,
+  (id) => {
+    const current = previewAmendment.value;
+    if (current && current.documentId !== id) previewAmendment.value = null;
+  },
+);
+watch(previewRows, (rows) => {
+  const current = previewAmendment.value;
+  // Only over the document's own amendments, loaded: never the empty list
+  // while another document's load.
+  if (
+    !current ||
+    amendmentsData.value?.documentId !== current.documentId ||
+    rows.some((row) => row.amendment.id === current.amendmentId)
+  ) {
+    return;
+  }
+  previewAmendment.value = null;
+});
+const previewNoteRows = computed(() =>
+  previewAmendmentRows(amendmentRows.value),
+);
+
 // Live -----------------------------------------------------------------------
 
 /** The document of the amendment in the panel: who answers it, its rule. */
@@ -1371,14 +1507,64 @@ function onPositionSaved(): void {
   if (amendmentsUrl.value) void amendmentsFetch.refresh({ dedupe: "cancel" });
 }
 
-function refreshSheet(): void {
-  void sheetFetch.refresh({ dedupe: "defer" });
-  if (amendmentsUrl.value) void amendmentsFetch.refresh();
+/**
+ * A live event: the sheet again. A fetch already on its way may have read
+ * before the change the event announces, so it is never joined: one this
+ * refresh started is waited for and run once more (trailingRefresh),
+ * however many events come meanwhile, and any other (a write's) is
+ * replaced (`dedupe: "cancel"`, which cannot starve: the runs follow one
+ * another).
+ */
+const refreshSheetTrailing = trailingRefresh(() =>
+  sheetFetch.refresh({ dedupe: "cancel" }),
+);
+const refreshAmendmentsTrailing = trailingRefresh(() =>
+  amendmentsUrl.value
+    ? amendmentsFetch.refresh({ dedupe: "cancel" })
+    : Promise.resolve(),
+);
+const refreshPreviewTrailing = trailingRefresh(() =>
+  previewFetchId.value
+    ? previewFetch.refresh({ dedupe: "cancel" })
+    : Promise.resolve(),
+);
+/**
+ * The sheet again, after `events` (none: a write of the page, or the
+ * reader asking): an open preview reads its document again too (its text,
+ * its amendments' answers), the same way, only while one is open and when
+ * the events may change it (affectsSheetPreview).
+ */
+function refreshSheet(events?: readonly LiveEventDto[]): void {
+  void refreshSheetTrailing();
+  if (amendmentsUrl.value) void refreshAmendmentsTrailing();
+  if (previewFetchId.value && (!events || affectsSheetPreview(events))) {
+    void refreshPreviewTrailing();
+  }
+}
+
+/**
+ * Someone noted as having spoken, or taken back, from the panel: the
+ * notes' answer (every turn that spoke) goes in at once, filtered as the
+ * sheet filters it, so the panel's chips and the column show it in the same
+ * tick; then the sheet again, with any fetch on its way cancelled.
+ */
+function onSpeakersUpdated(turns: SpeakingTurnDto[]): void {
+  const current = sheet.value;
+  if (current) {
+    sheet.value = {
+      ...current,
+      turns: sheetTurnsFromNotes(
+        turns,
+        new Set(items.value.map((item) => item.id)),
+      ),
+    };
+  }
+  void sheetFetch.refresh({ dedupe: "cancel" });
 }
 
 onLive((events) => {
   headcounts.onLive(events);
-  if (affectsControlSheet(events)) refreshSheet();
+  if (affectsControlSheet(events)) refreshSheet(events);
   if (affectsLiveDebate(events)) {
     void liveFetch.refresh({ dedupe: "defer" });
   }
@@ -1411,11 +1597,15 @@ function scrollToRow(id: string): void {
  * «Enmiendas», the amendments of the document in debate if it has any the
  * reader sees. Never from «Turnos de palabra», which lists the whole
  * assembly and has no row to follow: the debate moving on would take its
- * reader out of it.
+ * reader out of it. Whether it went anywhere: false when there was nothing
+ * to follow (nothing on screen, «Turnos de palabra», the document already
+ * shown).
  */
-async function followDebate(): Promise<void> {
+async function followDebate(): Promise<boolean> {
   const state = live.value;
-  if (!follow.value || !state || tab.value === "turns") return;
+  if (!follow.value || !state || tab.value === "turns") return false;
+  // Coming back where the reader left it: the sheet stays there.
+  if (holdFollow) return false;
   if (state.amendmentId && state.documentId) {
     const document = documentOptions.value.find(
       (entry) => entry.id === state.documentId,
@@ -1430,17 +1620,16 @@ async function followDebate(): Promise<void> {
         },
       });
       scrollToRow(state.amendmentId);
-      return;
+      return true;
     }
   }
   const debated = debateDocument.value;
   if (tab.value === "amendments" && debated) {
-    if (selectedDocument.value?.id !== debated.id) {
-      await router.replace({
-        query: { ...route.query, [DOCUMENT_QUERY]: debated.slug },
-      });
-    }
-    return;
+    if (selectedDocument.value?.id === debated.id) return false;
+    await router.replace({
+      query: { ...route.query, [DOCUMENT_QUERY]: debated.slug },
+    });
+    return true;
   }
   if (state.agendaItemId) {
     if (tab.value !== "general") {
@@ -1449,7 +1638,9 @@ async function followDebate(): Promise<void> {
       });
     }
     scrollToRow(state.agendaItemId);
+    return true;
   }
+  return false;
 }
 
 // Only when what is on screen moves (or following is turned on), not on
@@ -1475,12 +1666,198 @@ watch(
 watch(
   () => amendmentRows.value.length,
   () => {
+    if (holdFollow) return;
     if (follow.value && live.value?.amendmentId) {
       scrollToRow(live.value.amendmentId);
     }
   },
 );
-onMounted(() => void followDebate());
+
+// Back to where the reader left it (-return.ts) -------------------------------
+
+/**
+ * While the sheet comes back to where it was left, following the debate
+ * moves nothing (unless the debate moved meanwhile).
+ */
+let holdFollow = false;
+
+/** The scroll area: the hub's panel body, not the window. */
+function scrollArea(): HTMLElement | null {
+  return tabsAnchor.value ? scrollParentOf(tabsAnchor.value) : null;
+}
+
+/** Each row of the list shown (the table or the cards), in page order. */
+function rowBoxes(): { id: string; top: number; bottom: number }[] {
+  if (!import.meta.client) return [];
+  return [...document.querySelectorAll<HTMLElement>("[data-sheet-row]")]
+    .filter((element) => element.getClientRects().length > 0)
+    .map((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        id: element.dataset.sheetRow ?? "",
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+}
+
+/** The bottom of the sticky tabs, where a row starts being in view. */
+function barBottom(): number {
+  return tabsBar.value?.getBoundingClientRect().bottom ?? 0;
+}
+
+/**
+ * Writes where the reader is into this page's own history entry: on leaving
+ * (a link, the app's navigation) and when the page itself goes (a reload).
+ * Only while the browser's entry is still the sheet's: on Back or Forward
+ * it has already moved to the other one, which must not get it.
+ */
+function saveReturn(): void {
+  const id = assembly.value?.id;
+  if (!import.meta.client || !id) return;
+  const entry = window.history.state as { current?: unknown } | null;
+  if (entry?.current !== route.fullPath) return;
+  tabQueries.set(tab.value, currentSheetQuery());
+  const queries: SheetReturnState["tabQueries"] = {};
+  for (const [key, query] of tabQueries) {
+    queries[key as SheetReturnTab] = Object.fromEntries(
+      Object.entries(query).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  }
+  const saved: SheetReturnState = {
+    assemblyId: id,
+    scrollTop: scrollArea()?.scrollTop ?? 0,
+    anchor: firstRowInView(rowBoxes(), barBottom()),
+    follow: follow.value,
+    live: {
+      agendaItemId: live.value?.agendaItemId ?? null,
+      documentId: live.value?.documentId ?? null,
+      amendmentId: live.value?.amendmentId ?? null,
+    },
+    tabQueries: queries,
+    search: searchDraft.value,
+  };
+  try {
+    window.history.replaceState(
+      withSheetReturn(window.history.state, saved),
+      "",
+    );
+  } catch {
+    // A browser refusing the state only loses the way back.
+  }
+}
+onBeforeRouteLeave(saveReturn);
+if (import.meta.client) useEventListener(window, "pagehide", saveReturn);
+
+/**
+ * Puts the list back where it was: the saved scroll first, then, once laid
+ * out, the saved row where it was under the tabs. Given up as soon as the
+ * reader scrolls.
+ */
+function restoreScroll(saved: SheetReturnState, done: () => void): void {
+  const area = scrollArea();
+  if (!area) {
+    done();
+    return;
+  }
+  let cancelled = false;
+  const letGo = () => {
+    cancelled = true;
+  };
+  const keys = (event: KeyboardEvent) => {
+    if (
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "PageUp",
+        "PageDown",
+        "Home",
+        "End",
+        " ",
+      ].includes(event.key)
+    ) {
+      letGo();
+    }
+  };
+  area.addEventListener("wheel", letGo, { passive: true });
+  area.addEventListener("touchmove", letGo, { passive: true });
+  window.addEventListener("keydown", keys);
+  const finish = () => {
+    area.removeEventListener("wheel", letGo);
+    area.removeEventListener("touchmove", letGo);
+    window.removeEventListener("keydown", keys);
+    done();
+  };
+  requestAnimationFrame(() => {
+    if (cancelled) return finish();
+    area.scrollTop = saved.scrollTop;
+    requestAnimationFrame(() => {
+      const anchor = saved.anchor;
+      const row = anchor
+        ? rowBoxes().find((entry) => entry.id === anchor.rowId)
+        : undefined;
+      if (!cancelled && anchor && row) {
+        area.scrollTop = scrollTopForAnchor(
+          area.scrollTop,
+          row.top,
+          barBottom(),
+          anchor.offset,
+        );
+      }
+      finish();
+    });
+  });
+}
+
+onMounted(async () => {
+  const id = assembly.value?.id;
+  const saved = id
+    ? readSheetReturn(window.history.state, id, SHEET_FILTER_QUERY_KEYS)
+    : null;
+  if (!saved) {
+    void followDebate();
+    return;
+  }
+  // Kept in the entry: Back again after Forward, or a reload, finds the
+  // latest place written on leaving.
+  const moved = saved.follow && debateMoved(saved.live, live.value);
+  holdFollow = !moved;
+  follow.value = saved.follow;
+  for (const [key, query] of Object.entries(saved.tabQueries)) {
+    if (key !== tab.value) tabQueries.set(key as SheetTab, query);
+  }
+  if (saved.search && saved.search !== searchDraft.value) {
+    searchDraft.value = saved.search;
+  }
+  // The debate moved: follow it, unless there is nothing to follow
+  // («Turnos de palabra», nothing on screen, its document already shown);
+  // then the sheet comes back where it was left.
+  if (moved) {
+    if (await followDebate()) return;
+    holdFollow = true;
+  }
+  const release = () => {
+    holdFollow = false;
+  };
+  // «Enmiendas» waits for its document's amendments, fetched again on the
+  // way back.
+  if (tab.value === "amendments" && !amendmentsData.value) {
+    const stop = watch(amendmentsData, (data) => {
+      if (!data) return;
+      stop();
+      void nextTick(() => restoreScroll(saved, release));
+    });
+    // Nothing coming (no document, a failed fetch): let following go.
+    setTimeout(() => {
+      stop();
+      release();
+    }, 5000);
+    return;
+  }
+  void nextTick(() => restoreScroll(saved, release));
+});
 
 // Only the first load shows skeletons: refetches keep the sheet in place.
 const loading = computed(
@@ -1621,6 +1998,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             @open="openItem"
             @sort="onGeneralSort"
             @amendments="openDocumentAmendments"
+            @preview="openDocumentPreview"
           />
         </template>
         <div v-if="canEdit">
@@ -1643,24 +2021,39 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           variant="outline"
         />
         <template v-else>
-          <UFormField
-            :label="t('controlSheet.document.label')"
-            class="max-w-3xl"
-          >
-            <USelectMenu
-              v-model="selectedDocumentId"
-              :items="selectItems"
-              value-key="value"
-              :search-input="{
-                placeholder: t('controlSheet.document.search'),
-              }"
-              :ui="{
-                value: 'whitespace-normal text-start',
-                itemLabel: 'whitespace-normal',
-              }"
-              class="w-full"
+          <div class="flex max-w-3xl flex-wrap items-end gap-2">
+            <UFormField
+              :label="t('controlSheet.document.label')"
+              class="min-w-0 flex-1 basis-64"
+            >
+              <USelectMenu
+                v-model="selectedDocumentId"
+                :items="selectItems"
+                value-key="value"
+                :search-input="{
+                  placeholder: t('controlSheet.document.search'),
+                }"
+                :ui="{
+                  value: 'whitespace-normal text-start',
+                  itemLabel: 'whitespace-normal',
+                }"
+                class="w-full"
+              />
+            </UFormField>
+            <UButton
+              v-if="selectedDocument"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-scan-eye"
+              :label="t('controlSheet.preview.selected')"
+              :aria-label="
+                t('controlSheet.preview.documentAria', {
+                  title: selectedDocument.title,
+                })
+              "
+              @click="openDocumentPreview(selectedDocument)"
             />
-          </UFormField>
+          </div>
           <!--
               Where the document is in the agenda, and who answers its
               amendments: its main presenter.
@@ -1795,6 +2188,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               :show-positions="showPositions"
               @open="openAmendment"
               @sort="onAmendmentSort"
+              @preview="openAmendmentPreview"
             />
           </template>
         </template>
@@ -1847,8 +2241,30 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       @treated="onPanelTreated"
       @vote-changed="onVoteChanged"
       @position-saved="onPositionSaved"
-      @speakers-updated="refreshSheet"
+      @speakers-updated="onSpeakersUpdated"
       @result-changed="onPositionSaved"
+    />
+
+    <LiveViewDocumentWindow
+      v-model:open="previewDocumentOpen"
+      :document="previewDocumentId ? (previewDocument ?? null) : null"
+      :requested-id="previewDocumentId"
+      :loading="previewLoading"
+      :failed="previewFailed"
+      :scroll="null"
+      :document-path="previewDocumentPath"
+      :live="false"
+      :description="t('controlSheet.preview.documentDescription')"
+    />
+    <LiveViewAmendmentWindow
+      v-model:amendment-id="previewAmendmentId"
+      :rows="previewRows"
+      :note-rows="previewNoteRows"
+      :document="previewAmendment ? (previewDocument ?? null) : null"
+      :loading="previewLoading"
+      :failed="previewFailed"
+      :show-position="showPositions"
+      :document-path="previewDocumentPath"
     />
 
     <UModal

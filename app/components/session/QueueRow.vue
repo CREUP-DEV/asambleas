@@ -16,6 +16,11 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  * (its changes, the proponent's position, every other action) opens under
  * the row. The row is the anchor the keyboard shortcuts (j/k) and the
  * consolidated text move the focus to.
+ *
+ * While the Mesa selects a bloc («Seleccionar para bloque», user's decision
+ * of 2026-11-19), every row it may put in one starts with a checkbox (shift
+ * ticks the range from the last one), and those the main presenter has not
+ * accepted say «sin aceptar».
  */
 const props = defineProps<{ amendment: AmendmentDto }>();
 
@@ -39,6 +44,20 @@ const busy = computed(
 const debatable = computed(
   () => isSessionDebatable(props.amendment) && stage.value !== "superseded",
 );
+
+/** A checkbox of the bloc, while the Mesa selects one. */
+const blocSelectable = computed(
+  () => session.blocMode.value && session.blocOrder.value.includes(id.value),
+);
+const inBloc = computed(() => session.blocSelected.value.includes(id.value));
+const notAccepted = computed(
+  () => blocSelectable.value && props.amendment.position?.position !== "accept",
+);
+/** The checkbox's click: shift ticks or unticks the range. */
+function onBlocClick(event: MouseEvent): void {
+  event.stopPropagation();
+  session.toggleBloc(id.value, event.shiftKey);
+}
 
 const open = ref(false);
 const detailsId = computed(() => `session-row-${id.value}-details`);
@@ -107,6 +126,18 @@ function focusRow(): void {
     @focusin="focusRow"
   >
     <div class="flex min-h-11 items-center gap-1 ps-1 pe-1.5">
+      <!-- The checkbox is driven by the selection: the click (with or
+           without shift) changes it, the key Space too (a click). -->
+      <span
+        v-if="blocSelectable"
+        class="flex shrink-0 items-center ps-1.5"
+        @click="onBlocClick"
+      >
+        <UCheckbox
+          :model-value="inBloc"
+          :aria-label="t('session.bloc.include', { code })"
+        />
+      </span>
       <button
         type="button"
         class="hover:bg-elevated/60 focus-visible:ring-primary flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1.5 text-start outline-none focus-visible:ring-2"
@@ -159,6 +190,14 @@ function focusRow(): void {
         </span>
       </button>
 
+      <UBadge
+        v-if="notAccepted"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        class="shrink-0"
+        :label="t('session.bloc.notAccepted')"
+      />
       <UBadge
         v-if="debated"
         color="primary"

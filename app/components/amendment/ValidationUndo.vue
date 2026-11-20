@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type {
+  AmendmentCorrectionBody,
   AmendmentDto,
-  CorrectionBody,
   UndoValidationBody,
 } from "~~/shared/types/api";
 import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
+import { amendmentInadmissibleOnReview } from "~/composables/amendment/workspace";
 
 /**
  * The Secretaría takes back the validation of an amendment it validated,
@@ -15,7 +16,10 @@ import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
  * - "Devolver para corregir" (POST .../correction): back to its authors as
  *   a draft with a note saying why it cannot go as it is. They may fix it
  *   and present it again (same number and code, on time if it was), or
- *   leave it: a draft never counts. The form says what else happens.
+ *   leave it: a draft never counts. The form says what else happens. It
+ *   asks «¿Puede corregirla?» first (user's decision of 2026-11-19): «No»
+ *   declares it not admitted with the note instead (`correctable: false`),
+ *   never a late one, which the assembly decides on.
  * One line says where it stands; the parent shows it only while it can,
  * and takes the focus back once it is gone (`settled`).
  */
@@ -43,6 +47,8 @@ const toast = useToast();
 const busy = ref<"undo" | "correction" | null>(null);
 const confirmOpen = ref(false);
 const asking = ref(false);
+/** «¿Puede corregirla?»: yes unless the Secretaría says otherwise. */
+const correctable = ref(true);
 const note = ref("");
 const noteAttempted = ref(false);
 const noteInput = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
@@ -65,11 +71,29 @@ const consequences = computed(() =>
   ].filter((line): line is string => line !== null),
 );
 const noteMissing = computed(() => !note.value.trim());
+/**
+ * What else the form does: sending it back also hides it; declaring it not
+ * admitted leaves it as public as it was, and only clears the answer.
+ */
+const formConsequences = computed(() =>
+  closing.value
+    ? answered.value
+      ? [t("amendment.validationUndo.clearsAnswer")]
+      : []
+    : consequences.value,
+);
+/** The Secretaría may declare it not admitted instead of sending it back. */
+const inadmissibleOffered = computed(() =>
+  amendmentInadmissibleOnReview(props.amendment),
+);
+/** The form declares it not admitted rather than sending it back. */
+const closing = computed(() => inadmissibleOffered.value && !correctable.value);
 
 watch(
   () => props.amendment.id,
   () => {
     asking.value = false;
+    correctable.value = true;
     note.value = "";
     noteAttempted.value = false;
     confirmOpen.value = false;
@@ -118,6 +142,7 @@ async function undo(): Promise<void> {
 
 function startCorrection(): void {
   asking.value = true;
+  correctable.value = true;
   noteAttempted.value = false;
   void nextTick(() => noteInput.value?.textareaRef?.focus());
 }
@@ -135,16 +160,29 @@ async function sendCorrection(): Promise<void> {
   }
   if (busy.value) return;
   busy.value = "correction";
+  const inadmissible = closing.value;
   try {
-    const body: CorrectionBody = {
+    const body: AmendmentCorrectionBody = {
       note: note.value.trim(),
       updatedAt: props.amendment.updatedAt,
+      ...(inadmissible ? { correctable: false } : {}),
     };
     const updated = await api.send<AmendmentDto>(`${props.url}/correction`, {
       body: { ...body },
     });
     asking.value = false;
     note.value = "";
+    if (inadmissible) {
+      toast.add({
+        title: t("amendment.inadmissibleOnReview.done"),
+        description: t("amendment.inadmissibleOnReview.doneDescription"),
+        color: "success",
+        icon: "i-lucide-ban",
+      });
+      emit("updated", updated);
+      emit("settled");
+      return;
+    }
     toast.add({
       title: t("amendment.review.toasts.correctionSent"),
       description: t("amendment.review.toasts.correctionSentDescription"),
@@ -153,7 +191,12 @@ async function sendCorrection(): Promise<void> {
     });
     emit("corrected", updated);
   } catch (error) {
-    failed(error, "amendment.review.toasts.correctionFailed");
+    failed(
+      error,
+      inadmissible
+        ? "amendment.inadmissibleOnReview.failed"
+        : "amendment.review.toasts.correctionFailed",
+    );
   } finally {
     busy.value = null;
   }
@@ -175,22 +218,38 @@ async function sendCorrection(): Promise<void> {
 
     <form
       v-if="asking"
-      class="flex flex-col gap-2"
+      class="flex flex-col gap-3"
       novalidate
       @submit.prevent="sendCorrection"
     >
+      <AmendmentCorrectableChoice
+        v-if="inadmissibleOffered"
+        v-model="correctable"
+        :published="published"
+        :disabled="busy !== null"
+      />
       <UFormField
-        :label="t('amendment.review.correctionNote')"
-        :help="t('amendment.validationUndo.correctionHelp')"
+        :label="
+          closing
+            ? t('amendment.inadmissibleOnReview.noteLabel')
+            : t('amendment.review.correctionNote')
+        "
+        :help="
+          closing
+            ? t('amendment.inadmissibleOnReview.noteHelp')
+            : t('amendment.validationUndo.correctionHelp')
+        "
         :error="
           noteAttempted && noteMissing
-            ? t('amendment.review.correctionRequired')
+            ? closing
+              ? t('amendment.inadmissibleOnReview.noteRequired')
+              : t('amendment.review.correctionRequired')
             : undefined
         "
         required
       >
-        <template v-if="consequences.length > 0" #description>
-          <span class="text-default">{{ consequences.join(" ") }}</span>
+        <template v-if="formConsequences.length > 0" #description>
+          <span class="text-default">{{ formConsequences.join(" ") }}</span>
         </template>
         <UTextarea
           ref="noteInput"
@@ -200,16 +259,23 @@ async function sendCorrection(): Promise<void> {
           :maxrows="10"
           :maxlength="CORRECTION_NOTE_MAX_LENGTH"
           class="w-full"
-          :placeholder="t('amendment.review.correctionPlaceholder')"
+          :placeholder="
+            closing ? undefined : t('amendment.review.correctionPlaceholder')
+          "
         />
       </UFormField>
       <div class="flex flex-wrap items-center gap-2">
         <UButton
           type="submit"
-          icon="i-lucide-send"
+          :color="closing ? 'error' : 'primary'"
+          :icon="closing ? 'i-lucide-ban' : 'i-lucide-send'"
           :loading="busy === 'correction'"
           :disabled="busy !== null"
-          :label="t('amendment.review.actions.sendCorrection')"
+          :label="
+            closing
+              ? t('amendment.inadmissibleOnReview.send')
+              : t('amendment.review.actions.sendCorrection')
+          "
         />
         <UButton
           color="neutral"

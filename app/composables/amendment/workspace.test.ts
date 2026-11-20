@@ -49,7 +49,9 @@ import {
   isAmendmentPresenter,
   amendmentAuthorsInOrder,
   amendmentAcceptBlocked,
+  amendmentAnswerable,
   amendmentAwaitsPosition,
+  amendmentInadmissibleOnReview,
   amendmentMainAuthor,
   amendmentPositionBlocker,
   amendmentPositionNext,
@@ -1000,6 +1002,49 @@ describe("the main presenter's answer", () => {
     ).toBe(false);
   });
 
+  it("lets the answer change on what the assembly approved, outside the review", () => {
+    const voted = { finalVoted: true };
+    for (const rule of rules) {
+      for (const approvalMethod of ["vote", "assent", "formal"] as const) {
+        const approved = amendment("a", [], {
+          status: "approved",
+          approvalMethod,
+          decidedAt: "2026-11-02T10:00:00.000Z",
+        });
+        // Not waiting for an answer: the review and the counts leave it out.
+        expect(amendmentAwaitsPosition(approved, rule)).toBe(false);
+        expect(amendmentPositionBlocker(approved, rule)).toBeNull();
+        expect(amendmentAnswerable(approved, rule)).toBe(true);
+        expect(amendmentAnswerable(approved, rule, voted)).toBe(false);
+        expect(amendmentPositionNext(approved, rule)).toBe("decided");
+        expect(amendmentPositionNext(approved, rule, voted)).toBeNull();
+        // Kept private: the presenter does not read it, so it is closed.
+        const kept = { ...approved, reviewState: "validated" as const };
+        expect(amendmentAnswerable(kept, rule)).toBe(false);
+        expect(
+          amendmentAnswerable(kept, rule, { presenterSeesValidated: true }),
+        ).toBe(true);
+      }
+      const rejected = amendment("a", [], {
+        status: "rejected",
+        decidedAt: "2026-11-02T10:00:00.000Z",
+      });
+      expect(amendmentAnswerable(rejected, rule)).toBe(false);
+      // Undecided ones answer as before.
+      expect(amendmentAnswerable(amendment("a", []), rule)).toBe(true);
+    }
+    // One the presenter's acceptance incorporated, under "vote": decided.
+    expect(
+      amendmentAnswerable(
+        amendment("a", [], {
+          status: "approved",
+          approvalMethod: "proponent",
+        }),
+        "vote",
+      ),
+    ).toBe(false);
+  });
+
   it("waits for a transactional's main authors first", () => {
     const transactional = (extra: Partial<AmendmentDto>) =>
       amendment("t", [], { kind: "transactional", ...extra });
@@ -1129,6 +1174,60 @@ describe("the main presenter's answer", () => {
         "incorporate",
       ),
     ).toBeNull();
+  });
+});
+
+describe("amendmentInadmissibleOnReview", () => {
+  const reviewer = (
+    extra: Partial<AmendmentDto> = {},
+    can: Partial<AmendmentDto["can"]> = {},
+  ) => {
+    const base = amendment("a", [], extra);
+    return { ...base, can: { ...base.can, review: true, ...can } };
+  };
+
+  it("offers it while the Secretaría checks it, late or not", () => {
+    const waiting = reviewer(
+      { reviewState: "pending_validation" },
+      {
+        validate: true,
+      },
+    );
+    expect(amendmentInadmissibleOnReview(waiting)).toBe(true);
+    expect(amendmentInadmissibleOnReview({ ...waiting, late: true })).toBe(
+      true,
+    );
+  });
+
+  it("offers it on a validated one going back, but never a late one", () => {
+    const validated = reviewer({}, { unvalidate: true });
+    expect(amendmentInadmissibleOnReview(validated)).toBe(true);
+    expect(amendmentInadmissibleOnReview({ ...validated, late: true })).toBe(
+      false,
+    );
+  });
+
+  it("offers it on a draft sent back, until the final vote", () => {
+    const returned = reviewer({
+      status: "draft",
+      reviewState: "correction_requested",
+    });
+    expect(amendmentInadmissibleOnReview(returned)).toBe(true);
+    expect(amendmentInadmissibleOnReview(returned, true)).toBe(false);
+    expect(
+      amendmentInadmissibleOnReview(
+        reviewer({ status: "draft", reviewState: null }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is only for whoever reviews amendments", () => {
+    const base = amendment("a", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+    });
+    expect(amendmentInadmissibleOnReview(base)).toBe(false);
+    expect(amendmentInadmissibleOnReview(reviewer())).toBe(false);
   });
 });
 

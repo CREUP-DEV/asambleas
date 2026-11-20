@@ -627,7 +627,10 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     case "amendment_admitted":
       return make("home.news.amendment.admitted", "success");
     case "amendment_inadmissible":
-      return make("home.news.amendment.inadmissible", "error");
+      // Not admitted by the Secretaría while reviewing it: no correction.
+      return news.value === "review"
+        ? make("home.news.amendment.inadmissibleReview", "error")
+        : make("home.news.amendment.inadmissible", "error");
     case "amendment_transacted":
       // Named after the transactional that replaced it, when known.
       return news.value

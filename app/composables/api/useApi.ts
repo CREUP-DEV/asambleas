@@ -103,6 +103,10 @@ const REASON_KEYS: Record<string, string> = {
   control_sheet_stale: "common.errors.controlSheetStale",
   // A «Retirado» by hand on an item with documents.
   control_sheet_withdrawn_document: "common.errors.controlSheetWithdrawn",
+  // The Mesa's mark or a result by hand on an item still waiting for a vote.
+  control_sheet_awaiting_vote: "common.errors.controlSheetAwaitingVote",
+  // The Mesa's mark on an amendment still to be decided.
+  control_sheet_amendment_undecided: "common.errors.controlSheetUndecided",
   // A vote on an agenda item while one of its documents is voted: the
   // item is voted through the documents' final votes.
   item_has_voted_documents: "common.errors.itemHasVotedDocuments",

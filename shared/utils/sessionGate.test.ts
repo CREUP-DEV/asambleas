@@ -36,6 +36,10 @@ describe("session gate", () => {
     expect(liveStateClearsOnly({ documentId: "doc" })).toBe(false);
     expect(liveStateClearsOnly({ amendmentId: "amendment" })).toBe(false);
     expect(liveStateClearsOnly({ voteId: "vote" })).toBe(false);
+    // A bloc goes on screen only in session; taking it off, always.
+    expect(liveStateClearsOnly({ amendmentBloc: ["a", "b"] })).toBe(false);
+    expect(liveStateClearsOnly({ amendmentBloc: null })).toBe(true);
+    expect(liveStateClearsOnly({ amendmentBloc: [] })).toBe(true);
   });
 
   it("tells what moves the screen, which only the console in control sends", () => {
@@ -43,6 +47,8 @@ describe("session gate", () => {
     expect(liveStateMovesScreen({ documentId: "doc" })).toBe(true);
     expect(liveStateMovesScreen({ amendmentId: "amendment" })).toBe(true);
     expect(liveStateMovesScreen({ voteId: "vote" })).toBe(true);
+    expect(liveStateMovesScreen({ amendmentBloc: ["a"] })).toBe(true);
+    expect(liveStateMovesScreen({ amendmentBloc: null })).toBe(true);
     // Taking the debate off the screen moves it too.
     expect(liveStateMovesScreen({ amendmentId: null, voteId: null })).toBe(
       true,

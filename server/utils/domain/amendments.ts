@@ -180,6 +180,8 @@ import {
   positionRecordedBy,
   positionRecorder,
   reclassifyPositionPlan,
+  REVIEW_INADMISSION_MESSAGE,
+  reviewInadmissionCase,
   shouldAutoAcceptPosition,
   submissionLate,
   transactionalReopenBlocker,
@@ -3336,6 +3338,9 @@ export async function decideAmendmentAdmission(
               admission: "admitted",
               status: "submitted",
               decidedAt: null,
+              // Readmitted: the reason it was not admitted no longer holds.
+              // A submitted one keeps the note the Mesa left on reopening it.
+              outcomeNote: sql`case when ${amendments.status} = 'inadmissible' then null else ${amendments.outcomeNote} end`,
             })
             .where(
               and(
@@ -3354,6 +3359,9 @@ export async function decideAmendmentAdmission(
               // the instant it was declared so: what that closed is dated
               // with it (sessionClosingSourceIds).
               decidedAt: sql`case when ${amendments.status} = 'inadmissible' then ${amendments.decidedAt} else ${nowSql} end`,
+              // The reason, for its authors (user's decision of 2026-11-19);
+              // one already inadmissible keeps the reason it was given then.
+              outcomeNote: sql`case when ${amendments.status} = 'inadmissible' then ${amendments.outcomeNote} else ${body.note ?? null} end`,
             })
             .where(
               and(
@@ -3412,6 +3420,13 @@ export async function decideAmendmentAdmission(
             ? { voteId: voteRow.id, voteResult: voteRow.result }
             : {}),
           ...(unvalidated.has(id) ? { validated: true } : {}),
+          // The reason it is not admitted, for the email and the news; one
+          // already inadmissible (a failed vote to readmit it) keeps its own.
+          ...(admission === "inadmissible" &&
+          body.note &&
+          seen.get(id)?.status !== "inadmissible"
+            ? { note: body.note }
+            : {}),
         },
         actor,
       });
@@ -3874,10 +3889,17 @@ async function assertValidationReopenable(
   // Under shareLockAssembly: PUT .../live-state (lockAssembly) waits, so
   // the projection never points at it once it stops being public.
   const [live] = await tx
-    .select({ amendmentId: liveState.amendmentId })
+    .select({
+      amendmentId: liveState.amendmentId,
+      amendmentBloc: liveState.amendmentBloc,
+    })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId));
-  if (live?.amendmentId === amendmentId) {
+  // On its own or in the bloc on screen (user's decision of 2026-11-19).
+  if (
+    live?.amendmentId === amendmentId ||
+    (live?.amendmentBloc ?? []).includes(amendmentId)
+  ) {
     fail(409, "La Mesa la tiene en pantalla: quítala de la proyección antes", {
       messageKey: "amendment.validationUndo.errors.onScreen",
     });
@@ -4063,6 +4085,155 @@ export async function requestAmendmentCorrection(
               published: amendment.publishedAt !== null,
             }
           : {}),
+        ...(positionReset ? { positionReset: true } : {}),
+      },
+      actor,
+    });
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * The Secretaría declares an amendment not admitted while reviewing it,
+ * when it cannot be corrected (user's decision of 2026-11-19: «¿Puede
+ * corregirla?» «No», POST .../correction with `correctable: false`):
+ * one waiting for its check, one it validated that can still go back to
+ * review (not a late one: the assembly decides on those once validated), or
+ * a draft it already sent back for a correction (reviewInadmissionCase).
+ * It becomes `inadmissible` (status and admission), decided now, with the
+ * note as its outcome note, which its authors read and, if it was public,
+ * everyone who sees it. A `decisions` row records it (kind "inadmission",
+ * method "secretaria"), and amendment_inadmissible says it came from the
+ * review (`onReview`) with the note, so the email and the news say it
+ * cannot be corrected. Its validation and publication stay as they were:
+ * one never validated stays private and leaves the inbox. A returned draft
+ * gets back the presentation its correction cleared (submittedAt and who
+ * sent it, from its latest amendment_submitted), so a later readmission by
+ * the Mesa has one. One validated has the presenter's answer reset, as a
+ * correction does. The Mesa may readmit it (POST .../admission). Same locks
+ * as requestAmendmentCorrection, and the optimistic lock on the amendment.
+ */
+export async function declareInadmissibleOnReview(
+  ctx: AmendmentContext,
+  body: CorrectionBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment, now } = ctx;
+  assertReviewer(actor);
+  assertNotFinal(ctx);
+  const footing = reviewInadmissionCase({
+    ...amendment,
+    authorsApproval: authorsApproval(amendment),
+  });
+  if (!footing) fail(409, REVIEW_INADMISSION_MESSAGE);
+  const validated = footing === "validated";
+  if (validated && ctx.assembly.status === "closed") {
+    fail(409, "La asamblea está cerrada");
+  }
+
+  await db.transaction(async (tx) => {
+    if (validated) await shareLockAssembly(tx, ctx.assembly.id);
+    await lockDocument(tx, ctx.document.id, "share");
+    if (validated) {
+      await assertValidationReopenable(tx, amendment.id, ctx.assembly.id);
+    }
+    // A returned draft: its presentation as the latest one recorded it.
+    const [presented] =
+      footing === "returned"
+        ? await tx
+            .select({
+              at: events.createdAt,
+              userId: events.actorUserId,
+            })
+            .from(events)
+            .where(
+              and(
+                eq(events.entityType, "amendment"),
+                eq(events.entityId, amendment.id),
+                eq(events.type, "amendment_submitted"),
+              ),
+            )
+            .orderBy(desc(events.createdAt))
+            .limit(1)
+        : [];
+    const updated = await tx
+      .update(amendments)
+      .set({
+        status: "inadmissible",
+        admission: "inadmissible",
+        decidedAt: now,
+        outcomeNote: body.note,
+        ...(footing === "returned"
+          ? {
+              submittedAt: presented?.at ?? amendment.correctionRequestedAt,
+              submittedByUserId: presented?.userId ?? null,
+            }
+          : {}),
+      })
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          footing === "returned"
+            ? and(
+                eq(amendments.status, "draft"),
+                isNotNull(amendments.correctionRequestedAt),
+              )
+            : eq(amendments.status, "submitted"),
+          validated
+            ? isNotNull(amendments.validatedAt)
+            : isNull(amendments.validatedAt),
+          buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    const positionReset = validated
+      ? await resetPosition(tx, amendment.id)
+      : false;
+
+    const decisionId = cuid();
+    await tx.insert(decisions).values({
+      id: decisionId,
+      assemblyId: ctx.assembly.id,
+      kind: "inadmission",
+      method: "secretaria",
+      voteId: null,
+      subjectIds: [amendment.id],
+      note: body.note,
+      decidedByUserId: actor.user.id,
+    });
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "decision",
+      entityId: decisionId,
+      type: "decision_recorded",
+      payload: {
+        kind: "inadmission",
+        method: "secretaria",
+        subjectIds: [amendment.id],
+      },
+      actor,
+    });
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "amendment_inadmissible",
+      payload: {
+        decisionId,
+        method: "secretaria",
+        note: body.note,
+        onReview: true,
+        ...(validated
+          ? {
+              afterValidation: true,
+              published: amendment.publishedAt !== null,
+            }
+          : {}),
+        ...(footing === "returned" ? { afterCorrection: true } : {}),
         ...(positionReset ? { positionReset: true } : {}),
       },
       actor,
@@ -4577,12 +4748,14 @@ async function incorporateAcceptance(
 }
 
 /**
- * Under the "incorporate" rule, approves the late amendments among `ids`
- * the assembly has just admitted that their main presenter had already
- * accepted (user's decision of 2026-11-17: a late one is answered once
- * validated, and the acceptance waits for the admission to incorporate
- * it). Same locks as autoAcceptFormal, which runs before it; the position
- * rows it locks are read here again.
+ * Under the "incorporate" rule, approves the amendments among `ids` that
+ * have just become undecided and admitted with their main presenter's
+ * acceptance already on record: the late ones the assembly has just
+ * admitted (user's decision of 2026-11-17: a late one is answered once
+ * validated, and the acceptance waits for the admission to incorporate it)
+ * and one the Mesa has just reopened that keeps its acceptance. Never a
+ * transactional. Same locks as autoAcceptFormal, which runs before it; the
+ * position rows it locks are read here again.
  */
 async function incorporateOnAdmission(
   tx: Tx,
@@ -4754,8 +4927,12 @@ async function latestPositionAnswer(
  * document's "incorporate" rule accepting approves the amendment at once
  * (approval method "proponent"), which closes the pending transactionals
  * over it, and moving away from "accept" reopens it (positionEffect,
- * recordPosition); after the final vote nothing changes. The automatic
- * acceptance of a formal amendment changes here like any other answer.
+ * recordPosition); after the final vote nothing changes. One the assembly
+ * already approved (by a vote, by assent or as a formal one) can still be
+ * answered until then (answerableAfterDecision, user's decision of
+ * 2026-11-19): only the answer and its position_changed are recorded, the
+ * approval stays. The automatic acceptance of a formal amendment changes
+ * here like any other answer.
  */
 export async function setAmendmentPosition(
   ctx: AmendmentContext,
@@ -5311,6 +5488,19 @@ export async function applyAmendmentOutcome(
       lockedIds: locked.map((row) => row.id),
       sourceMap: dependents.sourceMap,
       parties,
+      rule,
+      voted: false,
+    });
+    // Undecided again with its presenter's acceptance kept (given after
+    // the assembly approved it, answerableAfterDecision, or under the
+    // "vote" rule before the document moved to "incorporate"): under
+    // "incorporate" an acceptance never leaves it undecided, so it is
+    // incorporated again, as when accepted (positionEffect). Same locks as
+    // autoAcceptFormal above; a transactional is left as it is.
+    await incorporateOnAdmission(tx, ctx, {
+      ids: [amendment.id],
+      lockedIds: locked.map((row) => row.id),
+      sourceMap: dependents.sourceMap,
       rule,
       voted: false,
     });

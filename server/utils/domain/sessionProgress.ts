@@ -2,32 +2,39 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { SessionProgressDto } from "~~/shared/types/api";
 import {
   itemsAwaitingVote,
-  itemsLeftTreated,
+  itemsPresentedTreated,
+  sessionTreatedItems,
+  type PresentedTarget,
 } from "~~/shared/utils/sessionProgress";
 import { db } from "../../db";
 import {
   agendaItems,
   controlSheetItems,
   documents,
+  liveState,
   votes,
 } from "../../db/schema";
 import type { Actor } from "./actor";
 import { titleDocumentPayload } from "./agendaWrites";
 import { recordEvent, type Executor } from "./events";
+import { loadItemVoteRows } from "./votes";
 
 /**
  * How far the session has gone, as the Mesa's console marks it (user's
- * decision of 2026-11-18):
+ * decisions of 2026-11-18 and 2026-11-19):
  *
  * - a document is «Proyectado» once the Mesa first puts it on screen during
  *   the session (`documents.first_projected_at`, never cleared);
- * - when the debate moves from one agenda item to another, the item left
- *   and its documents' automatic sub-items become treated in the control
- *   sheet (`itemsLeftTreated`): the Mesa's «Tratado», set as if the Mesa
- *   had ticked it (`control_sheet_treated_changed` with `byDebate`), and
- *   untick it there like any other. What still waits for a vote (a voted
- *   document without its final vote, an item marked «Se vota el punto»
- *   without its vote) is left alone: it is treated once voted.
+ * - what the Mesa presents in session (the live state moves to an agenda
+ *   item, or to a document, whose own item it is) becomes treated in the
+ *   control sheet at once (`itemsPresentedTreated`): the Mesa's «Tratado»,
+ *   set as if the Mesa had ticked it (`control_sheet_treated_changed` with
+ *   `byDebate`), and unticked from the sheet or the console like any other.
+ *   Only what is presented, never the items above it; what still waits for
+ *   a vote (a voted document without its final vote, an item marked «Se vota
+ *   el punto» without its vote, and the items above them) is left alone: it
+ *   is treated once voted. A mark the Mesa took away comes back only when
+ *   the item is presented again.
  *
  * Both run inside updateLiveState's transaction, which holds the assembly
  * row FOR UPDATE: the sheet's writes take it FOR SHARE first, so they wait.
@@ -46,27 +53,34 @@ export async function stampProjected(
     );
 }
 
+type AgendaItemRow = typeof agendaItems.$inferSelect;
+type ProgressDocumentRow = {
+  id: string;
+  agendaItemId: string;
+  voted: boolean;
+  status: (typeof documents.$inferSelect)["status"];
+  finalVoteId: string | null;
+};
+
 /**
- * Marks treated what the debate leaves behind going from `leftId` to
- * `nextId`. Only rows not treated yet: a mark the Mesa took away by hand
- * comes back only when the debate leaves that item again.
+ * The assembly's agenda items, its documents and the items that still
+ * wait for a vote (itemsAwaitingVote, over the whole agenda): what the
+ * marks set by presenting and by hand are checked against.
  */
-export async function markLeftItemsTreated(
-  tx: Executor,
-  input: {
-    assemblyId: string;
-    leftId: string | null;
-    nextId: string | null;
-    actor: Actor;
-  },
-): Promise<void> {
-  if (!input.leftId || !input.nextId || input.leftId === input.nextId) return;
+export async function loadAwaitingVote(
+  executor: Executor,
+  assemblyId: string,
+): Promise<{
+  items: AgendaItemRow[];
+  documents: ProgressDocumentRow[];
+  awaiting: Set<string>;
+}> {
   const [items, documentRows, itemVotes] = await Promise.all([
-    tx
+    executor
       .select()
       .from(agendaItems)
-      .where(eq(agendaItems.assemblyId, input.assemblyId)),
-    tx
+      .where(eq(agendaItems.assemblyId, assemblyId)),
+    executor
       .select({
         id: documents.id,
         agendaItemId: documents.agendaItemId,
@@ -75,27 +89,42 @@ export async function markLeftItemsTreated(
         finalVoteId: documents.finalVoteId,
       })
       .from(documents)
-      .where(eq(documents.assemblyId, input.assemblyId)),
-    tx
+      .where(eq(documents.assemblyId, assemblyId)),
+    executor
       .select({ subjectId: votes.subjectId })
       .from(votes)
       .where(
         and(
-          eq(votes.assemblyId, input.assemblyId),
+          eq(votes.assemblyId, assemblyId),
           eq(votes.subjectType, "agenda_item"),
           isNull(votes.voidedAt),
         ),
       ),
   ]);
-  // Nothing that still waits for a vote is treated by moving on.
   const awaiting = itemsAwaitingVote(
     items,
     documentRows,
     new Set(itemVotes.map((vote) => vote.subjectId)),
   );
-  const ids = itemsLeftTreated(items, input.leftId, input.nextId, awaiting);
+  return { items, documents: documentRows, awaiting };
+}
+
+/**
+ * Sets the Mesa's mark on `ids`, as if the Mesa had ticked them (byDebate):
+ * only rows not marked yet, each with its event.
+ */
+async function markItemsTreated(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    ids: string[];
+    items: readonly AgendaItemRow[];
+    actor: Actor;
+  },
+): Promise<void> {
+  const { ids } = input;
   if (ids.length === 0) return;
-  const byId = new Map(items.map((item) => [item.id, item]));
+  const byId = new Map(input.items.map((item) => [item.id, item]));
 
   await tx
     .insert(controlSheetItems)
@@ -155,36 +184,184 @@ export async function markLeftItemsTreated(
   }
 }
 
+/** The live state's agenda item and the item of its document. */
+function presentedTarget(
+  state: { agendaItemId: string | null; documentId: string | null },
+  documentRows: readonly ProgressDocumentRow[],
+): PresentedTarget {
+  const document = state.documentId
+    ? documentRows.find((row) => row.id === state.documentId)
+    : undefined;
+  return {
+    agendaItemId: state.agendaItemId,
+    documentItemId: document?.agendaItemId ?? null,
+  };
+}
+
+/**
+ * Marks treated what the live state presents now and did not before
+ * (itemsPresentedTreated of `next` minus that of `previous`): taking a
+ * document off or moving between amendments never marks again an item the
+ * Mesa has just unticked. `previous` null marks everything presented (the
+ * session opening with something on screen).
+ */
+export async function markPresentedTreated(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    previous: { agendaItemId: string | null; documentId: string | null } | null;
+    next: { agendaItemId: string | null; documentId: string | null };
+    actor: Actor;
+  },
+): Promise<void> {
+  if (!input.next.agendaItemId && !input.next.documentId) return;
+  const {
+    items,
+    documents: documentRows,
+    awaiting,
+  } = await loadAwaitingVote(tx, input.assemblyId);
+  const before = new Set(
+    input.previous
+      ? itemsPresentedTreated(
+          items,
+          presentedTarget(input.previous, documentRows),
+        )
+      : [],
+  );
+  const ids = itemsPresentedTreated(
+    items,
+    presentedTarget(input.next, documentRows),
+    awaiting,
+  ).filter((id) => !before.has(id));
+  await markItemsTreated(tx, {
+    assemblyId: input.assemblyId,
+    ids,
+    items,
+    actor: input.actor,
+  });
+}
+
+/**
+ * The session opens (or resumes) with something already on screen: it is
+ * presented from now on, so it is marked as on any move (user's decision of
+ * 2026-11-19). Runs in the status change's transaction.
+ */
+export async function markOnScreenAtOpen(
+  tx: Executor,
+  assemblyId: string,
+  actor: Actor,
+): Promise<void> {
+  const [state] = await tx
+    .select({
+      agendaItemId: liveState.agendaItemId,
+      documentId: liveState.documentId,
+    })
+    .from(liveState)
+    .where(eq(liveState.assemblyId, assemblyId));
+  if (!state) return;
+  if (state.documentId) await stampProjected(tx, state.documentId);
+  await markPresentedTreated(tx, {
+    assemblyId,
+    previous: null,
+    next: state,
+    actor,
+  });
+}
+
 /**
  * GET .../session-progress (session:moderate): the documents projected
- * and the agenda items the Mesa's mark says are treated. Ids only: the
- * console has the items and documents already.
+ * and where every agenda item stands (sessionTreatedItems, the control
+ * sheet's rule), with the mark's token so the console can undo or set it
+ * again. Ids and flags only: the console has the items and documents.
  */
 export async function loadSessionProgress(
   assemblyId: string,
 ): Promise<SessionProgressDto> {
-  const [projected, treated] = await Promise.all([
-    db
-      .select({ id: documents.id })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.assemblyId, assemblyId),
-          isNotNull(documents.firstProjectedAt),
+  const [projected, marks, items, documentRows, itemVoteRows] =
+    await Promise.all([
+      db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.assemblyId, assemblyId),
+            isNotNull(documents.firstProjectedAt),
+          ),
         ),
-      ),
-    db
-      .select({ id: controlSheetItems.agendaItemId })
-      .from(controlSheetItems)
-      .where(
-        and(
-          eq(controlSheetItems.assemblyId, assemblyId),
-          isNotNull(controlSheetItems.treatedAt),
-        ),
-      ),
-  ]);
+      db
+        .select({
+          agendaItemId: controlSheetItems.agendaItemId,
+          treatedAt: controlSheetItems.treatedAt,
+          manualResult: controlSheetItems.manualResult,
+          progressUpdatedAt: controlSheetItems.progressUpdatedAt,
+        })
+        .from(controlSheetItems)
+        .where(eq(controlSheetItems.assemblyId, assemblyId)),
+      db
+        .select({
+          id: agendaItems.id,
+          parentId: agendaItems.parentId,
+          generatedForDocumentId: agendaItems.generatedForDocumentId,
+          voted: agendaItems.voted,
+        })
+        .from(agendaItems)
+        .where(eq(agendaItems.assemblyId, assemblyId)),
+      db
+        .select({
+          id: documents.id,
+          agendaItemId: documents.agendaItemId,
+          voted: documents.voted,
+          status: documents.status,
+          finalVoteId: documents.finalVoteId,
+        })
+        .from(documents)
+        .where(eq(documents.assemblyId, assemblyId)),
+      loadItemVoteRows(assemblyId),
+    ]);
+  const finalVoteIds = documentRows
+    .map((row) => row.finalVoteId)
+    .filter((id): id is string => id !== null);
+  const finalVotes =
+    finalVoteIds.length > 0
+      ? await db.select().from(votes).where(inArray(votes.id, finalVoteIds))
+      : [];
+  const finalVoteById = new Map(finalVotes.map((vote) => [vote.id, vote]));
+  const treatments = sessionTreatedItems(
+    items,
+    documentRows.map((row) => {
+      const vote = row.finalVoteId ? finalVoteById.get(row.finalVoteId) : null;
+      return { ...row, finalVote: vote ? sheetVote(vote) : null };
+    }),
+    itemVoteRows.map((vote) => ({
+      ...sheetVote(vote),
+      id: vote.id,
+      subjectId: vote.subjectId,
+      recordedAt: vote.recordedAt.toISOString(),
+      voidedAt: vote.voidedAt?.toISOString() ?? null,
+    })),
+    marks.map((mark) => ({
+      agendaItemId: mark.agendaItemId,
+      treated: mark.treatedAt !== null,
+      manualResult: mark.manualResult,
+      token: mark.progressUpdatedAt?.toISOString() ?? null,
+    })),
+  );
   return {
     projectedDocumentIds: projected.map((row) => row.id).sort(),
-    treatedItemIds: treated.map((row) => row.id).sort(),
+    items: treatments.sort((a, b) => a.id.localeCompare(b.id)),
+  };
+}
+
+/** What the sheet's rule reads of a vote row. */
+function sheetVote(vote: typeof votes.$inferSelect) {
+  return {
+    method: vote.method,
+    result: vote.result,
+    inFavor: vote.inFavor,
+    against: vote.against,
+    abstentions: vote.abstentions,
+    blank: vote.blank,
+    invalid: vote.invalid,
+    unanimous: vote.unanimous,
   };
 }

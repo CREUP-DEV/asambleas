@@ -13,6 +13,7 @@ import {
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
 
 /**
@@ -36,6 +37,13 @@ const open = computed({
   },
 });
 const document = computed(() => session.document.value);
+
+/** What a secret vote counted here announces on the projection. */
+const announce = computed<LiveTallyAnnounce | null>(() =>
+  document.value
+    ? { subject: { type: "document", id: document.value.id } }
+    : null,
+);
 
 /** Every method, assent included: a text nobody opposes needs no count. */
 const FINAL_VOTE_METHODS = [...VOTE_METHODS];
@@ -292,6 +300,7 @@ async function record(): Promise<void> {
           :settings="session.settings.value"
           :headcount="session.voteHeadcount.value"
           :methods="FINAL_VOTE_METHODS"
+          :announce="announce"
           unanimity
         />
 

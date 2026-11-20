@@ -8,6 +8,7 @@ import {
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 
 /**
  * Records the vote on one amendment. It proposes the majority of the
@@ -54,6 +55,12 @@ const transactionalsLine = computed(() =>
   amendment.value ? session.transactionalsOver.line(amendment.value) : null,
 );
 const blocked = computed(() => !isSessionVoteReady(vote.value, outcome.value));
+/** What a secret vote counted here announces on the projection. */
+const announce = computed<LiveTallyAnnounce | null>(() =>
+  amendment.value
+    ? { subject: { type: "amendment", id: amendment.value.id } }
+    : null,
+);
 const saving = computed(() =>
   amendment.value ? Boolean(session.busy.value[amendment.value.id]) : false,
 );
@@ -101,6 +108,7 @@ async function submit(): Promise<void> {
           v-model="vote"
           :settings="session.settings.value"
           :headcount="session.voteHeadcount.value"
+          :announce="announce"
         />
       </form>
     </template>

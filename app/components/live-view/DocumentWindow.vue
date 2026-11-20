@@ -20,20 +20,48 @@ import {
  * part and following again. Another document on screen starts following
  * again; when the Mesa leaves the document, the window keeps it and says it
  * is no longer on screen.
+ *
+ * With `live` false it is a plain preview of any document (the control
+ * sheet's «Vista previa», user's decision of 2026-11-19): `description`
+ * says what it is, nothing follows the Mesa, and each document starts at
+ * its top, keeping the reader's place while it is closed and opened again.
+ * It shows a document only while it is the one asked for (`requestedId`):
+ * the last one never stands in for the next while it loads or when it
+ * could not be loaded (`failed`).
  */
-const props = defineProps<{
-  /** The document in debate, null when the Mesa shows none. */
-  document: DocumentDto | null;
-  /**
-   * The Mesa put another document on screen and it is on its way: the
-   * window shows a skeleton rather than the last one meanwhile.
-   */
-  loading?: boolean;
-  /** Where the Mesa has it scrolled, the latest the page heard. */
-  scroll: LiveScrollDto | null;
-  /** Localized path of the document's page. */
-  documentPath: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** The document in debate, null when the Mesa shows none. */
+    document: DocumentDto | null;
+    /**
+     * The Mesa put another document on screen and it is on its way: the
+     * window shows a skeleton rather than the last one meanwhile.
+     */
+    loading?: boolean;
+    /** Where the Mesa has it scrolled, the latest the page heard. */
+    scroll: LiveScrollDto | null;
+    /** Localized path of the document's page. */
+    documentPath: string | null;
+    /** The document on screen, followed (the live view); false: a preview. */
+    live?: boolean;
+    /** What the window says under its title when it is not `live`. */
+    description?: string;
+    /**
+     * Not `live`: the document asked for, null when none is (closed); the
+     * window shows no other.
+     */
+    requestedId?: string | null;
+    /** Not `live`: the document asked for could not be loaded. */
+    failed?: boolean;
+  }>(),
+  {
+    loading: false,
+    live: true,
+    description: undefined,
+    requestedId: null,
+    failed: false,
+  },
+);
 
 const open = defineModel<boolean>("open", { required: true });
 
@@ -59,6 +87,23 @@ watch(
     if (value) path.value = value;
   },
 );
+/**
+ * The document asked for, kept while the window closes (as `path`), so the
+ * closing window still shows the one it had.
+ */
+const requested = ref(props.requestedId);
+watch(
+  () => props.requestedId,
+  (value) => {
+    if (value) requested.value = value;
+  },
+);
+/** What the window shows: `shown`, unless a preview asked for another. */
+const current = computed(() =>
+  props.live || !requested.value || shown.value?.id === requested.value
+    ? shown.value
+    : null,
+);
 const onScreen = computed(
   () => Boolean(props.document) && props.document?.id === shown.value?.id,
 );
@@ -66,11 +111,11 @@ const onScreen = computed(
 /** The text as the projection shows it: voted, or as published. */
 const blocks = computed(
   () =>
-    shown.value?.consolidatedVersion?.blocks ??
-    shown.value?.baseVersion?.blocks ??
+    current.value?.consolidatedVersion?.blocks ??
+    current.value?.baseVersion?.blocks ??
     [],
 );
-const isFile = computed(() => shown.value?.format === "file");
+const isFile = computed(() => current.value?.format === "file");
 
 /**
  * Following the Mesa, or left where the reader scrolled (`readerAnchor`,
@@ -169,9 +214,13 @@ useEventListener(
 <template>
   <UModal
     v-model:open="open"
-    :title="shown?.title ?? t('liveView.document.view')"
+    :title="current?.title ?? t('liveView.document.view')"
     :description="
-      onScreen ? t('liveView.document.onScreen') : t('liveView.document.gone')
+      !live
+        ? description
+        : onScreen
+          ? t('liveView.document.onScreen')
+          : t('liveView.document.gone')
     "
     :ui="{
       content:
@@ -182,20 +231,27 @@ useEventListener(
   >
     <template #body>
       <CommonDocumentSkeleton v-if="loading" />
-      <div v-else-if="shown" ref="content" class="relative">
+      <UAlert
+        v-else-if="failed"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('liveView.document.loadError')"
+      />
+      <div v-else-if="current" ref="content" class="relative">
         <template v-if="isFile">
           <DocumentPdfPages
-            v-if="shown.fileUrl"
-            :key="shown.id"
-            :url="shown.fileUrl"
-            :title="shown.title"
+            v-if="current.fileUrl"
+            :key="current.id"
+            :url="current.fileUrl"
+            :title="current.title"
             @ready="place"
           />
           <p v-else class="text-muted">
             {{ t("projection.pdfPending") }}
           </p>
         </template>
-        <div v-else-if="blocks.length > 0" :key="shown.id" class="live-doc">
+        <div v-else-if="blocks.length > 0" :key="current.id" class="live-doc">
           <ContentView :blocks="blocks" />
         </div>
         <p v-else class="text-muted">
@@ -205,7 +261,7 @@ useEventListener(
     </template>
 
     <template #footer>
-      <template v-if="onScreen">
+      <template v-if="live && onScreen">
         <p
           v-if="following"
           class="text-muted flex min-h-10 items-center gap-2 text-sm"

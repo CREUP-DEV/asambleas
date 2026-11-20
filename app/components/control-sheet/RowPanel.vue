@@ -51,8 +51,9 @@ const props = defineProps<{
   /**
    * `internal`: a sheet key (ControlSheetDto.can.internal). Without it the
    * panel shows only what is public: the result, the presenter's answer and
-   * the votes; never the treated mark, a result by hand, who spoke, the
-   * observations nor their history (user's decision of 2026-11-19).
+   * the votes; never the Mesa's switch (the lists show whether it was
+   * treated), a result by hand, who spoke, the observations nor their
+   * history (user's decision of 2026-11-19).
    */
   can: { internal: boolean; edit: boolean; moderate: boolean };
   /** The treated mark on its way for this row. */
@@ -90,8 +91,12 @@ const emit = defineEmits<{
   voteChanged: [vote: VoteDto | null];
   /** The presenter's answer to the amendment changed. */
   positionSaved: [amendment: AmendmentDto];
-  /** Someone was noted as having spoken, or taken back. */
-  speakersUpdated: [];
+  /**
+   * Someone was noted as having spoken, or taken back: every turn that
+   * spoke in the assembly as the notes answered, for the page to show at
+   * once.
+   */
+  speakersUpdated: [turns: SpeakingTurnDto[]];
   /** A result was recorded or annulled here: the page fetches again. */
   resultChanged: [];
 }>();
@@ -301,6 +306,19 @@ if (import.meta.client) {
   });
 }
 
+/**
+ * «Guardar» shows only while something waits to be saved, or is saving
+ * (user's decision of 2026-11-19); never while two versions of the
+ * observations are shown and nothing else is unsaved: the warning has its
+ * own buttons.
+ */
+const showSave = computed(
+  () =>
+    (props.can.edit || Boolean(positionAnswer.value?.editable)) &&
+    (anyDirty.value || anySaving.value) &&
+    !(conflict.value !== null && !positionDirty.value),
+);
+
 const status = computed(() => {
   if (anySaving.value) return t("controlSheet.panel.saving");
   if (anyDirty.value) return t("controlSheet.panel.unsaved");
@@ -347,14 +365,25 @@ const itemRow = computed(() =>
 
 const NONE = "none";
 
-/** A «Retirado» by hand is for items without documents only. */
+/**
+ * A «Retirado» by hand is for items without documents only; while the item
+ * waits for a vote, neither «Retirado» nor «Decaído» (its vote treats it),
+ * though one noted before stays shown so it can be taken away.
+ */
+const awaitingVote = computed(
+  () => props.target?.kind === "item" && props.target.row.awaitingVote,
+);
 const resultItems = computed(() => {
   const withDocuments =
     props.target?.kind === "item" && props.target.row.documents.length > 0;
+  const current = itemRow.value?.manualResult ?? null;
   return [
     { value: NONE, label: t("controlSheet.manualResult.none") },
     ...CONTROL_SHEET_MANUAL_RESULTS.filter(
-      (value) => !(withDocuments && value === "withdrawn"),
+      (value) =>
+        value === current ||
+        (!(withDocuments && value === "withdrawn") &&
+          !(awaitingVote.value && value !== "not_applicable")),
     ).map((value) => ({
       value,
       label: t(`controlSheet.manualResult.${value}`),
@@ -384,6 +413,8 @@ const treatedControl = computed<TreatedControl | null>(() => {
     : amendmentTreatedControl(target.row);
 });
 const autoTreated = computed(() => treatedControl.value?.lock === "auto");
+/** Only its vote (an item) or the Mesa's decision (an amendment) treats it. */
+const treatedByVote = computed(() => treatedControl.value?.lock === "vote");
 /** An item a «Retirado» or «Decaído» by hand counts as treated. */
 const treatedByResult = computed(() => treatedControl.value?.lock === "result");
 const treatedMark = computed(() => sheetRow.value?.treated ?? null);
@@ -396,11 +427,22 @@ const treated = computed<boolean>({
     emit("treated", value);
   },
 });
-// A new mark, whoever set it: the open history shows it.
+// A change to the row, whoever made it (the mark, the observations, the
+// result, `listed`): the open history shows it.
 watch(
-  () => treatedControl.value?.token,
-  (token, previous) => {
-    if (token !== previous && historyOpen.value) void loadHistory();
+  () => {
+    const row = sheetRow.value;
+    if (!row) return "";
+    const item = "agendaItemId" in row ? row : null;
+    return [
+      treatedControl.value?.token,
+      row.observationsUpdatedAt,
+      item?.resultUpdatedAt,
+      item?.listedUpdatedAt,
+    ].join("|");
+  },
+  (key, previous) => {
+    if (key !== previous && historyOpen.value) void loadHistory();
   },
 );
 
@@ -531,6 +573,13 @@ function historyDetail(
                   : t("controlSheet.panel.treatedAuto")
               }}
             </template>
+            <template v-else-if="treatedByVote">
+              {{
+                target.kind === "amendment"
+                  ? t("controlSheet.panel.treatedUndecided")
+                  : t("controlSheet.panel.treatedAwaitingVote")
+              }}
+            </template>
             <template v-else-if="treatedByResult">
               {{ t("controlSheet.panel.treatedByResult") }}
             </template>
@@ -604,9 +653,11 @@ function historyDetail(
           :description="
             target.row.outcome.byVote
               ? t('controlSheet.manualResult.byVote')
-              : can.moderate
-                ? t('controlSheet.manualResult.hint')
-                : t('controlSheet.panel.resultMesaOnly')
+              : !can.moderate
+                ? t('controlSheet.panel.resultMesaOnly')
+                : target.row.awaitingVote
+                  ? t('controlSheet.manualResult.awaitingVote')
+                  : t('controlSheet.manualResult.hint')
           "
         >
           <USelect
@@ -640,7 +691,7 @@ function historyDetail(
             "
             :turns="speakerTurns ?? []"
             :writable="speakers.open"
-            @updated="emit('speakersUpdated')"
+            @updated="(turns) => emit('speakersUpdated', turns)"
           />
           <ControlSheetSpeakers v-else :speakers="target.row.speakers" />
         </section>
@@ -715,30 +766,37 @@ function historyDetail(
             @keydown="onKeydown"
             @blur="saveObservations"
           />
-          <div class="flex flex-wrap items-center justify-between gap-2">
+          <!-- Its height kept, so the button showing never moves the panel. -->
+          <div
+            class="flex min-h-8 flex-wrap items-center justify-between gap-2"
+          >
             <p class="text-muted text-xs">
               {{ editedLine(sheetRow?.observationsEdited ?? null) }}
             </p>
-            <!-- The panel's one save: the observations and the answer. -->
+            <!-- The panel's one save: the observations and the answer, only
+                 while something is unsaved (or saving: a click blurs the
+                 field first, which starts the save). -->
             <UButton
-              v-if="can.edit || positionAnswer?.editable"
+              v-if="showSave"
               size="sm"
               icon="i-lucide-save"
               :label="t('controlSheet.panel.save')"
               :loading="anySaving"
-              :disabled="!anyDirty || (conflict !== null && !positionDirty)"
               @click="saveAll"
             />
           </div>
         </div>
         <!-- Without the observations, the answer keeps its own save. -->
-        <div v-else-if="positionAnswer?.editable" class="flex justify-end">
+        <div
+          v-else-if="positionAnswer?.editable"
+          class="flex min-h-8 justify-end"
+        >
           <UButton
+            v-if="anyDirty || anySaving"
             size="sm"
             icon="i-lucide-save"
             :label="t('controlSheet.panel.save')"
             :loading="anySaving"
-            :disabled="!anyDirty"
             @click="saveAll"
           />
         </div>

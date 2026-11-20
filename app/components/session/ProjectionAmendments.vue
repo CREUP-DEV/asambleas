@@ -1,0 +1,155 @@
+<script setup lang="ts">
+import {
+  liveAmendmentCode,
+  liveReplacedBy,
+  type LiveAmendmentRow,
+  type LiveAmendmentState,
+} from "~/components/live-view/-model";
+import { thirdCount, voteTextKey } from "~~/shared/utils/votes";
+
+/**
+ * The amendments of the document in debate as the projection shows them
+ * beside the amendment on screen, in the style of its agenda
+ * (SessionProjectionAgenda, compact): one narrow column, the amendment on
+ * screen highlighted with the brand colour and marked as the current step.
+ * Each row says its code and who presents it; only a decided one says how
+ * it ended, so the list stays calm while the debate goes on: one voted
+ * gives its result and counts («Aprobada 20 / 5 / 3»), one transacted the
+ * transactional that replaced it (an icon and its code), and the rest
+ * their state (user's decision of 2026-11-20).
+ */
+const props = defineProps<{ rows: LiveAmendmentRow[] }>();
+
+const { t } = useI18n();
+
+/** Undecided rows say nothing: the highlight already marks the one debated. */
+const QUIET: ReadonlySet<LiveAmendmentState> = new Set(["debating", "pending"]);
+
+function stateClass(row: LiveAmendmentRow): string {
+  if (row.current) return "text-inverted";
+  switch (row.state) {
+    case "approved":
+    case "incorporated":
+      return "text-(--ui-color-success-800) dark:text-(--ui-color-success-300)";
+    case "rejected":
+    case "inadmissible":
+      return "text-(--ui-color-error-700) dark:text-(--ui-color-error-300)";
+    case "late":
+      return "text-(--ui-color-warning-800) dark:text-(--ui-color-warning-300)";
+    default:
+      return "text-dimmed";
+  }
+}
+
+const STATE_ICONS: Partial<Record<LiveAmendmentState, string>> = {
+  approved: "i-lucide-check",
+  incorporated: "i-lucide-check",
+  rejected: "i-lucide-x",
+  transacted: "i-lucide-git-merge",
+};
+
+interface Outcome {
+  icon: string | null;
+  /** What the row shows: the state, or the transactional's code. */
+  text: string;
+  /** The vote's counts, «20 / 5 / 3», when it was voted. */
+  counts: string | null;
+  /** The whole of it for screen readers. */
+  spoken: string;
+}
+
+/** How a decided amendment ended; null while it is undecided. */
+function outcomeOf(row: LiveAmendmentRow): Outcome | null {
+  if (QUIET.has(row.state)) return null;
+  const label = t(`liveView.state.${row.state}.label`);
+  const icon = STATE_ICONS[row.state] ?? null;
+  if (row.state === "transacted") {
+    const code = liveAmendmentCode(liveReplacedBy(row, props.rows)?.amendment);
+    return code
+      ? {
+          icon,
+          text: code,
+          counts: null,
+          spoken: t("liveView.state.transacted.by", { code }),
+        }
+      : { icon, text: label, counts: null, spoken: label };
+  }
+  const vote = row.amendment.outcomeVote;
+  if (vote && (row.state === "approved" || row.state === "rejected")) {
+    return {
+      icon,
+      text: label,
+      counts: `${vote.inFavor} / ${vote.against} / ${thirdCount(vote)}`,
+      spoken: `${label}. ${t(
+        voteTextKey("projection.resultCounts", vote.method),
+        {
+          inFavor: vote.inFavor,
+          against: vote.against,
+          third: thirdCount(vote),
+        },
+      )}`,
+    };
+  }
+  return { icon, text: label, counts: null, spoken: label };
+}
+
+const entries = computed(() =>
+  props.rows.map((row) => ({
+    row,
+    code:
+      liveAmendmentCode(row.amendment) ||
+      t(`session.enums.amendmentKind.${row.amendment.kind}`),
+    authors: row.amendment.authors.map((author) => author.acronym).join(", "),
+    authorNames: row.amendment.authors.map((author) => author.name).join(", "),
+    outcome: outcomeOf(row),
+  })),
+);
+</script>
+
+<template>
+  <ol class="space-y-2">
+    <li
+      v-for="entry in entries"
+      :key="entry.row.amendment.id"
+      class="relative flex flex-wrap items-baseline gap-x-3 rounded-xl px-4 py-2 text-[clamp(1rem,1.3vw,1.5rem)] transition-colors duration-500 motion-reduce:transition-none"
+      :class="
+        entry.row.current ? 'bg-primary text-inverted font-bold' : 'text-muted'
+      "
+      :aria-current="entry.row.current ? 'step' : undefined"
+    >
+      <span class="shrink-0 font-semibold tabular-nums">{{ entry.code }}</span>
+      <!-- Acronyms on screen, full names for screen readers. -->
+      <span v-if="entry.authors" class="min-w-0 flex-1 truncate">
+        <span aria-hidden="true">{{ entry.authors }}</span>
+        <span class="sr-only">{{ entry.authorNames }}</span>
+      </span>
+      <span v-else class="flex-1" />
+      <template v-if="entry.outcome">
+        <span
+          class="flex shrink-0 items-center gap-1 text-[0.8em] font-semibold"
+          :class="stateClass(entry.row)"
+        >
+          <UIcon
+            v-if="entry.outcome.icon"
+            :name="entry.outcome.icon"
+            class="size-[1.1em] shrink-0 self-center"
+            aria-hidden="true"
+          />
+          <span aria-hidden="true" class="tabular-nums">
+            {{ entry.outcome.text }}
+          </span>
+          <span class="sr-only">{{ entry.outcome.spoken }}</span>
+        </span>
+        <!-- The counts under it, at the right, as the state above. -->
+        <span
+          v-if="entry.outcome.counts"
+          class="basis-full text-end text-[0.8em] font-semibold tabular-nums"
+          :class="stateClass(entry.row)"
+          aria-hidden="true"
+        >
+          {{ entry.outcome.counts }}
+        </span>
+      </template>
+    </li>
+  </ol>
+</template>

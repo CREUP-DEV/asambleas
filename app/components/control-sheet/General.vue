@@ -18,8 +18,10 @@ import {
  * «General» of the control sheet: one row per agenda item it lists, under
  * the items they hang from. A table on large screens, a card per row below
  * them, both with the same fields. The row the Mesa has in debate is
- * marked (aria-current and a ring). «Tratado» only shows here; the Mesa
- * marks it in the row's panel.
+ * marked (aria-current and a ring). «Tratado» only shows here, to every
+ * reader (user's decision of 2026-11-19); the Mesa marks it in the row's
+ * panel. Each document's title links to its page, and the eye beside it
+ * opens it in a floating window without leaving the sheet («Vista previa»).
  *
  * `rows` are the ones the page shows, already filtered and sorted; the
  * headers sort by their column (`sort`). In any order but the agenda's
@@ -46,8 +48,8 @@ const props = defineProps<{
   sort: SheetSort<GeneralSortKey>;
   flat: boolean;
   /**
-   * A sheet key (ControlSheetDto.can.internal): the treated mark, who spoke
-   * and the observations. Without it those columns are not there.
+   * A sheet key (ControlSheetDto.can.internal): who spoke and the
+   * observations. Without it those columns are not there.
    */
   internal: boolean;
   /**
@@ -61,6 +63,8 @@ const emit = defineEmits<{
   sort: [column: GeneralSortKey];
   /** Open this document's amendments in «Enmiendas». */
   amendments: [document: SheetRowDocument];
+  /** Read this document in a floating window, without leaving the sheet. */
+  preview: [document: SheetRowDocument];
 }>();
 
 /** How many amendments of the document «Enmiendas» lists, 0 if none. */
@@ -110,6 +114,10 @@ function openLabel(row: GeneralSheetRow): string {
     },
   );
 }
+
+/** «Vista previa de «Title»», for the eye beside a document's title. */
+const previewLabel = (document: SheetRowDocument) =>
+  t("controlSheet.preview.documentAria", { title: document.title });
 
 /** "3.1. Title" for the button that opens a row. */
 const rowLabel = (row: GeneralSheetRow) =>
@@ -172,10 +180,7 @@ const ALL_COLUMNS: { key: GeneralSortKey; label: string; class: string }[] = [
   { key: "speakers", label: "controlSheet.columns.speakers", class: "w-48" },
 ];
 /** Columns only a sheet key reads. */
-const INTERNAL_COLUMNS: ReadonlySet<GeneralSortKey> = new Set([
-  "treated",
-  "speakers",
-]);
+const INTERNAL_COLUMNS: ReadonlySet<GeneralSortKey> = new Set(["speakers"]);
 const columns = computed(() =>
   props.internal
     ? ALL_COLUMNS
@@ -196,7 +201,7 @@ const itemRows = computed(() =>
       <table
         :class="[
           'w-full text-left text-sm',
-          internal ? 'min-w-[78rem]' : 'min-w-[56rem]',
+          internal ? 'min-w-[78rem]' : 'min-w-[63rem]',
         ]"
       >
         <caption class="sr-only">
@@ -268,6 +273,20 @@ const itemRows = computed(() =>
                     >{{ row.title }}</ULink
                   >
                   <template v-else>{{ row.title }}</template>
+                  <UTooltip
+                    v-if="ownDocument(row)"
+                    :text="t('controlSheet.preview.document')"
+                  >
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      icon="i-lucide-scan-eye"
+                      class="ms-1 align-middle"
+                      :aria-label="previewLabel(ownDocument(row)!)"
+                      @click="emit('preview', ownDocument(row)!)"
+                    />
+                  </UTooltip>
                   <UBadge
                     v-if="row.live"
                     color="primary"
@@ -318,6 +337,17 @@ const itemRows = computed(() =>
                     >
                       {{ document.title }}
                     </ULink>
+                    <UTooltip :text="t('controlSheet.preview.document')">
+                      <UButton
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        icon="i-lucide-scan-eye"
+                        class="-my-1 self-center"
+                        :aria-label="previewLabel(document)"
+                        @click="emit('preview', document)"
+                      />
+                    </UTooltip>
                     <UButton
                       v-if="amendmentsOf(document)"
                       color="primary"
@@ -354,7 +384,7 @@ const itemRows = computed(() =>
                   class="justify-center"
                 />
               </td>
-              <td v-if="internal" class="px-3 py-2 text-center">
+              <td class="px-3 py-2 text-center">
                 <ControlSheetTreated
                   v-bind="treatedOf(row)"
                   :label="
@@ -456,6 +486,20 @@ const itemRows = computed(() =>
                 >{{ row.title }}</ULink
               >
               <template v-else>{{ row.title }}</template>
+              <UTooltip
+                v-if="ownDocument(row)"
+                :text="t('controlSheet.preview.document')"
+              >
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  icon="i-lucide-scan-eye"
+                  class="ms-1 align-middle"
+                  :aria-label="previewLabel(ownDocument(row)!)"
+                  @click="emit('preview', ownDocument(row)!)"
+                />
+              </UTooltip>
               <UBadge
                 v-if="row.live"
                 color="primary"
@@ -503,6 +547,17 @@ const itemRows = computed(() =>
                 >
                   {{ document.title }}
                 </ULink>
+                <UTooltip :text="t('controlSheet.preview.document')">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-scan-eye"
+                    class="-my-1 self-center"
+                    :aria-label="previewLabel(document)"
+                    @click="emit('preview', document)"
+                  />
+                </UTooltip>
                 <UButton
                   v-if="amendmentsOf(document)"
                   color="primary"
@@ -541,7 +596,7 @@ const itemRows = computed(() =>
                 />
               </dd>
             </div>
-            <div v-if="internal">
+            <div>
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>

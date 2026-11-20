@@ -14,6 +14,16 @@ import {
   type SessionAdmissionDecision,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
+
+/**
+ * A secret vote counted here announces a decision of the Mesa: the
+ * decision has no row before it is recorded, and the amendments it
+ * decides may not be public yet, so none is named.
+ */
+const ADMISSION_ANNOUNCE: LiveTallyAnnounce = {
+  subject: { type: "decision", id: null },
+};
 
 /**
  * Admits amendments or declares them inadmissible, one by one or in bulk:
@@ -125,6 +135,28 @@ function transactionalsLine(amendment: AmendmentDto): string | null {
     )
     .join(" ");
 }
+/**
+ * Where the note goes, worded as in Validación's AdmissionModal: not
+ * admitting them makes it the reason their authors read by email and
+ * everyone reads with the amendment (its outcome note), and so does a vote
+ * that does not pass; admitting them leaves it in the decision's record.
+ */
+const noteField = computed(() => {
+  const count = Math.max(chosen.value.length, 1);
+  if (method.value === "vote") {
+    return {
+      label: t("session.admission.note"),
+      help: t("review.late.dialog.voteNoteHelp", count),
+    };
+  }
+  return decision.value === "inadmissible"
+    ? {
+        label: t("review.late.dialog.reasonLabel", count),
+        help: t("review.late.dialog.reasonHelp", count),
+      }
+    : { label: t("session.admission.note"), help: undefined };
+});
+
 const blocked = computed(
   () =>
     chosen.value.length === 0 ||
@@ -252,9 +284,14 @@ async function submit(): Promise<void> {
           :settings="session.settings.value"
           :headcount="session.voteHeadcount.value"
           :show-note="false"
+          :announce="ADMISSION_ANNOUNCE"
         />
 
-        <UFormField :label="t('session.admission.note')" name="admission-note">
+        <UFormField
+          :label="noteField.label"
+          :help="noteField.help"
+          name="admission-note"
+        >
           <UTextarea
             v-model="note"
             :rows="2"

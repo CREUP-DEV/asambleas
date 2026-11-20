@@ -17,9 +17,12 @@ import {
  * «Enmiendas» of the control sheet for one document: its amendments in the
  * console's order, with who presents each («Presenta», tags with a card
  * on hover, the main author first), the answer of the document's main
- * presenter (when the reader may see it), whether it was treated, its result and its vote. A
- * table on large screens, a card per amendment below them. «Tratada» only
- * shows here; the Mesa marks it in the row's panel. `rows` are the ones
+ * presenter (when the reader may see it), whether it was treated (to every
+ * reader, user's decision of 2026-11-19), its result and its vote. A table
+ * on large screens, a card per amendment below them. «Tratada» only shows
+ * here; the Mesa marks it in the row's panel. Each code links to the
+ * amendment in its document, and the eye beside it opens it in a floating
+ * window without leaving the sheet («Vista previa»). `rows` are the ones
  * the page shows, already filtered and sorted; the headers sort by their
  * column (`sort`).
  */
@@ -41,8 +44,8 @@ const props = defineProps<{
   treatedPending: Readonly<Record<string, boolean>>;
   sort: SheetSort<AmendmentSortKey>;
   /**
-   * A sheet key (ControlSheetDto.can.internal): the treated mark, who spoke
-   * and the observations. Without it those columns are not there.
+   * A sheet key (ControlSheetDto.can.internal): who spoke and the
+   * observations. Without it those columns are not there.
    */
   internal: boolean;
   /**
@@ -56,6 +59,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [row: AmendmentSheetRow];
   sort: [column: AmendmentSortKey];
+  /** Read this amendment in a floating window, without leaving the sheet. */
+  preview: [row: AmendmentSheetRow];
 }>();
 
 /** The row's box: what is on its way first, then what the sheet says. */
@@ -127,6 +132,11 @@ function openLabel(amendment: AmendmentDto): string {
   );
 }
 
+/** «Vista previa de la enmienda UGR1», for the eye beside its code. */
+function previewLabel(amendment: AmendmentDto): string {
+  return t("controlSheet.preview.amendmentAria", { code: codeOf(amendment) });
+}
+
 function codeOf(amendment: AmendmentDto): string {
   return amendment.code ?? t("amendment.unnumberedLabel");
 }
@@ -172,10 +182,7 @@ const ALL_COLUMNS: { key: AmendmentSortKey; label: string; class: string }[] = [
   { key: "speakers", label: "controlSheet.columns.speakers", class: "w-44" },
 ];
 /** Columns only a sheet key reads. */
-const INTERNAL_COLUMNS: ReadonlySet<AmendmentSortKey> = new Set([
-  "treated",
-  "speakers",
-]);
+const INTERNAL_COLUMNS: ReadonlySet<AmendmentSortKey> = new Set(["speakers"]);
 const columns = computed(() =>
   ALL_COLUMNS.filter(
     (column) =>
@@ -193,7 +200,7 @@ const columns = computed(() =>
       <table
         :class="[
           'w-full text-left text-sm',
-          internal ? 'min-w-[72rem]' : 'min-w-[52rem]',
+          internal ? 'min-w-[72rem]' : 'min-w-[59rem]',
         ]"
       >
         <caption class="sr-only">
@@ -233,12 +240,25 @@ const columns = computed(() =>
             :data-sheet-row="row.amendment.id"
           >
             <th scope="row" class="px-3 py-2 font-medium">
-              <ULink
-                :to="amendmentPath(row.amendment)"
-                class="text-highlighted underline-offset-2 hover:underline"
-              >
-                {{ codeOf(row.amendment) }}
-              </ULink>
+              <span class="inline-flex items-center gap-1">
+                <ULink
+                  :to="amendmentPath(row.amendment)"
+                  class="text-highlighted underline-offset-2 hover:underline"
+                >
+                  {{ codeOf(row.amendment) }}
+                </ULink>
+                <UTooltip :text="t('controlSheet.preview.document')">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-scan-eye"
+                    class="-my-1"
+                    :aria-label="previewLabel(row.amendment)"
+                    @click="emit('preview', row)"
+                  />
+                </UTooltip>
+              </span>
             </th>
             <td class="px-3 py-2">
               <ControlSheetMemberTags
@@ -267,7 +287,7 @@ const columns = computed(() =>
                 t("controlSheet.positionNone")
               }}</span>
             </td>
-            <td v-if="internal" class="px-3 py-2 text-center">
+            <td class="px-3 py-2 text-center">
               <ControlSheetTreated
                 v-bind="treatedOf(row)"
                 :label="
@@ -346,12 +366,25 @@ const columns = computed(() =>
           :class="row.live ? 'ring-primary ring-2' : ''"
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <ULink
-              :to="amendmentPath(row.amendment)"
-              class="text-highlighted font-medium underline-offset-2 hover:underline"
-            >
-              {{ codeOf(row.amendment) }}
-            </ULink>
+            <span class="inline-flex items-center gap-1">
+              <ULink
+                :to="amendmentPath(row.amendment)"
+                class="text-highlighted font-medium underline-offset-2 hover:underline"
+              >
+                {{ codeOf(row.amendment) }}
+              </ULink>
+              <UTooltip :text="t('controlSheet.preview.document')">
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  icon="i-lucide-scan-eye"
+                  class="-my-1"
+                  :aria-label="previewLabel(row.amendment)"
+                  @click="emit('preview', row)"
+                />
+              </UTooltip>
+            </span>
             <UBadge
               v-bind="stateBadge(row.state)"
               size="sm"
@@ -402,7 +435,7 @@ const columns = computed(() =>
                 }}</span>
               </dd>
             </div>
-            <div v-if="internal">
+            <div>
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>

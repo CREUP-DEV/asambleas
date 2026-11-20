@@ -3,14 +3,24 @@
  * htmlElementToBlocks walks it. Each is one pass over a selector. They add
  * no marks and no nesting that inspectHtml did not count: they remove nodes,
  * unwrap underlines of links, replace a superscript with a letter, move a
- * note's content into a <div> and write its "[1]" before it.
+ * note's content into a <div> and write its "[1]" before it, and move the
+ * cells of tables laid side by side into new <table> and <tr> elements at
+ * the same depth (one table more per part, one row more per row and part;
+ * every new row holds a cell inspectHtml counted).
  */
 
 import { nearestCellFill } from "../../../shared/constants/cellFills";
+import {
+  tableGrid,
+  type GridCell,
+  type TableGroup,
+} from "../../../shared/utils/content/tables";
 
 export interface PrepareImportedHtmlOptions {
   /** The title of the document the import is for. */
   documentTitle?: string;
+  /** Called when tables laid side by side were split (tableGaps). */
+  onTablesSplit?: () => void;
 }
 
 const NOTE_ITEM = /^(footnote|endnote)-(\d+)$/;
@@ -161,14 +171,11 @@ function alignments(document: Document): void {
  * Filled cells (`span.docx-cell`, see cellFills in docx.ts, which writes
  * "dark:rrggbb" or "light:rrggbb"): each takes the palette colour nearest
  * to its Word fill (`data-fill`, nearestCellFill), and on a dark fill it
- * becomes a header cell too (`data-header="true"`). A table that marks dark
- * cells marks its headers by colour, so its other cells are no headers
- * however bold their text (`data-header="false"`); htmlElementToBlocks reads
- * all three. Cells Word itself makes headers (repeated header rows, `th`)
+ * becomes a header cell too (`data-header="true"`); htmlElementToBlocks
+ * reads both. Cells Word itself makes headers (repeated header rows, `th`)
  * stay so.
  */
 function cellFills(document: Document): void {
-  const tables = new Set<Element>();
   for (const span of Array.from(document.querySelectorAll("span.docx-cell"))) {
     const [tone, colour] = (span.textContent ?? "").split(":");
     const cell = span.closest("td, th");
@@ -176,8 +183,22 @@ function cellFills(document: Document): void {
     if (!cell) continue;
     const fill = colour ? nearestCellFill(colour) : null;
     if (fill) cell.setAttribute("data-fill", fill);
-    if (tone !== "dark") continue;
-    cell.setAttribute("data-header", "true");
+    if (tone === "dark") cell.setAttribute("data-header", "true");
+  }
+}
+
+/**
+ * A table with dark cells (see cellFills) marks its headers by colour, so
+ * its other cells of its own are no headers however bold their text
+ * (`data-header="false"`, which htmlElementToBlocks reads). Runs after
+ * tableGaps, so each table split off decides by its own dark cells: a bold
+ * header on white beside a dark one still reads as a header.
+ */
+function colourHeaderTables(document: Document): void {
+  const tables = new Set<Element>();
+  for (const cell of Array.from(
+    document.querySelectorAll('td[data-header="true"], th[data-header="true"]'),
+  )) {
     const table = cell.closest("table");
     if (table) tables.add(table);
   }
@@ -191,6 +212,230 @@ function cellFills(document: Document): void {
       }
     }
   }
+}
+
+const tagOf = (element: Element): string => element.tagName.toLowerCase();
+
+/** A table's own rows, outside or inside thead, tbody and tfoot, as htmlElementToBlocks reads them. */
+function tableRows(table: Element): Element[] {
+  const rows: Element[] = [];
+  for (const child of Array.from(table.children)) {
+    const tag = tagOf(child);
+    if (tag === "tr") rows.push(child);
+    else if (tag === "thead" || tag === "tbody" || tag === "tfoot") {
+      rows.push(
+        ...Array.from(child.children).filter((row) => tagOf(row) === "tr"),
+      );
+    }
+  }
+  return rows;
+}
+
+const rowCells = (row: Element): Element[] =>
+  Array.from(row.children).filter((cell) => {
+    const tag = tagOf(cell);
+    return tag === "td" || tag === "th";
+  });
+
+/** A colspan or rowspan as htmlElementToBlocks reads it. */
+function spanOf(value: string | null): number {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 1 ? Math.min(n, 100) : 1;
+}
+
+const isBlankCell = (cell: Element): boolean =>
+  !(cell.textContent ?? "").trim() && !cell.querySelector("img");
+
+const isHeaderCell = (cell: Element): boolean =>
+  tagOf(cell) === "th" || cell.getAttribute("data-header") === "true";
+
+/**
+ * Splits one table at its spacer columns (see tableGaps). Returns whether it
+ * did; a table that does not clearly hold tables side by side stays whole.
+ */
+function splitTable(
+  document: Document,
+  table: Element,
+  marked: Set<Element>,
+): boolean {
+  const rows = tableRows(table);
+  if (rows.length < 2) return false;
+  const group: TableGroup<Element> = {
+    table: "table",
+    rows: rows.map((row, r) => ({
+      row: String(r),
+      cells: rowCells(row).map((cell, c) => ({
+        cell: {
+          table: "table",
+          row: String(r),
+          cell: `${r}:${c}`,
+          colspan: spanOf(cell.getAttribute("colspan")),
+          rowspan: spanOf(cell.getAttribute("rowspan")),
+        },
+        blocks: [cell],
+      })),
+    })),
+  };
+  const grid = tableGrid(group);
+  const elementOf = (cell: GridCell<Element>) => cell.blocks[0]!;
+  const blank = new Map<Element, boolean>();
+  const isBlank = (cell: GridCell<Element>) => {
+    const element = elementOf(cell);
+    let value = blank.get(element);
+    if (value === undefined) {
+      value = isBlankCell(element);
+      blank.set(element, value);
+    }
+    return value;
+  };
+  // Each row's own cells by the column they start at.
+  const byColumn = grid.rows.map(
+    (row) => new Map(row.map((cell) => [cell.column, cell])),
+  );
+  // An interior column where every row has a blank, unfilled cell of its own
+  // with no top or bottom rule, which no span crosses. Each row checked
+  // passes on a cell of its own, so the checks stay within the cells.
+  const gaps = new Set<number>();
+  for (let column = 1; column < grid.columns - 1; column++) {
+    const spacer = byColumn.every((cells) => {
+      const cell = cells.get(column);
+      if (!cell || cell.colspan !== 1 || cell.rowspan !== 1) return false;
+      const element = elementOf(cell);
+      return (
+        marked.has(element) &&
+        !element.hasAttribute("data-fill") &&
+        isBlank(cell)
+      );
+    });
+    if (spacer) gaps.add(column);
+  }
+  if (gaps.size === 0) return false;
+  // The columns between gaps, consecutive gaps counting as one.
+  const parts: { from: number; to: number }[] = [];
+  const partOf: number[] = [];
+  let from = 0;
+  for (let column = 0; column <= grid.columns; column++) {
+    if (column < grid.columns && !gaps.has(column)) continue;
+    if (column > from) {
+      for (let c = from; c < column; c++) partOf[c] = parts.length;
+      parts.push({ from, to: column });
+    }
+    from = column + 1;
+  }
+  // Each row's own cells in each part, and the rows a span covers there.
+  const cells = parts.map(() => grid.rows.map(() => [] as GridCell<Element>[]));
+  const covered = parts.map(() => grid.rows.map(() => false));
+  for (const [r, row] of grid.rows.entries()) {
+    for (const cell of row) {
+      if (gaps.has(cell.column)) continue;
+      const part = partOf[cell.column];
+      // A cell spanning into a gap: the layout is not what it seems.
+      if (part === undefined || cell.column + cell.colspan > parts[part]!.to) {
+        return false;
+      }
+      cells[part]![r]!.push(cell);
+      for (let below = r + 1; below < r + cell.rowspan; below++) {
+        covered[part]![below] = true;
+      }
+    }
+  }
+  const hasContent = (own: GridCell<Element>[]) =>
+    own.some((cell) => !isBlank(cell));
+  // The parts each row has content in.
+  const withContent = grid.rows.map((_, r) =>
+    cells.reduce((count, part) => count + (hasContent(part[r]!) ? 1 : 0), 0),
+  );
+  // A filled or header cell: a band such as a header or totals row.
+  const isBand = (element: Element) =>
+    element.hasAttribute("data-fill") || isHeaderCell(element);
+  // The last row where each part has plain data: text in a row of its own
+  // with no fill or header cell. Padding only follows it.
+  const lastPlain = cells.map((part) => {
+    let last = -1;
+    for (const [r, own] of part.entries()) {
+      if (hasContent(own) && !own.some((cell) => isBand(elementOf(cell)))) {
+        last = r;
+      }
+    }
+    return last;
+  });
+  // A row a part leaves out: one with nothing of its own there (blank,
+  // unfilled, no header, no span) while it has content in another part,
+  // below the part's last row of plain data, so it only pads that part at
+  // its end (before a closing band at most) to the other's length. A blank
+  // row between data rows stays, or the rows after it would move up a line
+  // and out of step with the other parts; so does a row blank everywhere,
+  // as in any table, and one a span covers.
+  const kept = parts.map((_, p) =>
+    grid.rows.map((_, r) => {
+      if (covered[p]![r]) return true;
+      const own = cells[p]![r]!;
+      if (own.length === 0) return false;
+      const padding = own.every(
+        (cell) =>
+          cell.rowspan === 1 && !isBand(elementOf(cell)) && isBlank(cell),
+      );
+      return !(padding && withContent[r]! > 0 && r > lastPlain[p]!);
+    }),
+  );
+  for (const [p, part] of parts.entries()) {
+    const keptRows = cells[p]!.filter((_, r) => kept[p]![r]);
+    // A part needs two columns, some text and a row of two cells at least:
+    // a table with one cell per row reads as a box of paragraphs.
+    if (part.to - part.from < 2) return false;
+    if (!keptRows.some(hasContent)) return false;
+    if (!keptRows.some((own) => own.length >= 2)) return false;
+    // A row a span covers with no cell of its own there would vanish and
+    // stretch the span over the next one.
+    if (keptRows.some((own) => own.length === 0)) return false;
+  }
+  // The cells move into the new tables, never copied; the spacers go.
+  const tables = parts.map((_, p) => {
+    const part = document.createElement("table");
+    for (const [r, own] of cells[p]!.entries()) {
+      if (!kept[p]![r]) continue;
+      const row = document.createElement("tr");
+      for (const cell of own) row.appendChild(elementOf(cell));
+      part.appendChild(row);
+    }
+    return part;
+  });
+  table.replaceWith(...tables);
+  return true;
+}
+
+/**
+ * Tables Word lays side by side as one table, with an empty column between
+ * them whose cells hide their top and bottom rules (`span.docx-gap`, see
+ * cellFills in docx.ts), become tables one after the other, left to right:
+ * blocks have no layout to put them side by side, and their rows have
+ * nothing to do with each other (a screen reader would read them as one).
+ * Only a clear spacer splits a table: an interior column, blank and unfilled
+ * in every row (each row with a cell of its own there that no span crosses),
+ * in a table of two rows or more, leaving parts of two columns or more with
+ * text. The rows that only pad a shorter part at its end go; a blank row
+ * between a part's data rows stays, so its rows keep their place. Tables
+ * nested in a cell are left alone (htmlElementToBlocks flattens them). Every
+ * marker goes, whether its table splits or not. Returns whether any table
+ * split.
+ */
+function tableGaps(document: Document): boolean {
+  const marked = new Set<Element>();
+  for (const span of Array.from(document.querySelectorAll("span.docx-gap"))) {
+    const cell = span.closest("td, th");
+    span.remove();
+    if (cell) marked.add(cell);
+  }
+  const tables = new Set<Element>();
+  for (const cell of marked) {
+    const table = cell.closest("table");
+    if (table && !table.parentElement?.closest("td, th")) tables.add(table);
+  }
+  let split = false;
+  for (const table of tables) {
+    if (splitTable(document, table, marked)) split = true;
+  }
+  return split;
 }
 
 /**
@@ -289,6 +534,8 @@ export function prepareImportedHtml(
   alignments(document);
   liftImages(document);
   cellFills(document);
+  if (tableGaps(document)) options.onTablesSplit?.();
+  colourHeaderTables(document);
   linkUnderlines(document);
   ordinalSuperscripts(document);
 }

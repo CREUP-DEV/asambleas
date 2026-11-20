@@ -141,7 +141,10 @@ export const ANSWER_STATUS_ICONS: Record<
  * - `decided`: no longer undecided, or the document's final vote is on
  *   record (`context.finalVoted`). One the presenter's acceptance
  *   incorporated stays answerable under the "incorporate" rule until that
- *   final vote: changing the answer reopens it;
+ *   final vote: changing the answer reopens it. One the assembly approved
+ *   otherwise is `decided` here too, though its answer may still change
+ *   from the amendment (amendmentAnswerable): it never joins the review's
+ *   queue, its progress or the home page's count;
  * - `authors`: a transactional its main authors have not all accepted yet
  *   (only their answers count);
  * - `validation`: still with the Secretaría;

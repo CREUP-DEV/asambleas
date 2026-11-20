@@ -165,6 +165,30 @@ const summary = computed(() => {
     : t("review.late.dialog.summaryNoVotes");
 });
 
+/**
+ * Where the note goes. Not treating them makes it the reason their authors
+ * read by email and everyone reads with the amendment (its outcome note),
+ * and so does a vote that does not pass; treating them leaves it in the
+ * decision's record only.
+ */
+const noteField = computed(() => {
+  if (method.value === "vote") {
+    return {
+      label: t("review.late.dialog.note"),
+      help: t("review.late.dialog.voteNoteHelp", props.count),
+    };
+  }
+  return decision.value === "inadmissible"
+    ? {
+        label: t("review.late.dialog.reasonLabel", props.count),
+        help: t("review.late.dialog.reasonHelp", props.count),
+      }
+    : {
+        label: t("review.late.dialog.note"),
+        help: t("review.late.dialog.noteHelp"),
+      };
+});
+
 const description = computed(() =>
   props.count === 1
     ? t("review.late.dialog.descriptionOne", { subject: props.subject })
@@ -237,9 +261,9 @@ function submit() {
         </div>
 
         <UFormField
-          :label="t('review.late.dialog.note')"
+          :label="noteField.label"
           :hint="t('review.late.dialog.optional')"
-          :help="t('review.late.dialog.noteHelp')"
+          :help="noteField.help"
           name="admission-note"
         >
           <UTextarea

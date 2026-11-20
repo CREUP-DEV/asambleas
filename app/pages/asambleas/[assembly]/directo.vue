@@ -29,6 +29,7 @@ import {
   liveAmendmentCode,
   liveAmendmentNote,
   liveAmendmentRows,
+  liveBlocEntries,
   liveSpeakers,
   liveVoteQuestion,
   liveVoteSubject,
@@ -59,6 +60,8 @@ import {
  * when a refresh fails, like the projection; when the live state never
  * loaded, it says so rather than "nothing is being debated".
  * Only published amendments are listed, so the Mesa sees what the room sees.
+ * A bloc the Mesa proposes to approve together shows as a notice with its
+ * codes, approved ones marked (user's decision of 2026-11-19).
  * The Mesa's latest headcount (attendance, delegations, quorum and the
  * majorities it gives) is public too, for transparency.
  * For the same reason, the main presenter's answer to the amendment in
@@ -431,6 +434,14 @@ watch(debatedId, (id) => {
   }
 });
 
+/** The bloc on screen, as the room reads it (liveBlocEntries). */
+const blocEntries = computed(() =>
+  liveBlocEntries(live.value?.amendmentBloc, amendments.value),
+);
+const blocApproved = computed(
+  () => blocEntries.value.filter((entry) => entry.approved).length,
+);
+
 const nothingInDebate = computed(
   () => !live.value?.agendaItemId && !documentId.value,
 );
@@ -770,6 +781,45 @@ watch(
         :description="message"
         :ui="{ description: 'whitespace-pre-line text-base text-default' }"
       />
+
+      <!-- A bloc the Mesa proposes to approve together. -->
+      <UAlert
+        v-if="blocEntries.length > 0"
+        color="primary"
+        variant="subtle"
+        icon="i-lucide-list-checks"
+        :title="t('liveView.bloc.title')"
+      >
+        <template #description>
+          <p class="text-default tabular-nums">
+            {{
+              t("projection.bloc.progress", {
+                approved: blocApproved,
+                total: blocEntries.length,
+              })
+            }}
+          </p>
+          <ul class="mt-2 flex flex-wrap gap-1.5">
+            <li v-for="entry in blocEntries" :key="entry.id">
+              <UBadge
+                size="lg"
+                :color="entry.approved ? 'success' : 'neutral'"
+                :variant="entry.approved ? 'subtle' : 'outline'"
+                :icon="entry.approved ? 'i-lucide-check' : undefined"
+                :class="entry.settled ? 'opacity-60' : ''"
+              >
+                <span class="font-semibold">{{ entry.code }}</span>
+                <span v-if="entry.author" class="text-muted">
+                  {{ entry.author.acronym }}
+                </span>
+                <span v-if="entry.approved" class="sr-only">
+                  {{ t("projection.bloc.approved") }}
+                </span>
+              </UBadge>
+            </li>
+          </ul>
+        </template>
+      </UAlert>
 
       <!--
         The live state never loaded: say so instead of "nothing in debate".

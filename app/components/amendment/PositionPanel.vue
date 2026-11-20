@@ -6,6 +6,7 @@ import type {
   PositionBody,
 } from "~~/shared/types/api";
 import {
+  amendmentAnswerable,
   amendmentAwaitsPosition,
   amendmentPositionBlocker,
   amendmentPositionNext,
@@ -15,6 +16,8 @@ import {
 import {
   acceptIncorporates,
   answersReserved,
+  isIncorporated,
+  wasReopened,
 } from "~/components/proponent-review/-review";
 
 /**
@@ -45,6 +48,12 @@ import {
  * waiting for its parties goes unnamed, though it comes back too) and, when
  * the answers are still reserved (answersReserved), that everyone sees the
  * approval anyway.
+ *
+ * An amendment the assembly already approved (by a vote, by assent or as a
+ * formal one) can still be answered until the final vote (user's decision
+ * of 2026-11-19, amendmentAnswerable): the answer is recorded and the
+ * approval stays, which the panel says instead of what the rule would do;
+ * it is never "your turn" there, only the small secondary action.
  *
  * Answering is the main action for a presenter while nobody has
  * answered yet ("Responder", solid); changing an answer, or the Mesa
@@ -149,11 +158,17 @@ const clashText = computed(() => {
       )
     : null;
 });
+/**
+ * What each answer does. On an amendment already decided they do nothing
+ * else (one line above the options says so), so they carry no description.
+ */
 const items = computed(() =>
   OPTIONS.map((value) => ({
     label: t(`amendment.position.options.${value}`),
-    description:
-      value === "accept" && props.document.acceptedAmendments === "incorporate"
+    description: afterDecision.value
+      ? undefined
+      : value === "accept" &&
+          props.document.acceptedAmendments === "incorporate"
         ? [
             t("amendment.position.descriptions.acceptIncorporate"),
             ...acceptConsequences.value,
@@ -223,12 +238,26 @@ const context = computed<AmendmentPositionContext>(() => ({
   finalVoted: Boolean(props.document.finalVote),
   presenterSeesValidated: presenterSeesValidated(props.document),
 }));
+/** It can be answered now, also once the assembly approved it. */
 const reachable = computed(() =>
-  amendmentAwaitsPosition(
+  amendmentAnswerable(
     props.amendment,
     props.document.acceptedAmendments,
     context.value,
   ),
+);
+/**
+ * Already approved by the assembly: answerable, but never waiting for the
+ * answer (amendmentAwaitsPosition), so never the presenter's turn.
+ */
+const afterDecision = computed(
+  () =>
+    reachable.value &&
+    !amendmentAwaitsPosition(
+      props.amendment,
+      props.document.acceptedAmendments,
+      context.value,
+    ),
 );
 const blocker = computed(() =>
   amendmentPositionBlocker(
@@ -253,7 +282,11 @@ const canEdit = computed(
 );
 /** A presenter's first answer: the main action of the detail. */
 const answerFirst = computed(
-  () => canEdit.value && isPresenter.value && answer.value === "pending",
+  () =>
+    canEdit.value &&
+    isPresenter.value &&
+    answer.value === "pending" &&
+    !afterDecision.value,
 );
 const editLabel = computed(() => {
   if (!isPresenter.value) {
@@ -289,7 +322,11 @@ function cancel(): void {
 
 async function save(): Promise<void> {
   saving.value = true;
-  const before = answer.value;
+  const before = {
+    status: props.amendment.status,
+    approvalMethod: props.amendment.approvalMethod,
+  };
+  const decided = afterDecision.value;
   try {
     const body: PositionBody = {
       position: position.value,
@@ -301,16 +338,17 @@ async function save(): Promise<void> {
       body,
     });
     editing.value = false;
-    const incorporate = props.document.acceptedAmendments === "incorporate";
+    // What the server did with it, read from the amendment it returns.
     toast.add({
       title: t("amendment.position.saved"),
-      description: incorporate
-        ? position.value === "accept"
+      description:
+        position.value === "accept" && isIncorporated(updated)
           ? t("amendment.position.savedIncorporated")
-          : before === "accept"
+          : wasReopened(before, updated)
             ? t("amendment.position.savedReopened")
-            : undefined
-        : undefined,
+            : decided
+              ? t("amendment.position.savedDecided")
+              : undefined,
       color: "success",
       icon: "i-lucide-check",
     });
@@ -382,7 +420,7 @@ async function save(): Promise<void> {
       <p v-if="nextKey" class="text-default flex items-start gap-1.5 text-sm">
         <UIcon
           :name="
-            next === 'incorporated'
+            next === 'incorporated' || next === 'decided'
               ? 'i-lucide-circle-check'
               : 'i-lucide-arrow-right'
           "
@@ -410,6 +448,17 @@ async function save(): Promise<void> {
           aria-hidden="true"
         />
         <span>{{ clashText }}</span>
+      </p>
+      <p
+        v-if="afterDecision"
+        class="text-muted flex items-start gap-1.5 text-sm"
+      >
+        <UIcon
+          name="i-lucide-circle-check"
+          class="mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span>{{ t("amendment.position.next.decided") }}</span>
       </p>
       <URadioGroup
         v-model="position"

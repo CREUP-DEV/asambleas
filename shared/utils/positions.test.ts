@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { positionsArePublic, positionsUnpublishable } from "./positions";
+import {
+  answerableAfterDecision,
+  positionsArePublic,
+  positionsUnpublishable,
+} from "./positions";
 
 const reserved = { positionsPublishedAt: null, positionsDebateStartedAt: null };
 const published = { ...reserved, positionsPublishedAt: "2026-11-18T10:00Z" };
@@ -21,5 +25,40 @@ describe("positionsUnpublishable", () => {
     expect(positionsUnpublishable(published)).toBe(true);
     expect(positionsUnpublishable(debated)).toBe(false);
     expect(positionsUnpublishable(both)).toBe(false);
+  });
+});
+
+describe("answerableAfterDecision", () => {
+  it("keeps the answer open on what the assembly approved", () => {
+    for (const method of ["vote", "assent", "formal"] as const) {
+      expect(
+        answerableAfterDecision({ status: "approved", approvalMethod: method }),
+      ).toBe(true);
+    }
+  });
+
+  it("leaves out incorporated, undecided and closed amendments", () => {
+    expect(
+      answerableAfterDecision({
+        status: "approved",
+        approvalMethod: "proponent",
+      }),
+    ).toBe(false);
+    expect(
+      answerableAfterDecision({ status: "approved", approvalMethod: null }),
+    ).toBe(false);
+    for (const status of [
+      "draft",
+      "submitted",
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "transacted",
+      "inadmissible",
+    ] as const) {
+      expect(answerableAfterDecision({ status, approvalMethod: "vote" })).toBe(
+        false,
+      );
+    }
   });
 });

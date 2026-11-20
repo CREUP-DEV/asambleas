@@ -718,10 +718,14 @@ html {
     font-style: italic;
   }
 
+  /* A long address (a bibliography's URL) breaks anywhere rather than
+     widening its column: in the console's debate column it made the whole
+     column scroll sideways. */
   .rich-text a {
     color: var(--ui-primary);
     text-decoration: underline;
     text-underline-offset: 0.18em;
+    overflow-wrap: anywhere;
   }
 
   /* Document and amendment content outside .rich-text (the editor). */

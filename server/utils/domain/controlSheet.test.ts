@@ -15,8 +15,14 @@ vi.mock("../auth/rbac", () => ({
   isAdmin: (name: string | null | undefined) => name === "Admin",
 }));
 
-const { sheetPositions, visibleSheetAmendments } =
-  await import("./controlSheet");
+const {
+  redactItemRowDto,
+  sheetItemBodyOnlyTreated,
+  sheetItemBodyTreats,
+  sheetPositions,
+  sheetTreatedIds,
+  visibleSheetAmendments,
+} = await import("./controlSheet");
 const { canSeePositions } = await import("./visibility");
 
 const CEA_USER = "u".repeat(24);
@@ -244,6 +250,145 @@ describe("control sheet positions", () => {
       recorder: null,
       updatedAt: null,
       answeredBy: null,
+    });
+  });
+});
+
+describe("the Mesa's treated mark by hand", () => {
+  const token = { updatedAt: null };
+
+  it("tells a body that only sets or undoes the mark", () => {
+    expect(
+      sheetItemBodyOnlyTreated({ treated: { value: true, ...token } }),
+    ).toBe(true);
+    expect(
+      sheetItemBodyOnlyTreated({ treated: { value: false, ...token } }),
+    ).toBe(true);
+    expect(
+      sheetItemBodyOnlyTreated({
+        treated: { value: true, ...token },
+        observations: { value: "x", ...token },
+      }),
+    ).toBe(false);
+    expect(
+      sheetItemBodyOnlyTreated({ listed: { value: true, ...token } }),
+    ).toBe(false);
+  });
+
+  it("tells a body that would treat the item by hand", () => {
+    expect(sheetItemBodyTreats({ treated: { value: true, ...token } })).toBe(
+      true,
+    );
+    expect(sheetItemBodyTreats({ treated: { value: false, ...token } })).toBe(
+      false,
+    );
+    expect(sheetItemBodyTreats({ result: { value: "lapsed", ...token } })).toBe(
+      true,
+    );
+    expect(
+      sheetItemBodyTreats({ result: { value: "withdrawn", ...token } }),
+    ).toBe(true);
+    expect(
+      sheetItemBodyTreats({ result: { value: "not_applicable", ...token } }),
+    ).toBe(false);
+    expect(sheetItemBodyTreats({ result: { value: null, ...token } })).toBe(
+      false,
+    );
+  });
+});
+
+describe("sheetTreatedIds", () => {
+  const STARTED = new Date("2026-05-01T10:00:00.000Z");
+  const amendment = (
+    id: string,
+    over: Partial<{
+      status: LoadedAmendment["status"];
+      approvalMethod: LoadedAmendment["approvalMethod"];
+      decidedAt: Date | null;
+    }> = {},
+  ) => ({
+    id,
+    status: "submitted" as LoadedAmendment["status"],
+    approvalMethod: null as LoadedAmendment["approvalMethod"],
+    decidedAt: null as Date | null,
+    ...over,
+  });
+
+  it("folds the mark and a settled result, never on an item awaiting a vote", () => {
+    const result = sheetTreatedIds({
+      itemRows: [
+        { agendaItemId: "i1", treatedAt: STARTED, manualResult: null },
+        { agendaItemId: "i2", treatedAt: null, manualResult: "lapsed" },
+        { agendaItemId: "i3", treatedAt: null, manualResult: "not_applicable" },
+        { agendaItemId: "i4", treatedAt: STARTED, manualResult: null },
+      ],
+      awaiting: new Set(["i4"]),
+      amendments: [],
+      amendmentRows: [],
+      sessionStartedAt: null,
+    });
+    expect(result).toEqual({ itemIds: ["i1", "i2"], amendmentIds: [] });
+  });
+
+  it("treats an amendment marked or settled in session", () => {
+    const result = sheetTreatedIds({
+      itemRows: [],
+      awaiting: new Set(),
+      amendments: [
+        amendment("a1", {
+          status: "rejected",
+          decidedAt: new Date("2026-05-01T11:00:00.000Z"),
+        }),
+        amendment("a2", {
+          status: "rejected",
+          decidedAt: new Date("2026-04-30T11:00:00.000Z"),
+        }),
+        amendment("a3", {
+          status: "approved",
+          approvalMethod: "proponent",
+          decidedAt: new Date("2026-04-30T11:00:00.000Z"),
+        }),
+        amendment("a4"),
+      ],
+      amendmentRows: [
+        { amendmentId: "a3", treatedAt: STARTED },
+        { amendmentId: "a4", treatedAt: null },
+      ],
+      sessionStartedAt: STARTED,
+    });
+    expect(result.amendmentIds).toEqual(["a1", "a3"]);
+  });
+});
+
+describe("redactItemRowDto", () => {
+  it("keeps only the tokens and whether it is marked", () => {
+    const at = "2026-05-01T10:00:00.000Z";
+    expect(
+      redactItemRowDto({
+        id: "r1",
+        agendaItemId: "i1",
+        listed: true,
+        listedUpdatedAt: at,
+        manualResult: "lapsed",
+        resultUpdatedAt: at,
+        treated: { by: "Someone", at: "2026-05-01T09:00:00.000Z" },
+        progressUpdatedAt: at,
+        observations: "Internal note",
+        observationsEdited: { by: "Someone", at },
+        observationsUpdatedAt: at,
+      }),
+    ).toEqual({
+      id: "r1",
+      agendaItemId: "i1",
+      listed: false,
+      listedUpdatedAt: at,
+      manualResult: null,
+      resultUpdatedAt: at,
+      treated: { by: null, at },
+      progressUpdatedAt: at,
+      observations: "",
+      observationsEdited: null,
+      observationsUpdatedAt: at,
     });
   });
 });

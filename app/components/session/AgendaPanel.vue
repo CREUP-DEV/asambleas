@@ -5,11 +5,15 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 /**
  * Agenda progress: every item with its documents. "Debate" points the live
  * state (and the projection) at an item or a document; selecting a document
- * only changes what the console shows. An item reads treated (a check) when
- * its voted documents all have their final vote or the Mesa's mark in the
- * control sheet says so, which the debate sets as it moves on; a document
- * reads «Proyectado» once on screen and «Tratado» once its own sub-item is
- * marked, and a treated one dims.
+ * only changes what the console shows. An item reads treated (a check) by
+ * the control sheet's own rule (the server's sessionTreatedItems: its
+ * votes, a result by hand, the Mesa's mark, which presenting it sets, or
+ * all its items treated); a document reads «Proyectado» once on screen and
+ * «Tratado» once its own item is, and a treated one dims. For the Mesa the
+ * check of an item treated only by its mark is a button that undoes it, and
+ * the circle of one neither treated nor waiting for a vote marks it (user's
+ * decision of 2026-11-19). A mark left on an item now waiting for a vote
+ * counts for nothing: a faint check, which undoes it too.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -50,6 +54,29 @@ function itemTreated(row: {
   return (
     itemDone(row.documents) || session.treatedItemIds.value.has(row.item.id)
   );
+}
+
+/**
+ * A mark the Mesa set before the item came to wait for a vote: it counts
+ * for nothing meanwhile, but the Mesa can still take it away.
+ */
+function staleMark(row: { item: { id: string } }, treated: boolean): boolean {
+  if (treated) return false;
+  const entry = session.itemTreatment(row.item.id);
+  return Boolean(entry?.awaitingVote && entry.marked);
+}
+
+function statusIcon(row: { item: { id: string } }, treated: boolean): string {
+  if (treated || staleMark(row, treated)) return "i-lucide-circle-check";
+  return liveItemId.value === row.item.id
+    ? "i-lucide-circle-dot"
+    : "i-lucide-circle";
+}
+
+function statusColor(row: { item: { id: string } }, treated: boolean): string {
+  if (treated) return "text-success";
+  if (staleMark(row, treated)) return "text-dimmed";
+  return liveItemId.value === row.item.id ? "text-primary" : "text-dimmed";
 }
 </script>
 
@@ -110,22 +137,62 @@ function itemTreated(row: {
             "
             :aria-current="liveItemId === row.item.id ? 'step' : undefined"
           >
+            <!-- The Mesa's mark, undone (or set) from its own icon. -->
+            <UTooltip
+              v-if="session.itemMarkAction(row.item.id)"
+              :text="
+                staleMark(row, itemTreated(row))
+                  ? t('session.progress.staleMarkHint')
+                  : session.itemMarkAction(row.item.id) === 'unmark'
+                    ? t('session.progress.markedHint')
+                    : t('session.progress.markHint')
+              "
+            >
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                square
+                class="-mx-1 -my-0.5 shrink-0 p-0.5"
+                :aria-label="
+                  staleMark(row, itemTreated(row))
+                    ? t('session.progress.unmarkStaleItem', {
+                        title: row.item.title,
+                      })
+                    : session.itemMarkAction(row.item.id) === 'unmark'
+                      ? t('session.progress.unmarkItem', {
+                          title: row.item.title,
+                        })
+                      : t('session.progress.markItem', {
+                          title: row.item.title,
+                        })
+                "
+                :aria-pressed="
+                  itemTreated(row) || staleMark(row, itemTreated(row))
+                "
+                :disabled="
+                  Boolean(session.busy.value[`treated-${row.item.id}`])
+                "
+                @click="
+                  session.setItemTreated(
+                    row.item.id,
+                    session.itemMarkAction(row.item.id) === 'mark',
+                  )
+                "
+              >
+                <UIcon
+                  :name="statusIcon(row, itemTreated(row))"
+                  class="size-4"
+                  :class="statusColor(row, itemTreated(row))"
+                  aria-hidden="true"
+                />
+              </UButton>
+            </UTooltip>
             <UIcon
-              :name="
-                itemTreated(row)
-                  ? 'i-lucide-circle-check'
-                  : liveItemId === row.item.id
-                    ? 'i-lucide-circle-dot'
-                    : 'i-lucide-circle'
-              "
+              v-else
+              :name="statusIcon(row, itemTreated(row))"
               class="mt-0.5 size-4 shrink-0"
-              :class="
-                itemTreated(row)
-                  ? 'text-success'
-                  : liveItemId === row.item.id
-                    ? 'text-primary'
-                    : 'text-dimmed'
-              "
+              :class="statusColor(row, itemTreated(row))"
               aria-hidden="true"
             />
             <span

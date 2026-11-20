@@ -303,7 +303,19 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   becomes the nearest colour of the palette by RGB distance, white none)
   and spans. A table of contents is left out: the view offers its own
   index of the headings. A table nested inside a cell becomes a
-  paragraph per row, cells joined by " | ".
+  paragraph per row, cells joined by " | ". Tables laid side by side as one
+  table (Word's way of putting, say, income next to expenses on a landscape
+  page: an empty column between them whose cells hide their top and bottom
+  rules) become tables one after the other, left to right (`tableGaps` in
+  `server/utils/content/docxHtml.ts`; warning `tables_split`): blocks have no
+  layout to place them side by side, and rows paired only by position would
+  tie each side's amendments to the other and read as one row aloud. Only a
+  clear spacer splits: an interior column, unfilled and blank in every row,
+  that no span crosses, in a table of two rows or more, each side two
+  columns wide with text; the rows that only pad the shorter side at its
+  end go, while a blank row between a side's data rows stays, so the rows
+  after it keep their place. The Word export puts an empty paragraph between consecutive tables, since
+  Word joins tables with nothing between them.
 - Footnotes and endnotes become paragraphs at the end that start with their
   reference ("[1]"); ordinals typed as a superscript letter become "ª"/"º";
   text in all caps is written in capitals. Centred and right-aligned
@@ -714,6 +726,12 @@ reviews each presented amendment and:
   number, code and timing, or leave it as a draft that never counts. On the document page the Secretaría finds the ones it sent back
   under "N devueltas para corregir", next to what it still has to validate or
   publish, until the authors send them again.
+- Not validating, it chooses whether the amendment can be corrected
+  ("¿Puede corregirla?", user's decision of 2026-11-19): "No" declares it
+  not admitted (`inadmissible`) with the note, which its authors read with
+  the email and the news; they cannot correct it nor present it again, and
+  the Mesa may readmit it. Also for one already sent back ("No admitirla"
+  on the amendment), and for a late one only before validation.
 
 Until it is published, an amendment is visible only to its authors, its
 creator, the parties of a transactional and the Secretaría and Mesa; once
@@ -759,7 +777,10 @@ presenter itself or the Secretaría changes who the main presenter is.
    validated when an office of the CEA presents the document. A late one is
    answered before its admission, and an acceptance that incorporates it
    waits for the admission. Never after the document's final vote. The Mesa can record
-   the answer on its behalf, and everyone sees who recorded it.
+   the answer on its behalf, and everyone sees who recorded it. Once the
+   assembly approved it (by a vote, by assent or as a formal one) the answer
+   can still change until the final vote, without changing the approval
+   (user's decision of 2026-11-19); it is no longer anyone's pending task.
 5. The assembly votes it. Each document has a rule for accepted amendments
    (`documents.acceptedAmendments`, default from its kind): with
    "incorporate" (regulations by default) an amendment the main presenter

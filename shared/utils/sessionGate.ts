@@ -20,16 +20,17 @@ export const SESSION_NOT_OPEN_MESSAGE_KEY = "common.errors.sessionNotOpen";
 
 /**
  * A change of the live state that only takes things off the screen: no
- * agenda item, document, amendment or vote is pointed at, the speaking
- * turns are not shown and no recess starts (ending one clears the screen).
- * The message to the room and the default limit of a turn may change at
- * any time.
+ * agenda item, document, amendment, bloc or vote is pointed at, the
+ * speaking turns are not shown and no recess starts (ending one clears the
+ * screen). The message to the room and the default limit of a turn may
+ * change at any time.
  */
 export function liveStateClearsOnly(body: LiveStateBody): boolean {
   return (
     (["agendaItemId", "documentId", "amendmentId", "voteId"] as const).every(
       (key) => body[key] === undefined || body[key] === null,
     ) &&
+    (body.amendmentBloc ?? []).length === 0 &&
     body.speakersVisible !== true &&
     (body.recess === undefined || body.recess === null)
   );
@@ -37,14 +38,20 @@ export function liveStateClearsOnly(body: LiveStateBody): boolean {
 
 /**
  * A change of the live state that moves what is on screen: it points at, or
- * takes off, the agenda item, document, amendment or vote in debate. Only
+ * takes off, the agenda item, document, amendment, bloc or vote in debate. Only
  * the console that controls the projection sends one (user's decision of
  * 2026-11-19); the message, the recess, the speakers' visibility and the
  * default limit of a turn any console of the Mesa may change.
  */
 export function liveStateMovesScreen(body: LiveStateBody): boolean {
   return (
-    ["agendaItemId", "documentId", "amendmentId", "voteId"] as const
+    [
+      "agendaItemId",
+      "documentId",
+      "amendmentId",
+      "amendmentBloc",
+      "voteId",
+    ] as const
   ).some((key) => body[key] !== undefined);
 }
 

@@ -5,7 +5,12 @@ import {
   positionBodySchema,
   transactionalBodySchema,
 } from "./amendment";
-import { documentCreateSchema, documentUpdateSchema } from "./document";
+import {
+  amendmentCorrectionBodySchema,
+  correctionBodySchema,
+  documentCreateSchema,
+  documentUpdateSchema,
+} from "./document";
 
 /**
  * z.object drops keys it does not know, so a field missing from a schema
@@ -100,5 +105,34 @@ describe("amendment bodies", () => {
         positionUpdatedAt: "yesterday",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("amendment correction body", () => {
+  it("keeps whether the amendment can be corrected", () => {
+    expect(
+      amendmentCorrectionBodySchema.parse({
+        note: " No cabe en este punto. ",
+        updatedAt: at,
+        correctable: false,
+      }),
+    ).toEqual({
+      note: "No cabe en este punto.",
+      updatedAt: at,
+      correctable: false,
+    });
+    // Absent, it can be corrected (as before).
+    expect(
+      amendmentCorrectionBodySchema.parse({ note: "Corrige", updatedAt: at })
+        .correctable,
+    ).toBeUndefined();
+    // A document's correction knows nothing about it.
+    expect(
+      correctionBodySchema.parse({
+        note: "Corrige",
+        updatedAt: at,
+        correctable: false,
+      }),
+    ).toEqual({ note: "Corrige", updatedAt: at });
   });
 });

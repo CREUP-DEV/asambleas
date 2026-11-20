@@ -814,6 +814,13 @@ describe("home work", () => {
       expect(key({ type: "amendment_admitted", value: null })).toBe(
         "home.news.amendment.admitted",
       );
+      expect(key({ type: "amendment_inadmissible", value: null })).toBe(
+        "home.news.amendment.inadmissible",
+      );
+      // The Secretaría's no while reviewing it: it cannot be corrected.
+      expect(key({ type: "amendment_inadmissible", value: "review" })).toBe(
+        "home.news.amendment.inadmissibleReview",
+      );
       expect(key({ type: "amendment_transacted", value: null })).toBe(
         "home.news.amendment.transacted",
       );

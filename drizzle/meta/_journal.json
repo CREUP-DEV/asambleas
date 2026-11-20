@@ -337,6 +337,13 @@
       "when": 1795114664487,
       "tag": "0047_fantastic_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795132390098,
+      "tag": "0048_free_sauron",
+      "breakpoints": true
     }
   ]
 }

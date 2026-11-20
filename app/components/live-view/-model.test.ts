@@ -18,9 +18,13 @@ import {
   liveAmendmentRows,
   liveAmendmentState,
   liveAmendmentStats,
+  liveBlocEntries,
   livePositionLine,
   liveReplacedBy,
   liveSpeakers,
+  liveTallyCast,
+  liveTallyRows,
+  liveTransactedCodes,
   liveVoteCounts,
   liveVoteQuestion,
   liveVoteSubject,
@@ -800,5 +804,115 @@ describe("live votes", () => {
       ["blank", 1],
       ["invalid", 2],
     ]);
+  });
+});
+
+describe("what a transactional combines", () => {
+  const list = [
+    amendment("e5", { code: "E5", positionKey: 2 }),
+    amendment("e3", { code: "E3", positionKey: 1 }),
+    amendment("e7", { code: "E7", positionKey: 3, publishedAt: null }),
+  ];
+
+  it("lists the codes of its sources in text order, whatever order they come in", () => {
+    expect(
+      liveTransactedCodes(
+        amendment("t1", { kind: "transactional", sourceIds: ["e5", "e3"] }),
+        list,
+      ),
+    ).toEqual(["E3", "E5"]);
+    expect(
+      liveTransactedCodes(
+        amendment("t1", { kind: "transactional", sourceIds: ["e12", "e3"] }),
+        [
+          amendment("e12", { code: "E12", positionKey: 1, number: 12 }),
+          amendment("e3", { code: "E3", positionKey: 1, number: 3 }),
+        ],
+      ),
+    ).toEqual(["E3", "E12"]);
+  });
+
+  it("leaves out sources the room cannot read", () => {
+    expect(
+      liveTransactedCodes(
+        amendment("t1", {
+          kind: "transactional",
+          sourceIds: ["e3", "e7", "gone"],
+        }),
+        list,
+      ),
+    ).toEqual(["E3"]);
+  });
+
+  it("says nothing for any other amendment", () => {
+    expect(
+      liveTransactedCodes(amendment("e9", { sourceIds: ["e3"] }), list),
+    ).toEqual([]);
+  });
+});
+
+describe("a bloc on screen (2026-11-19)", () => {
+  const ugr = {
+    id: "m1",
+    acronym: "UGR",
+    name: "Universidad",
+    kind: "asociado" as const,
+  };
+  const list = [
+    amendment("e5", { code: "E5", positionKey: 2, authors: [ugr] }),
+    amendment("e3", { code: "E3", positionKey: 1, status: "approved" }),
+    amendment("e7", { code: "E7", positionKey: 3, publishedAt: null }),
+    amendment("e9", { code: "E9", positionKey: 4, status: "withdrawn" }),
+    amendment("e1", { code: "E1", positionKey: 0 }),
+  ];
+
+  it("lists its amendments in text order, with author and state", () => {
+    expect(liveBlocEntries(["e5", "e3", "e9"], list)).toEqual([
+      { id: "e3", code: "E3", author: null, approved: true, settled: false },
+      { id: "e5", code: "E5", author: ugr, approved: false, settled: false },
+      { id: "e9", code: "E9", author: null, approved: false, settled: true },
+    ]);
+  });
+
+  it("leaves out what the room cannot read, and is empty without a bloc", () => {
+    expect(liveBlocEntries(["e7", "gone"], list)).toEqual([]);
+    expect(liveBlocEntries([], list)).toEqual([]);
+    expect(liveBlocEntries(undefined, list)).toEqual([]);
+  });
+});
+
+describe("a secret vote being counted", () => {
+  it("shows the running count with each share of the largest", () => {
+    const tally = {
+      counts: { inFavor: 6, against: 3, blank: 0, invalid: 1 },
+    };
+    expect(liveTallyRows(tally)).toEqual([
+      { key: "inFavor", count: 6, share: 1 },
+      { key: "against", count: 3, share: 0.5 },
+      { key: "blank", count: 0, share: 0 },
+      { key: "invalid", count: 1, share: 1 / 6 },
+    ]);
+    expect(liveTallyCast(tally)).toBe(10);
+  });
+
+  it("shows no count when the result comes at the end", () => {
+    expect(liveTallyRows({ counts: null })).toEqual([]);
+    expect(liveTallyCast({ counts: null })).toBe(0);
+    expect(liveTallyRows(null)).toEqual([]);
+  });
+
+  it("names what is voted from what the room reads", () => {
+    expect(
+      liveVoteSubject(
+        { subjectType: "amendment", subjectId: "e3" },
+        { amendments: [amendment("e3", { code: "E3" })], document: null },
+      ),
+    ).toEqual({ kind: "amendment", code: "E3" });
+    expect(
+      liveVoteSubject(
+        { subjectType: "decision", subjectId: null },
+        { amendments: [], document: null },
+      ),
+    ).toEqual({ kind: "decision" });
   });
 });

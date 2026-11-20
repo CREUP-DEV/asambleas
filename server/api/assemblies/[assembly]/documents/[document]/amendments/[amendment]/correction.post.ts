@@ -1,15 +1,25 @@
 import { defineEventHandler } from "h3";
 import type { AmendmentDto } from "~~/shared/types/api";
-import { correctionBodySchema } from "~~/shared/utils/schemas/document";
+import { amendmentCorrectionBodySchema } from "~~/shared/utils/schemas/document";
 import {
+  declareInadmissibleOnReview,
   loadAmendmentContext,
   readAmendmentBody,
   requestAmendmentCorrection,
 } from "../../../../../../../utils/domain/amendments";
 
-/** The Secretaría sends a presented amendment back to draft with a note. */
+/**
+ * The Secretaría sends a presented amendment back to draft with a note, or,
+ * when it cannot be corrected (`correctable: false`), declares it not
+ * admitted with that note.
+ */
 export default defineEventHandler(async (event): Promise<AmendmentDto> => {
   const ctx = await loadAmendmentContext(event);
-  const body = await readAmendmentBody(event, correctionBodySchema);
-  return requestAmendmentCorrection(ctx, body);
+  const { correctable, ...body } = await readAmendmentBody(
+    event,
+    amendmentCorrectionBodySchema,
+  );
+  return correctable === false
+    ? declareInadmissibleOnReview(ctx, body)
+    : requestAmendmentCorrection(ctx, body);
 });

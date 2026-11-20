@@ -6,6 +6,7 @@ import {
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
+import { sameBloc } from "~~/shared/utils/liveBloc";
 
 /**
  * The amendments of the document on screen, in text order, as a compact
@@ -25,6 +26,13 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  * apart, folded away, since the Mesa cannot debate them: whoever can
  * validate them does it there (asking first when it is several at once) or
  * opens them in Validación, where they can also be sent back.
+ *
+ * «Seleccionar para bloque» (user's decision of 2026-11-19) puts a checkbox
+ * on every row the Mesa may approve in a bloc, accepted or not, with quick
+ * fills («Las aceptadas», «Ninguna») and a bar stuck to the bottom that
+ * names the selection, puts it on screen or takes it off (only the console
+ * in control) and approves it by assent (BulkAssentDialog, the same dialog
+ * the accepted shortcut opens prefilled).
  *
  * When this console puts a document in debate, the column scrolls to its
  * start once it has loaded, so «Ahora en debate» folds into the bar on top
@@ -153,6 +161,36 @@ const hideDecided = computed({
  * approved them.
  */
 const readyForAssent = computed(() => session.assentPlan.value.ready.length);
+
+// Bloc ---------------------------------------------------------------------------
+
+const blocMode = computed({
+  get: () => session.blocMode.value,
+  set: (value: boolean) => {
+    if (value) session.blocMode.value = true;
+    else session.cancelBloc();
+  },
+});
+/** Rows the Mesa may put in a bloc: the switch shows only with some. */
+const blocAvailable = computed(() => session.blocOrder.value.length > 0);
+const blocSelected = computed(() => session.blocSelected.value);
+const blocCodes = computed(() =>
+  blocSelected.value.map((id) => session.label(id)).join(", "),
+);
+/**
+ * The selection is what is on screen (but for those approved since): the
+ * bar offers to take it off rather than to project it again.
+ */
+const blocProjected = computed(() => {
+  const onScreen = session.blocOnScreen.value;
+  if (onScreen.length === 0) return false;
+  const selectable = new Set(session.blocOrder.value);
+  return sameBloc(
+    blocSelected.value,
+    onScreen.filter((id) => selectable.has(id)),
+  );
+});
+const liveBusy = computed(() => Boolean(session.busy.value.live));
 
 const loading = computed(
   () =>
@@ -324,6 +362,12 @@ useEventListener(scroller, "pointerdown", letGo);
           size="sm"
           :label="t('session.queue.hideDecided')"
         />
+        <USwitch
+          v-if="blocAvailable || blocMode"
+          v-model="blocMode"
+          size="sm"
+          :label="t('session.bloc.select')"
+        />
         <UTooltip
           v-if="readyForAssent > 0"
           :text="t('session.queue.assentHint')"
@@ -340,9 +384,36 @@ useEventListener(scroller, "pointerdown", letGo);
                 readyForAssent,
               )
             "
-            @click="session.assentDialog.open = true"
+            @click="session.openAssent()"
           />
         </UTooltip>
+      </div>
+
+      <!-- Quick fills of the bloc; shift-click ticks a range. -->
+      <div
+        v-if="blocMode"
+        class="text-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+      >
+        <span>{{ t("session.bloc.fill") }}</span>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :label="t('session.bloc.fillAccepted')"
+          :disabled="readyForAssent === 0"
+          @click="session.selectAcceptedBloc()"
+        />
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :label="t('session.bloc.fillNone')"
+          :disabled="blocSelected.length === 0"
+          @click="session.clearBlocSelection()"
+        />
+        <span class="text-dimmed text-xs">{{
+          t("session.bloc.rangeHint")
+        }}</span>
       </div>
 
       <!-- Late: the assembly decides whether to treat them first. -->
@@ -457,6 +528,70 @@ useEventListener(scroller, "pointerdown", letGo);
           </section>
         </li>
       </ol>
+
+      <!-- The bloc being selected, stuck to the bottom of the column. -->
+      <div
+        v-if="blocMode"
+        class="border-primary/40 bg-default sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border-2 p-3 shadow-md"
+        role="region"
+        :aria-label="t('session.bloc.barLabel')"
+      >
+        <p
+          class="text-highlighted min-w-0 flex-1 basis-48 text-sm font-medium"
+          aria-live="polite"
+        >
+          <template v-if="blocSelected.length > 0">
+            {{
+              t(
+                "session.bloc.count",
+                { count: blocSelected.length },
+                blocSelected.length,
+              )
+            }}<span class="text-muted font-normal">: {{ blocCodes }}</span>
+          </template>
+          <span v-else class="text-muted font-normal">
+            {{ t("session.bloc.none") }}
+          </span>
+        </p>
+        <template v-if="session.inControl.value">
+          <UButton
+            v-if="blocProjected"
+            size="sm"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-monitor-off"
+            :label="t('session.bloc.unproject')"
+            :loading="liveBusy"
+            @click="session.unprojectBloc()"
+          />
+          <UButton
+            v-else
+            size="sm"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-monitor-up"
+            :label="t('session.bloc.project')"
+            :loading="liveBusy"
+            :disabled="blocSelected.length === 0 || !session.inSession.value"
+            @click="session.projectBloc(blocSelected)"
+          />
+        </template>
+        <UButton
+          size="sm"
+          color="success"
+          icon="i-lucide-check-check"
+          :label="t('session.bloc.approve')"
+          :disabled="blocSelected.length === 0 || !session.inSession.value"
+          @click="session.openAssent(blocSelected)"
+        />
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          :label="t('common.cancel')"
+          @click="session.cancelBloc()"
+        />
+      </div>
 
       <!-- Not validated by the Secretaría yet: outside the debate, folded away. -->
       <section

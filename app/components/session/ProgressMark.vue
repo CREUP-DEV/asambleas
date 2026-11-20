@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * Where a document stands in the session, as a quiet word with its icon:
- * «Proyectado» once the Mesa put it on screen, «Tratado» once its own
- * sub-item is marked treated (useSessionConsole's documentProgress).
+ * «Proyectado» once the Mesa put it on screen, «Tratado» once its own item
+ * reads treated by the control sheet's rule (useSessionConsole's
+ * documentProgress).
  * Nothing before. The icon carries the colour; the word stays neutral.
  */
 defineProps<{ progress: "treated" | "projected" | null }>();

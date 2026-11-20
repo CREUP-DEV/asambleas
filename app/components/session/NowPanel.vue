@@ -27,7 +27,9 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  *   its row marked as the one in debate and pressed again to take it out;
  *   under it, where it stands and its next step: the next amendment the
  *   Mesa can decide, then the final vote. None of the item's documents is
- *   pushed as the next step: the Mesa picks;
+ *   pushed as the next step: the Mesa picks; a bloc on screen (user's
+ *   decision of 2026-11-19) shows there with its codes, approves by assent
+ *   what is left of it and is taken off;
  * - an amendment: its change and the actions that fit (NowAmendment).
  *
  * When this device is looking at another document than the one in debate,
@@ -63,9 +65,13 @@ const screenLine = computed(() => {
         (other) => other.item.id === screen.agendaItemId,
       )
     : null;
+  const bloc = screen.amendmentBloc ?? [];
   const what = [
     screen.amendmentId && session.byId.value.has(screen.amendmentId)
       ? session.label(screen.amendmentId)
+      : null,
+    bloc.length > 0
+      ? t("session.bloc.onScreenWhat", { count: bloc.length }, bloc.length)
       : null,
     documentTitle ??
       (row
@@ -217,6 +223,27 @@ const documentStatus = computed(() => {
   return t("session.now.document.waiting");
 });
 
+// A bloc on screen ------------------------------------------------------------------
+
+/** The bloc on screen, in text order, each with whether it is decided. */
+const bloc = computed(() => {
+  const ids = new Set(session.blocOnScreen.value);
+  return session.amendments.value
+    .filter((amendment) => ids.has(amendment.id))
+    .map((amendment) => ({
+      id: amendment.id,
+      code: session.label(amendment.id),
+      approved: amendment.status === "approved",
+      open: isSessionOpen(amendment),
+    }));
+});
+const blocOpenIds = computed(() =>
+  bloc.value.filter((entry) => entry.open).map((entry) => entry.id),
+);
+const blocApproved = computed(
+  () => bloc.value.filter((entry) => entry.approved).length,
+);
+
 // Agenda item under debate ---------------------------------------------------------
 
 /**
@@ -267,7 +294,8 @@ function openItemVote(): void {
 
 /**
  * "Más" of an agenda item: with a vote in force, vote it again, change its
- * unanimity (an assent) or void it; and end the debate altogether.
+ * unanimity (an assent) or void it; undo the treated mark presenting it set,
+ * or set it again; and end the debate altogether.
  */
 const itemMoreItems = computed<DropdownMenuItem[][]>(() => {
   const groups: DropdownMenuItem[][] = [];
@@ -302,6 +330,25 @@ const itemMoreItems = computed<DropdownMenuItem[][]>(() => {
       });
     }
     if (voteItems.length > 0) groups.push(voteItems);
+  }
+  // Presenting it marked it treated: a wrong click is undone here, and a
+  // mark taken away is set again (user's decision of 2026-11-19).
+  const itemId = live.value?.agendaItemId;
+  const markAction = itemId ? session.itemMarkAction(itemId) : null;
+  if (itemId && markAction) {
+    groups.push([
+      {
+        label:
+          markAction === "unmark"
+            ? t("session.progress.unmark")
+            : t("session.progress.mark"),
+        icon:
+          markAction === "unmark" ? "i-lucide-rotate-ccw" : "i-lucide-check",
+        disabled: Boolean(session.busy.value[`treated-${itemId}`]),
+        onSelect: () =>
+          void session.setItemTreated(itemId, markAction === "mark"),
+      },
+    ]);
   }
   groups.push([
     {
@@ -351,7 +398,13 @@ const announcement = computed(() => {
     }
     case "document": {
       const title = document.value?.title ?? liveDocumentSummary.value?.title;
-      return title ? t("session.now.announce", { what: title }) : "";
+      if (!title) return "";
+      const what = t("session.now.announce", { what: title });
+      return bloc.value.length > 0
+        ? `${what}. ${t("session.bloc.announce", {
+            codes: bloc.value.map((entry) => entry.code).join(", "),
+          })}`
+        : what;
     }
     case "item": {
       if (!liveRow.value) return "";
@@ -620,6 +673,64 @@ const announcement = computed(() => {
                   {{ reason }}
                 </li>
               </ul>
+
+              <!-- The bloc on screen: its codes, approved ones marked. -->
+              <section
+                v-if="bloc.length > 0"
+                class="border-primary/30 bg-primary/5 space-y-2 rounded-lg border p-3"
+                aria-labelledby="session-now-bloc-title"
+              >
+                <p
+                  id="session-now-bloc-title"
+                  class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+                >
+                  <UIcon
+                    name="i-lucide-monitor"
+                    class="text-primary size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {{ t("session.bloc.onScreen") }}
+                  <span class="text-muted font-normal tabular-nums">
+                    {{
+                      t("session.bloc.progress", {
+                        approved: blocApproved,
+                        total: bloc.length,
+                      })
+                    }}
+                  </span>
+                </p>
+                <ul class="flex flex-wrap gap-1.5">
+                  <li v-for="entry in bloc" :key="entry.id">
+                    <UBadge
+                      :color="entry.approved ? 'success' : 'neutral'"
+                      :variant="entry.approved ? 'subtle' : 'outline'"
+                      :icon="entry.approved ? 'i-lucide-check' : undefined"
+                      :label="entry.code"
+                    />
+                  </li>
+                </ul>
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-if="blocOpenIds.length > 0"
+                    size="sm"
+                    color="success"
+                    icon="i-lucide-check-check"
+                    :label="t('session.bloc.approve')"
+                    :disabled="closed"
+                    @click="session.openAssent(blocOpenIds)"
+                  />
+                  <UButton
+                    v-if="session.inControl.value"
+                    size="sm"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-monitor-off"
+                    :label="t('session.bloc.unproject')"
+                    :loading="liveBusy"
+                    @click="session.unprojectBloc()"
+                  />
+                </div>
+              </section>
 
               <UAlert
                 v-if="lateCount > 0"

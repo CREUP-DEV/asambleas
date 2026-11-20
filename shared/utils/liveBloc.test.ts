@@ -1,0 +1,169 @@
+import { describe, expect, it } from "vitest";
+import {
+  changedLiveFields,
+  nextLivePointer,
+  normalizeBloc,
+  sameBloc,
+  type LivePointerFields,
+} from "./liveBloc";
+import { liveStateBodySchema } from "./schemas/assembly";
+
+const empty: LivePointerFields = {
+  agendaItemId: null,
+  documentId: null,
+  amendmentId: null,
+  amendmentBloc: null,
+  voteId: null,
+};
+const onDocument: LivePointerFields = {
+  ...empty,
+  agendaItemId: "item",
+  documentId: "doc",
+};
+
+function next(
+  previous: LivePointerFields,
+  body: Parameters<typeof nextLivePointer>[1],
+  owner: string | null = null,
+): LivePointerFields {
+  const result = nextLivePointer(previous, body, owner);
+  if ("error" in result) throw new Error(result.error);
+  return result.next;
+}
+
+describe("bloc on screen", () => {
+  it("stores no bloc as null and compares blocs by value", () => {
+    expect(normalizeBloc([])).toBeNull();
+    expect(normalizeBloc(null)).toBeNull();
+    expect(normalizeBloc(["a"])).toEqual(["a"]);
+    expect(sameBloc(["a", "b"], ["b", "a"])).toBe(true);
+    expect(sameBloc(null, [])).toBe(true);
+    expect(sameBloc(["a"], ["a", "b"])).toBe(false);
+    expect(
+      changedLiveFields(
+        { ...onDocument, amendmentBloc: ["a", "b"] },
+        { ...onDocument, amendmentBloc: ["b", "a"] },
+      ),
+    ).toEqual([]);
+    expect(
+      changedLiveFields(onDocument, { ...onDocument, amendmentBloc: ["a"] }),
+    ).toEqual(["amendmentBloc"]);
+    // Only the pointer: the message and the rest are the caller's.
+    expect(
+      changedLiveFields(
+        { ...onDocument, message: "a" } as LivePointerFields,
+        {
+          ...onDocument,
+          amendmentBloc: ["a"],
+          message: "b",
+        } as LivePointerFields,
+      ),
+    ).toEqual(["amendmentBloc"]);
+  });
+
+  it("takes the amendment and the vote off when a bloc goes on", () => {
+    expect(
+      next(
+        { ...onDocument, amendmentId: "x", voteId: "v" },
+        { amendmentBloc: ["a", "b"] },
+        "doc",
+      ),
+    ).toEqual({ ...onDocument, amendmentBloc: ["a", "b"] });
+  });
+
+  it("takes the bloc off when an amendment or a vote goes on", () => {
+    const withBloc = { ...onDocument, amendmentBloc: ["a"] };
+    expect(next(withBloc, { amendmentId: "x" }, "doc")).toEqual({
+      ...onDocument,
+      amendmentId: "x",
+    });
+    expect(next(withBloc, { voteId: "v" })).toEqual({
+      ...onDocument,
+      voteId: "v",
+    });
+    // Clearing them leaves the bloc alone.
+    expect(next(withBloc, { amendmentId: null, voteId: null })).toEqual(
+      withBloc,
+    );
+    expect(next(withBloc, { amendmentBloc: [] })).toEqual(onDocument);
+  });
+
+  it("refuses a bloc with an amendment or a vote", () => {
+    expect(
+      nextLivePointer(
+        onDocument,
+        { amendmentBloc: ["a"], amendmentId: "x" },
+        "doc",
+      ),
+    ).toEqual({ error: "bloc_with_pointer" });
+    expect(
+      nextLivePointer(onDocument, { amendmentBloc: ["a"], voteId: "v" }, "doc"),
+    ).toEqual({ error: "bloc_with_pointer" });
+    // Taking them off at the same time is fine.
+    expect(
+      next(
+        { ...onDocument, amendmentId: "x" },
+        { amendmentBloc: ["a"], amendmentId: null, voteId: null },
+        "doc",
+      ),
+    ).toEqual({ ...onDocument, amendmentBloc: ["a"] });
+  });
+
+  it("selects the bloc's document, or refuses another one", () => {
+    expect(next(empty, { amendmentBloc: ["a"] }, "doc")).toEqual({
+      ...empty,
+      documentId: "doc",
+      amendmentBloc: ["a"],
+    });
+    expect(
+      nextLivePointer(
+        onDocument,
+        { documentId: "other", amendmentBloc: ["a"] },
+        "doc",
+      ),
+    ).toEqual({ error: "foreign_document" });
+  });
+
+  it("drops the bloc of a document the screen leaves", () => {
+    const withBloc = { ...onDocument, amendmentBloc: ["a"] };
+    expect(next(withBloc, { documentId: "other" })).toEqual({
+      ...onDocument,
+      documentId: "other",
+    });
+    expect(next(withBloc, { documentId: null })).toEqual({
+      ...onDocument,
+      documentId: null,
+    });
+    // The same document keeps it.
+    expect(next(withBloc, { documentId: "doc" })).toEqual(withBloc);
+    // Nothing about the pointer keeps it.
+    expect(next(withBloc, {})).toEqual(withBloc);
+  });
+});
+
+describe("the bloc in PUT .../live-state", () => {
+  const id = (n: number) => `amendment${String(n).padStart(16, "0")}`;
+
+  it("takes distinct ids, up to 200, or null to take it off", () => {
+    expect(
+      liveStateBodySchema.safeParse({ amendmentBloc: [id(1), id(2)] }).success,
+    ).toBe(true);
+    expect(liveStateBodySchema.safeParse({ amendmentBloc: null }).success).toBe(
+      true,
+    );
+    expect(liveStateBodySchema.safeParse({ amendmentBloc: [] }).success).toBe(
+      true,
+    );
+    expect(
+      liveStateBodySchema.safeParse({ amendmentBloc: [id(1), id(1)] }).success,
+    ).toBe(false);
+    expect(
+      liveStateBodySchema.safeParse({
+        amendmentBloc: Array.from({ length: 201 }, (_, n) => id(n)),
+      }).success,
+    ).toBe(false);
+    expect(
+      liveStateBodySchema.safeParse({ amendmentBloc: ["Not an id"] }).success,
+    ).toBe(false);
+  });
+});

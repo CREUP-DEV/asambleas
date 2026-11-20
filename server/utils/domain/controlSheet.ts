@@ -4,6 +4,7 @@ import type { z } from "zod/v4";
 import { db } from "../../db";
 import {
   agendaItems,
+  amendments,
   controlSheetAmendments,
   controlSheetItems,
   controlSheetObservationRevisions,
@@ -28,6 +29,10 @@ import {
   hiddenTitleItemIds,
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
+import {
+  amendmentTreatedInSession,
+  isSettledManualResult,
+} from "~~/shared/utils/controlSheet";
 import {
   appendObservations,
   CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH,
@@ -62,6 +67,7 @@ import { shareLockAssembly, type DocumentRow } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
+import { loadAwaitingVote } from "./sessionProgress";
 import { loadSpokenTurns } from "./speakers";
 import {
   canSeeDocument,
@@ -105,10 +111,12 @@ function fail(statusCode: number, message: string, data?: unknown): never {
  * 2026-11-19), but only its public part: the agenda, the presenters (an
  * office as "CEA" to whoever may not see it), the votes and the amendments,
  * with the presenter's answers once they are public to that reader
- * (canSeePositions). What the sheet itself notes (observations, the Mesa's
- * marks and results by hand, who spoke, its history) stays with whoever
- * holds a sheet key (canViewControlSheet), and every endpoint that serves
- * it calls this.
+ * (canSeePositions), and whether each row was treated, as a plain yes or
+ * no (user's decision of 2026-11-19). What the sheet itself notes
+ * (observations, who marked a row and when, results by hand, who spoke, its
+ * history) stays with whoever holds a sheet key (canViewControlSheet), and
+ * every endpoint that serves it calls this, but the Mesa's mark set from the
+ * session console (PATCH .../control-sheet/items/[item]).
  */
 export function requireControlSheetReader(actor: Actor): void {
   if (!canViewControlSheet(actor)) {
@@ -320,10 +328,69 @@ export function sheetPositions(
 }
 
 /**
+ * Whether each row the reader gets was treated, as ControlSheetDto.treated
+ * says it to every reader: the items the Mesa marked or noted «Retirado» or
+ * «Decaído» (never one still waiting for a vote, over the whole agenda),
+ * and the amendments the Mesa marked or settled in session. Plain ids: no
+ * who, when nor result by hand. `itemRows` and `amendments` are already
+ * those the reader gets.
+ */
+export function sheetTreatedIds(input: {
+  itemRows: readonly Pick<
+    ItemSheetRow,
+    "agendaItemId" | "treatedAt" | "manualResult"
+  >[];
+  awaiting: ReadonlySet<string>;
+  amendments: readonly {
+    id: string;
+    status: LoadedAmendment["status"];
+    approvalMethod: LoadedAmendment["approvalMethod"];
+    decidedAt: Date | null;
+  }[];
+  amendmentRows: readonly Pick<
+    AmendmentSheetRow,
+    "amendmentId" | "treatedAt"
+  >[];
+  sessionStartedAt: Date | null;
+}): ControlSheetDto["treated"] {
+  const itemIds = input.itemRows
+    .filter(
+      (row) =>
+        !input.awaiting.has(row.agendaItemId) &&
+        (row.treatedAt !== null || isSettledManualResult(row.manualResult)),
+    )
+    .map((row) => row.agendaItemId)
+    .sort();
+  const marked = new Set(
+    input.amendmentRows
+      .filter((row) => row.treatedAt !== null)
+      .map((row) => row.amendmentId),
+  );
+  const startedAt = input.sessionStartedAt?.toISOString() ?? null;
+  const amendmentIds = input.amendments
+    .filter(
+      (row) =>
+        marked.has(row.id) ||
+        amendmentTreatedInSession(
+          {
+            status: row.status,
+            approvalMethod: row.approvalMethod,
+            decidedAt: row.decidedAt?.toISOString() ?? null,
+          },
+          startedAt,
+        ),
+    )
+    .map((row) => row.id)
+    .sort();
+  return { itemIds, amendmentIds };
+}
+
+/**
  * The sheet as the actor reads it. Whoever holds a sheet key
  * (canViewControlSheet) reads all of it; everyone else only its public part
- * (requireControlSheetReader): no notes, marks, turns nor session start, and
- * the presenter's answers only where canSeePositions lets it read them.
+ * (requireControlSheetReader): no notes, turns nor session start, whether
+ * each row was treated only as ids (sheetTreatedIds), and the presenter's
+ * answers only where canSeePositions lets it read them.
  */
 export async function loadControlSheet(
   actor: Actor,
@@ -333,7 +400,9 @@ export async function loadControlSheet(
 
   const [visibleDocuments, sessionStartedAt] = await Promise.all([
     loadVisibleDocuments(actor, assembly.id),
-    internal ? loadSessionStartedAt(assembly.id) : Promise.resolve(null),
+    // Everyone's: the amendments settled since then count as treated
+    // (`treated`), though only a sheet key reads the moment itself.
+    loadSessionStartedAt(assembly.id),
   ]);
   const finalVoteIds = visibleDocuments
     .map((row) => row.finalVoteId)
@@ -346,6 +415,7 @@ export async function loadControlSheet(
     turns,
     itemSheet,
     itemVoteRows,
+    progress,
   ] = await Promise.all([
     loadReaderItems(actor, assembly.id, visibleDocuments),
     findPresentedAmendments(visibleDocuments.map((row) => row.id)),
@@ -353,13 +423,14 @@ export async function loadControlSheet(
       ? db.select().from(votes).where(inArray(votes.id, finalVoteIds))
       : Promise.resolve([]),
     internal ? loadSpokenTurns(actor, assembly.id) : Promise.resolve([]),
-    internal
-      ? db
-          .select()
-          .from(controlSheetItems)
-          .where(eq(controlSheetItems.assemblyId, assembly.id))
-      : Promise.resolve([]),
+    // Every reader's: whether each row was treated reaches everyone
+    // (`treated`); the rest of the row only a sheet key.
+    db
+      .select()
+      .from(controlSheetItems)
+      .where(eq(controlSheetItems.assemblyId, assembly.id)),
     loadItemVoteRows(assembly.id),
+    loadAwaitingVote(db, assembly.id),
   ]);
 
   const itemsById = readerItems.items;
@@ -408,7 +479,7 @@ export async function loadControlSheet(
         );
       });
   const [amendmentSheet, recorders] = await Promise.all([
-    internal && visibleAmendments.size > 0
+    visibleAmendments.size > 0
       ? db
           .select()
           .from(controlSheetAmendments)
@@ -422,21 +493,38 @@ export async function loadControlSheet(
   ]);
   // Rows of items the reader does not get stay out, as the items do.
   const itemRows = itemSheet.filter((row) => itemsById.has(row.agendaItemId));
-  const names = await loadUserNames([
-    ...itemRows.flatMap(itemRowUsers),
-    ...amendmentSheet.flatMap(amendmentRowUsers),
-  ]);
+  const names = internal
+    ? await loadUserNames([
+        ...itemRows.flatMap(itemRowUsers),
+        ...amendmentSheet.flatMap(amendmentRowUsers),
+      ])
+    : new Map<string, string>();
+  const treated = sheetTreatedIds({
+    itemRows,
+    awaiting: progress.awaiting,
+    amendments: visibleRows,
+    amendmentRows: amendmentSheet,
+    sessionStartedAt,
+  });
 
   return {
-    sessionStartedAt: sessionStartedAt?.toISOString() ?? null,
+    sessionStartedAt: internal
+      ? (sessionStartedAt?.toISOString() ?? null)
+      : null,
     documents: documentDtos,
     turns: turns.filter(
       (turn) => turn.agendaItemId === null || itemsById.has(turn.agendaItemId),
     ),
-    itemRows: itemRows.map((row) => toItemRowDto(row, names)),
-    amendmentRows: amendmentSheet.map((row) =>
-      toAmendmentRowDto(row, visibleAmendments.get(row.amendmentId)!, names),
-    ),
+    itemRows: internal ? itemRows.map((row) => toItemRowDto(row, names)) : [],
+    amendmentRows: internal
+      ? amendmentSheet.map((row) =>
+          toAmendmentRowDto(
+            row,
+            visibleAmendments.get(row.amendmentId)!,
+            names,
+          ),
+        )
+      : [],
     positions: sheetPositions(answeredRows, documentById, recorders, (row) => {
       const document = documentById.get(row.documentId);
       return seesAnswerRecord(actor, {
@@ -453,6 +541,12 @@ export async function loadControlSheet(
     itemVotes: itemVoteRows
       .filter((row) => itemsById.has(row.subjectId))
       .map((row) => toItemVoteDto(row, readerItems.titleHidden)),
+    treated,
+    // Only with a sheet key: an item above a voted document the reader
+    // cannot see (one not public yet) would tell it that document is there.
+    awaitingItemIds: internal
+      ? [...progress.awaiting].filter((id) => itemsById.has(id)).sort()
+      : null,
     can: {
       internal,
       edit: canEditControlSheet(actor),
@@ -643,6 +737,72 @@ export const CONTROL_SHEET_WITHDRAWN_REASON =
   "control_sheet_withdrawn_document";
 
 /**
+ * Reason of the 422 the Mesa's mark, or a «Retirado» or «Decaído» by hand,
+ * gets on an item that still waits for a vote (itemsAwaitingVote): it is
+ * treated only by its votes (user's decision of 2026-11-19).
+ */
+export const CONTROL_SHEET_AWAITING_VOTE_REASON = "control_sheet_awaiting_vote";
+
+/**
+ * Reason of the 422 the Mesa's mark gets on an amendment still to be
+ * decided: it is treated when the Mesa settles it (user's decision of
+ * 2026-11-19).
+ */
+export const CONTROL_SHEET_UNDECIDED_REASON =
+  "control_sheet_amendment_undecided";
+
+/**
+ * Whether a body for an item changes only the Mesa's treated mark: the one
+ * write the Mesa (session:moderate) sends from the session console, sheet
+ * key or not (PATCH .../control-sheet/items/[item]).
+ */
+export function sheetItemBodyOnlyTreated(body: ItemBody): boolean {
+  return (
+    body.treated !== undefined &&
+    body.observations === undefined &&
+    body.listed === undefined &&
+    body.result === undefined
+  );
+}
+
+/**
+ * An item's sheet row as the Mesa without a sheet key may read it, after
+ * setting or undoing the mark from the session console: only its tokens and
+ * whether it is marked, never the observations, a result by hand, `listed`,
+ * nor who marked it or wrote them and when.
+ */
+export function redactItemRowDto(
+  row: ControlSheetItemRowDto,
+): ControlSheetItemRowDto {
+  return {
+    id: row.id,
+    agendaItemId: row.agendaItemId,
+    listed: false,
+    listedUpdatedAt: row.listedUpdatedAt,
+    manualResult: null,
+    resultUpdatedAt: row.resultUpdatedAt,
+    treated:
+      row.treated && row.progressUpdatedAt
+        ? { by: null, at: row.progressUpdatedAt }
+        : null,
+    progressUpdatedAt: row.progressUpdatedAt,
+    observations: "",
+    observationsEdited: null,
+    observationsUpdatedAt: row.observationsUpdatedAt,
+  };
+}
+
+/**
+ * Whether a body for an item would treat it by hand: the Mesa's mark set,
+ * or a «Retirado» or «Decaído». Refused on an item that waits for a vote.
+ */
+export function sheetItemBodyTreats(body: ItemBody): boolean {
+  return (
+    body.treated?.value === true || isSettledManualResult(body.result?.value)
+  );
+}
+
+/**
  * Changes what the sheet notes about an agenda item. Observations and
  * `listed` are the sheet's editors'; the result by hand and `treated` the
  * Mesa's, since a «Retirado» or «Decaído» counts as treated. A «Retirado» by
@@ -658,6 +818,11 @@ export async function updateSheetItem(
 ): Promise<ControlSheetItemRowDto> {
   if (body.observations || body.listed) requireEdit(actor);
   if (body.result || body.treated) requireModerate(actor);
+  // The Mesa without a sheet key (the session console's mark) reads back
+  // no more of the row than its tokens.
+  const shown = canViewControlSheet(actor)
+    ? (row: ControlSheetItemRowDto) => row
+    : redactItemRowDto;
 
   return db.transaction(async (tx) => {
     await shareLockAssembly(tx, assembly.id);
@@ -671,6 +836,16 @@ export async function updateSheetItem(
         ),
       );
     if (!present) fail(404, "Punto no encontrado");
+    // What still waits for a vote is treated by its votes alone: neither
+    // the Mesa's mark nor a result by hand treats it meanwhile.
+    if (sheetItemBodyTreats(body)) {
+      const { awaiting } = await loadAwaitingVote(tx, assembly.id);
+      if (awaiting.has(item.id)) {
+        fail(422, "Este punto se da por tratado cuando se vota", {
+          reason: CONTROL_SHEET_AWAITING_VOTE_REASON,
+        });
+      }
+    }
     if (body.result?.value === "withdrawn") {
       const [held] = await tx
         .select({ id: documents.id })
@@ -726,7 +901,7 @@ export async function updateSheetItem(
         {
           reason: CONTROL_SHEET_STALE_REASON,
           fields: stale,
-          row: toItemRowDto(row, names),
+          row: shown(toItemRowDto(row, names)),
         },
       );
     }
@@ -806,7 +981,7 @@ export async function updateSheetItem(
       }
     }
     const names = await loadUserNames(itemRowUsers(current), tx);
-    return toItemRowDto(current, names);
+    return shown(toItemRowDto(current, names));
   });
 }
 
@@ -830,6 +1005,19 @@ export async function updateSheetAmendment(
 
   return db.transaction(async (tx) => {
     await shareLockAssembly(tx, assembly.id);
+    // An amendment still to be decided is treated when the Mesa settles
+    // it, never by the mark.
+    if (body.treated?.value === true) {
+      const [current] = await tx
+        .select({ status: amendments.status })
+        .from(amendments)
+        .where(eq(amendments.id, amendment.id));
+      if (current?.status === "submitted") {
+        fail(422, "Esta enmienda se da por tratada cuando se decide", {
+          reason: CONTROL_SHEET_UNDECIDED_REASON,
+        });
+      }
+    }
     await tx
       .insert(controlSheetAmendments)
       .values({ assemblyId: assembly.id, amendmentId: amendment.id })

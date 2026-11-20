@@ -12,6 +12,7 @@ import {
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
 
 /**
@@ -100,6 +101,25 @@ const confirming = ref(false);
 const questionTouched = ref(false);
 const summary = useTemplateRef<HTMLElement>("summary");
 const questionId = useId();
+
+/**
+ * What a secret vote counted here announces on the projection: the item,
+ * and the question only when the public reads the item's title (the
+ * question may repeat it; the server drops it otherwise too).
+ */
+const announce = computed<LiveTallyAnnounce | null>(() => {
+  if (!itemId.value) return null;
+  const item = row.value?.item;
+  const titlePublic =
+    item !== undefined &&
+    !item.unlisted &&
+    !item.titleHidden &&
+    item.publicTitleHidden === false;
+  return {
+    subject: { type: "agenda_item", id: itemId.value },
+    question: titlePublic ? question.value : null,
+  };
+});
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
@@ -280,6 +300,7 @@ async function record(): Promise<void> {
           :headcount="session.voteHeadcount.value"
           :methods="methods"
           :assent-text="t('session.itemVote.assentText')"
+          :announce="announce"
           unanimity
         />
 

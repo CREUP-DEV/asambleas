@@ -7,6 +7,7 @@ import {
 } from "../../constants/domain";
 import { READING_BEAT_MAX_SECONDS } from "../documentViews";
 import type {
+  AmendmentCorrectionBody,
   BulkDocumentsBody,
   CorrectionBody,
   UndoValidationBody,
@@ -117,6 +118,16 @@ export const correctionBodySchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+/**
+ * Body of POST .../amendments/[amendment]/correction
+ * (AmendmentCorrectionBody): the same note, and whether the amendment can be
+ * corrected (`correctable`, true when absent); false declares it not
+ * admitted instead.
+ */
+export const amendmentCorrectionBodySchema = correctionBodySchema.extend({
+  correctable: z.boolean().optional(),
+});
+
 /** Body of PUT .../documents/[document]/positions (PositionsPublicationBody). */
 export const positionsPublicationBodySchema = z.object({
   public: z.boolean(),
@@ -188,6 +199,10 @@ export type _DocumentSchemaChecks = [
   Assignable<BulkDocumentsBody, z.output<typeof bulkDocumentsSchema>>,
   Assignable<DocumentUpdateBody, z.output<typeof documentUpdateSchema>>,
   Assignable<CorrectionBody, z.output<typeof correctionBodySchema>>,
+  Assignable<
+    AmendmentCorrectionBody,
+    z.output<typeof amendmentCorrectionBodySchema>
+  >,
   Assignable<UndoValidationBody, z.output<typeof undoValidationBodySchema>>,
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
   Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,

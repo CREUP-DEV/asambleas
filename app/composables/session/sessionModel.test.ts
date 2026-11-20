@@ -17,6 +17,7 @@ import {
   isSessionVoteReady,
   sessionAdmissionCandidates,
   sessionAssentPlan,
+  sessionBlocToggle,
   sessionCleanVote,
   sessionApprovalImpact,
   sessionConsolidatedPreview,
@@ -1048,6 +1049,29 @@ describe("session model", () => {
       expect(isSessionReopenable(a1, byId)).toBe(false);
     });
 
+    it("leaves an incorporated amendment to its answer while it can change", () => {
+      const byId = new Map<string, AmendmentDto>();
+      const incorporated = am("i1", {
+        status: "approved",
+        approvalMethod: "proponent",
+        can: { ...a1.can, position: true },
+      });
+      // Reopened, its acceptance would incorporate it again: the answer is
+      // what takes it out.
+      expect(isSessionReopenable(incorporated, byId)).toBe(false);
+      // Nobody here may change the answer (or the rule is "vote" now).
+      expect(
+        isSessionReopenable(
+          { ...incorporated, can: { ...incorporated.can, position: false } },
+          byId,
+        ),
+      ).toBe(true);
+      // Approved by the assembly: reopened as before, answerable or not.
+      expect(
+        isSessionReopenable({ ...incorporated, approvalMethod: "vote" }, byId),
+      ).toBe(true);
+    });
+
     it("leaves behind a transactional another one got ahead of", () => {
       // T2 replaced s1 first; T1 over s1 and s2 still waits for UPV and
       // can never replace s1 now (the server answers 409).
@@ -1375,6 +1399,20 @@ describe("session model", () => {
           false,
         ),
       ).toEqual(none);
+      // Approved by the assembly: the answer may still change, under either
+      // rule, and accepting is never blocked (it changes nothing else).
+      for (const rule of ["vote", "incorporate"] as const) {
+        const approved = {
+          ...answerable,
+          status: "approved" as const,
+          approvalMethod: "vote" as const,
+        };
+        expect(sessionPositionMenu(approved, rule, false)).toEqual(none);
+        expect(sessionPositionMenu(approved, rule, true)).toBe(null);
+        expect(
+          sessionPositionMenu({ ...approved, can: can({}) }, rule, false),
+        ).toBe(null);
+      }
       // Not validated, or late and not admitted: not the presenter's yet.
       expect(
         sessionPositionMenu(
@@ -1997,6 +2035,36 @@ describe("pending transactionals over an amendment (SES-3)", () => {
     const plan = sessionAssentPlan([withdrawn, x1, y1, x3, x4]);
     expect(plan.ready.map((x) => x.id)).toEqual(["x4", "x1", "x3"]);
     expect(plan.skipped).toEqual([]);
+    expect(plan.notAccepted).toEqual([]);
+  });
+
+  it("plans a bloc the Mesa picks with the same exclusions (2026-11-19)", () => {
+    // Not accepted, yet in the selection: kept out only by T9.
+    const plan = sessionAssentPlan(list, ["y1", "x3", "x4"]);
+    expect(plan.ready.map((x) => x.id)).toEqual(["x4"]);
+    expect(
+      plan.skipped.map((x) => [x.amendment.id, x.reason, x.conflictsWith]),
+    ).toEqual([
+      ["y1", "transactional_pending", ["t9"]],
+      ["x3", "transactional_clash", ["t9"]],
+    ]);
+
+    // Without T9: the one not accepted goes in, flagged; an accepted one
+    // left out of the selection stays out, and a decided one is dropped.
+    const withdrawn = { ...t9, status: "withdrawn" as const };
+    const decided = { ...x4, status: "approved" as const };
+    const bloc = sessionAssentPlan(
+      [withdrawn, x1, y1, x3, decided],
+      ["y1", "x3", "x4"],
+    );
+    expect(bloc.ready.map((x) => x.id)).toEqual(["y1", "x3"]);
+    expect(bloc.notAccepted).toEqual(["y1"]);
+    expect(bloc.skipped).toEqual([]);
+
+    // Two of the selection on the same words: the second waits.
+    const clash = sessionAssentPlan([withdrawn, x1, y1], ["x1", "y1"]);
+    expect(clash.ready).toHaveLength(1);
+    expect(clash.skipped.map((x) => x.reason)).toEqual(["overlap_candidate"]);
   });
 
   it("asks once for a one-click decision, naming what applies", () => {
@@ -2245,5 +2313,39 @@ describe("late amendments in a transactional (2026-11-19)", () => {
       { transactionalId: "t5", effect: "leaves" },
       { transactionalId: "t6", effect: "lapses" },
     ]);
+  });
+});
+
+describe("bloc selection (2026-11-19)", () => {
+  const order = ["a", "b", "c", "d", "e"];
+
+  it("toggles one row", () => {
+    expect(
+      sessionBlocToggle([], order, "b", { anchor: null, range: false }),
+    ).toEqual(["b"]);
+    expect(
+      sessionBlocToggle(["b", "d"], order, "b", { anchor: "d", range: false }),
+    ).toEqual(["d"]);
+  });
+
+  it("selects or clears a range with shift, in the queue's order", () => {
+    expect(
+      sessionBlocToggle(["a"], order, "d", { anchor: "b", range: true }),
+    ).toEqual(["a", "b", "c", "d"]);
+    // Upwards too.
+    expect(
+      sessionBlocToggle([], order, "b", { anchor: "d", range: true }),
+    ).toEqual(["b", "c", "d"]);
+    // The clicked row was selected: the range is cleared.
+    expect(
+      sessionBlocToggle(["a", "b", "c", "d"], order, "c", {
+        anchor: "a",
+        range: true,
+      }),
+    ).toEqual(["d"]);
+    // An anchor no longer listed: the row alone.
+    expect(
+      sessionBlocToggle([], order, "c", { anchor: "zz", range: true }),
+    ).toEqual(["c"]);
   });
 });

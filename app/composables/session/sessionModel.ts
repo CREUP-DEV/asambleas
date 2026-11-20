@@ -32,6 +32,7 @@ import {
   compareAmendmentCodes,
 } from "~/composables/amendment/workspace";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import { answerableAfterDecision } from "~~/shared/utils/positions";
 import {
   compareAmendmentAnswers,
   type AmendmentOrderOptions,
@@ -104,13 +105,17 @@ export const SESSION_REOPENABLE: AmendmentStatus[] = [
  * and, for a transactional, not turned down by a main author and either
  * one that replaced its sources (they stay replaced) or one whose loaded
  * sources are all still open. One that another transactional got ahead of
- * (it lapsed when the other replaced them) would come back stuck.
+ * (it lapsed when the other replaced them) would come back stuck. One its
+ * main presenter's acceptance incorporated is taken out by changing that
+ * answer while the viewer may record it (`can.position`): reopened, it
+ * would only be incorporated again.
  */
 export function isSessionReopenable(
   amendment: AmendmentDto,
   byId: ReadonlyMap<string, AmendmentDto>,
 ): boolean {
   if (!SESSION_REOPENABLE.includes(amendment.status)) return false;
+  if (isSessionIncorporated(amendment) && amendment.can.position) return false;
   if (amendment.kind !== "transactional") return true;
   if (sessionTransactionalRejectors(amendment).length > 0) return false;
   if (isSessionReplacing(amendment)) return true;
@@ -696,6 +701,9 @@ export function isSessionDebatable(amendment: AmendmentDto): boolean {
  * amendments are answered (validated and, if late, admitted: what
  * `can.position` says), never after the final vote, and an incorporated one
  * keeps its answer open until then (changing it takes it out of the text).
+ * One the assembly approved otherwise (by a vote, by assent or as a formal
+ * one) keeps its answer open too, and changing it changes nothing else
+ * (answerableAfterDecision, user's decision of 2026-11-19).
  * - null: nothing to offer, now or later from here;
  * - `waitsPublication`: open to the Mesa but still private, so no answer can
  *   be recorded until the Secretaría publishes it: the console shows the
@@ -714,7 +722,11 @@ export function sessionPositionMenu(
   voted: boolean,
 ): SessionPositionMenu | null {
   if (voted) return null;
-  if (amendment.status !== "submitted" && !isSessionIncorporated(amendment)) {
+  if (
+    amendment.status !== "submitted" &&
+    !isSessionIncorporated(amendment) &&
+    !answerableAfterDecision(amendment)
+  ) {
     return null;
   }
   // The server lets the main presenter answer what it sees: a validated,
@@ -1454,6 +1466,11 @@ export type SessionAssentSkipReason =
 
 export interface SessionAssentPlan {
   ready: AmendmentDto[];
+  /**
+   * The ready ones the main presenter has not accepted, which only a
+   * selection of the Mesa brings in: their row says «sin aceptar».
+   */
+  notAccepted: string[];
   skipped: {
     amendment: AmendmentDto;
     reason: SessionAssentSkipReason;
@@ -1476,19 +1493,29 @@ export interface SessionAssentPlan {
  * - amendments that collide with an earlier one of the batch.
  * A transactional skipped for the last two reasons does not count as left
  * out for the others: the first that collides keeps its place.
+ *
+ * With `selectedIds` (the bloc the Mesa picks, user's decision of
+ * 2026-11-19) the candidates are those instead, accepted or not, with the
+ * same exclusions; one no longer open (decided from another console) is
+ * left out without a word.
  */
-export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
+export function sessionAssentPlan(
+  list: AmendmentDto[],
+  selectedIds?: readonly string[],
+): SessionAssentPlan {
   const sorted = sortSessionAmendments(list);
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const approved = sorted.filter(
     (amendment) => amendment.status === "approved" && amendment.ops.length > 0,
   );
+  const selected = selectedIds ? new Set(selectedIds) : null;
   // Private ones are left out: the server refuses to decide them.
   const candidates = sorted.filter(
     (amendment) =>
-      isSessionOpen(amendment) &&
-      amendment.publishedAt !== null &&
-      amendment.position?.position === "accept",
+      isSessionBlocCandidate(amendment) &&
+      (selected
+        ? selected.has(amendment.id)
+        : amendment.position?.position === "accept"),
   );
 
   const skipped: SessionAssentPlan["skipped"] = [];
@@ -1574,7 +1601,45 @@ export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
     (a, b) =>
       (order.get(a.amendment.id) ?? 0) - (order.get(b.amendment.id) ?? 0),
   );
-  return { ready, skipped };
+  const notAccepted = ready
+    .filter((amendment) => amendment.position?.position !== "accept")
+    .map((amendment) => amendment.id);
+  return { ready, notAccepted, skipped };
+}
+
+/**
+ * The Mesa may put it in a bloc (user's decision of 2026-11-19): admitted,
+ * validated, public and still undecided, whatever the main presenter
+ * answered. The same amendments sessionAssentPlan takes as candidates,
+ * without asking for an acceptance.
+ */
+export function isSessionBlocCandidate(amendment: AmendmentDto): boolean {
+  return isSessionOpen(amendment) && amendment.publishedAt !== null;
+}
+
+/**
+ * A bloc selection after a click on one of its rows: the row alone toggles
+ * it; with shift, every row from the last one clicked (`anchor`) to this
+ * one takes the state this one gets, in the order of `order` (the
+ * selectable rows as the queue lists them).
+ */
+export function sessionBlocToggle(
+  selection: readonly string[],
+  order: readonly string[],
+  id: string,
+  options: { anchor: string | null; range: boolean },
+): string[] {
+  const selecting = !selection.includes(id);
+  const from = options.anchor ? order.indexOf(options.anchor) : -1;
+  const to = order.indexOf(id);
+  const ids =
+    options.range && from !== -1 && to !== -1
+      ? order.slice(Math.min(from, to), Math.max(from, to) + 1)
+      : [id];
+  if (!selecting) return selection.filter((other) => !ids.includes(other));
+  const next = [...selection];
+  for (const other of ids) if (!next.includes(other)) next.push(other);
+  return next;
 }
 
 /** A decision the console sends in one click (or one key). */
@@ -2156,4 +2221,34 @@ export function buildSessionAgendaRows(
   };
   walk(null, 0);
   return rows;
+}
+
+/**
+ * Whether moving the debate from one agenda item to another leaves a vote
+ * unrecorded (user's decision of 2026-11-20), so the console in control
+ * asks first: the item left waits for a vote (`awaiting`, the control
+ * sheet's rule) and the one reached is neither under it nor above it.
+ * Moving inside the item (to one of its sub-items or documents, or back
+ * up to it) keeps the vote at hand; ending the debate leaves it.
+ */
+export function sessionLeavesPendingVote(
+  items: readonly { id: string; parentId: string | null }[],
+  awaiting: (itemId: string) => boolean,
+  fromId: string | null,
+  toId: string | null,
+): boolean {
+  if (!fromId || fromId === toId || !awaiting(fromId)) return false;
+  if (!toId) return true;
+  const parentOf = new Map(items.map((item) => [item.id, item.parentId]));
+  const isUnder = (id: string, ancestor: string): boolean => {
+    const seen = new Set<string>();
+    let current = parentOf.get(id) ?? null;
+    while (current && !seen.has(current)) {
+      if (current === ancestor) return true;
+      seen.add(current);
+      current = parentOf.get(current) ?? null;
+    }
+    return false;
+  };
+  return !isUnder(toId, fromId) && !isUnder(fromId, toId);
 }

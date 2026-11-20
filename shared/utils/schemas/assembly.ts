@@ -6,6 +6,8 @@ import {
   DOCUMENT_KINDS,
   MAJORITIES,
   MILESTONE_KEYS,
+  VOTE_METHODS,
+  VOTE_SUBJECTS,
 } from "../../constants/domain";
 import type {
   AgendaItemBody,
@@ -21,6 +23,7 @@ import type {
   LiveStateBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
+import { VOTE_QUESTION_MAX_LENGTH } from "./vote";
 
 /**
  * Request bodies and queries of the assembly, calendar, agenda and live
@@ -40,6 +43,8 @@ export const SPEAKING_LIMIT_MAX_SECONDS = 3600;
 /** The default limit of a speaking turn: three minutes (the column's default). */
 export const DEFAULT_SPEAKING_LIMIT_SECONDS = 180;
 export const MILESTONE_NOTE_MAX_LENGTH = 500;
+/** The most amendments a bloc on screen holds (LiveStateBody.amendmentBloc). */
+export const LIVE_BLOC_MAX_AMENDMENTS = 200;
 export const ASSEMBLY_LIST_PAGE_SIZE = 20;
 
 const assemblyIdPattern = /^[a-z0-9]{20,32}$/;
@@ -205,6 +210,14 @@ export const liveStateBodySchema = z.object({
   agendaItemId: assemblyEntityId.nullable().optional(),
   documentId: assemblyEntityId.nullable().optional(),
   amendmentId: assemblyEntityId.nullable().optional(),
+  amendmentBloc: z
+    .array(assemblyEntityId)
+    .max(LIVE_BLOC_MAX_AMENDMENTS)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "duplicate_id",
+    })
+    .nullable()
+    .optional(),
   voteId: assemblyEntityId.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
   speakersVisible: z.boolean().optional(),
@@ -296,14 +309,46 @@ export const livePointerBodySchema = z.object({
 
 const ballotCount = z.number().int().min(0).max(100_000);
 
-/** POST .../live-tally: a secret vote's running count, or null. */
+/** How the room follows a secret vote's count (LiveTallyReveal). */
+export const LIVE_TALLY_REVEALS = ["end", "live"] as const;
+
+/**
+ * A secret vote's count nobody has sent again for this long ends, on the
+ * server and on the projection: the console repeats it every 15 s while
+ * its form is open, and a hidden tab's timers fire once a minute, so 90 s
+ * (as the projection control's CONTROL_TTL_MS) keeps a live count alive.
+ */
+export const LIVE_TALLY_TTL_MS = 90_000;
+
+/**
+ * POST .../live-tally: a secret vote the Mesa is counting (what is voted,
+ * its question, how the count is shown and, ballot by ballot, the count),
+ * or null.
+ */
 export const liveTallyBodySchema = z.object({
   tally: z
     .object({
-      inFavor: ballotCount,
-      against: ballotCount,
-      blank: ballotCount,
-      invalid: ballotCount,
+      subject: z
+        .object({
+          type: z.enum(VOTE_SUBJECTS),
+          id: assemblyEntityId.nullable(),
+        })
+        .nullable(),
+      question: z
+        .string()
+        .max(VOTE_QUESTION_MAX_LENGTH)
+        .transform((value) => normalizeText(value).trim() || null)
+        .nullable(),
+      method: z.enum(VOTE_METHODS),
+      reveal: z.enum(LIVE_TALLY_REVEALS),
+      counts: z
+        .object({
+          inFavor: ballotCount,
+          against: ballotCount,
+          blank: ballotCount,
+          invalid: ballotCount,
+        })
+        .nullable(),
       present: ballotCount.nullable(),
       majority: z.enum(MAJORITIES),
     })

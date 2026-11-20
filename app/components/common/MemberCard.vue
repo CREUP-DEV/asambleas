@@ -4,8 +4,11 @@ import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
 import { isGenericExecutiveMember } from "~/utils/executiveMembers";
 
-/** The CREUP emblem, the generic "CEA"'s avatar (user's decision of 2026-11-19). */
-const CREUP_EMBLEM = "/marca/isotipo-granate.svg";
+/**
+ * The CREUP imagotype (the emblem with the word "CREUP" under it), the
+ * generic "CEA"'s avatar (user's decisions of 2026-11-19).
+ */
+const CREUP_EMBLEM = "/marca/imagotipo-granate.svg";
 
 /**
  * A member as the card its acronym opens on hover shows it (CommonMemberBadge,

@@ -11,11 +11,14 @@ import { shownVoteCounts } from "~~/shared/utils/votes";
 import type {
   AmendmentDto,
   LiveEventDto,
+  LiveTally,
+  LiveTallyCounts,
   MemberRef,
   SpeakersDto,
   SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
+import type { VoteSubject } from "~~/shared/constants/domain";
 import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 import {
   isSessionReplacing,
@@ -288,6 +291,73 @@ export function liveAmendmentCode(
   return amendment.code ?? (amendment.number ? `#${amendment.number}` : "");
 }
 
+/**
+ * The codes of the amendments a transactional combines, in text order (as
+ * the bloc chips: its sources are stored in no order of their own), among
+ * those the room can read (published ones): the projection says
+ * «Transacciona las enmiendas E3 y E5» under its title. Empty for any
+ * other amendment, or when none of them is listed.
+ */
+export function liveTransactedCodes(
+  amendment: Pick<AmendmentDto, "kind" | "sourceIds">,
+  list: readonly AmendmentDto[],
+): string[] {
+  if (amendment.kind !== "transactional") return [];
+  const wanted = new Set(amendment.sourceIds);
+  const codes: string[] = [];
+  for (const source of sortSessionAmendments(
+    list.filter(
+      (item) =>
+        wanted.has(item.id) &&
+        item.status !== "draft" &&
+        item.publishedAt !== null,
+    ),
+  )) {
+    const code = liveAmendmentCode(source);
+    if (code && !codes.includes(code)) codes.push(code);
+  }
+  return codes;
+}
+
+/** One amendment of the bloc on screen, as the room reads it. */
+export interface LiveBlocEntry {
+  id: string;
+  code: string;
+  /** Its main author (the first one), named by acronym on the chip. */
+  author: MemberRef | null;
+  /** Approved already: its chip turns green as the Mesa approves it. */
+  approved: boolean;
+  /** Decided some other way (rejected, withdrawn, lapsed...). */
+  settled: boolean;
+}
+
+/**
+ * The bloc on screen («Se propone aprobar en bloque», user's decision of
+ * 2026-11-19) in text order, among the amendments the room can read
+ * (published ones): the projection's chips and the live view's notice.
+ */
+export function liveBlocEntries(
+  ids: readonly string[] | null | undefined,
+  list: readonly AmendmentDto[],
+): LiveBlocEntry[] {
+  if (!ids || ids.length === 0) return [];
+  const wanted = new Set(ids);
+  return sortSessionAmendments(
+    list.filter(
+      (item) =>
+        wanted.has(item.id) &&
+        item.status !== "draft" &&
+        item.publishedAt !== null,
+    ),
+  ).map((item) => ({
+    id: item.id,
+    code: liveAmendmentCode(item),
+    author: item.authors[0] ?? null,
+    approved: item.status === "approved",
+    settled: item.status !== "approved" && item.status !== "submitted",
+  }));
+}
+
 /** A sentence under a row, as an i18n key and its parameters. */
 export interface LiveAmendmentNote {
   key: string;
@@ -462,7 +532,8 @@ export interface LiveVoteAgendaRow {
  * something else.
  */
 export function liveVoteSubject(
-  vote: VoteDto,
+  /** A recorded vote, or the secret vote being counted (LiveTally). */
+  vote: { subjectType: VoteSubject; subjectId: string | null },
   context: {
     amendments: readonly AmendmentDto[];
     document: { id: string; title: string; reference: string | null } | null;
@@ -611,4 +682,46 @@ export function liveVoteCounts(
   vote: VoteDto,
 ): { key: LiveVoteCountKey; value: number }[] {
   return shownVoteCounts(vote);
+}
+
+// A secret vote being counted --------------------------------------------------
+
+/** The ballots of a secret vote, in the order the projection shows them. */
+export const LIVE_TALLY_KEYS = [
+  "inFavor",
+  "against",
+  "blank",
+  "invalid",
+] as const satisfies readonly (keyof LiveTallyCounts)[];
+
+/**
+ * The running count of a secret vote shown ballot by ballot, each with its
+ * share of the largest one (the bars); empty when the count is only shown
+ * with the result (`reveal: "end"`, no counts).
+ */
+export function liveTallyRows(
+  tally: Pick<LiveTally, "counts"> | null | undefined,
+): {
+  key: (typeof LIVE_TALLY_KEYS)[number];
+  count: number;
+  share: number;
+}[] {
+  const counts = tally?.counts;
+  if (!counts) return [];
+  const top = Math.max(1, ...LIVE_TALLY_KEYS.map((key) => counts[key]));
+  return LIVE_TALLY_KEYS.map((key) => ({
+    key,
+    count: counts[key],
+    share: counts[key] / top,
+  }));
+}
+
+/** The ballots counted so far; 0 without a running count. */
+export function liveTallyCast(
+  tally: Pick<LiveTally, "counts"> | null | undefined,
+): number {
+  const counts = tally?.counts;
+  return counts
+    ? LIVE_TALLY_KEYS.reduce((sum, key) => sum + counts[key], 0)
+    : 0;
 }

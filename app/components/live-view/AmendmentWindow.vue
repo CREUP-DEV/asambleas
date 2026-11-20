@@ -22,8 +22,21 @@ const props = withDefaults(
     showPosition?: boolean;
     /** Localized path of the document workspace. */
     documentPath: string | null;
+    /**
+     * Every amendment of the document, for the note under the badge
+     * («Sustituida por T1») when `rows` is a filtered list (the control
+     * sheet's preview pages through the rows it shows); `rows` otherwise.
+     */
+    noteRows?: LiveAmendmentRow[];
+    /**
+     * `document` is on its way (the control sheet's preview fetches it on
+     * opening): a skeleton rather than the amendment against no text.
+     */
+    loading?: boolean;
+    /** `document` could not be loaded. */
+    failed?: boolean;
   }>(),
-  { showPosition: false },
+  { showPosition: false, noteRows: undefined, loading: false, failed: false },
 );
 
 /** The amendment shown; null when closed. */
@@ -49,7 +62,7 @@ const open = computed({
 
 const note = computed(() => {
   if (!row.value) return null;
-  const found = liveAmendmentNote(row.value, props.rows);
+  const found = liveAmendmentNote(row.value, props.noteRows ?? props.rows);
   return found ? t(found.key, found.params ?? {}) : null;
 });
 
@@ -87,7 +100,16 @@ watch(amendmentId, async () => {
   >
     <template #body>
       <div v-if="row" ref="body">
+        <CommonDocumentSkeleton v-if="loading" />
+        <UAlert
+          v-else-if="failed"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="t('liveView.document.loadError')"
+        />
         <LiveViewAmendmentSummary
+          v-else
           :amendment="row.amendment"
           :document="document"
           :state="row.state"

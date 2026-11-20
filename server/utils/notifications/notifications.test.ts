@@ -6,6 +6,7 @@ const { noticesForEvent } = await import("./rules");
 const { eventMayNotify } = await import("./triggers");
 const { renderDigestEmail, renderNoticeEmail } = await import("./template");
 const { readSmtpConfig, describeSmtpError } = await import("./mailer");
+const { inadmissibleWording } = await import("./wording");
 const { readNotificationSettings } =
   await import("~~/shared/utils/schemas/notifications");
 const { DEFAULT_NOTIFICATION_SETTINGS } =
@@ -272,6 +273,35 @@ describe("noticesForEvent", () => {
         ),
       ),
     ).toEqual(["presenter_correction"]);
+  });
+});
+
+describe("inadmissibleWording", () => {
+  const amendment = "ABC 4 al documento «Ley»";
+
+  it("says the Secretaría's no cannot be corrected, with its note", () => {
+    const wording = inadmissibleWording(
+      { method: "secretaria", onReview: true, note: "Fuera del objeto." },
+      amendment,
+    );
+    expect(wording.lead).toContain("La Secretaría no ha admitido");
+    expect(wording.lead).toContain("No se puede corregir");
+    expect(wording.note).toEqual({
+      label: "Nota de la Secretaría",
+      text: "Fuera del objeto.",
+    });
+  });
+
+  it("gives the Mesa's note, and no note when there is none", () => {
+    const mesa = inadmissibleWording(
+      { method: "mesa", note: "Motivo." },
+      amendment,
+    );
+    expect(mesa.lead).toBe(
+      "Tu enmienda ABC 4 al documento «Ley» no ha sido admitida.",
+    );
+    expect(mesa.note).toEqual({ label: "Nota", text: "Motivo." });
+    expect(inadmissibleWording({ method: "vote" }, amendment).note).toBeNull();
   });
 });
 

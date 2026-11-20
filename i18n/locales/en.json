@@ -89,6 +89,8 @@
       "unknown": "The operation could not be completed.",
       "controlSheetStale": "Someone changed this row of the sheet at the same time. What is there now is shown.",
       "controlSheetWithdrawn": "An item with documents is not marked as withdrawn by hand: the document is withdrawn.",
+      "controlSheetAwaitingVote": "This item counts as dealt with once it is voted: until then it is not marked by hand nor noted as withdrawn or lapsed.",
+      "controlSheetUndecided": "This amendment counts as dealt with once the Mesa decides it: it is not marked by hand before.",
       "seatingStale": "Someone changed the room at the same time. What is there now is shown.",
       "seatingSeatsOccupied": "The change removes seats where people are sitting.",
       "seatingNotFound": "That is no longer in the room. What is there now is shown.",
@@ -844,6 +846,7 @@
         "images_in_tables": "Images inside tables or lists are not imported: insert them outside.",
         "images_without_alt": "Some images have no description: they show a dashed border. Add one from their menu (right-click) before sending the document.",
         "tables_flattened": "Tables inside another table were turned into one paragraph per row, with cells separated by \"{'|'}\".",
+        "tables_split": "Tables placed side by side were split into separate tables, one after the other.",
         "highlight": "Text highlighting was lost; check whether it marked anything important."
       },
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
@@ -1556,10 +1559,12 @@
         "incorporateIfAccepted": "If the document's presenter accepts it, it goes into the text without a vote. Otherwise the assembly votes on it.",
         "incorporated": "It is in the text without a vote. If the answer changes before the final vote, it will be undecided again.",
         "vote": "The assembly will vote on it.",
-        "voteAnyway": "The assembly will vote on it, whether the document's presenter accepts it or not."
+        "voteAnyway": "The assembly will vote on it, whether the document's presenter accepts it or not.",
+        "decided": "It is already approved: changing the answer changes neither the approval nor the text."
       },
       "savedIncorporated": "It has been put in the text without a vote.",
       "savedReopened": "It is no longer in the text: it is undecided again.",
+      "savedDecided": "It is still approved: the answer does not change the decision.",
       "later": "It can be answered later by {member}.",
       "laterYou": "You can answer it later.",
       "yourTurn": "It is your turn to answer it.",
@@ -1927,6 +1932,22 @@
         "formal": "From amendment of content to amendment of form",
         "partial": "From amendment of form to amendment of content"
       }
+    },
+    "inadmissibleOnReview": {
+      "legend": "Can it be corrected?",
+      "yes": "Yes: it goes back to its authors so they can fix it and present it again",
+      "no": "No: it is not admitted. It is closed and will not be debated",
+      "noPublished": "It is published: the note will show with it.",
+      "description": "{subject} will not be admitted: its authors will not be able to fix it or present it again.",
+      "noteLabel": "Why is it not admitted?",
+      "noteHelp": "Its authors will read it as written. The Mesa can admit it again.",
+      "noteRequired": "Write why it is not admitted.",
+      "send": "Do not admit it",
+      "done": "Amendment not admitted",
+      "doneDescription": "Its authors will see it with your note. They cannot fix it.",
+      "failed": "The amendment could not be declared not admitted",
+      "action": "Do not admit it",
+      "actionHelp": "If it cannot be fixed, close it: its authors will no longer be able to fix it."
     },
     "validationUndo": {
       "label": "Amendment validation",
@@ -3005,6 +3026,7 @@
         "authorsChanged": "The Secretariat changed who presents {amendment}.",
         "admitted": "The assembly decided to treat {amendment}: it will be debated.",
         "inadmissible": "Not admitted: {amendment} will not be debated.",
+        "inadmissibleReview": "The Secretariat did not admit {amendment}: it cannot be fixed and will not be debated.",
         "approved": "Approved: {amendment} goes into the text.",
         "incorporated": "The document's presenter accepted {amendment}: it is already in the text without a vote.",
         "rejected": "Rejected: {amendment} leaves the text as it was.",
@@ -3676,7 +3698,16 @@
     },
     "progress": {
       "projected": "Projected",
-      "treated": "Treated"
+      "treated": "Treated",
+      "mark": "Mark as treated",
+      "unmark": "Unmark as treated",
+      "markItem": "Mark {title} as treated",
+      "unmarkItem": "Marked as treated. Unmark {title}",
+      "markedHint": "Marked as treated · Unmark",
+      "markHint": "Mark as treated",
+      "staleMarkHint": "Marked, but it does not count until its vote · Unmark",
+      "unmarkStaleItem": "Marked, but it does not count until its vote. Unmark {title}",
+      "markFailed": "The treated mark could not be changed"
     },
     "recess": {
       "button": "Recess",
@@ -3907,6 +3938,16 @@
       "undoBallot": "Undo the last one",
       "liveCountHint": "Each vote shows at once on the projection.",
       "liveCountHintKeys": "Keys 1 to 4: in favour, against, blank and invalid. Each vote shows at once on the projection.",
+      "reveal": {
+        "label": "How the count is projected",
+        "end": "At the end, with the result",
+        "endHint": "The screen announces the vote; the ballots show only with the result.",
+        "live": "Live, ballot by ballot",
+        "liveHint": "Each ballot shows on screen as it is counted.",
+        "liveLocked": "Set the ballots back to zero to count live: those already entered would show before the result.",
+        "pending": "Choose how the count is projected to start counting the votes.",
+        "notProjected": "This console does not control the projection: the count will not show on screen."
+      },
       "title": "Vote on {code}",
       "description": "Amendments are decided by simple majority unless the Mesa sets another one.",
       "method": "Method",
@@ -4029,6 +4070,29 @@
       "select": "Mark {code} as lapsed",
       "keep": "Keep them",
       "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed"
+    },
+    "bloc": {
+      "select": "Select for a bloc",
+      "fill": "Tick:",
+      "fillAccepted": "The accepted ones",
+      "fillNone": "None",
+      "rangeHint": "Shift + click ticks a range",
+      "barLabel": "Selected bloc",
+      "count": "None selected | 1 selected | {count} selected",
+      "none": "Tick the amendments proposed for approval as a bloc",
+      "project": "Project bloc",
+      "unproject": "Take off the screen",
+      "approve": "Approve as a bloc by assent",
+      "include": "Include {code} in the bloc",
+      "notAccepted": "not accepted",
+      "onScreen": "Bloc on screen",
+      "onScreenWhat": "a bloc of 1 amendment | a bloc of {count} amendments",
+      "progress": "{approved} of {total} approved",
+      "announce": "On screen, the bloc {codes}",
+      "otherDocumentTitle": "Project the bloc of another document?",
+      "assentTitle": "Approve as a bloc by assent",
+      "assentDescription": "Amendments the Mesa proposes to approve together. If nobody objects, they are approved one after another.",
+      "assentEmpty": "No amendment of the selection can be approved now"
     },
     "assent": {
       "title": "Approve accepted amendments by assent",
@@ -4196,6 +4260,11 @@
       "otherDocumentTitle": "Move the debate to {code}?",
       "otherDocument": "The room is debating another document: the projection and the attendees will move to this one.",
       "moveDebate": "Move the debate here"
+    },
+    "leaveVote": {
+      "title": "Move on without recording the vote?",
+      "description": "“{item}” has a vote that is not recorded. If you move to another item, it stays pending until you record it.",
+      "confirm": "Move on without it"
     },
     "validateConfirm": {
       "title": "Validate and publish 1 amendment? | Validate and publish {count} amendments?",
@@ -4471,8 +4540,14 @@
     }
   },
   "projection": {
+    "bloc": {
+      "title": "Proposed for approval as a bloc",
+      "progress": "{approved} of {total} approved",
+      "approved": "Approved"
+    },
     "tally": {
-      "title": "Secret vote · counting",
+      "title": "Secret vote",
+      "revealAtEnd": "Counting in progress: the result will be shown at the end",
       "castOf": "{count} of {present} present have voted",
       "cast": "1 vote counted | {count} votes counted"
     },
@@ -4494,6 +4569,11 @@
     "pdfPending": "The PDF of this document has not been uploaded yet.",
     "amendment": "Amendment {code}",
     "amendmentHidden": "The amendment under debate is not public yet.",
+    "transacts": "Combines amendment {codes} | Combines amendments {codes}",
+    "amendments": "Amendments to the document",
+    "amendmentsCompact": "{approved} approved · {undecided} undecided",
+    "resultCounts": "{inFavor} in favour, {against} against, {third} abstentions.",
+    "resultCountsSecret": "{inFavor} in favour, {against} against, {third} blank.",
     "amendmentStats": "{approved} amendments approved · {undecided} undecided · {total} in total",
     "finalApproved": "Final text approved",
     "finalRejected": "Final text rejected",
@@ -4630,6 +4710,7 @@
       "countToPublish": "{count} validated, not published | {count} validated, not published",
       "actionError": "Could not complete the action on the amendment",
       "correctionHint": "It goes back to its authors as a draft, with your note.",
+      "inadmissibleHint": "It is closed. Its authors will see it with your note.",
       "done": {
         "validate_publish": {
           "one": "{label} validated and published",
@@ -4644,6 +4725,7 @@
           "many": "{count} amendments published"
         },
         "correction": "A correction of {label} was requested",
+        "inadmissible": "{label} was not admitted",
         "unvalidated": "Validation of {label} undone"
       },
       "presentedBy": "Presented by",
@@ -4723,6 +4805,9 @@
         "note": "Note",
         "optional": "Optional",
         "noteHelp": "It stays on the record. For example, who asked for it.",
+        "reasonLabel": "Why is it not considered? | Why are they not considered?",
+        "reasonHelp": "It is the reason: its authors and whoever reads the amendment will see it as written. | It is the reason: their authors and whoever reads the amendments will see it as written.",
+        "voteNoteHelp": "If the vote does not pass, it is the reason: its authors and whoever reads the amendment will see it as written. | If the vote does not pass, it is the reason: their authors and whoever reads the amendments will see it as written.",
         "summaryTreat": "It will be recorded that the assembly will consider {subject}. It will be public and can be debated. | It will be recorded that the assembly will consider {subject}. They will be public and can be debated.",
         "summaryNotTreat": "It will be recorded that the assembly will not consider {subject}. It will stay out of the debate. | It will be recorded that the assembly will not consider {subject}. They will stay out of the debate.",
         "summaryTie": "It is a tie and the vote has to be repeated. Enter the new count.",
@@ -4742,7 +4827,7 @@
   "controlSheet": {
     "title": "Control sheet",
     "intro": "How each item and each amendment stands: whether it was dealt with, its result, how it was voted and who spoke.",
-    "introPublic": "How each item and each amendment stands: its result and how it was voted.",
+    "introPublic": "How each item and each amendment stands: whether it was dealt with, its result and how it was voted.",
     "loading": "Loading the control sheet",
     "loadError": "The control sheet could not be loaded",
     "retry": "Try again",
@@ -4764,6 +4849,13 @@
     "rowCount": "{count} item on the sheet | {count} items on the sheet",
     "amendmentCount": "{count} amendment | {count} amendments",
     "openAmendments": "{count} amendment of «{title}» | {count} amendments of «{title}»",
+    "preview": {
+      "document": "Preview",
+      "documentAria": "Preview «{title}»",
+      "amendmentAria": "Preview amendment {code}",
+      "selected": "View document",
+      "documentDescription": "Preview: the sheet stays open behind it."
+    },
     "tabs": {
       "label": "Parts of the control sheet",
       "general": "Overview",
@@ -4891,6 +4983,7 @@
       "label": "Result noted by hand",
       "hint": "For what no vote decides: a report that lapses, a withdrawn item.",
       "byVote": "Its vote decides it.",
+      "awaitingVote": "It waits for its vote: the vote decides whether it was dealt with, so it is not noted as withdrawn or lapsed.",
       "none": "Not noted",
       "withdrawn": "Withdrawn",
       "lapsed": "Lapsed",
@@ -4923,7 +5016,9 @@
       "stale": "Someone changed it at the same time. What is there now is shown.",
       "treated": "Dealt with",
       "treatedAmendment": "Dealt with",
-      "treatedHint": "The Mesa marks it when it was dealt with without a vote.",
+      "treatedHint": "It is marked by itself when the Mesa presents it in session. The Mesa also marks or unmarks it here.",
+      "treatedAwaitingVote": "It will count as dealt with once it is voted.",
+      "treatedUndecided": "It will count as dealt with once the Mesa decides it.",
       "treatedAuto": "It counts as dealt with because of its vote or what happened to its documents.",
       "treatedAutoAmendment": "It counts as dealt with: the Mesa settled it during the session.",
       "treatedBy": "Marked by {name}, {when}",
@@ -5592,6 +5687,9 @@
     }
   },
   "liveView": {
+    "bloc": {
+      "title": "Proposed for approval as a bloc"
+    },
     "recess": "The session is in recess.",
     "recessUntil": "The session is in recess until {time}.",
     "title": "Live",
@@ -5627,7 +5725,8 @@
       "goToProjected": "Go to what is on screen",
       "openPage": "Open its page",
       "empty": "This document has no text yet.",
-      "following": "Following the screen"
+      "following": "Following the screen",
+      "loadError": "The document could not be loaded"
     },
     "amendmentWindow": {
       "title": "Amendment",

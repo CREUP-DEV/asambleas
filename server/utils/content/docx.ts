@@ -24,10 +24,12 @@ import { prepareImportedHtml } from "./docxHtml";
  * text, headings, lists, quotes and inline emphasis survive the conversion;
  * htmlElementToBlocks drops everything else and blocksSchema removes unsafe
  * links. Word numbers are written into the text (NUMBERING_SCRIPT), tables
- * become a paragraph per row (htmlElementToBlocks), and footnotes, ordinal
- * superscripts and the Word title are adjusted (prepareImportedHtml). What
- * is lost on the way is reported as warnings: tracked changes, comments,
- * images, the layout of tables and highlighting.
+ * stay tables, with their header cells, fills and spans (htmlElementToBlocks;
+ * one nested in a cell becomes a paragraph per row), tables laid side by side
+ * become tables one after the other, and footnotes, ordinal superscripts and
+ * the Word title are adjusted (prepareImportedHtml). What is lost on the way
+ * is reported as warnings: tracked changes, comments, images, the layout of
+ * tables and highlighting.
  */
 
 export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
@@ -68,8 +70,10 @@ export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
  * - the nodes the walk copies to read list items, more the deeper they are.
  *
  * Before walking, prepareImportedHtml drops the repeated Word title, turns
- * footnotes into paragraphs and ordinal superscripts into "ª" and "º", and
- * drops the underline of links, adding no marks or nesting.
+ * footnotes into paragraphs and ordinal superscripts into "ª" and "º",
+ * drops the underline of links and splits tables laid side by side, adding
+ * no marks or nesting (the split moves cells already counted into new tables
+ * and rows: one table more per part, one row more per row and part).
  *
  * The walk then stops at the first block past the document limit, and block
  * ids come from the system CSPRNG instead of cuid2, whose createId costs about
@@ -303,6 +307,9 @@ const STYLE_MAP = [
   "r[style-name='docx-align'] => span.docx-align",
   // A filled table cell, for prepareImportedHtml (see cellFills).
   "r[style-name='docx-cell'] => span.docx-cell",
+  // An unfilled cell with no top or bottom rule, for prepareImportedHtml
+  // (see cellFills and tableGaps).
+  "r[style-name='docx-gap'] => span.docx-gap",
   // The entries of a table of contents Word wrote without a content
   // control: the platform builds its own from the headings.
   "p[style-name='toc 1'] => !",
@@ -614,29 +621,38 @@ function alignmentRun(documents) {
 // subtotal), which prepareImportedHtml turns into a header cell, since
 // templates mark headers by colour and bold alone would make a header of
 // every bold line of a statement; or "light". The colour becomes the nearest
-// one of the platform's palette there. mammoth reads a cell's properties
-// right before it makes the cell, so the fill read is handed straight to it.
+// one of the platform's palette there. An unfilled cell whose top and bottom
+// rules do not show starts with another hidden run (docx-gap): a column of
+// them is the spacer between tables laid side by side, which
+// prepareImportedHtml splits apart. mammoth reads a cell's properties right
+// before it makes the cell, so what is read is handed straight to it.
 function cellFills(nodes, documents) {
   const first = nodes.Element.prototype.first;
   const makeCell = documents.TableCell;
   if (typeof makeCell !== "function") throw new Error("table cells not found");
   let fill = null;
+  let gap = false;
   nodes.Element.prototype.first = function (name) {
     if (name === "w:sdtContent" && this.name === "w:sdt" && isContents(this)) {
       return undefined;
     }
     const found = first.call(this, name);
-    if (name === "w:tcPr" && this.name === "w:tc") fill = fillOf(found);
+    if (name === "w:tcPr" && this.name === "w:tc") {
+      fill = fillOf(found);
+      gap = !fill && hidesRules(found);
+    }
     return found;
   };
   documents.TableCell = function (children, options) {
-    const marked = fill;
+    const marked = fill ? { text: fill, style: "docx-cell" }
+      : gap ? { text: "gap", style: "docx-gap" } : null;
     fill = null;
+    gap = false;
     const index = marked
       ? children.findIndex((child) => child.type === "paragraph")
       : -1;
     if (index < 0) return makeCell(children, options);
-    const run = documents.Run([documents.Text(marked)], { styleName: "docx-cell" });
+    const run = documents.Run([documents.Text(marked.text)], { styleName: marked.style });
     const paragraph = children[index];
     const withRun = children.slice();
     withRun[index] = Object.assign({}, paragraph, {
@@ -658,14 +674,35 @@ function isContents(sdt) {
 function fillOf(properties) {
   const shading = properties && properties.first("w:shd");
   const fill = shading && shading.attributes["w:fill"];
-  if (typeof fill !== "string" || !/^[0-9a-fA-F]{6}$/.test(fill)) return null;
+  const value = luminanceOf(fill);
+  if (value === null) return null;
+  if (value < 0.4) return "dark:" + fill.toLowerCase();
+  return value < 0.97 ? "light:" + fill.toLowerCase() : null;
+}
+// The relative luminance of a "rrggbb" colour, null for anything else
+// ("auto" included).
+function luminanceOf(colour) {
+  if (typeof colour !== "string" || !/^[0-9a-fA-F]{6}$/.test(colour)) return null;
   const channel = (offset) => {
-    const value = parseInt(fill.slice(offset, offset + 2), 16) / 255;
+    const value = parseInt(colour.slice(offset, offset + 2), 16) / 255;
     return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
   };
-  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-  if (luminance < 0.4) return "dark:" + fill.toLowerCase();
-  return luminance < 0.97 ? "light:" + fill.toLowerCase() : null;
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+// Whether a cell's own top and bottom borders both do not show: none, or as
+// white as fillOf's no fill. A border the cell leaves to the table ("auto"
+// is black, and a missing one is the table's) shows.
+function hidesRules(properties) {
+  const borders = properties && properties.first("w:tcBorders");
+  return !!borders && hiddenBorder(borders.first("w:top")) &&
+    hiddenBorder(borders.first("w:bottom"));
+}
+function hiddenBorder(border) {
+  if (!border) return false;
+  const style = border.attributes["w:val"];
+  if (style === "nil" || style === "none") return true;
+  const value = luminanceOf(border.attributes["w:color"]);
+  return value !== null && value >= 0.97;
 }
 // Text formatted as all caps is shown in capitals: write it so.
 function upperCaseRun(run) {
@@ -1512,7 +1549,10 @@ export async function convertDocx(
       );
       if (attached.dropped) warnings.add("images_dropped");
       if (attached.withoutAlt) warnings.add("images_without_alt");
-      prepareImportedHtml(document as unknown as Document, { documentTitle });
+      prepareImportedHtml(document as unknown as Document, {
+        documentTitle,
+        onTablesSplit: () => warnings.add("tables_split"),
+      });
       let produced = 0;
       const blocks = htmlElementToBlocks(
         document.body as unknown as Element,
@@ -1544,6 +1584,7 @@ export async function convertDocx(
     "images_in_tables",
     "images_without_alt",
     "tables_flattened",
+    "tables_split",
     "highlight",
   ];
   return {

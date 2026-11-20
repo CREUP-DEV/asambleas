@@ -60,6 +60,7 @@ const row = (over: Partial<GeneralSheetRow>): GeneralSheetRow => ({
   documents: [],
   outcome: { result: null, treated: false, byVote: false },
   autoTreated: false,
+  awaitingVote: false,
   speakers: [],
   sheet: null,
   live: false,

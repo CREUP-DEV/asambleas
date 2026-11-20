@@ -178,6 +178,42 @@ describe("itemOutcome", () => {
       byVote: false,
     });
   });
+
+  it("ignores the Mesa's mark while the item awaits a vote", () => {
+    expect(
+      itemOutcome(
+        [doc()],
+        { manualResult: null, treated: true },
+        { voted: false, votes: [] },
+        true,
+      ),
+    ).toEqual({ result: null, treated: false, byVote: false });
+    expect(
+      itemOutcome([], { manualResult: null, treated: true }, null, true),
+    ).toEqual({ result: null, treated: false, byVote: false });
+  });
+
+  it("a «Decaído» does not treat an awaiting item, but still reads", () => {
+    expect(
+      itemOutcome(
+        [],
+        { manualResult: "lapsed", treated: false },
+        { voted: true, votes: [] },
+        true,
+      ),
+    ).toEqual({ result: "lapsed", treated: false, byVote: false });
+  });
+
+  it("an item awaiting a vote is still treated once its votes are in", () => {
+    expect(
+      itemOutcome(
+        [doc({ finalVote: vote() })],
+        { manualResult: null, treated: true },
+        null,
+        true,
+      ),
+    ).toEqual({ result: "approved", treated: true, byVote: true });
+  });
 });
 
 describe("the item's own vote", () => {

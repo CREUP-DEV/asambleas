@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { HeadcountDto, VoteInput } from "~~/shared/types/api";
+import type {
+  HeadcountDto,
+  LiveTallyReveal,
+  VoteInput,
+} from "~~/shared/types/api";
 import {
   MAJORITIES,
   VOTE_METHODS,
@@ -11,6 +15,12 @@ import {
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useOptionalSessionConsole } from "~/composables/session/useSessionConsole";
+import {
+  sessionLiveTally,
+  sessionPendingTallyVote,
+  sessionRevealAllowed,
+  type LiveTallyAnnounce,
+} from "~/composables/session/liveTally";
 import {
   ballotKeysOf,
   foreignBallotKeys,
@@ -43,11 +53,19 @@ import {
  * decision of 2026-11-19): in favour, against or abstain by show of hands,
  * roll call or the portal; in favour, against, blank or invalid in a
  * secret vote. The members present who cast nothing are «no emitidos»,
- * worked out, not typed, whenever that base is known. In the session
- * console, a secret vote is counted live, ballot by ballot (one tile per
- * kind of ballot, +1 and −1, the keys 1 to 4 and undo), and each change of
- * the count goes to the projection (session.pushTally) until the form
- * closes or leaves the secret method.
+ * worked out, not typed, whenever that base is known.
+ *
+ * In the session console, while the session is open, a secret vote asks
+ * first how the room follows the count (user's decision of 2026-11-19):
+ * «Al final, con el resultado» (the counts are typed as for any method) or
+ * «En directo, papeleta a papeleta» (one tile per kind of ballot, +1 and
+ * −1, the keys 1 to 4 and undo). Nothing is counted, and nothing goes on
+ * screen, until the Mesa picks one; then the projection announces the vote
+ * (what the dialog passes in `announce`, the method and, live, the running
+ * count) through session.pushTally, again every 15 s while the form is open
+ * (the server keeps it in memory only), until the form closes or leaves
+ * the secret method. The control sheet and Validación have no console, so
+ * they never offer it.
  */
 const props = withDefaults(
   defineProps<{
@@ -70,6 +88,12 @@ const props = withDefaults(
      * unanimity. Otherwise it stays an assent.
      */
     unanimity?: boolean;
+    /**
+     * What is voted, for the projection's announcement of a secret vote
+     * counted in the console (sessionLiveTally). Without it the screen
+     * still announces a secret vote and its count, unnamed.
+     */
+    announce?: LiveTallyAnnounce | null;
   }>(),
   {
     methods: () => VOTE_METHODS.filter((method) => method !== "assent"),
@@ -78,6 +102,7 @@ const props = withDefaults(
     headcount: undefined,
     assentText: undefined,
     unanimity: false,
+    announce: null,
   },
 );
 
@@ -85,6 +110,16 @@ const vote = defineModel<VoteInput>({ required: true });
 
 const { t, locale } = useI18n();
 const uid = useId();
+
+const session = useOptionalSessionConsole();
+/** The form belongs to the console of an open session: it can project. */
+const consoleCounts = computed(() => Boolean(session?.inSession.value));
+/** A secret vote counted in the console asks how the room follows it. */
+const revealOffered = computed(
+  () => vote.value.method === "secret" && consoleCounts.value,
+);
+/** How the room follows the count; none until the Mesa picks one. */
+const reveal = ref<LiveTallyReveal | null>(null);
 
 const methodItems = computed(() =>
   props.methods.map((method) => ({
@@ -119,9 +154,13 @@ function setField<K extends "method" | "majority" | "note">(
 ) {
   const next = { ...vote.value, [key]: value };
   // Another method drops the ballots it does not take (blank and invalid
-  // outside a secret vote, abstentions in one).
+  // outside a secret vote, abstentions in one). Leaving a secret vote forgets
+  // how the room followed it: one that turns secret again starts with no
+  // mode picked, so with no ballots (the watch on revealPending), and counts
+  // typed under another method never reach the screen all at once.
   if (key === "method") {
     for (const foreign of foreignBallotKeys(next.method)) next[foreign] = 0;
+    if (next.method !== "secret") reveal.value = null;
   }
   vote.value = next;
 }
@@ -177,17 +216,58 @@ watch(
   { immediate: true },
 );
 
-// A secret vote counted live ---------------------------------------------------
+// A secret vote announced on screen --------------------------------------------
 
-const session = useOptionalSessionConsole();
+/**
+ * «En directo» is off once ballots are entered «Al final» (they would reach
+ * the screen before the result: sessionRevealAllowed); its hint says how
+ * to count live instead.
+ */
+const revealItems = computed(() =>
+  (["end", "live"] as const).map((value) => {
+    const disabled = !sessionRevealAllowed(reveal.value, value, ballots.value);
+    return {
+      value,
+      label: t(`session.vote.reveal.${value}`),
+      description: t(
+        disabled
+          ? "session.vote.reveal.liveLocked"
+          : `session.vote.reveal.${value}Hint`,
+      ),
+      disabled,
+    };
+  }),
+);
+function setReveal(value: LiveTallyReveal): void {
+  if (!sessionRevealAllowed(reveal.value, value, ballots.value)) return;
+  reveal.value = value;
+}
+/** The Mesa still has to say how the count is shown: nothing is counted. */
+const revealPending = computed(() => revealOffered.value && !reveal.value);
+// No hidden count can be recorded meanwhile, however the form got there: a
+// form that mounts already secret (a dialog keeps its vote across a v-if),
+// a vote that turns secret, or a session that opens with counts typed.
+watch(
+  revealPending,
+  (pending) => {
+    if (!pending) return;
+    const next = sessionPendingTallyVote(vote.value);
+    if (next !== vote.value) vote.value = next;
+  },
+  { immediate: true },
+);
 /** Counting ballot by ballot, which the projection follows. */
 const liveCount = computed(
-  () => vote.value.method === "secret" && Boolean(session?.inSession.value),
+  () => revealOffered.value && reveal.value === "live",
 );
 const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 const shortcutsOn = computed(() => liveCount.value && shortcutsEnabled.value);
 /** The ballots added, in order, so «Deshacer» takes the last one back. */
 const history = ref<BallotKey[]>([]);
+// The other mode has no tiles to undo on.
+watch(reveal, () => {
+  history.value = [];
+});
 
 function addBallot(key: BallotKey): void {
   setCount(key, (vote.value[key] ?? 0) + 1);
@@ -225,19 +305,23 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   addBallot(key);
 });
 
+/**
+ * What the projection shows (sessionLiveTally): null while the method is
+ * not secret or no mode is picked. A change of mode sends the new
+ * announcement straight away, which replaces the previous one (null first
+ * would let the last result flash in between).
+ */
+const announcement = computed(() =>
+  sessionLiveTally(vote.value, {
+    counting: consoleCounts.value,
+    reveal: reveal.value,
+    announce: props.announce,
+    present: base.value,
+  }),
+);
 let tallyShown = false;
 watch(
-  () =>
-    liveCount.value
-      ? {
-          inFavor: vote.value.inFavor ?? 0,
-          against: vote.value.against ?? 0,
-          blank: vote.value.blank ?? 0,
-          invalid: vote.value.invalid ?? 0,
-          present: base.value,
-          majority: vote.value.majority ?? "simple",
-        }
-      : null,
+  announcement,
   (tally) => {
     if (!session) return;
     if (tally) {
@@ -248,8 +332,14 @@ watch(
       tallyShown = false;
     }
   },
-  { deep: true, immediate: true },
+  { deep: true },
 );
+// Memory only on the server (a restart forgets it, a projected result
+// ends it): sent again while the form is open.
+const TALLY_REPEAT_MS = 15_000;
+useIntervalFn(() => {
+  if (session && announcement.value) session.pushTally(announcement.value);
+}, TALLY_REPEAT_MS);
 onBeforeUnmount(() => {
   if (tallyShown) session?.pushTally(null);
 });
@@ -369,6 +459,30 @@ const denominatorText = computed(() =>
       </UFormField>
     </div>
 
+    <!-- A secret vote in the console: how the room follows the count, to
+         pick before counting. -->
+    <div v-if="revealOffered" class="space-y-2">
+      <URadioGroup
+        :model-value="reveal ?? undefined"
+        :legend="t('session.vote.reveal.label')"
+        :items="revealItems"
+        value-key="value"
+        variant="card"
+        :ui="{ fieldset: 'grid gap-2 sm:grid-cols-2' }"
+        class="w-full"
+        @update:model-value="(value) => setReveal(value as LiveTallyReveal)"
+      />
+      <p v-if="revealPending" class="text-muted text-sm">
+        {{ t("session.vote.reveal.pending") }}
+      </p>
+      <p
+        v-else-if="session && !session.inControl.value"
+        class="text-muted text-xs"
+      >
+        {{ t("session.vote.reveal.notProjected") }}
+      </p>
+    </div>
+
     <template v-if="assent">
       <p class="text-muted text-sm">
         {{ assentText ?? t("session.vote.assentNoCount") }}
@@ -381,7 +495,7 @@ const denominatorText = computed(() =>
       />
     </template>
 
-    <fieldset v-else class="space-y-3">
+    <fieldset v-else-if="!revealPending" class="space-y-3">
       <legend class="text-highlighted mb-2 text-sm font-medium">
         {{ t("session.vote.counts") }}
       </legend>
@@ -554,7 +668,7 @@ const denominatorText = computed(() =>
     </UFormField>
 
     <div
-      v-if="!assent"
+      v-if="!assent && !revealPending"
       class="border-default bg-elevated/40 space-y-2 rounded-lg border p-3"
       aria-live="polite"
       aria-atomic="true"

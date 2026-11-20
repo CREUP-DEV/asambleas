@@ -14,6 +14,7 @@ import {
   p,
   convertTimed,
   cell,
+  cellWith,
   row,
   table,
   run,
@@ -323,6 +324,97 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
     ]);
     // Imported content never writes the earlier `shade`.
     expect(result.blocks.some((block) => block.cell?.shade)).toBe(false);
+  });
+
+  it("splits tables laid side by side at a column that hides its rules", async () => {
+    const border = (side: string, look: string) =>
+      `<w:${side} ${look} w:sz="8" w:space="0"/>`;
+    const white = 'w:val="single" w:color="FFFFFF"';
+    /** A blank cell whose top and bottom borders look as given. */
+    const spacer = (top: string, bottom = top) =>
+      cellWith(
+        `<w:tcBorders>${border("top", top)}${border("bottom", bottom)}</w:tcBorders><w:shd w:val="clear" w:fill="auto"/>`,
+        "<w:p/>",
+      );
+    const header = (fill: string, text: string) =>
+      cellWith(
+        `<w:gridSpan w:val="2"/><w:shd w:val="clear" w:fill="${fill}"/>`,
+        p(null, text),
+      );
+    const text = (value: string) => cell(p(null, value));
+    const result = await convert(
+      await structureDocx(
+        table(
+          row(
+            header("163866", "Income"),
+            spacer(white),
+            header("792225", "Expenses"),
+          ),
+          row(
+            text("Fees"),
+            text("100"),
+            spacer(white),
+            text("Rent"),
+            text("60"),
+          ),
+          row(
+            text("Grants"),
+            text("20"),
+            spacer('w:val="nil"'),
+            cell("<w:p/>"),
+            cell("<w:p/>"),
+          ),
+        ) +
+          p(null, "Between") +
+          // A column whose bottom rule shows is a column of the table.
+          table(
+            row(
+              text("a"),
+              spacer(white, 'w:val="single" w:color="auto"'),
+              text("b"),
+              text("c"),
+            ),
+            row(
+              text("d"),
+              spacer(white, 'w:val="single" w:color="auto"'),
+              text("e"),
+              text("f"),
+            ),
+          ),
+      ),
+    );
+    expect(result.warnings).toEqual(["tables_split"]);
+    expect(
+      result.blocks.map((block) => [
+        block.text,
+        block.cell?.header ?? false,
+        block.cell?.fill ?? null,
+      ]),
+    ).toEqual([
+      ["Income", true, "blue"],
+      ["Fees", false, null],
+      ["100", false, null],
+      ["Grants", false, null],
+      ["20", false, null],
+      ["Expenses", true, "burgundy"],
+      ["Rent", false, null],
+      ["60", false, null],
+      ["Between", false, null],
+      ["a", false, null],
+      ["", false, null],
+      ["b", false, null],
+      ["c", false, null],
+      ["d", false, null],
+      ["", false, null],
+      ["e", false, null],
+      ["f", false, null],
+    ]);
+    const tableOf = (text: string) =>
+      result.blocks.find((block) => block.text === text)!.cell!.table;
+    expect(new Set(["Income", "Fees", "20"].map(tableOf)).size).toBe(1);
+    expect(new Set(["Expenses", "Rent", "60"].map(tableOf)).size).toBe(1);
+    expect(tableOf("Income")).not.toBe(tableOf("Expenses"));
+    expect(new Set(["a", "f"].map(tableOf)).size).toBe(1);
   });
 
   it("leaves out a table of contents", async () => {

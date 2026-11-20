@@ -269,6 +269,11 @@ function bodyOf(
       continue;
     }
     const grid = tableGrid(run.table, (block) => block.text.trim() === "");
+    // Word joins tables with nothing between them into one: an empty
+    // paragraph keeps consecutive tables apart.
+    if (children[children.length - 1] instanceof Table) {
+      children.push(new Paragraph({}));
+    }
     children.push(
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },

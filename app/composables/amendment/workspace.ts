@@ -31,6 +31,7 @@ import {
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { diffPassage } from "~~/shared/utils/content/diff";
+import { answerableAfterDecision } from "~~/shared/utils/positions";
 import {
   firstTouchedBlockId,
   touchedBlockIds,
@@ -222,6 +223,31 @@ export function amendmentReviewSentenceKey(
 ): string {
   const others = !presenter && (key === "pending" || key === "validated");
   return `amendment.review.states.${others ? `${key}_others` : key}`;
+}
+
+/**
+ * Whether the viewer (whoever reviews amendments) may declare it not
+ * admitted instead of sending it back, «¿Puede corregirla?» «No» (user's
+ * decision of 2026-11-19), as the server's reviewInadmissionCase says:
+ * - one waiting for its check (`can.validate`), late or not;
+ * - one validated that can still go back to review (`can.unvalidate`),
+ *   except a late one, which the assembly decides on («No tratarla»);
+ * - a draft already sent back for a correction, before the document's final
+ *   vote (`finalVoted`).
+ */
+export function amendmentInadmissibleOnReview(
+  amendment: Pick<AmendmentDto, "status" | "reviewState" | "late"> & {
+    can: Pick<AmendmentCapabilities, "review" | "validate" | "unvalidate">;
+  },
+  finalVoted = false,
+): boolean {
+  if (finalVoted || !amendment.can.review) return false;
+  if (amendment.can.validate) return true;
+  if (amendment.can.unvalidate) return !amendment.late;
+  return (
+    amendment.status === "draft" &&
+    amendment.reviewState === "correction_requested"
+  );
 }
 
 /**
@@ -444,12 +470,15 @@ export function presenterSeesValidated(
  * validated or not admitted. Shared with positionWaitReason in the review
  * mode, so the workspace, the review mode and the home page agree. An
  * amendment recorded before validation existed (no review state) counts as
- * published.
+ * published. One the assembly approved otherwise (answerableAfterDecision)
+ * is "decided" for the review, and answerable only with `afterDecision`
+ * (amendmentAnswerable) while the main presenter reads it.
  */
 function positionWait(
   amendment: PositionInput,
   rule: AcceptedAmendmentRule,
   context: AmendmentPositionContext = {},
+  afterDecision = false,
 ): AmendmentPositionBlocker | "decided" | null {
   if (context.finalVoted) return "decided";
   if (
@@ -458,6 +487,15 @@ function positionWait(
     amendment.approvalMethod === "proponent"
   ) {
     return null;
+  }
+  if (answerableAfterDecision(amendment)) {
+    if (!afterDecision) return "decided";
+    const state = amendment.reviewState;
+    const seen =
+      state === "published" ||
+      state === null ||
+      (state === "validated" && Boolean(context.presenterSeesValidated));
+    return seen ? null : "decided";
   }
   if (amendment.status !== "submitted") return "decided";
   if (
@@ -505,6 +543,23 @@ export function amendmentAwaitsPosition(
 }
 
 /**
+ * The main presenter (or the Mesa for it) can give or change its answer
+ * now, as the server's positionBlocker says (`can.position` adds who may):
+ * everything amendmentAwaitsPosition takes, and also an amendment the
+ * assembly already approved by a vote, by assent or as a formal one
+ * (answerableAfterDecision, user's decision of 2026-11-19), until the final
+ * vote. Such an answer changes nothing else, so those stay out of the
+ * review mode's queue and the counts, which read amendmentAwaitsPosition.
+ */
+export function amendmentAnswerable(
+  amendment: PositionInput,
+  rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
+): boolean {
+  return positionWait(amendment, rule, context, true) === null;
+}
+
+/**
  * Why the main presenter cannot answer yet, for an undecided amendment that
  * has not reached it (AmendmentPositionBlocker). Null when it can be
  * answered, or it is decided (or the document was voted).
@@ -546,20 +601,24 @@ export function amendmentAcceptBlocked(
  * - `incorporated`: accepted under "incorporate": it is in the text, and
  *   changing the answer before the final vote reopens it;
  * - `vote`: the assembly votes it (rule "vote", or not accepted);
- * - `voteAnyway`: rule "vote" and no answer yet: voted whatever the answer.
- * Null once it is decided otherwise (voted, withdrawn...), after the final
- * vote, or while it has not reached the presenter (amendmentPositionBlocker
- * says why).
+ * - `voteAnyway`: rule "vote" and no answer yet: voted whatever the answer;
+ * - `decided`: the assembly already approved it (amendmentAnswerable): the
+ *   answer can still change, and changes neither the approval nor the text.
+ * Null once it is decided otherwise (rejected, withdrawn...), after the
+ * final vote, or while it has not reached the presenter
+ * (amendmentPositionBlocker says why).
  */
 export type AmendmentPositionNext =
-  "incorporateIfAccepted" | "incorporated" | "vote" | "voteAnyway";
+  "incorporateIfAccepted" | "incorporated" | "vote" | "voteAnyway" | "decided";
 
 export function amendmentPositionNext(
   amendment: PositionInput & Pick<AmendmentDto, "position">,
   rule: AcceptedAmendmentRule,
   context: AmendmentPositionContext = {},
 ): AmendmentPositionNext | null {
-  if (!amendmentAwaitsPosition(amendment, rule, context)) return null;
+  if (!amendmentAwaitsPosition(amendment, rule, context)) {
+    return amendmentAnswerable(amendment, rule, context) ? "decided" : null;
+  }
   const answer = amendment.position?.position ?? "pending";
   if (rule === "incorporate") {
     if (answer === "accept") return "incorporated";

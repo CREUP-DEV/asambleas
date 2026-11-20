@@ -16,6 +16,7 @@ import {
 } from "../../../utils/domain/assemblies";
 import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { markOnScreenAtOpen } from "../../../utils/domain/sessionProgress";
 import { closeSpeakingTurns } from "../../../utils/domain/speakers";
 import { buildOptimisticLockCondition } from "../../../utils/optimisticLock";
 
@@ -59,6 +60,8 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
 
       if (body.status === "in_session") {
         await ensureLiveState(tx, assembly.id, actor.user.id);
+        // Resuming with something on screen presents it (sessionProgress.ts).
+        await markOnScreenAtOpen(tx, assembly.id, actor);
       }
       // Nobody keeps the floor once the assembly closes: the turns could not
       // be ended afterwards (closed assemblies refuse speakers writes).

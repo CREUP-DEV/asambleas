@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type {
+  AmendmentCorrectionBody,
   AmendmentDto,
   DocumentAmendmentsDto,
   PublishAmendmentsBody,
   ValidateAmendmentsBody,
-  CorrectionBody,
   UndoValidationBody,
 } from "~~/shared/types/api";
+import { amendmentInadmissibleOnReview } from "~/composables/amendment/workspace";
 import {
   blockedBySelection,
   canSelectSeveral,
@@ -57,7 +58,10 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** The server returned these amendments after an action. */
   updated: [amendments: AmendmentDto[]];
-  /** These amendments left the queue (sent back for correction). */
+  /**
+   * These amendments left the queue (sent back for correction, or not
+   * admitted).
+   */
   removed: [ids: string[]];
   /** Someone changed them meanwhile: refetch the queue. */
   conflict: [];
@@ -305,12 +309,30 @@ const correctionOpen = computed({
   },
 });
 
-async function sendCorrection(note: string) {
+/**
+ * «¿Puede corregirla?» in the dialog: the Secretaría may declare it not
+ * admitted instead (user's decision of 2026-11-19), never a late one it
+ * already validated.
+ */
+const correctionInadmissible = computed(() =>
+  correctionTarget.value
+    ? amendmentInadmissibleOnReview(
+        correctionTarget.value,
+        Boolean(fullDocument.value?.finalVote),
+      )
+    : false,
+);
+
+async function sendCorrection(note: string, correctable: boolean) {
   const amendment = correctionTarget.value;
   if (!amendment || busy.value) return;
   busy.value = { id: amendment.id, action: "correction" };
   try {
-    const body: CorrectionBody = { note, updatedAt: amendment.updatedAt };
+    const body: AmendmentCorrectionBody = {
+      note,
+      updatedAt: amendment.updatedAt,
+      ...(correctable ? {} : { correctable: false }),
+    };
     await api.send<AmendmentDto>(
       `${documentUrl.value}/amendments/${encodeURIComponent(amendment.id)}/correction`,
       { method: "POST", body },
@@ -319,10 +341,19 @@ async function sendCorrection(note: string) {
     correctionTarget.value = null;
     unselect([amendment.id]);
     emit("removed", [amendment.id]);
-    notify(
-      t("review.amendments.done.correction", { label: labelOf(amendment) }),
-      t("review.amendments.correctionHint"),
-    );
+    if (correctable) {
+      notify(
+        t("review.amendments.done.correction", { label: labelOf(amendment) }),
+        t("review.amendments.correctionHint"),
+      );
+    } else {
+      notify(
+        t("review.amendments.done.inadmissible", {
+          label: labelOf(amendment),
+        }),
+        t("review.amendments.inadmissibleHint"),
+      );
+    }
   } catch (error) {
     busy.value = null;
     api.notifyError(error, "review.amendments.actionError");
@@ -620,6 +651,8 @@ const summary = computed(() =>
       kind="amendment"
       :subject="correctionTarget ? labelOf(correctionTarget) : ''"
       :busy="busy?.action === 'correction'"
+      :inadmissible="correctionInadmissible"
+      :published="correctionTarget?.publishedAt != null"
       @confirm="sendCorrection"
     />
   </section>

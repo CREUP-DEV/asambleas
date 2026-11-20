@@ -12,6 +12,7 @@ import {
   amendmentPositionBlocker,
   presenterSeesValidated,
 } from "~/composables/amendment/workspace";
+import { answerableAfterDecision } from "~~/shared/utils/positions";
 import { sessionPositionMenu } from "~/composables/session/sessionModel";
 import type { AmendmentSheetRow } from "./-model";
 
@@ -31,7 +32,11 @@ import type { AmendmentSheetRow } from "./-model";
  * the main authors of a transactional, the assembly's admission,
  * publication). Accepting
  * where accepted amendments are incorporated says so under the option, and
- * saving is the confirmation.
+ * saving is the confirmation. One the assembly already approved (by a vote,
+ * by assent or as a formal one: answerableAfterDecision) can still be
+ * answered until the final vote, but changing its answer changes nothing
+ * else: its options say nothing about what they do and one line says the
+ * approval stays.
  */
 const props = defineProps<{
   row: AmendmentSheetRow;
@@ -136,14 +141,20 @@ watch(current, (value, previous) => {
 const incorporates = computed(
   () => props.document?.acceptedAmendments === "incorporate",
 );
+/**
+ * Approved by the assembly: the answer is recorded and the approval and
+ * the text stay (not one the acceptance incorporated, which follows it).
+ */
+const afterDecision = computed(() => answerableAfterDecision(amendment.value));
 const items = computed(() =>
   PROPONENT_POSITIONS.filter(
     (value) => value !== "transact" || current.value === "transact",
   ).map((value) => ({
     value,
     label: t(`amendment.position.options.${value}`),
-    description:
-      value === "accept" && incorporates.value
+    description: afterDecision.value
+      ? undefined
+      : value === "accept" && incorporates.value
         ? t("amendment.position.descriptions.acceptIncorporate")
         : t(`amendment.position.descriptions.${value}`),
     disabled: value === "accept" && Boolean(menu.value?.acceptBlocked),
@@ -168,6 +179,9 @@ async function save(): Promise<boolean> {
     );
     toast.add({
       title: t("amendment.position.saved"),
+      description: afterDecision.value
+        ? t("amendment.position.savedDecided")
+        : undefined,
       icon: "i-lucide-check",
     });
     emit("saved", updated);
@@ -214,6 +228,9 @@ defineExpose({ editable, dirty, saving: busy, save });
             ? t("controlSheet.panel.positionFor", { member: presenter })
             : t("controlSheet.panel.positionHint")
         }}
+      </p>
+      <p v-if="afterDecision" class="text-muted text-xs">
+        {{ t("amendment.position.next.decided") }}
       </p>
       <URadioGroup
         v-model="choice"

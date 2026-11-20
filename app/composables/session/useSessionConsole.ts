@@ -61,6 +61,7 @@ import {
   buildSessionAgendaRows,
   buildSessionQueue,
   isSessionAwaitingValidation,
+  isSessionBlocCandidate,
   isSessionIncorporated,
   isSessionOpen,
   isSessionPendingAdmission,
@@ -68,6 +69,7 @@ import {
   isSessionTransactable,
   sessionAmendmentStage,
   sessionAssentPlan,
+  sessionBlocToggle,
   sessionCleanVote,
   sessionConnectionState,
   sessionApprovalImpact,
@@ -77,6 +79,7 @@ import {
   sessionFinalVoteBlockers,
   sessionFinalVoteReasons,
   sessionLapseOffer,
+  sessionLeavesPendingVote,
   sessionNextAgendaTarget,
   sessionNextAmendmentId,
   sessionPendingTransactionalIds,
@@ -90,6 +93,9 @@ import {
   type SessionSettleAction,
 } from "./sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
+import { numberedAgendaTitle } from "~/utils/agendaTree";
+import { staleSheetRow } from "~/components/control-sheet/-model";
+import { sessionMarkAction } from "~~/shared/utils/sessionProgress";
 import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
@@ -334,11 +340,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       own.agendaItemId === live.agendaItemId &&
       own.documentId === live.documentId &&
       own.amendmentId === live.amendmentId;
+    // A bloc is only projected with control: away from the screen there is
+    // none (SessionCursor carries no bloc).
     return {
       ...live,
       agendaItemId: own.agendaItemId,
       documentId: own.documentId,
       amendmentId: own.amendmentId,
+      amendmentBloc: onScreen ? live.amendmentBloc : [],
       vote: onScreen ? live.vote : null,
     };
   });
@@ -567,6 +576,82 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     );
   }
   const assentPlan = computed(() => sessionAssentPlan(amendments.value));
+
+  // Bloc (user's decision of 2026-11-19) ---------------------------------------
+
+  /**
+   * «Seleccionar para bloque»: the Mesa ticks, in the main queue, the
+   * amendments it proposes to approve together (isSessionBlocCandidate,
+   * accepted or not), puts them on screen as a bloc and approves them by
+   * assent. Local to this console, and gone when it shows another document.
+   */
+  const blocMode = ref(false);
+  const blocSelection = ref<string[]>([]);
+  /** The row last clicked, where a shift-click range starts. */
+  const blocAnchor = ref<string | null>(null);
+  /**
+   * The rows that can be ticked, in the order the queue lists them: those
+   * of the main list only, never of a group that changes the same passage
+   * (debated one by one) nor late ones (user's decision of 2026-11-19).
+   */
+  const blocOrder = computed(() =>
+    queue.value.entries
+      .map((entry) => (entry.type === "amendment" ? entry.amendment : null))
+      .filter(
+        (amendment): amendment is AmendmentDto =>
+          amendment !== null &&
+          isVisible(amendment) &&
+          isSessionBlocCandidate(amendment) &&
+          // A transactional that can no longer go ahead is only withdrawn.
+          stageOf(amendment) !== "superseded",
+      )
+      .map((amendment) => amendment.id),
+  );
+  /** The selection, without what was decided since (from any console). */
+  const blocSelected = computed(() => {
+    const ids = new Set(blocSelection.value);
+    return blocOrder.value.filter((id) => ids.has(id));
+  });
+  watch(documentId, () => {
+    blocMode.value = false;
+    blocSelection.value = [];
+    blocAnchor.value = null;
+  });
+  /** Ticks or unticks a row; with shift, the range from the last one. */
+  function toggleBloc(id: string, range = false): void {
+    blocSelection.value = sessionBlocToggle(
+      blocSelected.value,
+      blocOrder.value,
+      id,
+      { anchor: blocAnchor.value, range },
+    );
+    blocAnchor.value = id;
+  }
+  /** «Las aceptadas»: what the accepted shortcut would approve. */
+  function selectAcceptedBloc(): void {
+    blocSelection.value = assentPlan.value.ready.map(
+      (amendment) => amendment.id,
+    );
+    blocAnchor.value = null;
+  }
+  function clearBlocSelection(): void {
+    blocSelection.value = [];
+    blocAnchor.value = null;
+  }
+  function cancelBloc(): void {
+    clearBlocSelection();
+    blocMode.value = false;
+  }
+  /**
+   * The bloc on screen for the document the console shows; empty without
+   * one, or while this console looks at another document.
+   */
+  const blocOnScreen = computed<string[]>(() => {
+    const state = debate.value;
+    if (!state || state.documentId !== documentId.value) return [];
+    // A server not updated yet sends none.
+    return state.amendmentBloc ?? [];
+  });
   /** Why the final vote cannot be recorded yet (empty when it can). */
   const finalVoteReasons = computed(() =>
     sessionFinalVoteReasons({
@@ -757,10 +842,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return itemVotesFetch.refresh();
   }
 
-  // How far the session has gone: the documents projected and the items
-  // treated (the Mesa's mark in the control sheet, also set as the debate
-  // moves on). The Mesa only, as itself; a failed read keeps the last good
-  // marks, and with none the console marks nothing.
+  // How far the session has gone: the documents projected and where each
+  // item stands (the control sheet's rule; the Mesa's mark is set when the
+  // Mesa presents an item, and undone or set again from here). The Mesa
+  // only, as itself; a failed read keeps the last good marks, and with none
+  // the console marks nothing.
   const progressFetch = useAsyncData(
     () => `session-progress-${param.value}`,
     () =>
@@ -775,34 +861,99 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const projectedDocumentIds = computed(
     () => new Set(progressDto.value?.projectedDocumentIds ?? []),
   );
+  /**
+   * Where each agenda item stands, by the control sheet's own rule
+   * (sessionTreatedItems on the server): treated or not and why, whether it
+   * waits for a vote, and the mark's token.
+   */
+  const itemTreatments = computed(
+    () =>
+      new Map(
+        (progressDto.value?.items ?? []).map((entry) => [entry.id, entry]),
+      ),
+  );
   const treatedItemIds = computed(
-    () => new Set(progressDto.value?.treatedItemIds ?? []),
+    () =>
+      new Set(
+        (progressDto.value?.items ?? [])
+          .filter((entry) => entry.treated)
+          .map((entry) => entry.id),
+      ),
   );
 
   function refreshProgress(): Promise<void> {
     return progressFetch.refresh();
   }
 
-  /** Each document's automatic sub-item: its mark in the sheet is the document's. */
-  const autoItemOfDocument = computed(
-    () =>
-      new Map(
-        (agenda.value?.items ?? [])
-          .filter((item) => item.generatedForDocumentId)
-          .map((item) => [item.generatedForDocumentId!, item.id]),
-      ),
-  );
+  /** Where an agenda item stands in the session, or null while unknown. */
+  function itemTreatment(itemId: string) {
+    return itemTreatments.value.get(itemId) ?? null;
+  }
 
   /**
-   * Where a document stands in the session: `treated` once its automatic
-   * sub-item is marked treated, `projected` once the Mesa put it on screen,
-   * else null.
+   * Whether the Mesa can set (`mark`) or undo (`unmark`) the treated mark
+   * of an item from the console (sessionMarkAction): undo a mark, the one
+   * left on an item now waiting for a vote included, set it only on an item
+   * neither treated nor waiting for a vote.
+   */
+  function itemMarkAction(itemId: string): "mark" | "unmark" | null {
+    if (!canModerate.value) return null;
+    const entry = itemTreatment(itemId);
+    return entry ? sessionMarkAction(entry) : null;
+  }
+
+  /**
+   * Sets or undoes the Mesa's treated mark of an item, as the control sheet
+   * does (PATCH .../control-sheet/items/[item], with the mark's token): a
+   * mark someone changed meanwhile reads again and says so.
+   */
+  async function setItemTreated(
+    itemId: string,
+    value: boolean,
+  ): Promise<boolean> {
+    const key = `treated-${itemId}`;
+    if (busy.value[key]) return false;
+    const token = itemTreatment(itemId)?.token ?? null;
+    busy.value = { ...busy.value, [key]: true };
+    try {
+      await api.send(
+        `${assemblyUrl.value}/control-sheet/items/${encodeURIComponent(itemId)}`,
+        {
+          method: "PATCH",
+          body: { treated: { value, updatedAt: token } },
+        },
+      );
+      return true;
+    } catch (error) {
+      if (staleSheetRow(error)) {
+        toast.add({
+          title: t("controlSheet.panel.stale"),
+          color: "warning",
+          icon: "i-lucide-refresh-ccw",
+        });
+      } else {
+        api.notifyError(error, "session.progress.markFailed");
+      }
+      return false;
+    } finally {
+      const { [key]: _done, ...rest } = busy.value;
+      busy.value = rest;
+      await refreshProgress();
+    }
+  }
+
+  /**
+   * Where a document stands in the session: `treated` once its own item
+   * (its automatic sub-item, or the item it hangs from) reads treated,
+   * `projected` once the Mesa put it on screen, else null.
    */
   function documentProgress(
     documentId: string,
   ): "treated" | "projected" | null {
-    const autoItem = autoItemOfDocument.value.get(documentId);
-    if (autoItem && treatedItemIds.value.has(autoItem)) return "treated";
+    const owner = agenda.value?.documents.find(
+      (entry) => entry.id === documentId,
+    );
+    if (owner && treatedItemIds.value.has(owner.agendaItemId)) return "treated";
     return projectedDocumentIds.value.has(documentId) ? "projected" : null;
   }
 
@@ -864,9 +1015,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
     for (const event of events) {
       if (event.entityType === "live") live = true;
-      // A document goes on screen or the debate moves on (live), or the
-      // Mesa ticks an item in the sheet (control_sheet).
-      if (event.entityType === "live" || event.entityType === "control_sheet") {
+      // A document goes on screen or the debate moves on (live), the Mesa
+      // ticks an item in the sheet (control_sheet), or a vote, a document
+      // or the agenda changes how an item stands by the sheet's rule.
+      if (
+        event.entityType === "live" ||
+        event.entityType === "control_sheet" ||
+        event.entityType === "vote" ||
+        event.entityType === "document" ||
+        event.entityType === "agenda_item"
+      ) {
         progressChanged = true;
       }
       if (event.entityType === "vote") {
@@ -1002,7 +1160,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * amendment). Nothing is sent then, so the session need not be open.
    */
   async function moveDebate(body: LiveStateBody): Promise<boolean> {
-    if (inControl.value) return setLive(body);
+    if (inControl.value) {
+      if (!(await confirmLeavingVote(body))) return false;
+      return setLive(body);
+    }
     const from = debate.value;
     const next: SessionCursor = {
       agendaItemId: from?.agendaItemId ?? null,
@@ -1023,6 +1184,38 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (body.amendmentId !== undefined) next.amendmentId = body.amendmentId;
     cursor.value = next;
     return true;
+  }
+
+  /**
+   * Leaving an agenda item whose vote is not recorded yet asks first, on
+   * the console that presents (user's decision of 2026-11-20): the item
+   * stays pending until its vote is recorded (sessionLeavesPendingVote).
+   */
+  async function confirmLeavingVote(body: LiveStateBody): Promise<boolean> {
+    if (body.agendaItemId === undefined) return true;
+    const fromId = liveState.value?.agendaItemId ?? null;
+    const leaves = sessionLeavesPendingVote(
+      agenda.value?.items ?? [],
+      (itemId) => itemTreatment(itemId)?.awaitingVote ?? false,
+      fromId,
+      body.agendaItemId,
+    );
+    if (!leaves) return true;
+    const row = agendaRows.value.find((entry) => entry.item.id === fromId);
+    const item = row
+      ? numberedAgendaTitle(
+          row.number,
+          row.item.title,
+          t("agenda.unlisted.inText"),
+        )
+      : "";
+    return confirm({
+      title: t("session.leaveVote.title"),
+      description: t("session.leaveVote.description", { item }),
+      confirmLabel: t("session.leaveVote.confirm"),
+      confirmIcon: "i-lucide-skip-forward",
+      confirmColor: "warning",
+    });
   }
 
   function debateAgendaItem(itemId: string): Promise<boolean> {
@@ -1141,6 +1334,36 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   /**
+   * Puts a bloc on screen («Se propone aprobar en bloque»), in place of the
+   * amendment or the vote on it. Only the console in control, on the
+   * document on screen (or none yet): moving the room to another document
+   * asks first, as debating an amendment of it does.
+   */
+  async function projectBloc(ids: string[]): Promise<boolean> {
+    if (!inControl.value || ids.length === 0) return false;
+    const liveDocument = liveState.value?.documentId ?? null;
+    if (liveDocument !== null && liveDocument !== documentId.value) {
+      const confirmed = await confirm({
+        title: t("session.bloc.otherDocumentTitle"),
+        description: t("session.debateConfirm.otherDocument"),
+        confirmLabel: t("session.debateConfirm.moveDebate"),
+        confirmIcon: "i-lucide-radio",
+      });
+      if (!confirmed) return false;
+    }
+    return setLive({
+      amendmentBloc: ids,
+      amendmentId: null,
+      voteId: null,
+    });
+  }
+
+  /** Takes the bloc off the screen; the document stays. */
+  function unprojectBloc(): Promise<boolean> {
+    return setLive({ amendmentBloc: null });
+  }
+
+  /**
    * "Siguiente": debates the next amendment the Mesa can decide and makes
    * it the target of the keyboard shortcuts.
    */
@@ -1192,14 +1415,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const TALLY_SEND_MS = 120;
   let tallyTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingTally: LiveTally | null = null;
+  // One POST at a time, in the order they were made: a count sent after the
+  // null that ended it would put it back on screen.
+  let tallyQueue: Promise<unknown> = Promise.resolve();
   function sendTally(): void {
     tallyTimer = undefined;
-    void api
-      .send(`${assemblyUrl.value}/live-tally`, {
-        method: "POST",
-        body: { tally: pendingTally },
-      })
-      .catch(() => undefined);
+    const body = { tally: pendingTally };
+    const url = `${assemblyUrl.value}/live-tally`;
+    tallyQueue = tallyQueue.then(() =>
+      api.send(url, { method: "POST", body }).catch(() => undefined),
+    );
   }
   function pushTally(tally: LiveTally | null): void {
     // Only the console in control shows the count (the server ignores the
@@ -1247,7 +1472,30 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const composer = reactive({ open: false, sourceIds: [] as string[] });
   const finalVoteDialog = reactive({ open: false });
   const finalVoteAnnulDialog = reactive({ open: false });
-  const assentDialog = reactive({ open: false });
+  /**
+   * Approval by assent of several amendments: those of `ids`, as
+   * sessionAssentPlan plans them, from the accepted shortcut (`bloc`
+   * false, prefilled with the accepted ones) or from a bloc the Mesa picked
+   * or has on screen.
+   */
+  const assentDialog = reactive({
+    open: false,
+    ids: [] as string[],
+    bloc: false,
+  });
+  // The shortcut keeps its whole plan: the accepted ones held back say why.
+  const assentDialogPlan = computed(() =>
+    assentDialog.bloc
+      ? sessionAssentPlan(amendments.value, assentDialog.ids)
+      : assentPlan.value,
+  );
+  /** Opens it on the accepted ones (the shortcut), or on a bloc. */
+  function openAssent(ids?: string[]): void {
+    assentDialog.ids =
+      ids ?? assentPlan.value.ready.map((amendment) => amendment.id);
+    assentDialog.bloc = ids !== undefined;
+    assentDialog.open = true;
+  }
   const lapseDialog = reactive<SessionLapseDialog>({
     open: false,
     targetId: null,
@@ -1306,6 +1554,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   watch(documentId, () => {
     finalVoteDialog.open = false;
     finalVoteAnnulDialog.open = false;
+    // Its amendments are the previous document's.
+    assentDialog.open = false;
   });
   // Likewise the item vote: once the debate moves to another item (from
   // any Mesa device), it must not record a vote on the one the room left.
@@ -2461,6 +2711,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteBlockers,
     preview,
     assentPlan,
+    blocMode,
+    blocSelected,
+    blocOrder,
+    toggleBloc,
+    selectAcceptedBloc,
+    clearBlocSelection,
+    cancelBloc,
+    blocOnScreen,
+    projectBloc,
+    unprojectBloc,
     finalVoteReasons,
     focusedId,
     focused,
@@ -2505,6 +2765,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     // how far the session has gone
     projectedDocumentIds,
     treatedItemIds,
+    itemTreatment,
+    itemMarkAction,
+    setItemTreated,
     documentProgress,
     // dialogs
     voteDialog,
@@ -2514,6 +2777,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteDialog,
     finalVoteAnnulDialog,
     assentDialog,
+    assentDialogPlan,
+    openAssent,
     lapseDialog,
     wordingDialog,
     openWording,

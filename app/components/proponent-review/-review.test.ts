@@ -337,17 +337,20 @@ describe("positions", () => {
     // The rule changed to "vote" afterwards: as the server, it is decided.
     expect(isPositionReviewable(incorporated("a"), "vote")).toBe(false);
     expect(positionWaitReason(incorporated("a"), "vote")).toBe("decided");
-    // Approved by the assembly: decided for good.
-    expect(
-      isPositionReviewable(
-        amendment("a", {
-          status: "approved",
-          approvalMethod: "vote",
-          position: answered("accept"),
-        }),
-        "incorporate",
-      ),
-    ).toBe(false);
+    // Approved by the assembly: its answer can still change from the
+    // amendment (can.position), but it is decided, so it never joins the
+    // review's queue nor its progress.
+    const approved = amendment("a", {
+      status: "approved",
+      approvalMethod: "vote",
+      position: answered("accept"),
+      can: { position: true },
+    });
+    for (const rule of ["vote", "incorporate"] as const) {
+      expect(isPositionReviewable(approved, rule)).toBe(false);
+      expect(positionWaitReason(approved, rule)).toBe("decided");
+      expect(proponentReviewItems([approved], rule)).toEqual([]);
+    }
     expect(
       isPositionReviewable(amendment("a", { status: "transacted" }), "vote"),
     ).toBe(false);

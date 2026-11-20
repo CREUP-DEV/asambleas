@@ -38,7 +38,10 @@ import {
   type AmendmentOverlap,
   type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
-import { incorporatedClashIds } from "~/components/proponent-review/-review";
+import {
+  incorporatedClashIds,
+  isIncorporated,
+} from "~/components/proponent-review/-review";
 
 /**
  * One amendment, read on its own. What matters comes first, in this order:
@@ -398,9 +401,18 @@ const canChangeAuthors = computed(
       Boolean(props.document.finalVote),
     ),
 );
-/** The viewer answers it (the main presenter, or the Mesa for it). */
+/**
+ * The viewer answers it (the main presenter, or the Mesa for it) while it
+ * is undecided or its acceptance incorporated it. One the assembly already
+ * approved keeps its answer open (user's decision of 2026-11-19), but it is
+ * nobody's turn: the panel stays with the details, with a secondary
+ * «Cambiar la respuesta».
+ */
 const positionTurn = computed(
-  () => showPosition.value && props.amendment.can.position,
+  () =>
+    showPosition.value &&
+    props.amendment.can.position &&
+    (props.amendment.status === "submitted" || isIncorporated(props.amendment)),
 );
 /** A transactional a main author rejected (closed, the originals carry on). */
 const rejectedByAuthors = computed(() =>
@@ -833,9 +845,11 @@ async function remove(): Promise<void> {
       :amendments-url="amendmentsUrl"
       :label-of="labelOf"
       :status-of="statusOf"
+      :final-voted="Boolean(document.finalVote)"
       @edit="emit('edit', $event)"
       @replaced="emit('replaced', $event)"
       @corrected="onCorrected"
+      @updated="emit('updated', $event)"
       @changed="emit('changed')"
       @settled="onReviewSettled"
     />

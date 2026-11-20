@@ -42,7 +42,11 @@ import {
   liveAmendmentRows,
   liveAmendmentStats,
   liveAssentKey,
+  liveBlocEntries,
   liveSpeakers,
+  liveTallyCast,
+  liveTallyRows,
+  liveTransactedCodes,
   liveVoteCounts,
   liveVoteQuestion,
   liveVoteSubject,
@@ -55,17 +59,25 @@ import {
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { ROOM_VIEW_QUERY } from "~~/shared/constants/roomView";
+import { LIVE_TALLY_TTL_MS } from "~~/shared/utils/schemas/assembly";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
  * It shows what the Mesa puts in debate (a document with its text or its
- * PDF beside the agenda, an amendment with the blocks it changes), the
+ * PDF beside the agenda, an amendment with the blocks it changes, or a bloc
+ * of amendments the Mesa proposes to approve together, each turning green
+ * as it is approved), the
  * result of the last vote and the Mesa's message; when nothing is in
  * debate, the agenda. While the Mesa makes the speaking turns visible, a
  * band at the bottom shows who has the floor, for how long, and who is
- * next. The header also shows the Mesa's latest headcount (members
- * present, quorum and the majorities it gives), for transparency. It
- * follows the live state and is open to every signed-in user.
+ * next. An amendment on screen takes most of the screen, with the agenda
+ * item and the document's amendments in a narrow column beside it. A secret
+ * vote the Mesa is counting is announced (what is voted and its question)
+ * with its running count or, when the Mesa shows it only at the end, a
+ * line saying so. The header also shows the Mesa's latest headcount
+ * (members present, quorum and the majorities it gives), for
+ * transparency. It follows the live state and is open to every signed-in
+ * user.
  *
  * It is opened on a Mesa account but read by the whole room: every read of
  * a Mesa account asks for the room view (`?view=room`), and the server
@@ -317,6 +329,10 @@ function onLive(events: LiveEventDto[]): void {
   }
   if (affectsSpeakers(events)) refreshes.push(refreshSpeakers());
   if (affectsHeadcounts(events)) refreshes.push(refreshHeadcounts());
+  // A count's events are lost while the stream is down: a reconnect (its
+  // `ready`) and the polling fallback read the kept one again, so a count
+  // ended or expired meanwhile leaves the screen.
+  if (poll) void readTally();
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
   if (affectsAgenda(events)) refreshes.push(refreshAgenda());
   if (poll || touchesDocument) {
@@ -351,45 +367,48 @@ const mesaScroll = ref<LiveScrollDto | null>(null);
 const mesaPointer = shallowRef<PointerState>(EMPTY_POINTER_STATE);
 
 /**
- * A secret vote the Mesa is counting, ballot by ballot (user's decision of
- * 2026-11-18): each ballot arrives on the stream (`tally`) and the count
- * grows on screen until the vote is recorded, when its result takes over.
- * A projection that opens mid-count reads the last one.
+ * A secret vote the Mesa is counting (user's decisions of 2026-11-18 and
+ * 2026-11-19): announced once the Mesa picks how the room follows it, with
+ * what is voted and its question, and either the count growing ballot by
+ * ballot or a line saying the result comes at the end. Each change arrives
+ * on the stream (`tally`) until the vote is recorded, when its result takes
+ * over. A projection that opens mid-count, or gets its stream back, reads
+ * the last one; the server ends a count no console repeats
+ * (LIVE_TALLY_TTL_MS), so one left by a closed console does not stay.
  */
 const tally = ref<LiveTally | null>(null);
+/** Counts the stream's events: a read that one overtook is dropped. */
+let tallyEvents = 0;
+/** When this page last got a count (its own clock, not the server's). */
+let tallySeenAt = 0;
+function setTally(next: LiveTally | null): void {
+  tally.value = next;
+  if (next) tallySeenAt = Date.now();
+}
 function onTally(dto: LiveTallyDto): void {
-  tally.value = dto.tally;
+  tallyEvents += 1;
+  setTally(dto.tally);
 }
 async function readTally(): Promise<void> {
+  const before = tallyEvents;
   try {
     const dto = await read<LiveTallyDto | null>(
       `${assemblyUrl.value}/live-tally`,
     );
-    tally.value = dto?.tally ?? null;
+    if (tallyEvents === before) setTally(dto?.tally ?? null);
   } catch {
     // The next ballot brings it.
   }
 }
 onMounted(() => void readTally());
-const tallyRows = computed(() => {
-  const value = tally.value;
-  if (!value) return [];
-  const keys = ["inFavor", "against", "blank", "invalid"] as const;
-  const top = Math.max(1, ...keys.map((key) => value[key]));
-  return keys.map((key) => ({
-    key,
-    count: value[key],
-    share: value[key] / top,
-  }));
-});
-const tallyCast = computed(() =>
-  tally.value
-    ? tally.value.inFavor +
-      tally.value.against +
-      tally.value.blank +
-      tally.value.invalid
-    : 0,
-);
+// A count nobody sends again ends here too, should its end never arrive.
+useIntervalFn(() => {
+  if (tally.value && Date.now() - tallySeenAt > LIVE_TALLY_TTL_MS) {
+    tally.value = null;
+  }
+}, 5_000);
+const tallyRows = computed(() => liveTallyRows(tally.value));
+const tallyCast = computed(() => liveTallyCast(tally.value));
 usePointerFade(mesaPointer);
 function onMesaPointer(pointer: LivePointerDto): void {
   if (pointer.documentId !== documentId.value) return;
@@ -581,12 +600,27 @@ const message = computed(() => live.value?.message?.trim() || null);
 /** A recess the Mesa called: the screen says so until it ends. */
 const recess = computed(() => live.value?.recess ?? null);
 
-const mode = computed<"recess" | "amendment" | "document" | "idle">(() => {
-  if (recess.value) return "recess";
-  if (debated.value) return "amendment";
-  if (document.value || documentLoading.value) return "document";
-  return "idle";
-});
+/**
+ * A bloc the Mesa proposes to approve together (user's decision of
+ * 2026-11-19): its codes in text order, each with its main author and
+ * whether it is approved yet (the amendments refresh on every outcome).
+ */
+const blocEntries = computed(() =>
+  liveBlocEntries(live.value?.amendmentBloc, amendments.value),
+);
+const blocApproved = computed(
+  () => blocEntries.value.filter((entry) => entry.approved).length,
+);
+
+const mode = computed<"recess" | "amendment" | "bloc" | "document" | "idle">(
+  () => {
+    if (recess.value) return "recess";
+    if (debated.value) return "amendment";
+    if (blocEntries.value.length > 0) return "bloc";
+    if (document.value || documentLoading.value) return "document";
+    return "idle";
+  },
+);
 /**
  * The page takes the screen's height exactly: its boxes scroll themselves
  * (the document, and the agenda beside it or on its own), so a long agenda
@@ -601,32 +635,40 @@ const fitsScreen = computed(() => mode.value !== "recess");
 // before and after it; moving on scrolls there smoothly. Only the list
 // scrolls, never the page.
 const agendaNav = ref<HTMLElement | null>(null);
-/** The list last placed: a new one (another mode) is placed at once. */
-let placedIn: HTMLElement | null = null;
+/**
+ * The document's amendments beside the amendment on screen: the one on
+ * screen sits in the middle too.
+ */
+const amendmentsNav = ref<HTMLElement | null>(null);
+/** The lists last placed: a new one (another mode) is placed at once. */
+const placed = new WeakSet<HTMLElement>();
+
+/** Scrolls a list so its current row sits in the middle of its box. */
+function centerCurrent(box: HTMLElement | null): void {
+  const current = box?.querySelector<HTMLElement>("[aria-current]");
+  // Not laid out yet (hidden, or before the first layout): the first
+  // placement that counts is the one that can measure, and it jumps.
+  if (!box || !current || box.clientHeight === 0) return;
+  const boxRect = box.getBoundingClientRect();
+  const rect = current.getBoundingClientRect();
+  const top =
+    rect.top -
+    boxRect.top +
+    box.scrollTop -
+    (box.clientHeight - rect.height) / 2;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  box.scrollTo({
+    top: Math.max(0, top),
+    // A list placed for the first time (the screen opening, or another
+    // mode's list) goes there at once; moving on in it glides.
+    behavior: placed.has(box) && !reduce ? "smooth" : "auto",
+  });
+  placed.add(box);
+}
+
 watch(
   () => [live.value?.agendaItemId, agendaNav.value, rows.value.length],
-  () => {
-    const box = agendaNav.value;
-    const current = box?.querySelector<HTMLElement>("[aria-current]");
-    if (!box || !current) return;
-    const boxRect = box.getBoundingClientRect();
-    const rect = current.getBoundingClientRect();
-    const top =
-      rect.top -
-      boxRect.top +
-      box.scrollTop -
-      (box.clientHeight - rect.height) / 2;
-    const reduce = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    box.scrollTo({
-      top: Math.max(0, top),
-      // A list placed for the first time (the screen opening, or another
-      // mode's list) goes there at once; moving on in it glides.
-      behavior: placedIn === box && !reduce ? "smooth" : "auto",
-    });
-    placedIn = box;
-  },
+  () => centerCurrent(agendaNav.value),
   { flush: "post" },
 );
 
@@ -663,6 +705,55 @@ const voteAssentKey = computed(() =>
 const voteCounts = computed(() =>
   vote.value ? liveVoteCounts(vote.value) : [],
 );
+
+// A result the Mesa puts on screen ends any count still shown (a console
+// closed mid-count never ends its own), once the result is there to take
+// its place; the server forgets its copy when it projects a vote it
+// records. A console still counting sends it back.
+watch(
+  () => vote.value?.id ?? null,
+  (id, previous) => {
+    if (id && id !== previous) tally.value = null;
+  },
+);
+
+/** What the secret vote being counted is about, as the room reads it. */
+const tallySubjectKind = computed(() => {
+  const subject = tally.value?.subject;
+  return subject
+    ? liveVoteSubject(
+        { subjectType: subject.type, subjectId: subject.id },
+        {
+          amendments: amendments.value,
+          document: document.value ?? null,
+          agenda: rows.value,
+        },
+      )
+    : null;
+});
+const tallySubject = computed(() =>
+  tallySubjectKind.value
+    ? liveVoteSubjectText(tallySubjectKind.value, t)
+    : null,
+);
+/**
+ * Its question, unless the heading already says it or the room reads the
+ * item without its title (the server drops it then too).
+ */
+const tallyQuestion = computed(() => {
+  const value = tally.value;
+  if (!value?.question) return null;
+  const subject = value.subject;
+  if (subject?.type === "agenda_item") {
+    const row = rows.value.find((entry) => entry.item.id === subject.id);
+    if (!row || row.item.titleHidden) return null;
+  }
+  return liveVoteQuestion(
+    value,
+    tallySubjectKind.value ?? { kind: "other" },
+    t("agenda.unlisted.inText"),
+  );
+});
 
 /** The Mesa's latest headcount and the majorities it gives. */
 const attendance = computed(() =>
@@ -712,6 +803,50 @@ const attendanceLine = computed(() => {
 const speakers = computed(() =>
   liveSpeakers(speakersDto.value, live.value?.speakersVisible ?? false),
 );
+/**
+ * The document's amendments beside the amendment on screen, in the order
+ * attendees read them (liveAmendmentRows: published ones only), the one on
+ * screen highlighted (user's decision of 2026-11-20).
+ */
+const amendmentRows = computed(() =>
+  liveAmendmentRows(amendments.value, debated.value?.id ?? null, {
+    byAnswer: true,
+  }),
+);
+watch(
+  () => [debated.value?.id, amendmentsNav.value, amendmentRows.value.length],
+  () => centerCurrent(amendmentsNav.value),
+  { flush: "post" },
+);
+// Its box changes size with the screen, and the text font may land after
+// the first layout: the one on screen goes back to the middle.
+useResizeObserver(amendmentsNav, () => centerCurrent(amendmentsNav.value));
+onMounted(() => {
+  void window.document.fonts?.ready.then(() =>
+    centerCurrent(amendmentsNav.value),
+  );
+});
+
+/** "E3 y E5": the locale's own way of joining a list. */
+function joinCodes(codes: string[]): string {
+  try {
+    return new Intl.ListFormat(locale.value, {
+      style: "long",
+      type: "conjunction",
+    }).format(codes);
+  } catch {
+    return codes.join(", ");
+  }
+}
+/** A transactional on screen names the amendments it combines. */
+const transacted = computed(() => {
+  const codes = debated.value
+    ? liveTransactedCodes(debated.value, amendments.value)
+    : [];
+  return codes.length > 0
+    ? t("projection.transacts", { codes: joinCodes(codes) }, codes.length)
+    : null;
+});
 
 // Only what the room can read. The room view already gets published
 // amendments only; liveAmendmentRows keeps to them for an account that
@@ -896,11 +1031,12 @@ useHead(() => ({
         <p class="text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-bold">
           {{ assembly?.label }}
         </p>
-        <!-- Only with an amendment on screen: otherwise the agenda beside
-             the text already names the item. -->
+        <!-- Only with a bloc on screen, or an amendment on a narrow
+             screen: otherwise the column beside the text names the item. -->
         <p
-          v-if="currentRow && mode === 'amendment'"
+          v-if="currentRow && (mode === 'amendment' || mode === 'bloc')"
           class="text-muted truncate text-[clamp(1rem,1.4vw,1.5rem)]"
+          :class="mode === 'amendment' ? 'lg:hidden' : ''"
         >
           <AgendaItemNumber :number="currentRow.number" />
           {{ currentRow.item.title }}
@@ -922,21 +1058,17 @@ useHead(() => ({
         />
         {{ attendanceLine }}
       </p>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center">
         <!-- Fullscreen support is only known in the browser. -->
         <ClientOnly>
           <!-- The connection, a dot by the clock (the bottom bar is gone so
-               the text takes its room); a warning only when it matters. -->
+               the text takes its room); a warning only when it matters.
+               The status is always there (its label is for screen
+               readers) and takes room only with a warning. -->
           <span
-            class="inline-flex items-center gap-2 text-sm"
+            class="inline-flex items-center gap-2 text-sm has-[.text-warning]:me-3"
             role="status"
-            :title="connectionLabel"
           >
-            <span
-              class="size-3 rounded-full"
-              :class="CONNECTION_DOT[connection]"
-              aria-hidden="true"
-            />
             <span class="sr-only">{{ connectionLabel }}</span>
             <span v-if="stale" class="text-warning font-medium">
               {{ t("projection.stale") }}
@@ -945,14 +1077,29 @@ useHead(() => ({
               {{ t("projection.loadFailed") }}
             </span>
           </span>
+          <!-- The dot is sized on the clock and centred on its digits: the
+               clock's box is trimmed to the capitals (lining figures), so
+               items-center needs no nudge (Firefox ignores the trim and
+               centres it on the line box). -->
           <span
-            class="text-[clamp(1.25rem,2vw,2.25rem)] font-semibold tabular-nums"
-            :aria-label="t('projection.clock', { time: clock })"
+            class="inline-flex items-center gap-[0.3em] text-[clamp(1.25rem,2vw,2.25rem)] font-semibold"
+            :title="connectionLabel"
           >
-            {{ clock }}
+            <span
+              class="size-[0.33em] shrink-0 rounded-full"
+              :class="CONNECTION_DOT[connection]"
+              aria-hidden="true"
+            />
+            <span
+              class="tabular-nums [text-box:trim-both_cap_alphabetic]"
+              :aria-label="t('projection.clock', { time: clock })"
+            >
+              {{ clock }}
+            </span>
           </span>
           <UButton
             v-if="fullscreenSupported"
+            class="ms-3"
             color="neutral"
             variant="ghost"
             size="lg"
@@ -968,11 +1115,19 @@ useHead(() => ({
       </div>
     </header>
 
+    <!-- Fitted to the screen, the content starts closer to the header:
+         the document's text or PDF takes that room. -->
     <main
-      class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)] px-[clamp(1rem,3vw,3rem)] py-[clamp(1rem,2vw,2rem)] text-[clamp(1.125rem,1.5vw,2rem)]"
-      :class="{ 'min-h-0': fitsScreen }"
+      class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)] px-[clamp(1rem,3vw,3rem)] pb-[clamp(1rem,2vw,2rem)] text-[clamp(1.125rem,1.5vw,2rem)]"
+      :class="
+        fitsScreen
+          ? 'min-h-0 pt-[clamp(0.5rem,1vw,1rem)]'
+          : 'pt-[clamp(1rem,2vw,2rem)]'
+      "
     >
-      <!-- A secret vote being counted: the count grows ballot by ballot. -->
+      <!-- A secret vote being counted: what is voted, its question, and
+           the count growing ballot by ballot or a line saying the result
+           comes at the end. -->
       <section
         v-if="tally && mode !== 'recess'"
         role="status"
@@ -988,7 +1143,20 @@ useHead(() => ({
           />
           {{ t("projection.tally.title") }}
         </p>
+        <p
+          v-if="tallySubject"
+          class="text-highlighted mt-1 text-[clamp(1.5rem,3vw,3.25rem)] leading-tight font-extrabold tracking-tight"
+        >
+          {{ tallySubject }}
+        </p>
+        <p
+          v-if="tallyQuestion"
+          class="text-highlighted mt-1 text-[clamp(1.25rem,2.4vw,2.75rem)] leading-snug font-semibold whitespace-pre-line"
+        >
+          {{ tallyQuestion }}
+        </p>
         <dl
+          v-if="tally.counts"
           class="mt-[clamp(0.5rem,1vw,1rem)] grid grid-cols-2 gap-x-[clamp(1rem,3vw,3rem)] gap-y-[clamp(0.5rem,1vw,1rem)] lg:grid-cols-4"
         >
           <div v-for="row in tallyRows" :key="row.key" class="min-w-0">
@@ -1019,6 +1187,7 @@ useHead(() => ({
           </div>
         </dl>
         <p
+          v-if="tally.counts"
           class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1rem,1.6vw,1.75rem)] tabular-nums"
         >
           {{
@@ -1029,6 +1198,13 @@ useHead(() => ({
                 })
               : t("projection.tally.cast", { count: tallyCast }, tallyCast)
           }}
+          · {{ t(`session.enums.majority.${tally.majority}`) }}
+        </p>
+        <p
+          v-else
+          class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.125rem,1.8vw,2rem)] font-medium"
+        >
+          {{ t("projection.tally.revealAtEnd") }}
           · {{ t(`session.enums.majority.${tally.majority}`) }}
         </p>
       </section>
@@ -1145,8 +1321,107 @@ useHead(() => ({
         </p>
       </section>
 
+      <!-- The amendment takes most of the screen; beside it, a narrow
+           column names the agenda item, counts and lists the
+           document's amendments, the one on screen highlighted. -->
       <section
         v-else-if="mode === 'amendment' && debated"
+        class="grid min-h-0 flex-1 gap-[clamp(1rem,2.5vw,2.5rem)] lg:grid-cols-[minmax(0,1fr)_clamp(15rem,21vw,26rem)]"
+      >
+        <div
+          class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
+          aria-live="polite"
+        >
+          <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <div class="min-w-0">
+              <h1
+                id="projection-amendment-title"
+                class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
+              >
+                {{ t("projection.amendment", { code: debated.code ?? "" }) }}
+              </h1>
+              <p
+                v-if="transacted"
+                class="text-default mt-[clamp(0.25rem,0.6vw,0.6rem)] text-[clamp(1.25rem,2vw,2rem)] leading-tight font-semibold"
+              >
+                {{ transacted }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 pb-1">
+              <CommonMemberBadge
+                v-for="author in debated.authors"
+                :key="author.id"
+                :member="author"
+                size="xl"
+                :tooltip="false"
+                show-name
+              />
+              <CommonStatusBadge
+                v-if="debated.status !== 'submitted'"
+                kind="amendment"
+                :value="debated.status"
+                size="xl"
+                variant="solid"
+              />
+            </div>
+          </div>
+          <!-- Only the blocks it changes: context would push the change off
+               the screen (see "The amendment on screen"). -->
+          <!-- Focusable: a keyboard reads what does not fit (the room never
+               scrolls it; the page brings the change into view). -->
+          <div
+            ref="diffBox"
+            role="region"
+            tabindex="0"
+            aria-labelledby="projection-amendment-title"
+            class="projection-text projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
+          >
+            <ContentAmendmentDiff
+              :id="debated.id"
+              :base="base"
+              :ops="debated.ops"
+              :context="0"
+            />
+          </div>
+        </div>
+        <aside
+          :aria-label="t('projection.amendments')"
+          class="hidden min-h-0 flex-col gap-[clamp(0.5rem,1vw,1rem)] lg:flex"
+        >
+          <div class="space-y-1 px-4">
+            <p
+              v-if="currentRow"
+              class="text-highlighted text-[clamp(1.125rem,1.6vw,1.75rem)] leading-tight font-bold"
+            >
+              <AgendaItemNumber :number="currentRow.number" />
+              {{ currentRow.item.title }}
+            </p>
+            <p
+              v-if="amendmentStats.total > 0"
+              class="text-default text-[clamp(1rem,1.3vw,1.5rem)] tabular-nums"
+            >
+              {{
+                t("projection.amendmentsCompact", {
+                  approved: amendmentStats.approved,
+                  undecided: amendmentStats.undecided,
+                })
+              }}
+            </p>
+          </div>
+          <nav
+            ref="amendmentsNav"
+            :aria-label="t('projection.amendments')"
+            class="projection-scroll min-h-0 flex-1 overflow-y-auto"
+          >
+            <SessionProjectionAmendments :rows="amendmentRows" />
+          </nav>
+        </aside>
+      </section>
+
+      <!-- A bloc: the codes, large, each with its main author; each turns
+           green as the Mesa approves it. -->
+      <section
+        v-else-if="mode === 'bloc'"
         class="flex min-h-0 flex-1 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
         aria-live="polite"
       >
@@ -1156,54 +1431,64 @@ useHead(() => ({
               {{ document?.reference ?? document?.title }}
             </p>
             <h1
-              id="projection-amendment-title"
+              id="projection-bloc-title"
               class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
             >
-              {{ t("projection.amendment", { code: debated.code ?? "" }) }}
+              {{ t("projection.bloc.title") }}
             </h1>
           </div>
-          <div class="flex flex-wrap items-center gap-2 pb-1">
-            <UBadge
-              color="neutral"
-              variant="outline"
-              size="xl"
-              :label="t(`session.enums.amendmentKind.${debated.kind}`)"
-            />
-            <CommonMemberBadge
-              v-for="author in debated.authors"
-              :key="author.id"
-              :member="author"
-              size="xl"
-              :tooltip="false"
-              show-name
-            />
-            <CommonStatusBadge
-              v-if="debated.status !== 'submitted'"
-              kind="amendment"
-              :value="debated.status"
-              size="xl"
-              variant="solid"
-            />
-          </div>
+          <p
+            class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold tabular-nums"
+          >
+            {{
+              t("projection.bloc.progress", {
+                approved: blocApproved,
+                total: blocEntries.length,
+              })
+            }}
+          </p>
         </div>
-        <!-- Only the blocks it changes: context would push the change off
-             the screen (see "The amendment on screen"). -->
-        <!-- Focusable: a keyboard reads what does not fit (the room never
-             scrolls it; the page brings the change into view). -->
-        <div
-          ref="diffBox"
-          role="region"
-          tabindex="0"
-          aria-labelledby="projection-amendment-title"
-          class="projection-text projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
+        <ul
+          class="projection-scroll flex min-h-0 flex-1 flex-wrap content-start gap-[clamp(0.75rem,1.5vw,1.5rem)] overflow-y-auto"
+          aria-labelledby="projection-bloc-title"
         >
-          <ContentAmendmentDiff
-            :id="debated.id"
-            :base="base"
-            :ops="debated.ops"
-            :context="0"
-          />
-        </div>
+          <li
+            v-for="entry in blocEntries"
+            :key="entry.id"
+            class="flex min-w-[clamp(8rem,14vw,14rem)] flex-col gap-[clamp(0.25rem,0.5vw,0.5rem)] rounded-2xl border-4 px-[clamp(1rem,2vw,2rem)] py-[clamp(0.5rem,1.2vw,1.25rem)] transition-colors duration-300"
+            :class="
+              entry.approved
+                ? 'border-success bg-success/10'
+                : entry.settled
+                  ? 'border-default opacity-60'
+                  : 'border-default bg-elevated/40'
+            "
+          >
+            <span
+              class="flex items-center gap-[0.3em] text-[clamp(2rem,4vw,4.5rem)] leading-none font-extrabold tabular-nums"
+            >
+              <UIcon
+                v-if="entry.approved"
+                name="i-lucide-check"
+                class="text-success size-[0.8em] shrink-0"
+                aria-hidden="true"
+              />
+              {{ entry.code }}
+            </span>
+            <span
+              v-if="entry.author"
+              class="text-muted text-[clamp(1.125rem,1.8vw,2rem)] leading-tight font-semibold"
+            >
+              {{ entry.author.acronym }}
+            </span>
+            <span
+              v-if="entry.approved"
+              class="text-[clamp(1rem,1.4vw,1.5rem)] font-bold text-(--ui-color-success-800) uppercase dark:text-(--ui-color-success-300)"
+            >
+              {{ t("projection.bloc.approved") }}
+            </span>
+          </li>
+        </ul>
       </section>
 
       <section
@@ -1232,10 +1517,13 @@ useHead(() => ({
         v-else-if="mode === 'document' && document"
         class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
       >
-        <div class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]">
-          <!-- What changes is announced; the text below is not. -->
+        <div class="flex min-h-0 flex-col">
+          <!-- What changes is announced; the text below is not. Always
+               there (a live region added with its content may go unread),
+               it takes room under it only when a line shows: otherwise
+               the text or the PDF starts at the top. -->
           <div
-            class="flex flex-col gap-[clamp(0.5rem,1vw,1rem)]"
+            class="flex flex-col gap-[clamp(0.5rem,1vw,1rem)] has-[p]:mb-[clamp(0.75rem,1.5vw,1.5rem)]"
             aria-live="polite"
           >
             <!-- The agenda beside it already names the document: its title
@@ -1283,7 +1571,7 @@ useHead(() => ({
               v-if="document.fileUrl"
               :key="document.id"
               ref="documentBox"
-              class="projection-scroll border-default bg-elevated min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(0.5rem,1vw,1rem)]"
+              class="projection-scroll border-default bg-elevated min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(0.25rem,0.5vw,0.5rem)]"
             >
               <div ref="documentContent" class="relative">
                 <DocumentPdfPages

@@ -27,6 +27,7 @@ import type {
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 import type { NotifyingEvent } from "./plan";
 import type { EmailDetail, EmailNotice } from "./template";
+import { inadmissibleWording } from "./wording";
 
 /**
  * What one notice says to one account (docs/design.md, "Email
@@ -462,6 +463,11 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
     const of = `al documento ${quoted(ctx.document.title)}`;
     let heading = "Tu enmienda se ha resuelto";
     let lead: string;
+    // Why it was not admitted: the note the decision carries (the
+    // Secretaría's when it reviewed it, the Mesa's otherwise).
+    let note: { label: string; text: string } | null = text(payload.outcomeNote)
+      ? { label: "Nota", text: text(payload.outcomeNote)! }
+      : null;
     switch (ctx.event.type) {
       case "amendment_approved":
         heading = "Tu enmienda está aprobada";
@@ -477,10 +483,13 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
         heading = "Tu enmienda está rechazada";
         lead = `La asamblea ha rechazado tu enmienda ${c} ${of}.`;
         break;
-      case "amendment_inadmissible":
+      case "amendment_inadmissible": {
         heading = "Tu enmienda no se ha admitido";
-        lead = `Tu enmienda ${c} ${of} no ha sido admitida.`;
+        const wording = inadmissibleWording(payload, `${c} ${of}`);
+        lead = wording.lead;
+        note = wording.note ?? note;
         break;
+      }
       case "amendment_transacted":
         heading = "Tu enmienda está transada";
         lead = `Tu enmienda ${c} ${of} queda sustituida por la transaccional ${text(payload.code) ?? "aceptada"}.`;
@@ -514,9 +523,7 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
       heading,
       lead,
       details: [...paths.details, ...amendmentDetails(ctx, amendment)],
-      note: text(payload.outcomeNote)
-        ? { label: "Nota", text: text(payload.outcomeNote)! }
-        : null,
+      note,
       action: {
         label: "Ver la enmienda",
         url: amendmentLink(paths.documentPath, amendment),

@@ -24,6 +24,7 @@ import {
   positionRecordedBy,
   publishOnValidation,
   reclassifyPositionPlan,
+  reviewInadmissionCase,
   shouldAutoAcceptPosition,
   POSITION_BLOCKER_MESSAGES,
   validationReopenBlocker,
@@ -511,12 +512,62 @@ describe("position of the main presenter", () => {
     };
     expect(positionBlocker(incorporated, "incorporate")).toBeNull();
     expect(positionBlocker(incorporated, "vote")).toBe("decided");
+    for (const status of [
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "transacted",
+      "inadmissible",
+    ] as const) {
+      for (const rule of ["vote", "incorporate"] as const) {
+        expect(positionBlocker({ ...answerable, status }, rule)).toBe(
+          "decided",
+        );
+      }
+    }
+  });
+
+  it("keeps the answer open on what the assembly approved, until the final vote", () => {
+    for (const approvalMethod of ["vote", "assent", "formal"] as const) {
+      const approved = {
+        ...answerable,
+        status: "approved" as const,
+        approvalMethod,
+      };
+      for (const rule of ["vote", "incorporate"] as const) {
+        expect(positionBlocker(approved, rule)).toBeNull();
+        expect(positionBlocker(approved, rule, true)).toBe("voted");
+        // Recording it changes nothing else: no reopening, no approval.
+        for (const position of ["accept", "reject", "pending"] as const) {
+          expect(positionEffect(approved, position, rule)).toBeNull();
+        }
+      }
+      // Decided, never on its way: unread by the presenter, it is closed.
+      expect(positionBlocker({ ...approved, publishedAt: null }, "vote")).toBe(
+        "decided",
+      );
+      expect(
+        positionBlocker(
+          { ...approved, publishedAt: null, presenterSeesValidated: true },
+          "vote",
+        ),
+      ).toBeNull();
+    }
+    // Never counted as an answer still to give.
     expect(
-      positionBlocker(
-        { ...incorporated, approvalMethod: "vote" as const },
-        "incorporate",
+      countPositionsPending(
+        [
+          {
+            ...answerable,
+            status: "approved",
+            approvalMethod: "vote",
+            authorsApproval: null,
+            position: null,
+          },
+        ],
+        "vote",
       ),
-    ).toBe("decided");
+    ).toBe(0);
   });
 
   it("incorporates an accepted amendment and reopens it when the answer changes", () => {
@@ -547,6 +598,35 @@ describe("position of the main presenter", () => {
       "reopen",
     );
     expect(positionEffect(incorporated, "accept", "incorporate")).toBeNull();
+  });
+
+  it("incorporates again an acceptance kept through the Mesa's reopening", () => {
+    // Approved by a vote, then accepted: only the answer is recorded.
+    const voted = {
+      status: "approved" as const,
+      approvalMethod: "vote" as const,
+      admission: "admitted" as const,
+    };
+    expect(positionEffect(voted, "accept", "incorporate")).toBeNull();
+    // Reopened, it is undecided with the acceptance kept: under
+    // "incorporate" that acceptance approves it (incorporateOnAdmission
+    // runs it at the end of the reopening), under "vote" it waits.
+    const undecided = {
+      ...voted,
+      status: "submitted" as const,
+      approvalMethod: null,
+    };
+    expect(positionEffect(undecided, "accept", "incorporate")).toBe("approve");
+    expect(positionEffect(undecided, "accept", "vote")).toBeNull();
+    // Not admitted (a late one an author withdrew before the assembly
+    // decided): it waits for the admission, as before.
+    expect(
+      positionEffect(
+        { ...undecided, admission: "pending" },
+        "accept",
+        "incorporate",
+      ),
+    ).toBeNull();
   });
 
   it("decides nothing when accepted amendments are voted", () => {
@@ -1061,6 +1141,72 @@ describe("validationReopenBlocker", () => {
       validationReopenBlocker({ ...row, kind: "transactional" }),
     ).not.toBeNull();
     expect(validationReopenBlocker({ ...row, late: true })).not.toBeNull();
+  });
+});
+
+describe("reviewInadmissionCase", () => {
+  const at = new Date("2026-03-10T12:00:00Z");
+  const waiting = {
+    status: "submitted" as const,
+    validatedAt: null,
+    correctionRequestedAt: null,
+    authorsApproval: null,
+    kind: "partial" as const,
+    late: false,
+    admission: "pending" as const,
+  };
+  const validated = {
+    ...waiting,
+    validatedAt: at,
+    admission: "admitted" as const,
+  };
+
+  it("takes one waiting for its check, late or not", () => {
+    expect(reviewInadmissionCase(waiting)).toBe("unvalidated");
+    expect(reviewInadmissionCase({ ...waiting, late: true })).toBe(
+      "unvalidated",
+    );
+  });
+
+  it("takes one validated that can still go back to review, on time", () => {
+    expect(reviewInadmissionCase(validated)).toBe("validated");
+    expect(
+      reviewInadmissionCase({ ...validated, late: true, admission: "pending" }),
+    ).toBeNull();
+    expect(
+      reviewInadmissionCase({ ...validated, kind: "transactional" }),
+    ).toBeNull();
+  });
+
+  it("takes a draft already sent back for a correction", () => {
+    expect(
+      reviewInadmissionCase({
+        ...waiting,
+        status: "draft",
+        correctionRequestedAt: at,
+      }),
+    ).toBe("returned");
+    expect(reviewInadmissionCase({ ...waiting, status: "draft" })).toBeNull();
+  });
+
+  it("refuses decided ones and a transactional waiting for its authors", () => {
+    for (const status of [
+      "approved",
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "transacted",
+      "inadmissible",
+    ] as const) {
+      expect(reviewInadmissionCase({ ...validated, status })).toBeNull();
+    }
+    expect(
+      reviewInadmissionCase({
+        ...waiting,
+        kind: "transactional",
+        authorsApproval: "pending",
+      }),
+    ).toBeNull();
   });
 });
 

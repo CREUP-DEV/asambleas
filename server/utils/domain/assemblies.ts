@@ -38,7 +38,7 @@ import {
 import { assemblySettings, loadDocumentSummaries } from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { stampDebateStarted } from "./positionsPublication";
-import { markLeftItemsTreated, stampProjected } from "./sessionProgress";
+import { markPresentedTreated, stampProjected } from "./sessionProgress";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
 import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
@@ -73,6 +73,12 @@ import {
   liveStateClearsOnly,
   liveStateMovesScreen,
 } from "~~/shared/utils/sessionGate";
+import {
+  changedLiveFields,
+  nextLivePointer,
+  normalizeBloc,
+  type LivePointerFields,
+} from "~~/shared/utils/liveBloc";
 import { loadCalendarRules } from "./calendarRules";
 import {
   publicTitleHiddenItemIds,
@@ -837,6 +843,7 @@ const EMPTY_LIVE_STATE: LiveStateDto = {
   agendaItemId: null,
   documentId: null,
   amendmentId: null,
+  amendmentBloc: [],
   vote: null,
   message: null,
   speakersVisible: false,
@@ -865,6 +872,7 @@ export async function loadLiveStateDto(
     agendaItemId: row.state.agendaItemId,
     documentId: row.state.documentId,
     amendmentId: row.state.amendmentId,
+    amendmentBloc: row.state.amendmentBloc ?? [],
     vote: row.vote ? toVoteDto(row.vote) : null,
     message: row.state.message,
     speakersVisible: row.state.speakersVisible,
@@ -923,11 +931,10 @@ export async function ensureLiveState(
     .onConflictDoNothing({ target: liveState.assemblyId });
 }
 
-type LiveStateFields = {
-  [
-    K in "agendaItemId" | "documentId" | "amendmentId" | "voteId" | "message"
-  ]-?: Exclude<LiveStateBody[K], undefined>;
-} & { speakersVisible: boolean };
+type LiveStateFields = LivePointerFields & {
+  message: string | null;
+  speakersVisible: boolean;
+};
 
 /** Whether two instants are the same (both null counts). */
 function sameMoment(a: Date | null, b: Date | null): boolean {
@@ -939,7 +946,11 @@ function sameMoment(a: Date | null, b: Date | null): boolean {
  * clears it. Every id must belong to the assembly, and an amendment must be
  * published (everyone follows the projection). Choosing an amendment also
  * selects its document, choosing a document also selects its agenda item,
- * and switching documents clears an amendment of the previous one.
+ * and switching documents clears an amendment of the previous one. A bloc
+ * (`amendmentBloc`, user's decision of 2026-11-19) is published amendments
+ * of one document, which it selects like an amendment; the bloc and the
+ * amendment or the vote on screen take each other's place
+ * (nextLivePointer in shared/utils/liveBloc.ts).
  * `speakersVisible` shows attendees who has the floor and who is next; a
  * change of it also records `speakers_visibility_changed` (entityType
  * "speakers"), so clients that follow the speakers refetch them.
@@ -969,23 +980,11 @@ export async function updateLiveState(
       agendaItemId: current?.agendaItemId ?? null,
       documentId: current?.documentId ?? null,
       amendmentId: current?.amendmentId ?? null,
+      amendmentBloc: normalizeBloc(current?.amendmentBloc),
       voteId: current?.voteId ?? null,
       message: current?.message ?? null,
       speakersVisible: current?.speakersVisible ?? false,
     };
-    const next: LiveStateFields = { ...previous };
-    for (const key of [
-      "agendaItemId",
-      "documentId",
-      "amendmentId",
-      "voteId",
-      "message",
-    ] as const) {
-      if (body[key] !== undefined) next[key] = body[key] ?? null;
-    }
-    if (body.speakersVisible !== undefined) {
-      next.speakersVisible = body.speakersVisible;
-    }
     // A recess keeps when it started while the Mesa changes when it ends.
     const recessStartedAt =
       body.recess === undefined
@@ -1010,6 +1009,8 @@ export async function updateLiveState(
       speakingLimitSeconds !==
       (current?.speakingLimitSeconds ?? DEFAULT_SPEAKING_LIMIT_SECONDS);
 
+    // The document of the amendment or the bloc the body puts on screen.
+    let owner: string | null = null;
     if (body.amendmentId) {
       const [amendment] = await tx
         .select({
@@ -1034,16 +1035,58 @@ export async function updateLiveState(
           "La Secretaría tiene que publicar esta enmienda antes de proyectarla",
         );
       }
-      if (body.documentId === undefined) next.documentId = amendment.documentId;
-      else if (next.documentId !== amendment.documentId) {
+      owner = amendment.documentId;
+    }
+    const bloc = normalizeBloc(body.amendmentBloc);
+    if (bloc) {
+      // Each amendment of a bloc as one alone: of this assembly and public;
+      // and all of them of one document.
+      const rows = await tx
+        .select({
+          documentId: amendments.documentId,
+          publishedAt: amendments.publishedAt,
+        })
+        .from(amendments)
+        .innerJoin(documents, eq(documents.id, amendments.documentId))
+        .where(
+          and(
+            inArray(amendments.id, bloc),
+            eq(documents.assemblyId, assemblyId),
+          ),
+        );
+      if (rows.length !== bloc.length) {
+        fail(422, "Alguna enmienda del bloque no pertenece a esta asamblea");
+      }
+      if (new Set(rows.map((row) => row.documentId)).size > 1) {
+        fail(422, "Las enmiendas del bloque son de documentos distintos");
+      }
+      if (rows.some((row) => !row.publishedAt)) {
+        fail(
+          409,
+          "La Secretaría tiene que publicar cada enmienda del bloque antes de proyectarlo",
+        );
+      }
+      const blocDocument = rows[0]!.documentId;
+      if (owner !== null && owner !== blocDocument) {
         fail(422, "La enmienda no pertenece al documento indicado");
       }
-    } else if (
-      body.amendmentId === undefined &&
-      next.documentId !== previous.documentId
-    ) {
-      next.amendmentId = null;
+      owner = blocDocument;
     }
+    const pointer = nextLivePointer(previous, body, owner);
+    if ("error" in pointer) {
+      fail(
+        422,
+        pointer.error === "bloc_with_pointer"
+          ? "Un bloque no se proyecta junto a una enmienda o una votación"
+          : "La enmienda no pertenece al documento indicado",
+      );
+    }
+    const next: LiveStateFields = {
+      ...pointer.next,
+      message:
+        body.message === undefined ? previous.message : (body.message ?? null),
+      speakersVisible: body.speakersVisible ?? previous.speakersVisible,
+    };
 
     if (next.documentId && next.documentId !== previous.documentId) {
       const [document] = await tx
@@ -1090,9 +1133,12 @@ export async function updateLiveState(
       }
     }
 
-    const changed: string[] = (
-      Object.keys(next) as (keyof LiveStateFields)[]
-    ).filter((key) => next[key] !== previous[key]);
+    const changed: string[] = [
+      ...changedLiveFields(previous, next),
+      ...(["message", "speakersVisible"] as const).filter(
+        (key) => next[key] !== previous[key],
+      ),
+    ];
     if (recessChanged) changed.push("recess");
     if (limitChanged) changed.push("speakingLimitSeconds");
     const values = {
@@ -1119,6 +1165,7 @@ export async function updateLiveState(
         agendaItemId: next.agendaItemId,
         documentId: next.documentId,
         amendmentId: next.amendmentId,
+        amendmentBloc: next.amendmentBloc,
         voteId: next.voteId,
         speakersVisible: next.speakersVisible,
         recess: recessStartedAt !== null,
@@ -1136,17 +1183,21 @@ export async function updateLiveState(
         actor,
       });
     }
-    // In session, a document on screen is marked projected, and the item the
-    // debate leaves is marked treated with its documents (sessionProgress.ts).
+    // In session, a document on screen is marked projected, and what is
+    // presented (the item, the document's own item) is marked treated at
+    // once (sessionProgress.ts).
     if (locked.status === "in_session") {
       if (next.documentId && next.documentId !== previous.documentId) {
         await stampProjected(tx, next.documentId);
       }
-      if (next.agendaItemId !== previous.agendaItemId) {
-        await markLeftItemsTreated(tx, {
+      if (
+        next.agendaItemId !== previous.agendaItemId ||
+        next.documentId !== previous.documentId
+      ) {
+        await markPresentedTreated(tx, {
           assemblyId,
-          leftId: previous.agendaItemId,
-          nextId: next.agendaItemId,
+          previous,
+          next,
           actor,
         });
       }

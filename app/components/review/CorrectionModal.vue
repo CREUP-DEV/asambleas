@@ -8,6 +8,12 @@ import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
  * amendment. The parent sends it (POST .../correction) on `confirm` and
  * closes the modal when it succeeds. It keeps the last subject it named, so
  * its text does not read "«»" while it closes after the parent clears it.
+ *
+ * For an amendment the Secretaría may declare not admitted instead
+ * (`inadmissible`, amendmentInadmissibleOnReview), it also asks «¿Puede
+ * corregirla?» (AmendmentCorrectableChoice, user's decision of 2026-11-19):
+ * «No» turns the note into the reason it is not admitted, and the dialog's
+ * wording follows. `confirm` says which (`correctable`).
  */
 const props = withDefaults(
   defineProps<{
@@ -15,12 +21,16 @@ const props = withDefaults(
     subject: string;
     kind: "document" | "amendment";
     busy?: boolean;
+    /** Offer «¿Puede corregirla?»: the amendment may be declared not admitted. */
+    inadmissible?: boolean;
+    /** The amendment is public: a note it is not admitted with shows with it. */
+    published?: boolean;
   }>(),
-  { busy: false },
+  { busy: false, inadmissible: false, published: false },
 );
 
 const open = defineModel<boolean>("open", { default: false });
-const emit = defineEmits<{ confirm: [note: string] }>();
+const emit = defineEmits<{ confirm: [note: string, correctable: boolean] }>();
 
 const { t } = useI18n();
 
@@ -39,7 +49,12 @@ const schema = computed(() =>
     note: z
       .string()
       .trim()
-      .min(1, t("review.correction.noteRequired"))
+      .min(
+        1,
+        closing.value
+          ? t("amendment.inadmissibleOnReview.noteRequired")
+          : t("review.correction.noteRequired"),
+      )
       .max(
         CORRECTION_NOTE_MAX_LENGTH,
         t("review.correction.noteTooLong", {
@@ -52,13 +67,19 @@ const schema = computed(() =>
 type CorrectionForm = z.output<typeof schema.value>;
 
 const state = reactive<CorrectionForm>({ note: "" });
+/** «¿Puede corregirla?»: yes unless the Secretaría says otherwise. */
+const correctable = ref(true);
+/** Declaring it not admitted: the wording follows. */
+const closing = computed(() => props.inadmissible && !correctable.value);
 
 watch(open, (isOpen) => {
-  if (isOpen) state.note = "";
+  if (!isOpen) return;
+  state.note = "";
+  correctable.value = true;
 });
 
 function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
-  emit("confirm", event.data.note.trim());
+  emit("confirm", event.data.note.trim(), !closing.value);
 }
 </script>
 
@@ -70,7 +91,9 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
       t(
         props.kind === 'document'
           ? 'review.correction.descriptionDocument'
-          : 'review.correction.descriptionAmendment',
+          : closing
+            ? 'amendment.inadmissibleOnReview.description'
+            : 'review.correction.descriptionAmendment',
         { subject: shownSubject },
       )
     "
@@ -81,12 +104,26 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
         :id="formId"
         :schema="schema"
         :state="state"
-        class="space-y-2"
+        class="space-y-3"
         @submit="onSubmit"
       >
+        <AmendmentCorrectableChoice
+          v-if="props.inadmissible"
+          v-model="correctable"
+          :published="props.published"
+          :disabled="props.busy"
+        />
         <UFormField
-          :label="t('review.correction.noteLabel')"
-          :help="t('review.correction.noteHelp')"
+          :label="
+            closing
+              ? t('amendment.inadmissibleOnReview.noteLabel')
+              : t('review.correction.noteLabel')
+          "
+          :help="
+            closing
+              ? t('amendment.inadmissibleOnReview.noteHelp')
+              : t('review.correction.noteHelp')
+          "
           name="note"
           required
         >
@@ -114,9 +151,13 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
         <UButton
           type="submit"
           :form="formId"
-          color="warning"
-          icon="i-lucide-undo-2"
-          :label="t('review.correction.send')"
+          :color="closing ? 'error' : 'warning'"
+          :icon="closing ? 'i-lucide-ban' : 'i-lucide-undo-2'"
+          :label="
+            closing
+              ? t('amendment.inadmissibleOnReview.send')
+              : t('review.correction.send')
+          "
           :loading="props.busy"
         />
       </div>

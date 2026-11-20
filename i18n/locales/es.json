@@ -89,6 +89,8 @@
       "unknown": "No se ha podido completar la operación.",
       "controlSheetStale": "Alguien ha cambiado esta fila de la hoja a la vez. Se muestra lo que hay ahora.",
       "controlSheetWithdrawn": "Un punto con documentos no se marca como retirado a mano: se retira el documento.",
+      "controlSheetAwaitingVote": "Este punto cuenta como tratado cuando se vota: hasta entonces no se marca a mano ni se anota como retirado o decaído.",
+      "controlSheetUndecided": "Esta enmienda cuenta como tratada cuando la Mesa la decide: no se marca a mano antes.",
       "seatingStale": "Alguien ha cambiado la sala a la vez. Se muestra lo que hay ahora.",
       "seatingSeatsOccupied": "El cambio quita asientos en los que hay gente sentada.",
       "seatingNotFound": "Eso ya no está en la sala. Se muestra lo que hay ahora.",
@@ -844,6 +846,7 @@
         "images_in_tables": "Las imágenes dentro de tablas o listas no se importan: insértalas fuera de ellas.",
         "images_without_alt": "Algunas imágenes no tienen descripción: aparecen con un borde discontinuo. Añádesela desde su menú (clic derecho) antes de enviar el documento.",
         "tables_flattened": "Las tablas dentro de otra tabla se han convertido en un párrafo por fila, con las celdas separadas por «{'|'}».",
+        "tables_split": "Las tablas que estaban una al lado de otra se han separado en tablas seguidas, una debajo de otra.",
         "highlight": "Se ha perdido el resaltado de color del texto; revisa si marcaba algo importante."
       },
       "tooComplex": "El documento es demasiado extenso o complejo para importarlo. Divídelo en partes o simplifica su formato.",
@@ -1556,9 +1559,11 @@
         "incorporateIfAccepted": "Si la acepta quien presenta el documento, se incorpora sin votación. Si no, la votará la asamblea.",
         "incorporated": "Está incorporada al texto sin votación. Si cambia la respuesta antes de la votación final, volverá a quedar pendiente.",
         "vote": "La votará la asamblea.",
-        "voteAnyway": "La votará la asamblea, la acepte o no quien presenta el documento."
+        "voteAnyway": "La votará la asamblea, la acepte o no quien presenta el documento.",
+        "decided": "Ya está aprobada: cambiar la respuesta no cambia la aprobación ni el texto."
       },
       "savedIncorporated": "Se ha incorporado al texto sin votación.",
+      "savedDecided": "Sigue aprobada: la respuesta no cambia la decisión.",
       "savedReopened": "Ya no está incorporada: vuelve a estar pendiente de decisión.",
       "later": "Podrá responderla {member} más adelante.",
       "laterYou": "Podrás responderla después.",
@@ -1927,6 +1932,22 @@
         "formal": "Pasa de enmienda de contenido a enmienda de forma",
         "partial": "Pasa de enmienda de forma a enmienda de contenido"
       }
+    },
+    "inadmissibleOnReview": {
+      "legend": "¿Puede corregirla?",
+      "yes": "Sí: vuelve a sus autores para que la corrijan y la presenten de nuevo",
+      "no": "No: no se admite. Queda cerrada y no se debatirá",
+      "noPublished": "Está publicada: la nota se verá con ella.",
+      "description": "{subject} no se admitirá: sus autores no podrán corregirla ni volver a presentarla.",
+      "noteLabel": "¿Por qué no se admite?",
+      "noteHelp": "Lo leerán sus autores tal cual. La Mesa puede volver a admitirla.",
+      "noteRequired": "Escribe por qué no se admite.",
+      "send": "No admitirla",
+      "done": "Enmienda no admitida",
+      "doneDescription": "Sus autores lo verán con tu nota. No podrán corregirla.",
+      "failed": "No se ha podido declarar no admitida la enmienda",
+      "action": "No admitirla",
+      "actionHelp": "Si no tiene arreglo, ciérrala: sus autores ya no podrán corregirla."
     },
     "validationUndo": {
       "label": "Validación de la enmienda",
@@ -3005,6 +3026,7 @@
         "authorsChanged": "Secretaría ha cambiado quién presenta {amendment}.",
         "admitted": "La asamblea ha decidido tratar {amendment}: se debatirá.",
         "inadmissible": "No se ha admitido {amendment}: no se debatirá.",
+        "inadmissibleReview": "Secretaría no ha admitido {amendment}: no se puede corregir ni se debatirá.",
         "approved": "Se ha aprobado {amendment}: su cambio pasa al texto.",
         "incorporated": "Quien presenta el documento aceptó {amendment}: ya está en el texto sin votación.",
         "rejected": "Se ha rechazado {amendment}: el texto queda como estaba.",
@@ -3676,7 +3698,16 @@
     },
     "progress": {
       "projected": "Proyectado",
-      "treated": "Tratado"
+      "treated": "Tratado",
+      "mark": "Marcar como tratado",
+      "unmark": "Desmarcar como tratado",
+      "markItem": "Marcar {title} como tratado",
+      "unmarkItem": "Marcado como tratado. Desmarcar {title}",
+      "markedHint": "Marcado como tratado · Desmarcar",
+      "markHint": "Marcar como tratado",
+      "staleMarkHint": "Marcado, pero no cuenta hasta su votación · Desmarcar",
+      "unmarkStaleItem": "Marcado, pero no cuenta hasta su votación. Desmarcar {title}",
+      "markFailed": "No se ha podido cambiar la marca de tratado"
     },
     "recess": {
       "button": "Receso",
@@ -3907,6 +3938,16 @@
       "undoBallot": "Deshacer el último",
       "liveCountHint": "Cada voto se ve al momento en la proyección.",
       "liveCountHintKeys": "Teclas 1 a 4: a favor, en contra, en blanco y nulo. Cada voto se ve al momento en la proyección.",
+      "reveal": {
+        "label": "Cómo se proyecta el recuento",
+        "end": "Al final, con el resultado",
+        "endHint": "La pantalla anuncia la votación; los votos se ven solo con el resultado.",
+        "live": "En directo, papeleta a papeleta",
+        "liveHint": "Cada papeleta se ve en la pantalla al contarla.",
+        "liveLocked": "Pon los votos a cero para contar en directo: los ya anotados se verían antes del resultado.",
+        "pending": "Elige cómo se proyecta el recuento para empezar a contar los votos.",
+        "notProjected": "Esta consola no controla la proyección: el recuento no se verá en pantalla."
+      },
       "title": "Votación de {code}",
       "description": "Las enmiendas se deciden por mayoría simple salvo que la Mesa indique otra.",
       "method": "Método",
@@ -4029,6 +4070,29 @@
       "select": "Marcar {code} como decaída",
       "keep": "Mantenerlas",
       "submit": "Marcar como decaídas | Marcar 1 como decaída | Marcar {count} como decaídas"
+    },
+    "bloc": {
+      "select": "Seleccionar para bloque",
+      "fill": "Marcar:",
+      "fillAccepted": "Las aceptadas",
+      "fillNone": "Ninguna",
+      "rangeHint": "Mayús + clic marca un tramo",
+      "barLabel": "Bloque seleccionado",
+      "count": "Ninguna seleccionada | 1 seleccionada | {count} seleccionadas",
+      "none": "Marca las enmiendas que se proponen aprobar en bloque",
+      "project": "Proyectar bloque",
+      "unproject": "Quitar de la pantalla",
+      "approve": "Aprobar en bloque por asentimiento",
+      "include": "Incluir {code} en el bloque",
+      "notAccepted": "sin aceptar",
+      "onScreen": "Bloque en pantalla",
+      "onScreenWhat": "un bloque de 1 enmienda | un bloque de {count} enmiendas",
+      "progress": "{approved} de {total} aprobadas",
+      "announce": "En pantalla, el bloque {codes}",
+      "otherDocumentTitle": "¿Proyectar el bloque de otro documento?",
+      "assentTitle": "Aprobar en bloque por asentimiento",
+      "assentDescription": "Enmiendas que la Mesa propone aprobar juntas. Si nadie se opone, se aprueban una tras otra.",
+      "assentEmpty": "Ninguna enmienda de la selección se puede aprobar ahora"
     },
     "assent": {
       "title": "Aprobar por asentimiento las aceptadas",
@@ -4196,6 +4260,11 @@
       "otherDocumentTitle": "¿Pasar el debate a {code}?",
       "otherDocument": "La sala está debatiendo otro documento: la proyección y los asistentes pasarán a este.",
       "moveDebate": "Pasar el debate aquí"
+    },
+    "leaveVote": {
+      "title": "¿Pasar sin registrar la votación?",
+      "description": "«{item}» tiene una votación sin registrar. Si pasas a otro punto, seguirá pendiente hasta que la registres.",
+      "confirm": "Pasar sin registrarla"
     },
     "validateConfirm": {
       "title": "¿Validar y publicar 1 enmienda? | ¿Validar y publicar {count} enmiendas?",
@@ -4471,8 +4540,14 @@
     }
   },
   "projection": {
+    "bloc": {
+      "title": "Se propone aprobar en bloque",
+      "progress": "{approved} de {total} aprobadas",
+      "approved": "Aprobada"
+    },
     "tally": {
-      "title": "Votación secreta · recuento en curso",
+      "title": "Votación secreta",
+      "revealAtEnd": "Recuento en curso: el resultado se mostrará al final",
       "castOf": "{count} de {present} presentes han votado",
       "cast": "1 voto contado | {count} votos contados"
     },
@@ -4494,6 +4569,11 @@
     "pdfPending": "El PDF de este documento todavía no se ha subido.",
     "amendment": "Enmienda {code}",
     "amendmentHidden": "La enmienda en debate todavía no es pública.",
+    "transacts": "Transacciona la enmienda {codes} | Transacciona las enmiendas {codes}",
+    "amendments": "Enmiendas del documento",
+    "amendmentsCompact": "{approved} aprobadas · {undecided} por decidir",
+    "resultCounts": "{inFavor} a favor, {against} en contra, {third} abstenciones.",
+    "resultCountsSecret": "{inFavor} a favor, {against} en contra, {third} en blanco.",
     "amendmentStats": "{approved} enmiendas aprobadas · {undecided} por decidir · {total} en total",
     "finalApproved": "Texto final aprobado",
     "finalRejected": "Texto final rechazado",
@@ -4630,6 +4710,7 @@
       "countToPublish": "{count} validada sin publicar | {count} validadas sin publicar",
       "actionError": "No se ha podido completar la acción sobre la enmienda",
       "correctionHint": "Vuelve como borrador a sus autores, con tu nota.",
+      "inadmissibleHint": "Queda cerrada. Sus autores lo verán con tu nota.",
       "done": {
         "validate_publish": {
           "one": "{label} validada y publicada",
@@ -4644,6 +4725,7 @@
           "many": "{count} enmiendas publicadas"
         },
         "correction": "Se ha pedido corregir {label}",
+        "inadmissible": "No se ha admitido {label}",
         "unvalidated": "Validación de {label} deshecha"
       },
       "presentedBy": "Presentada por",
@@ -4723,6 +4805,9 @@
         "note": "Nota",
         "optional": "Opcional",
         "noteHelp": "Queda en el registro. Por ejemplo, quién lo pidió.",
+        "reasonLabel": "¿Por qué no se trata? | ¿Por qué no se tratan?",
+        "reasonHelp": "Es el motivo: lo leerán tal cual sus autores y quien vea la enmienda. | Es el motivo: lo leerán tal cual sus autores y quien vea las enmiendas.",
+        "voteNoteHelp": "Si la votación no sale adelante, será el motivo: lo leerán tal cual sus autores y quien vea la enmienda. | Si la votación no sale adelante, será el motivo: lo leerán tal cual sus autores y quien vea las enmiendas.",
         "summaryTreat": "Se anotará que la asamblea decide tratar {subject}. Será pública y se podrá debatir. | Se anotará que la asamblea decide tratar {subject}. Serán públicas y se podrán debatir.",
         "summaryNotTreat": "Se anotará que la asamblea no trata {subject}. Quedará fuera del debate. | Se anotará que la asamblea no trata {subject}. Quedarán fuera del debate.",
         "summaryTie": "Hay empate y hay que repetir la votación. Anota el nuevo recuento.",
@@ -4742,7 +4827,7 @@
   "controlSheet": {
     "title": "Hoja de control",
     "intro": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado, cómo se votó y quién intervino.",
-    "introPublic": "Cómo va cada punto y cada enmienda: con qué resultado y cómo se votó.",
+    "introPublic": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado y cómo se votó.",
     "loading": "Cargando la hoja de control",
     "loadError": "No se ha podido cargar la hoja de control",
     "retry": "Reintentar",
@@ -4764,6 +4849,13 @@
     "rowCount": "{count} punto en la hoja | {count} puntos en la hoja",
     "amendmentCount": "{count} enmienda | {count} enmiendas",
     "openAmendments": "{count} enmienda de «{title}» | {count} enmiendas de «{title}»",
+    "preview": {
+      "document": "Vista previa",
+      "documentAria": "Vista previa de «{title}»",
+      "amendmentAria": "Vista previa de la enmienda {code}",
+      "selected": "Ver documento",
+      "documentDescription": "Vista previa: la hoja sigue abierta detrás."
+    },
     "tabs": {
       "label": "Partes de la hoja de control",
       "general": "General",
@@ -4891,6 +4983,7 @@
       "label": "Resultado anotado a mano",
       "hint": "Para lo que ninguna votación decide: un informe que decae, un punto retirado.",
       "byVote": "Lo decide su votación.",
+      "awaitingVote": "Espera su votación: lo que se vote decide si se ha tratado, así que no se anota como retirado ni decaído.",
       "none": "Sin anotar",
       "withdrawn": "Retirado",
       "lapsed": "Decaído",
@@ -4923,7 +5016,9 @@
       "stale": "Alguien lo ha cambiado a la vez. Se muestra lo que hay ahora.",
       "treated": "Tratado",
       "treatedAmendment": "Tratada",
-      "treatedHint": "La Mesa lo marca cuando se ha tratado sin una votación.",
+      "treatedHint": "Se marca solo cuando la Mesa lo presenta en la sesión. La Mesa también lo marca o lo desmarca aquí.",
+      "treatedAwaitingVote": "Contará como tratado cuando se vote.",
+      "treatedUndecided": "Contará como tratada cuando la Mesa la decida.",
       "treatedAuto": "Cuenta como tratado por su votación o lo que pasó con sus documentos.",
       "treatedAutoAmendment": "Cuenta como tratada: la Mesa la resolvió durante la sesión.",
       "treatedBy": "Lo marcó {name}, {when}",
@@ -5592,6 +5687,9 @@
     }
   },
   "liveView": {
+    "bloc": {
+      "title": "Se propone aprobar en bloque"
+    },
     "recess": "La sesión está en receso.",
     "recessUntil": "La sesión está en receso hasta las {time}.",
     "title": "En directo",
@@ -5627,7 +5725,8 @@
       "goToProjected": "Ir a lo proyectado",
       "openPage": "Abrir su página",
       "empty": "Este documento aún no tiene texto.",
-      "following": "Sigue la proyección"
+      "following": "Sigue la proyección",
+      "loadError": "No se ha podido cargar el documento"
     },
     "amendmentWindow": {
       "title": "Enmienda",

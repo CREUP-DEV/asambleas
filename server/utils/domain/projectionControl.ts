@@ -13,6 +13,7 @@ import {
   takeControl,
   type ControlState,
 } from "../live/projectionControl";
+import { publishLiveTally, readLiveTally } from "../live/scroll";
 import { canModerate, type Actor } from "./actor";
 import { recordEvent } from "./events";
 
@@ -89,6 +90,14 @@ export async function projectionControl(
         ? takeControl(assemblyId, entry)
         : beatConsole(assemblyId, entry);
   if (state.announce) {
+    // A secret vote's count belongs to the console that was counting it:
+    // once another holds the screen, nobody could end it from there.
+    if (readLiveTally(assemblyId)) {
+      publishLiveTally(assemblyId, {
+        tally: null,
+        at: new Date().toISOString(),
+      });
+    }
     await recordEvent(db, {
       assemblyId,
       entityType: "projection",

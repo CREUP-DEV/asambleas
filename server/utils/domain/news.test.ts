@@ -56,6 +56,16 @@ describe("newsValue", () => {
     expect(newsValue("amendment_approved", { method: "proponent" })).toBe(
       "proponent",
     );
+    // Not admitted by the Secretaría while reviewing it, or by the Mesa.
+    expect(
+      newsValue("amendment_inadmissible", {
+        method: "secretaria",
+        onReview: true,
+      }),
+    ).toBe("review");
+    expect(
+      newsValue("amendment_inadmissible", { method: "secretaria" }),
+    ).toBeNull();
   });
 
   it("names the transactional that replaced the amendment", () => {
