@@ -4120,7 +4120,6 @@
       "changed": "Este pasaje ha cambiado: se ha reabierto o aprobado otra enmienda que lo toca. Ábrelo de nuevo desde el texto consolidado.",
       "now": "Cómo se lee ahora",
       "text": "Redacción del pasaje",
-      "reset": "Volver al texto de partida",
       "diff": "Cambios sobre el texto base",
       "noChanges": "Con esta redacción el pasaje queda como en el texto base.",
       "invalid": "Esta redacción no se puede guardar: revisa el texto.",
@@ -4137,6 +4136,24 @@
         "pending": "Por redactar",
         "automatic": "Gana la supresión",
         "worded": "Redactado por la Mesa"
+      },
+      "setFor": "Fijar la redacción de {codes}",
+      "clashesTitle": "Dónde chocan",
+      "clashAt": "Aquí cambian el mismo texto {codes}",
+      "original": "Texto original",
+      "deletesBlock": "Suprime el párrafo entero.",
+      "formatOnly": "Cambia el formato de este párrafo.",
+      "eachTitle": "Todo lo que cambia cada enmienda en el pasaje",
+      "automaticProposal": "Propuesta automática",
+      "startFrom": "Empezar desde",
+      "startAutomatic": "Propuesta automática",
+      "startCurrent": "Redacción actual",
+      "startFromAmendment": "Empezar desde {code} tal como se aprobó",
+      "coverage": "Esta redacción recoge:",
+      "coverageLevel": {
+        "all": "todo",
+        "part": "en parte",
+        "none": "nada"
       }
     },
     "collision": {
@@ -5342,7 +5359,9 @@
       "annul": "Anular",
       "annulTitle": "Anular la votación final",
       "annulHint": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y pierde su texto consolidado.",
-      "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final."
+      "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final.",
+      "finalBlocked": "Todavía no se puede anotar la votación final",
+      "finalFromConsole": "La Mesa lo resuelve desde la consola de la sesión."
     },
     "download": {
       "button": "Descargar",

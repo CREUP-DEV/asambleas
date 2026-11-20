@@ -673,6 +673,34 @@ const announcement = computed(() => {
                   {{ reason }}
                 </li>
               </ul>
+              <!-- The way to what holds the vote back (user's decision of
+                   2026-11-20): each passage still to word opens its
+                   wording, as «Texto consolidado» does. -->
+              <div
+                v-if="
+                  !next &&
+                  !finalVote &&
+                  document.can.moderate &&
+                  session.pendingPassages.value.length > 0
+                "
+                class="flex flex-wrap gap-2"
+              >
+                <UButton
+                  v-for="passage in session.pendingPassages.value"
+                  :key="passage.key"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-pen-line"
+                  :label="
+                    t('session.wording.setFor', {
+                      codes: passage.amendmentIds.map(session.label).join(', '),
+                    })
+                  "
+                  data-testid="session-now-word-passage"
+                  @click="session.openWording(passage)"
+                />
+              </div>
 
               <!-- The bloc on screen: its codes, approved ones marked. -->
               <section

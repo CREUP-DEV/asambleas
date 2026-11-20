@@ -1098,7 +1098,15 @@ function transformPastedHTML(pasted: string): string {
   return html;
 }
 
-const editorProps = { handlePaste, handleDrop, transformPastedHTML };
+// Documents and amendments are written in Spanish, whatever the interface's
+// language: the browser checks their spelling in Spanish (user's decision
+// of 2026-11-20; it underlined every word otherwise).
+const editorProps = {
+  handlePaste,
+  handleDrop,
+  transformPastedHTML,
+  attributes: { lang: "es", spellcheck: "true" },
+};
 
 function openAltDialog(): void {
   const attrs = editor.value?.getAttributes("blockImage");

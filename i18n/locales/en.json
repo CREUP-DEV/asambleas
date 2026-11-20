@@ -4120,7 +4120,6 @@
       "changed": "This passage has changed: another amendment that touches it was reopened or approved. Open it again from the consolidated text.",
       "now": "How it reads now",
       "text": "Wording of the passage",
-      "reset": "Back to the starting text",
       "diff": "Changes to the base text",
       "noChanges": "With this wording the passage reads as in the base text.",
       "invalid": "This wording cannot be saved: check the text.",
@@ -4137,6 +4136,24 @@
         "pending": "To word",
         "automatic": "The deletion wins",
         "worded": "Worded by the Mesa"
+      },
+      "setFor": "Set the wording of {codes}",
+      "clashesTitle": "Where they clash",
+      "clashAt": "{codes} change the same text here",
+      "original": "Original text",
+      "deletesBlock": "Deletes the whole paragraph.",
+      "formatOnly": "Changes the format of this paragraph.",
+      "eachTitle": "Everything each amendment changes in the passage",
+      "automaticProposal": "Automatic proposal",
+      "startFrom": "Start from",
+      "startAutomatic": "Automatic proposal",
+      "startCurrent": "Current wording",
+      "startFromAmendment": "Start from {code} as approved",
+      "coverage": "This wording keeps:",
+      "coverageLevel": {
+        "all": "all",
+        "part": "part",
+        "none": "nothing"
       }
     },
     "collision": {
@@ -5342,7 +5359,9 @@
       "annul": "Annul",
       "annulTitle": "Annul the final vote",
       "annulHint": "The vote stays in the history, but the document is pending its final vote again and loses its consolidated text.",
-      "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote."
+      "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote.",
+      "finalBlocked": "The final vote cannot be recorded yet",
+      "finalFromConsole": "The Mesa sorts it out from the session console."
     },
     "download": {
       "button": "Download",

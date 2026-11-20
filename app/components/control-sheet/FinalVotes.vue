@@ -8,6 +8,7 @@ import type {
 import {
   sessionCleanVote,
   sessionErrorData,
+  sessionErrorIds,
 } from "~/composables/session/sessionModel";
 import type { ItemVoteContext, SheetRowDocument } from "./-model";
 
@@ -19,6 +20,13 @@ import type { ItemVoteContext, SheetRowDocument } from "./-model";
  * amendments are not all decided says how many are left; one with its
  * final vote shows it and can have it annulled (a mistake, until the
  * assembly closes). For the Mesa and whoever holds assembly:vote_result.
+ *
+ * The sheet knows only the undecided amendments; the console knows the
+ * rest of what holds a final vote back (approved amendments that collide,
+ * passages the Mesa still has to word). The server refuses those with 409
+ * and what is missing (`undecided`, `conflicts`, `pendingPassages`), and
+ * the sheet says which, never the generic "someone changed this" of a
+ * stale write, which only reloading would seem to fix.
  */
 const props = defineProps<{
   documents: readonly SheetRowDocument[];
@@ -45,6 +53,36 @@ const documentUrl = (id: string) =>
   `${props.apiBase}/documents/${encodeURIComponent(id)}`;
 
 // Recording -------------------------------------------------------------------
+
+/** What holds the final vote back, from the server's 409; null otherwise. */
+function finalVoteBlocker(error: unknown): string | null {
+  if (api.errorStatus(error) !== 409) return null;
+  const passages = sessionErrorData(error)?.pendingPassages;
+  if (Array.isArray(passages) && passages.length > 0) {
+    return `${t(
+      "session.preview.pendingWordings",
+      { count: passages.length },
+      passages.length,
+    )} ${t("controlSheet.results.finalFromConsole")}`;
+  }
+  const conflicts = sessionErrorData(error)?.conflicts;
+  if (Array.isArray(conflicts) && conflicts.length > 0) {
+    return `${t(
+      "session.preview.conflictsTitle",
+      { count: conflicts.length },
+      conflicts.length,
+    )}. ${t("controlSheet.results.finalFromConsole")}`;
+  }
+  const undecided = sessionErrorIds(error, "undecided");
+  if (undecided.length > 0) {
+    return `${t(
+      "session.finalVote.undecided",
+      { count: undecided.length },
+      undecided.length,
+    )}.`;
+  }
+  return null;
+}
 
 const recording = ref<SheetRowDocument | null>(null);
 const recordOpen = computed({
@@ -76,6 +114,7 @@ async function submit(vote: VoteInput): Promise<void> {
     });
     emit("changed");
   } catch (error) {
+    const blocker = finalVoteBlocker(error);
     if (sessionErrorData(error)?.tie === true) {
       toast.add({
         title: t("session.vote.tieTitle"),
@@ -83,6 +122,15 @@ async function submit(vote: VoteInput): Promise<void> {
         color: "warning",
         icon: "i-lucide-scale",
       });
+    } else if (blocker) {
+      recording.value = null;
+      toast.add({
+        title: t("controlSheet.results.finalBlocked"),
+        description: blocker,
+        color: "warning",
+        icon: "i-lucide-pen-line",
+      });
+      emit("changed");
     } else {
       api.notifyError(error, "controlSheet.results.failed");
       emit("changed");
