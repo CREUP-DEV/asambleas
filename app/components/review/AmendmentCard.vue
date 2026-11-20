@@ -20,8 +20,9 @@ import {
  * One amendment in the validation inbox: who presents it, a sentence saying
  * where it stands, its changes over the published text and its
  * justification. The actions depend on where it stands:
- * - waiting for validation: "Validar y publicar" (main), "Pedir corrección"
- *   and, under "Más", "Validar sin publicar". A transactional has no "Más":
+ * - waiting for validation: "Validar y publicar" (main), "Validar sin
+ *   publicar" and "Devolver" (to its authors to correct, or not admitted:
+ *   ReviewCorrectionModal; user's decision of 2026-11-20). A transactional has no "Más":
  *   validating it always publishes it, since it replaces the amendments it
  *   groups, which are public;
  * - validated but kept private: "Publicar";
@@ -560,7 +561,7 @@ const moreBusy = computed(
           color="neutral"
           variant="outline"
           icon="i-lucide-undo-2"
-          :label="t('review.askCorrection')"
+          :label="t('review.amendments.sendBack')"
           :aria-describedby="titleId"
           :loading="busy === 'correction'"
           :disabled="disabled && busy !== 'correction'"

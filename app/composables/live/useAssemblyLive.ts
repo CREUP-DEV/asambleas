@@ -13,6 +13,7 @@ import {
   shouldReopenOnShow,
 } from "./-watchdog";
 import { checkForNewVersion } from "~/composables/shell/newVersion";
+import { sessionFailureAction } from "~/middleware/-session";
 
 /** Quiet period before a burst of changes is delivered as one batch. */
 const DEBOUNCE_MS = 300;
@@ -104,11 +105,33 @@ export function useAssemblyLive(
     onPointer?: (pointer: LivePointerDto) => void;
     /** A secret vote's running count (`tally` events). */
     onTally?: (tally: LiveTallyDto) => void;
+    /**
+     * Up to how long this client waits before handing a batch to
+     * `onChange` (user's decision of 2026-11-20): a delay drawn once per
+     * page, the same for every batch so they keep their order. Every
+     * client of the room refetching at the same instant is what loaded the
+     * server; spread over a second, the same requests no longer queue.
+     * 0 (the default) delivers at once.
+     */
+    spreadMs?: () => number;
   } = {},
-): { connected: Readonly<Ref<boolean>>; polling: Readonly<Ref<boolean>> } {
+): {
+  connected: Readonly<Ref<boolean>>;
+  polling: Readonly<Ref<boolean>>;
+  expired: Readonly<Ref<boolean>>;
+} {
   const connected = ref(false);
   const polling = ref(false);
-  const result = { connected: readonly(connected), polling: readonly(polling) };
+  /**
+   * The session is gone (user's decision of 2026-11-20): the stream stops
+   * reconnecting and polling, which only got 401s, until the page reloads.
+   */
+  const expired = ref(false);
+  const result = {
+    connected: readonly(connected),
+    polling: readonly(polling),
+    expired: readonly(expired),
+  };
   if (import.meta.server) return result;
   const nuxtApp = useNuxtApp();
 
@@ -143,16 +166,34 @@ export function useAssemblyLive(
     maxWaitTimer = undefined;
   }
 
-  function deliver(): void {
-    clearFlushTimers();
-    if (pending.length === 0) return;
-    const batch = dedupe(pending);
-    pending = [];
+  /** This page's share of the spread (spreadMs), drawn once. */
+  const spreadShare = Math.random();
+
+  function handOver(batch: LiveEventDto[]): void {
     try {
       onChange(batch);
     } catch (error) {
       console.error("[live] change handler failed", error);
     }
+  }
+
+  function deliver(): void {
+    clearFlushTimers();
+    if (pending.length === 0) return;
+    const batch = dedupe(pending);
+    pending = [];
+    const delay = Math.round(
+      spreadShare * Math.max(0, options.spreadMs?.() ?? 0),
+    );
+    if (delay === 0) {
+      handOver(batch);
+      return;
+    }
+    const gen = generation;
+    setTimeout(() => {
+      // The stream was closed meanwhile (another assembly, or the page left).
+      if (gen === generation) handOver(batch);
+    }, delay);
   }
 
   function enqueue(event: LiveEventDto): void {
@@ -201,8 +242,28 @@ export function useAssemblyLive(
     connected.value = false;
     missedChanges = true;
     failures += 1;
-    if (failures >= FAILURES_BEFORE_POLLING) startPolling(id);
+    if (failures >= FAILURES_BEFORE_POLLING) {
+      startPolling(id);
+      void checkSession(gen);
+    }
     scheduleReconnect(id, gen);
+  }
+
+  /**
+   * A stream cannot tell why it failed. Past a few failures, ask whether
+   * the session still exists: once the server says it is gone, every
+   * reconnection and every poll would only get a 401, so both stop and the
+   * page says so (`expired`). A network error or a 5xx says nothing.
+   */
+  async function checkSession(gen: number): Promise<void> {
+    try {
+      await $fetch("/api/auth/session");
+    } catch (error) {
+      if (gen !== generation) return;
+      if (sessionFailureAction(error) !== "redirect") return;
+      expired.value = true;
+      teardown();
+    }
   }
 
   /**
@@ -211,7 +272,7 @@ export function useAssemblyLive(
    */
   function reopen(delayMs = 0): void {
     const id = activeId;
-    if (!id) return;
+    if (!id || expired.value) return;
     const gen = generation;
     closeSource();
     clearTimeout(reconnectTimer);
@@ -348,6 +409,7 @@ export function useAssemblyLive(
 
   function connect(id: string): void {
     teardown();
+    if (expired.value) return;
     activeId = id;
     // The stream has no replay: anything recorded since the page fetched its
     // data and before `ready` is lost, so resync once the stream is ready.

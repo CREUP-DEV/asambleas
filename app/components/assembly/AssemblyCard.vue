@@ -138,6 +138,8 @@ const headingTag = computed(() => `h${props.headingLevel}`);
           class="text-dimmed size-4 shrink-0"
           aria-hidden="true"
         />
+        <!-- The amendments on them, once there are any (the same count
+             as the agenda's documents add up to). -->
         <dd>
           {{
             t(
@@ -145,7 +147,16 @@ const headingTag = computed(() => `h${props.headingLevel}`);
               { count: assembly.documentCount },
               assembly.documentCount,
             )
-          }}
+          }}<template v-if="assembly.amendmentCount > 0">
+            ·
+            {{
+              t(
+                "assemblies.card.amendments",
+                { count: assembly.amendmentCount },
+                assembly.amendmentCount,
+              )
+            }}</template
+          >
         </dd>
       </div>
     </dl>

@@ -35,7 +35,11 @@ import {
   canModerate,
   type Actor,
 } from "./actor";
-import { assemblySettings, loadDocumentSummaries } from "./documents";
+import {
+  assemblySettings,
+  countVisibleAmendments,
+  loadDocumentSummaries,
+} from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { stampDebateStarted } from "./positionsPublication";
 import { markPresentedTreated, stampProjected } from "./sessionProgress";
@@ -215,23 +219,55 @@ export function visibleDocumentsCondition(actor: Actor): SQL | undefined {
   );
 }
 
-export async function countVisibleDocuments(
+/**
+ * The documents the actor can see in each assembly and the amendments it
+ * can see on them (user's decision of 2026-11-20, for the assembly card):
+ * each document's own rule (countVisibleAmendments, its amendmentCount),
+ * added up, so the card says what the agenda's documents add up to.
+ */
+export async function countVisibleContent(
   actor: Actor,
   assemblyIds: string[],
   executor: Executor = db,
-): Promise<Map<string, number>> {
-  if (assemblyIds.length === 0) return new Map();
+): Promise<{
+  documents: Map<string, number>;
+  amendments: Map<string, number>;
+}> {
+  const result = {
+    documents: new Map<string, number>(),
+    amendments: new Map<string, number>(),
+  };
+  if (assemblyIds.length === 0) return result;
   const rows = await executor
-    .select({ assemblyId: documents.assemblyId, total: count() })
+    .select({ id: documents.id, assemblyId: documents.assemblyId })
     .from(documents)
     .where(
       and(
         inArray(documents.assemblyId, assemblyIds),
         visibleDocumentsCondition(actor),
       ),
-    )
-    .groupBy(documents.assemblyId);
-  return new Map(rows.map((row) => [row.assemblyId, Number(row.total)]));
+    );
+  const assemblyOf = new Map(rows.map((row) => [row.id, row.assemblyId]));
+  for (const row of rows) {
+    result.documents.set(
+      row.assemblyId,
+      (result.documents.get(row.assemblyId) ?? 0) + 1,
+    );
+  }
+  const perDocument = await countVisibleAmendments(
+    actor,
+    rows.map((row) => row.id),
+    executor,
+  );
+  for (const [documentId, total] of perDocument) {
+    const assemblyId = assemblyOf.get(documentId);
+    if (!assemblyId) continue;
+    result.amendments.set(
+      assemblyId,
+      (result.amendments.get(assemblyId) ?? 0) + total,
+    );
+  }
+  return result;
 }
 
 // Milestones --------------------------------------------------------------------
@@ -320,7 +356,12 @@ export async function insertMilestones(
 
 export function toAssemblySummaryDto(
   row: AssemblyRow,
-  extra: { documentCount: number; milestones: MilestoneDto[]; now?: Date },
+  extra: {
+    documentCount: number;
+    amendmentCount: number;
+    milestones: MilestoneDto[];
+    now?: Date;
+  },
 ): AssemblySummaryDto {
   const finalSince = agendaFinalSince(extra.milestones, extra.now);
   return {
@@ -335,6 +376,7 @@ export function toAssemblySummaryDto(
     location: row.location,
     agendaFinalizedAt: iso(finalSince),
     documentCount: extra.documentCount,
+    amendmentCount: extra.amendmentCount,
     nextMilestone: nextMilestone(extra.milestones, extra.now, {
       convened: row.status !== "draft",
       agendaFinal: finalSince !== null,
@@ -348,6 +390,7 @@ export function toAssemblyDto(
   row: AssemblyRow,
   extra: {
     documentCount: number;
+    amendmentCount: number;
     milestones: MilestoneDto[];
     calendarRules: CalendarRules;
     calendarDocuments: CalendarDocumentDto[];
@@ -438,12 +481,13 @@ export async function loadAssemblyDto(
   const [milestones, counts, calendarRules, calendarDocuments] =
     await Promise.all([
       loadMilestoneDtos([row.id], executor),
-      countVisibleDocuments(actor, [row.id], executor),
+      countVisibleContent(actor, [row.id], executor),
       loadCalendarRules(row.type, executor),
       loadCalendarDocuments(actor, row.id, executor),
     ]);
   return toAssemblyDto(actor, row, {
-    documentCount: counts.get(row.id) ?? 0,
+    documentCount: counts.documents.get(row.id) ?? 0,
+    amendmentCount: counts.amendments.get(row.id) ?? 0,
     milestones: milestones.get(row.id) ?? [],
     calendarRules,
     calendarDocuments,
@@ -479,14 +523,15 @@ export async function listAssemblies(
   const ids = rows.map((row) => row.id);
   const [milestones, counts] = await Promise.all([
     loadMilestoneDtos(ids),
-    countVisibleDocuments(actor, ids),
+    countVisibleContent(actor, ids),
   ]);
   const now = new Date();
 
   return {
     items: rows.map((row) =>
       toAssemblySummaryDto(row, {
-        documentCount: counts.get(row.id) ?? 0,
+        documentCount: counts.documents.get(row.id) ?? 0,
+        amendmentCount: counts.amendments.get(row.id) ?? 0,
         milestones: milestones.get(row.id) ?? [],
         now,
       }),

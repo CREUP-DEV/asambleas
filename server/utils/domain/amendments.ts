@@ -1,4 +1,10 @@
-import { createError, getRouterParam, readBody, type H3Event } from "h3";
+import {
+  createError,
+  getRouterParam,
+  isError,
+  readBody,
+  type H3Event,
+} from "h3";
 import {
   and,
   asc,
@@ -66,6 +72,8 @@ import type {
   AmendmentAdmissionDto,
   AmendmentOutcomeDto,
   ApprovalWarnings,
+  BulkAssentBody,
+  BulkAssentDto,
   CorrectionBody,
   UndoValidationBody,
   DocumentAmendmentsDto,
@@ -2081,6 +2089,33 @@ export async function findAmendmentsAwaitingReview(
       awaitsAuthors(fields)
     );
   });
+}
+
+/**
+ * Amendments of these documents the Secretaría validated and published that
+ * are still undecided, for «Validadas» in the validation inbox (user's
+ * decision of 2026-11-20), where a validation made by mistake is taken
+ * back. Late ones still waiting for the assembly's decision are left out:
+ * «Fuera de plazo» lists them. Whether each can go back is the DTO's
+ * `can.unvalidate`, which the caller checks.
+ */
+export async function findValidatedPublishedAmendments(
+  documents: { id: string }[],
+): Promise<LoadedAmendment[]> {
+  if (documents.length === 0) return [];
+  const rows = await findAmendments(
+    db,
+    and(
+      inArray(
+        amendments.documentId,
+        documents.map((document) => document.id),
+      ),
+      eq(amendments.status, "submitted"),
+      isNotNull(amendments.validatedAt),
+      isNotNull(amendments.publishedAt),
+    ),
+  );
+  return rows.filter((row) => !awaitsAssemblyDecision(row));
 }
 
 /**
@@ -5092,6 +5127,56 @@ async function approvalWarnings(
     approved,
     live.map((row) => row.id),
   );
+}
+
+/**
+ * A bloc approved by assent in one request (POST .../amendments/assent;
+ * user's decision of 2026-11-20): each amendment goes through the single
+ * approval (applyAmendmentOutcome, its own transaction, checks and events)
+ * in the order given, one after another, so the room's clients refetch
+ * once for the whole bloc instead of once per amendment, as the console's
+ * request after request made them do. One that cannot be approved (decided
+ * meanwhile, changed since it was seen, hidden or of another document) is
+ * left with the reason and the rest go on; anything but a client error
+ * stops it.
+ */
+export async function applyBulkAssent(
+  ctx: DocumentAmendmentContext,
+  body: BulkAssentBody,
+): Promise<BulkAssentDto> {
+  if (!canRecordResults(ctx.actor)) {
+    fail(403, "No tienes permiso para realizar esta acción");
+  }
+  assertSessionOpen(ctx.assembly.status);
+  const results: AmendmentOutcomeDto[] = [];
+  const failed: BulkAssentDto["failed"] = [];
+  for (const item of body.items) {
+    const amendment = await loadAmendment(db, item.id);
+    if (
+      !amendment ||
+      amendment.documentId !== ctx.document.id ||
+      !isVisible(ctx, amendment)
+    ) {
+      failed.push({ id: item.id, message: "Enmienda no encontrada" });
+      continue;
+    }
+    try {
+      results.push(
+        await applyAmendmentOutcome(
+          {
+            ...ctx,
+            amendment,
+            isAuthor: isAmendmentAuthor(ctx.actor, amendment),
+          },
+          { action: "approve", method: "assent", updatedAt: item.updatedAt },
+        ),
+      );
+    } catch (error) {
+      if (!isError(error) || error.statusCode >= 500) throw error;
+      failed.push({ id: item.id, message: error.message });
+    }
+  }
+  return { results, failed };
 }
 
 export async function applyAmendmentOutcome(

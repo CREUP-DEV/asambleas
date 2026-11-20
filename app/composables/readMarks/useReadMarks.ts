@@ -11,6 +11,7 @@ import {
   type ReadMarkIndex,
   type ReadProgress,
 } from "~~/shared/utils/readMarks";
+import { shouldRefetchReadMarks } from "../assembly/-liveFilters";
 import type { CurrentAssemblyContext } from "../assembly/useCurrentAssembly";
 import { keepLastGoodData } from "../fetch/lastGoodData";
 
@@ -77,16 +78,10 @@ export function provideReadMarks(
   );
 
   // What can be marked, and whether it changed, follows the documents and
-  // the amendments.
+  // the amendments that change what is seen or its text, never their
+  // decisions (shouldRefetchReadMarks).
   onLive((events) => {
-    if (
-      events.some(
-        (event) =>
-          event.type === "poll" ||
-          event.entityType === "document" ||
-          event.entityType === "amendment",
-      )
-    ) {
+    if (shouldRefetchReadMarks(events)) {
       void result.refresh({ dedupe: "defer" });
     }
   });

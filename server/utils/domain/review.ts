@@ -33,6 +33,7 @@ import type {
   MeWorkReviewDto,
   ReviewQueueAmendmentDto,
   ReviewQueueDto,
+  ReviewValidatedDto,
 } from "~~/shared/types/api";
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 import { canManageDocuments, canReviewAmendments, type Actor } from "./actor";
@@ -43,6 +44,7 @@ import {
   findAmendmentsAwaitingReview,
   findSubmittedAmendments,
   findTransactionalsAwaitingMember,
+  findValidatedPublishedAmendments,
   loadedMainAuthor,
   membersSourcesOf,
 } from "./amendments";
@@ -138,6 +140,42 @@ export async function loadReviewQueue(
     });
   }
 
+  const { visible, milestones } = await loadReviewDocuments(actor, assembly);
+  const now = new Date();
+
+  const documentDtos = manageDocuments
+    ? await buildDocumentSummaries(
+        actor,
+        visible.filter((row) => row.status === "submitted"),
+        new Map([[assembly.id, milestones]]),
+        now,
+      )
+    : [];
+
+  const amendmentDtos = reviewAmendments
+    ? await buildReviewAmendments(
+        actor,
+        assembly,
+        visible,
+        milestones,
+        await findAmendmentsAwaitingReview(visible),
+        now,
+      )
+    : [];
+
+  return { documents: documentDtos, amendments: amendmentDtos };
+}
+
+type ReviewDocumentRow = Awaited<
+  ReturnType<typeof loadReviewDocuments>
+>["visible"][number];
+
+/**
+ * The documents of the assembly the actor can see, in the order the
+ * assembly will debate them (agenda order, then creation order), with the
+ * assembly's calendar.
+ */
+async function loadReviewDocuments(actor: Actor, assembly: AssemblyRow) {
   const [rows, milestones, items] = await Promise.all([
     db.query.documents
       .findMany({
@@ -161,48 +199,75 @@ export async function loadReviewQueue(
         (position.get(a.agendaItemId) ?? Number.MAX_SAFE_INTEGER) -
         (position.get(b.agendaItemId) ?? Number.MAX_SAFE_INTEGER),
     );
-  const now = new Date();
+  return { visible, milestones };
+}
 
-  const documentDtos = manageDocuments
-    ? await buildDocumentSummaries(
-        actor,
-        visible.filter((row) => row.status === "submitted"),
-        new Map([[assembly.id, milestones]]),
-        now,
-      )
-    : [];
-
-  const amendmentDtos: ReviewQueueAmendmentDto[] = [];
-  if (reviewAmendments) {
-    const [pending, executiveIds] = await Promise.all([
-      findAmendmentsAwaitingReview(visible),
-      loadExecutiveMemberIds(),
-    ]);
-    for (const document of visible) {
-      const own = pending.filter((row) => row.documentId === document.id);
-      if (own.length === 0) continue;
-      const ctx = buildDocumentAmendmentContext(
-        actor,
-        assembly,
-        document,
-        milestones,
-        document.proponentMemberId !== null &&
-          executiveIds.has(document.proponentMemberId),
-        now,
-      );
-      const ref = {
-        id: document.id,
-        slug: document.slug,
-        title: document.title,
-        reference: document.reference,
-      };
-      for (const amendment of await buildAmendmentDtos(ctx, own)) {
-        amendmentDtos.push({ document: ref, amendment });
-      }
+/** The amendments found, as DTOs with their document, document by document. */
+async function buildReviewAmendments(
+  actor: Actor,
+  assembly: AssemblyRow,
+  visible: ReviewDocumentRow[],
+  milestones: Awaited<ReturnType<typeof loadMilestones>>,
+  found: Awaited<ReturnType<typeof findAmendmentsAwaitingReview>>,
+  now: Date,
+): Promise<ReviewQueueAmendmentDto[]> {
+  const result: ReviewQueueAmendmentDto[] = [];
+  if (found.length === 0) return result;
+  const executiveIds = await loadExecutiveMemberIds();
+  for (const document of visible) {
+    const own = found.filter((row) => row.documentId === document.id);
+    if (own.length === 0) continue;
+    const ctx = buildDocumentAmendmentContext(
+      actor,
+      assembly,
+      document,
+      milestones,
+      document.proponentMemberId !== null &&
+        executiveIds.has(document.proponentMemberId),
+      now,
+    );
+    const ref = {
+      id: document.id,
+      slug: document.slug,
+      title: document.title,
+      reference: document.reference,
+    };
+    for (const amendment of await buildAmendmentDtos(ctx, own)) {
+      result.push({ document: ref, amendment });
     }
   }
+  return result;
+}
 
-  return { documents: documentDtos, amendments: amendmentDtos };
+/**
+ * «Validadas» in the validation inbox (GET .../review/validated, amendment:
+ * review; user's decision of 2026-11-20): the amendments it validated and
+ * published that are still undecided and whose validation can still be
+ * taken back (`can.unvalidate`), by document in agenda order and then in
+ * text order. Read only when the tab is opened, so the inbox stays light.
+ */
+export async function loadValidatedAmendments(
+  actor: Actor,
+  assembly: AssemblyRow,
+): Promise<ReviewValidatedDto> {
+  if (!canReviewAmendments(actor)) {
+    throw createError({
+      statusCode: 403,
+      message: "No tienes permiso para revisar enmiendas",
+    });
+  }
+  const { visible, milestones } = await loadReviewDocuments(actor, assembly);
+  const rows = await buildReviewAmendments(
+    actor,
+    assembly,
+    visible,
+    milestones,
+    await findValidatedPublishedAmendments(visible),
+    new Date(),
+  );
+  return {
+    amendments: rows.filter((row) => row.amendment.can.unvalidate),
+  };
 }
 
 // Home page -----------------------------------------------------------------------

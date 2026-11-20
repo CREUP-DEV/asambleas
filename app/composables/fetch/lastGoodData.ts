@@ -205,6 +205,11 @@ export interface RetryFailedOptions {
   maxDelay?: number;
   /** Called when a retry leaves every source up to date. */
   onRecovered?: () => void;
+  /**
+   * While true, nothing is retried: the session is gone and every attempt
+   * would only get a 401 (useAssemblyLive's `expired`).
+   */
+  paused?: () => boolean;
 }
 
 const RETRY_BASE_MS = 3_000;
@@ -240,7 +245,7 @@ export function useRetryFailed(
   }
 
   function schedule(): void {
-    if (disposed || timer !== undefined) return;
+    if (disposed || timer !== undefined || options.paused?.()) return;
     const delay = Math.min(baseDelay * 2 ** attempt, maxDelay);
     attempt += 1;
     // Jitter keeps clients that failed together from retrying in lockstep.
@@ -249,6 +254,7 @@ export function useRetryFailed(
 
   async function retry(): Promise<void> {
     timer = undefined;
+    if (options.paused?.()) return;
     const due = sources.filter(
       (source) => source.failed.value && source.status.value !== "pending",
     );

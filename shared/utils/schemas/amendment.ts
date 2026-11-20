@@ -13,6 +13,7 @@ import type {
   AmendmentAuthorsBody,
   AmendmentDraftBody,
   AmendmentUpdateBody,
+  BulkAssentBody,
   OutcomeBody,
   PositionBody,
   PublishAmendmentsBody,
@@ -151,6 +152,21 @@ export const validateAmendmentsBodySchema = z.object({
   publish: z.boolean(),
 });
 
+/**
+ * POST .../amendments/assent (BulkAssentBody): the amendments of a bloc
+ * approved by assent in one request, each with the version it was seen at.
+ */
+export const bulkAssentBodySchema = z.object({
+  items: z
+    .array(z.object({ id: entityIdSchema, updatedAt: updatedAtSchema }))
+    .min(1)
+    .max(MAX_ADMISSION_BATCH)
+    .refine(
+      (items) => new Set(items.map((item) => item.id)).size === items.length,
+      { message: "duplicate_ids" },
+    ),
+});
+
 /** POST .../amendments/publish (PublishAmendmentsBody). */
 export const publishAmendmentsBodySchema = z.object({
   amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),
@@ -269,6 +285,7 @@ export type _AmendmentSchemaChecks = [
     PublishAmendmentsBody,
     z.output<typeof publishAmendmentsBodySchema>
   >,
+  Assignable<BulkAssentBody, z.output<typeof bulkAssentBodySchema>>,
   Assignable<PositionBody, z.output<typeof positionBodySchema>>,
   Assignable<AcceptanceBody, z.output<typeof acceptanceBodySchema>>,
   Assignable<OutcomeBody, z.output<typeof outcomeBodySchema>>,

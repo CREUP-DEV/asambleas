@@ -12,6 +12,12 @@ import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { shouldRefetchAgenda, shouldRefetchAssembly } from "./-liveFilters";
 
 /**
+ * Up to how long a reader's page waits before refetching after a live
+ * change (useAssemblyLive's spreadMs; user's decision of 2026-11-20).
+ */
+const LIVE_SPREAD_MS = 1_200;
+
+/**
  * The assembly shown by the hub page (app/pages/asambleas/[assembly].vue)
  * and shared with every nested section page through provide/inject.
  *
@@ -64,6 +70,8 @@ export interface CurrentAssemblyContext {
   live: {
     connected: Readonly<Ref<boolean>>;
     polling: Readonly<Ref<boolean>>;
+    /** The session is gone: the stream stopped (useAssemblyLive). */
+    expired: Readonly<Ref<boolean>>;
   };
 }
 
@@ -164,6 +172,9 @@ export function provideCurrentAssembly(
       onScroll: (scroll) => {
         for (const handler of scrollHandlers) handler(scroll);
       },
+      // The room spreads its refetches over a second; the Mesa, whose
+      // console must follow at once, never waits.
+      spreadMs: () => (assembly.value?.can.moderate ? 0 : LIVE_SPREAD_MS),
     },
   );
 
@@ -241,7 +252,11 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
     },
     onLive: () => () => {},
     onLiveScroll: () => () => {},
-    live: { connected: readonly(ref(false)), polling: readonly(ref(false)) },
+    live: {
+      connected: readonly(ref(false)),
+      polling: readonly(ref(false)),
+      expired: readonly(ref(false)),
+    },
   };
 }
 

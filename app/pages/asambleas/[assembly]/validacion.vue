@@ -32,7 +32,9 @@ import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
  * any of them rejected is gone); then "Enmiendas" in two tabs: "Por
  * revisar", the amendments nobody else sees until they are validated, and
  * "Validadas sin publicar",
- * the amendments it validated and kept private, to publish them; and, in
+ * the amendments it validated and kept private, to publish them, and
+ * "Validadas", those validated and published still undecided, to take a
+ * validation made by mistake back (user's decision of 2026-11-20); and, in
  * "Fuera de plazo",
  * the late ones that wait for the assembly to decide whether to treat them.
  * Validating a transactional always publishes it: it replaces amendments
@@ -134,8 +136,13 @@ const toPublishCount = computed(() =>
   ),
 );
 
-/** The two parts are tabs of "Enmiendas", each with its count. */
-type AmendmentTab = "review" | "publish";
+/**
+ * The parts are tabs of "Enmiendas", each with its count: "Validadas" (the
+ * validated and published ones still undecided, to take a validation back)
+ * is read when opened, so its count shows once it has been.
+ */
+type AmendmentTab = "review" | "publish" | "validated";
+const validatedCount = ref<number | null>(null);
 const amendmentTab = ref<AmendmentTab>("review");
 const amendmentTabItems = computed<TabsItem[]>(() => [
   {
@@ -155,6 +162,19 @@ const amendmentTabItems = computed<TabsItem[]>(() => [
       color: "neutral",
       variant: "soft",
     },
+  },
+  {
+    value: "validated",
+    label: t("review.amendments.tabs.validated"),
+    ...(validatedCount.value === null
+      ? {}
+      : {
+          badge: {
+            label: String(validatedCount.value),
+            color: "neutral" as const,
+            variant: "soft" as const,
+          },
+        }),
   },
 ]);
 /** The transactionals listed apart: to validate, and waiting for authors. */
@@ -489,23 +509,44 @@ async function confirmBulkPublish() {
         role="alert"
       />
 
-      <CommonEmptyState
-        v-else-if="empty"
-        icon="i-lucide-circle-check-big"
-        :title="t('review.emptyTitle')"
-        :description="t('review.emptyDescription')"
-        variant="outline"
-      >
-        <template v-if="canDocuments" #action>
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-list-checks"
-            :label="t('review.toTracking')"
-            :to="sectionPath('seguimiento')"
+      <template v-else-if="empty">
+        <CommonEmptyState
+          icon="i-lucide-circle-check-big"
+          :title="t('review.emptyTitle')"
+          :description="t('review.emptyDescription')"
+          variant="outline"
+        >
+          <template v-if="canDocuments" #action>
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-list-checks"
+              :label="t('review.toTracking')"
+              :to="sectionPath('seguimiento')"
+            />
+          </template>
+        </CommonEmptyState>
+        <!-- Nothing left to review: what was validated can still go back. -->
+        <section
+          v-if="canAmendments"
+          class="space-y-4"
+          aria-labelledby="review-validated-heading"
+        >
+          <h3
+            id="review-validated-heading"
+            class="text-highlighted text-lg font-semibold"
+          >
+            {{ t("review.amendments.tabs.validated") }}
+          </h3>
+          <ReviewValidatedList
+            active
+            :api-base="apiBase"
+            :document-path="documentPath"
+            @undone="refresh"
+            @announce="announce"
           />
-        </template>
-      </CommonEmptyState>
+        </section>
+      </template>
 
       <template v-else>
         <section
@@ -716,6 +757,17 @@ async function confirmBulkPublish() {
               />
             </div>
           </div>
+
+          <!-- Read only when opened: it can list every amendment. -->
+          <ReviewValidatedList
+            v-show="amendmentTab === 'validated'"
+            :active="amendmentTab === 'validated'"
+            :api-base="apiBase"
+            :document-path="documentPath"
+            @count="validatedCount = $event"
+            @undone="refresh"
+            @announce="announce"
+          />
         </section>
 
         <section

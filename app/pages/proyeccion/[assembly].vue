@@ -96,6 +96,7 @@ definePageMeta({ layout: false });
 
 const route = useRoute();
 const { t, locale } = useI18n();
+const localePath = useLocalePath();
 const api = useApi();
 const me = useMe();
 
@@ -448,11 +449,15 @@ async function readMesaScroll(): Promise<void> {
 watch(documentId, () => void readMesaScroll(), { immediate: true });
 watch(documentBox, () => followMesaScroll(), { flush: "post" });
 
-const { connected, polling } = useAssemblyLive(() => assemblyId, onLive, {
-  onScroll: onMesaScroll,
-  onPointer: onMesaPointer,
-  onTally,
-});
+const { connected, polling, expired } = useAssemblyLive(
+  () => assemblyId,
+  onLive,
+  {
+    onScroll: onMesaScroll,
+    onPointer: onMesaPointer,
+    onTally,
+  },
+);
 
 // Until the first connection is ready the screen is connecting, not
 // offline: the room must not see an alarm while the page opens.
@@ -473,7 +478,15 @@ const CONNECTION_DOT = {
   connecting: "bg-(--ui-text-dimmed)",
   offline: "bg-error",
 } as const;
+/**
+ * Where to sign in again once the session is gone (`expired`), back to the
+ * projection afterwards. A full load: its data was read as nobody.
+ */
+const signInAgainPath = computed(() =>
+  localePath({ path: "/login", query: { redirect: route.fullPath } }),
+);
 const connectionLabel = computed(() => {
+  if (expired.value) return t("projection.sessionExpired");
   switch (connection.value) {
     case "live":
       return t("projection.live");
@@ -526,6 +539,8 @@ useRetryFailed(
     },
   ],
   {
+    // Once the session is gone every retry would only get a 401.
+    paused: () => expired.value,
     onRecovered: () => {
       lastUpdate.value = new Date();
     },
@@ -1056,7 +1071,11 @@ useHead(() => ({
           :class="attendance?.latest.quorum ? 'text-success' : 'text-error'"
           aria-hidden="true"
         />
-        {{ attendanceLine }}
+        <!-- Trimmed to the capitals, as the clock is: both centre on the
+             same line, whatever their sizes. -->
+        <span class="[text-box:trim-both_cap_alphabetic]">
+          {{ attendanceLine }}
+        </span>
       </p>
       <div class="flex items-center">
         <!-- Fullscreen support is only known in the browser. -->
@@ -1070,7 +1089,15 @@ useHead(() => ({
             role="status"
           >
             <span class="sr-only">{{ connectionLabel }}</span>
-            <span v-if="stale" class="text-warning font-medium">
+            <ULink
+              v-if="expired"
+              :to="signInAgainPath"
+              external
+              class="text-warning font-medium underline underline-offset-4"
+            >
+              {{ t("projection.sessionExpired") }}
+            </ULink>
+            <span v-else-if="stale" class="text-warning font-medium">
               {{ t("projection.stale") }}
             </span>
             <span v-else-if="failed" class="text-warning font-medium">

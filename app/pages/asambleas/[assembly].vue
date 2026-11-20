@@ -125,6 +125,13 @@ const current = provideCurrentAssembly({
   },
 });
 const { assembly, live, stale } = current;
+/**
+ * Where to sign in again once the session is gone (live.expired), back to
+ * this page afterwards. A full load: the page's data was read as nobody.
+ */
+const signInAgainPath = computed(() =>
+  localePath({ path: "/login", query: { redirect: route.fullPath } }),
+);
 
 // The account's read marks, once for every page and row of the assembly.
 provideReadMarks(current);
@@ -285,14 +292,34 @@ watch(() => route.path, revealActiveSection);
             <ShellBreadcrumbs placement="inline" />
           </div>
           <template v-if="assembly">
-            <!-- "Convocada" is the usual state and says nothing new: only
-                 the others (draft, in session, closed) are shown. -->
+            <!-- Only a draft says so (user's decision of 2026-11-20): the
+                 session's own state shows in the live badge beside it, and
+                 the others say nothing new here. -->
             <CommonStatusBadge
-              v-if="assembly.status !== 'convened'"
+              v-if="assembly.status === 'draft'"
               kind="assembly"
               :value="assembly.status"
             />
-            <UTooltip v-if="stale" :text="t('assembly.hub.staleDescription')">
+            <!-- The session is gone: nothing updates until signing in
+                 again, so it says so before anything else. -->
+            <UButton
+              v-if="live.expired.value"
+              color="warning"
+              variant="soft"
+              size="xs"
+              icon="i-lucide-log-in"
+              :to="signInAgainPath"
+              external
+              :aria-label="t('assembly.hub.sessionExpiredDescription')"
+            >
+              <span class="hidden sm:inline">{{
+                t("assembly.hub.sessionExpired")
+              }}</span>
+            </UButton>
+            <UTooltip
+              v-else-if="stale"
+              :text="t('assembly.hub.staleDescription')"
+            >
               <UButton
                 color="warning"
                 variant="soft"

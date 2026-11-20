@@ -420,6 +420,8 @@
       "nextMilestone": "Próximo plazo",
       "liveOn": "En directo",
       "liveOffline": "Sin conexión en directo",
+      "sessionExpired": "Sesión caducada",
+      "sessionExpiredDescription": "Tu sesión ha caducado y la página ya no se actualiza. Vuelve a entrar para seguir.",
       "livePolling": "Se ha perdido la conexión en directo. Los datos se actualizan cada 15 segundos mientras se recupera.",
       "stale": "Sin actualizar",
       "staleDescription": "No se ha podido actualizar la asamblea. Se muestran los últimos datos cargados. Pulsa para reintentarlo."
@@ -1288,8 +1290,8 @@
         "fix": "Corregir y volver a enviar",
         "validatePublish": "Validar y publicar",
         "validateOnly": "Validar sin publicar",
-        "askCorrection": "Pedir corrección",
-        "sendCorrection": "Enviar la petición",
+        "askCorrection": "Devolver",
+        "sendCorrection": "Devolver para corregir",
         "publish": "Publicar"
       },
       "validateOnlyHint": "Si la validas sin publicarla, hasta que la publiques solo la verán quienes la presentan, la CEA, Secretaría y la Mesa.",
@@ -3089,6 +3091,7 @@
       "location": "Lugar",
       "documentsLabel": "Documentos",
       "documents": "Sin documentos | {count} documento | {count} documentos",
+      "amendments": "{count} enmienda | {count} enmiendas",
       "agendaProvisional": "ODD provisional",
       "nextMilestone": "Próximo plazo",
       "live": "En curso"
@@ -4602,6 +4605,7 @@
       "unanimous": "Por unanimidad"
     },
     "stale": "Mostrando los últimos datos recibidos",
+    "sessionExpired": "Sesión caducada: vuelve a entrar",
     "loadFailed": "No se han podido cargar los datos",
     "connecting": "Conectando…",
     "attendance": {
@@ -4681,7 +4685,8 @@
       "tabs": {
         "label": "Qué enmiendas ver",
         "review": "Por revisar",
-        "publish": "Validadas sin publicar"
+        "publish": "Validadas sin publicar",
+        "validated": "Validadas"
       },
       "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Validadas sin publicar».",
       "none": "No hay enmiendas esperando tu validación.",
@@ -4696,6 +4701,7 @@
       "textUnavailable": "No se ha podido cargar el texto del documento para mostrar los cambios.",
       "validatePublish": "Validar y publicar",
       "validateOnly": "Validar sin publicar",
+      "sendBack": "Devolver",
       "validateOnlyHelp": "Queda validada, pero hasta que la publiques solo la ven sus autores, la CEA, la Secretaría y la Mesa.",
       "publish": "Publicar",
       "select": "Seleccionar {label}",
@@ -4743,12 +4749,21 @@
       "correctValidatedHelp": "Vuelve a sus autores con una nota para que la corrijan",
       "unvalidatedHint": "Vuelve a estar en «Por revisar»."
     },
+    "validated": {
+      "help": "Las enmiendas que ya validaste y publicaste y que aún no se han decidido. Si validaste alguna por error, deshaz la validación: vuelve a «Por revisar» tal como está. Para devolverla a sus autores con una nota, ábrela.",
+      "none": "No hay enmiendas validadas y publicadas pendientes de decidir.",
+      "loading": "Cargando las enmiendas validadas",
+      "loadError": "No se han podido cargar las enmiendas validadas.",
+      "undoLabel": "Deshacer la validación de {label}",
+      "confirmTitle": "¿Deshacer la validación de {label}?"
+    },
     "toPublish": {
       "help": "Las ven sus autores, la CEA, la Secretaría y la Mesa. Publícalas cuando quieras que las vea toda la asamblea.",
       "none": "No hay enmiendas validadas pendientes de publicar."
     },
     "correction": {
       "title": "Pedir corrección",
+      "titleAmendment": "Devolver la enmienda",
       "descriptionDocument": "«{subject}» volverá a quien lo presenta para que lo corrija y lo envíe de nuevo.",
       "descriptionAmendment": "{subject} volverá a sus autores para que la corrijan y la envíen de nuevo.",
       "noteLabel": "¿Qué tienen que corregir?",

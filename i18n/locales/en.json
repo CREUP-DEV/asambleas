@@ -420,6 +420,8 @@
       "nextMilestone": "Next deadline",
       "liveOn": "Live",
       "liveOffline": "Live connection lost",
+      "sessionExpired": "Session expired",
+      "sessionExpiredDescription": "Your session has expired and the page no longer updates. Sign in again to go on.",
       "livePolling": "The live connection was lost. Data refreshes every 15 seconds while it reconnects.",
       "stale": "Not up to date",
       "staleDescription": "The assembly could not be refreshed. Showing the last loaded data. Select to retry."
@@ -1288,8 +1290,8 @@
         "fix": "Fix and send again",
         "validatePublish": "Validate and publish",
         "validateOnly": "Validate without publishing",
-        "askCorrection": "Ask for a correction",
-        "sendCorrection": "Send the request",
+        "askCorrection": "Send back",
+        "sendCorrection": "Send back for a correction",
         "publish": "Publish"
       },
       "validateOnlyHint": "If you validate it without publishing it, until you publish it only its presenters, the CEA, the Secretariat and the Mesa will see it.",
@@ -3089,6 +3091,7 @@
       "location": "Venue",
       "documentsLabel": "Documents",
       "documents": "No documents | {count} document | {count} documents",
+      "amendments": "{count} amendment | {count} amendments",
       "agendaProvisional": "Provisional agenda",
       "nextMilestone": "Next deadline",
       "live": "In progress"
@@ -4602,6 +4605,7 @@
       "unanimous": "Unanimously"
     },
     "stale": "Showing the last data received",
+    "sessionExpired": "Session expired: sign in again",
     "loadFailed": "The data could not be loaded",
     "connecting": "Connecting…",
     "attendance": {
@@ -4681,7 +4685,8 @@
       "tabs": {
         "label": "Which amendments to show",
         "review": "To review",
-        "publish": "Validated, not published"
+        "publish": "Validated, not published",
+        "validated": "Validated"
       },
       "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Validated, not published”.",
       "none": "No amendments are waiting for your validation.",
@@ -4696,6 +4701,7 @@
       "textUnavailable": "The document text could not be loaded to show the changes.",
       "validatePublish": "Validate and publish",
       "validateOnly": "Validate without publishing",
+      "sendBack": "Send back",
       "validateOnlyHelp": "It stays validated, but until you publish it only its authors, the CEA, the Secretariat and the Mesa see it.",
       "publish": "Publish",
       "select": "Select {label}",
@@ -4743,12 +4749,21 @@
       "correctValidatedHelp": "Back to its authors with a note to fix it",
       "unvalidatedHint": "It is in “To review” again."
     },
+    "validated": {
+      "help": "The amendments you validated and published that are not decided yet. If you validated one by mistake, undo the validation: it goes back to “To review” as it is. To send it back to its authors with a note, open it.",
+      "none": "There are no validated and published amendments still to be decided.",
+      "loading": "Loading the validated amendments",
+      "loadError": "The validated amendments could not be loaded.",
+      "undoLabel": "Undo the validation of {label}",
+      "confirmTitle": "Undo the validation of {label}?"
+    },
     "toPublish": {
       "help": "Their authors, the CEA, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
       "none": "No validated amendments are waiting to be published."
     },
     "correction": {
       "title": "Ask for a correction",
+      "titleAmendment": "Send the amendment back",
       "descriptionDocument": "“{subject}” goes back to its presenters so they can fix it and send it again.",
       "descriptionAmendment": "{subject} goes back to its authors so they can fix it and send it again.",
       "noteLabel": "What do they need to fix?",

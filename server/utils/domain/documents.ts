@@ -724,7 +724,7 @@ async function loadAmendmentVisibilityRows(
  * unpublished and withdrawn ones `canSeeAmendment` lets them read (they
  * wrote, created or are a party to them; the CEA reads the withdrawn).
  */
-async function countVisibleAmendments(
+export async function countVisibleAmendments(
   actor: Actor,
   documentIds: string[],
   executor: Executor = db,

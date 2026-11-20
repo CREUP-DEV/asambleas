@@ -4,8 +4,8 @@ import type { FormSubmitEvent } from "@nuxt/ui";
 import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
 
 /**
- * "Pedir corrección": a required note for whoever presented a document or an
- * amendment. The parent sends it (POST .../correction) on `confirm` and
+ * "Pedir corrección" (a document) or "Devolver" (an amendment, user's
+ * decision of 2026-11-20): a required note for whoever presented it. The parent sends it (POST .../correction) on `confirm` and
  * closes the modal when it succeeds. It keeps the last subject it named, so
  * its text does not read "«»" while it closes after the parent clears it.
  *
@@ -86,7 +86,11 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
 <template>
   <UModal
     v-model:open="open"
-    :title="t('review.correction.title')"
+    :title="
+      props.kind === 'document'
+        ? t('review.correction.title')
+        : t('review.correction.titleAmendment')
+    "
     :description="
       t(
         props.kind === 'document'
@@ -156,7 +160,9 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
           :label="
             closing
               ? t('amendment.inadmissibleOnReview.send')
-              : t('review.correction.send')
+              : props.kind === 'amendment'
+                ? t('amendment.review.actions.sendCorrection')
+                : t('review.correction.send')
           "
           :loading="props.busy"
         />

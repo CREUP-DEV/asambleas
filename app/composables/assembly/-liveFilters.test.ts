@@ -3,6 +3,7 @@ import {
   mayChangeAssemblyData,
   shouldRefetchAgenda,
   shouldRefetchAssembly,
+  shouldRefetchReadMarks,
 } from "./-liveFilters";
 
 const event = (entityType: string, type = "updated") => ({ entityType, type });
@@ -91,13 +92,64 @@ describe("shouldRefetchAgenda", () => {
   it("refetches on anything else", () => {
     expect(shouldRefetchAgenda([event("live", "poll")])).toBe(true);
     expect(shouldRefetchAgenda([event("document")])).toBe(true);
-    expect(shouldRefetchAgenda([event("amendment")])).toBe(true);
     expect(shouldRefetchAgenda([event("agenda_item")])).toBe(true);
   });
 
+  it("refetches for the amendments only when which ones are seen changes", () => {
+    for (const type of [
+      "amendment_submitted",
+      "amendment_published",
+      "amendment_validated",
+      "amendment_validation_undone",
+      "amendment_withdrawn",
+      "amendment_deleted",
+    ]) {
+      expect(shouldRefetchAgenda([event("amendment", type)]), type).toBe(true);
+    }
+    for (const type of [
+      "amendment_approved",
+      "amendment_rejected",
+      "amendment_lapsed",
+      "amendment_reopened",
+      "amendment_transacted",
+      "position_changed",
+      "acceptance_recorded",
+    ]) {
+      expect(shouldRefetchAgenda([event("amendment", type)]), type).toBe(false);
+    }
+  });
+
   it("refetches when one event of a mixed batch calls for it", () => {
-    expect(shouldRefetchAgenda([event("speakers"), event("amendment")])).toBe(
-      true,
-    );
+    expect(
+      shouldRefetchAgenda([
+        event("speakers"),
+        event("amendment", "amendment_approved"),
+        event("amendment", "amendment_published"),
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe("shouldRefetchReadMarks", () => {
+  it("follows the documents, a poll and what changes what is to read", () => {
+    expect(shouldRefetchReadMarks([event("live", "poll")])).toBe(true);
+    expect(shouldRefetchReadMarks([event("document")])).toBe(true);
+    expect(
+      shouldRefetchReadMarks([event("amendment", "amendment_published")]),
+    ).toBe(true);
+    expect(
+      shouldRefetchReadMarks([event("amendment", "amendment_updated")]),
+    ).toBe(true);
+  });
+
+  it("ignores decisions, answers and everything else", () => {
+    expect(
+      shouldRefetchReadMarks([
+        event("amendment", "amendment_approved"),
+        event("amendment", "position_changed"),
+        event("control_sheet", "control_sheet_treated_changed"),
+        event("speakers", "floor_given"),
+      ]),
+    ).toBe(false);
   });
 });

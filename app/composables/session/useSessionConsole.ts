@@ -5,6 +5,8 @@ import type {
   AmendmentAdmissionDto,
   AmendmentDto,
   AmendmentOutcomeDto,
+  BulkAssentBody,
+  BulkAssentDto,
   ApprovalWarnings,
   AssemblyDto,
   DocumentAmendmentsDto,
@@ -2019,24 +2021,39 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   /** Approves by assent every amendment of the plan, one after another. */
   async function bulkAssent(ids: string[]): Promise<number> {
-    const results: AmendmentOutcomeDto[] = [];
-    await track("bulk-assent", async () => {
-      for (const id of ids) {
-        const amendment = byId.value.get(id);
-        if (!amendment || !isSessionOpen(amendment)) continue;
-        // A transactional proposed over it since the plan was made: it
-        // would be withdrawn without anyone saying so.
-        if (sessionPendingTransactionalIds(amendment, byId.value).length > 0) {
-          continue;
-        }
-        const result = await runOutcome(
-          amendment,
-          { action: "approve", method: "assent" },
-          { offer: false, toast: false },
-        );
-        if (result) results.push(result);
+    if (!requireInSession()) return 0;
+    const items: BulkAssentBody["items"] = [];
+    let documentOf: string | null = null;
+    for (const id of ids) {
+      const amendment = byId.value.get(id);
+      if (!amendment || !isSessionOpen(amendment)) continue;
+      // A transactional proposed over it since the plan was made: it
+      // would be withdrawn without anyone saying so.
+      if (sessionPendingTransactionalIds(amendment, byId.value).length > 0) {
+        continue;
       }
-    });
+      documentOf ??= amendment.documentId;
+      if (amendment.documentId !== documentOf) continue;
+      items.push({ id: amendment.id, updatedAt: amendment.updatedAt });
+    }
+    // The whole bloc in one request (user's decision of 2026-11-20): one
+    // after another, every approval made the whole room refetch, and under
+    // that load each one took seconds.
+    let results: AmendmentOutcomeDto[] = [];
+    if (items.length > 0) {
+      try {
+        const response = await track("bulk-assent", () =>
+          api.send<BulkAssentDto>(documentApi("/amendments/assent"), {
+            body: { items } satisfies BulkAssentBody,
+          }),
+        );
+        results = response.results;
+        for (const result of results) upsertAmendment(result.amendment);
+      } catch (error) {
+        api.notifyError(error, "session.errors.outcome");
+        onConflict(error);
+      }
+    }
     const done = results.length;
     toast.add({
       title: t("session.toasts.assentMany", { count: done }, done),

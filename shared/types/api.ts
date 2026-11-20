@@ -372,6 +372,17 @@ export interface ReviewQueueDto {
   amendments: ReviewQueueAmendmentDto[];
 }
 
+/**
+ * GET .../review/validated (amendment:review): «Validadas» in the
+ * validation inbox, the amendments validated and published that are still
+ * undecided and can go back to review (`can.unvalidate`), by document in
+ * agenda order, then in text order. Late ones waiting for the assembly's
+ * decision are in ReviewQueueDto.amendments instead.
+ */
+export interface ReviewValidatedDto {
+  amendments: ReviewQueueAmendmentDto[];
+}
+
 export interface ReviewQueueAmendmentDto {
   document: {
     id: string;
@@ -412,7 +423,13 @@ export interface AssemblySummaryDto {
    * `agenda_final` date once it has come, else null (agendaFinalSince).
    */
   agendaFinalizedAt: IsoDate | null;
+  /** Documents the reader can see. */
   documentCount: number;
+  /**
+   * Amendments past draft the reader can see on those documents, each
+   * counted by its document's own rule (DocumentSummaryDto.amendmentCount).
+   */
+  amendmentCount: number;
   /** Next milestone still to come, for countdowns. */
   nextMilestone: MilestoneDto | null;
   updatedAt: IsoDate;
@@ -1397,6 +1414,25 @@ export interface ValidateAmendmentsBody {
  */
 export interface PublishAmendmentsBody {
   amendmentIds: string[];
+}
+
+/**
+ * POST .../amendments/assent: a bloc approved by assent in one request
+ * (user's decision of 2026-11-20), each amendment with the `updatedAt` it
+ * was seen at, in the order they are approved.
+ */
+export interface BulkAssentBody {
+  items: { id: string; updatedAt: IsoDate }[];
+}
+
+/**
+ * Response of POST .../amendments/assent: what each approval returned, in
+ * order, and those that could not be approved (decided meanwhile, changed,
+ * gone), with the reason the single approval would have given.
+ */
+export interface BulkAssentDto {
+  results: AmendmentOutcomeDto[];
+  failed: { id: string; message: string }[];
 }
 
 /**
