@@ -36,6 +36,7 @@ describe("sharedAgendaAction (Directo's agenda)", () => {
     // not, so the next agenda page refetches what it is handed.
     expect(directo([event("amendment", "amendment_published")])).toBe("behind");
     expect(directo([event("amendment", "amendment_withdrawn")])).toBe("behind");
+    expect(directo([event("amendment", "amendment_reopened")])).toBe("behind");
   });
 
   it("refetches once for a batch that holds both", () => {
@@ -52,7 +53,6 @@ describe("sharedAgendaAction (Directo's agenda)", () => {
     expect(directo([event("speakers", "speaker_added")])).toBe("none");
     expect(directo([event("vote", "vote_recorded")])).toBe("none");
     expect(directo([event("amendment", "amendment_approved")])).toBe("none");
-    expect(directo([event("amendment", "amendment_reopened")])).toBe("none");
     expect(directo([])).toBe("none");
   });
 

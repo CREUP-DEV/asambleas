@@ -40,10 +40,13 @@ const IGNORED_LIVE_ENTITIES: ReadonlySet<string> = new Set([
  * left to read follow them. Admitting a late amendment publishes it, and
  * declaring a returned draft inadmissible makes it count as presented: both
  * come with a `decision` event, which no longer refetches the agenda, so
- * they are listed here. Deciding one (approved, rejected, lapsed,
- * transacted, reopened), its presenter's answer, an acceptance or a wording
- * changes none of that, and every client refetching the whole agenda for
- * each of them is what slowed the session down.
+ * they are listed here. A withdrawn one put back in debate
+ * (`amendment_reopened`) is seen again, so it counts too (user's decision of
+ * 2026-11-20, reversing the morning's); reopenings are rare. Deciding one
+ * (approved, rejected, lapsed, transacted), its presenter's answer, an
+ * acceptance or a wording changes none of that, and every client
+ * refetching the whole agenda for each of them is what slowed the session
+ * down.
  */
 export const AMENDMENT_LISTING_TYPES: ReadonlySet<string> = new Set([
   "amendment_created",
@@ -56,20 +59,19 @@ export const AMENDMENT_LISTING_TYPES: ReadonlySet<string> = new Set([
   "amendment_withdrawn",
   "amendment_admitted",
   "amendment_inadmissible",
+  "amendment_reopened",
 ]);
 
 /**
  * The amendment events that may change a DocumentDto's `amendmentCount`
  * or `hasAmendments` (countVisibleAmendments, hasAnyAmendment): the listing
- * types, a withdrawn one put back in debate (`amendment_reopened`), and a
- * change of who counts as one of its insiders, who see it before it is
- * public: its authors (`amendment_authors_changed`) and the parties of a
- * transactional (`transactional_source_dropped` takes some away,
- * `transactional_revision_applied` adds them).
+ * types and a change of who counts as one of its insiders, who see it
+ * before it is public: its authors (`amendment_authors_changed`) and the
+ * parties of a transactional (`transactional_source_dropped` takes some
+ * away, `transactional_revision_applied` adds them).
  */
 export const DOCUMENT_AMENDMENT_COUNT_TYPES: ReadonlySet<string> = new Set([
   ...AMENDMENT_LISTING_TYPES,
-  "amendment_reopened",
   "amendment_authors_changed",
   "transactional_source_dropped",
   "transactional_revision_applied",

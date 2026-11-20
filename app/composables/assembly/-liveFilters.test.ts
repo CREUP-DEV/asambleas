@@ -225,6 +225,7 @@ describe("shouldRefetchAgenda", () => {
       "amendment_deleted",
       "amendment_admitted",
       "amendment_inadmissible",
+      "amendment_reopened",
     ]) {
       expect(shouldRefetchAgenda([event("amendment", type)]), type).toBe(true);
     }
@@ -232,7 +233,6 @@ describe("shouldRefetchAgenda", () => {
       "amendment_approved",
       "amendment_rejected",
       "amendment_lapsed",
-      "amendment_reopened",
       "amendment_transacted",
       "position_changed",
       "acceptance_recorded",
