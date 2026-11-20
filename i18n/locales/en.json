@@ -1697,6 +1697,7 @@
         "amendment_approved": "Approved",
         "amendment_rejected": "Rejected",
         "amendment_reopened": "Reopened",
+        "amendment_vote_without_effect": "Vote without effect",
         "position_changed": "Answer from the document's presenter",
         "acceptance_recorded": "Answer to a transactional",
         "relation_created": "Relation added",
@@ -1735,7 +1736,13 @@
       "validatedPublished": "Published at the same time: the whole assembly can see it",
       "wasPublished": "It was published: it is no longer visible to everyone.",
       "wasValidated": "It was validated: it no longer is.",
-      "positionReset": "The answer of whoever presents the document was cleared."
+      "positionReset": "The answer of whoever presents the document was cleared.",
+      "alternatives": {
+        "won": "Vote between alternatives: its option, {option}, won ({count} votes)",
+        "lost": "Vote between alternatives: it was in option {option} ({count} votes) and {winner} won",
+        "rejectedAll": "Vote between alternatives with no winning option: the Mesa rejected them all",
+        "noEffect": "Vote between alternatives with no winning option: the Mesa left them undecided"
+      }
     },
     "vote": {
       "counts": "Count",
@@ -1761,7 +1768,18 @@
         "absolute": "Absolute majority",
         "two_thirds": "Two-thirds majority"
       },
-      "unanimous": "@:projection.vote.unanimous"
+      "unanimous": "@:projection.vote.unanimous",
+      "alternatives": {
+        "title": "Vote between alternatives",
+        "option": "Option {letter}",
+        "optionCount": "{option}: {count}",
+        "abstentions": "No abstentions | 1 abstention | {count} abstentions",
+        "blank": "No blank ballots | 1 blank | {count} blank",
+        "won": "Option {letter} won",
+        "rejectedAll": "No option won: the Mesa rejected them all",
+        "noEffect": "No option won: the Mesa left them undecided",
+        "amendments": "Amendments"
+      }
     },
     "composer": {
       "titleNew": "Present an amendment",
@@ -2005,6 +2023,9 @@
       },
       "sheetTitle": "In the control sheet",
       "sheetEdited": "Last edited by {name}, {when}"
+    },
+    "reopenAlternatives": {
+      "required": "It was decided in a vote between alternatives: reopening it voids the vote and reopens all its amendments"
     }
   },
   "admin": {
@@ -2531,6 +2552,7 @@
       },
       "emptyDocument": "This document has no text.",
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
+      "alternativeOption": "Option {option}: {count}",
       "voteCountsSecret": "votes in favour: {inFavor}, against: {against}, blank: {blank}",
       "finalVote": {
         "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
@@ -4567,6 +4589,40 @@
         "spoken": "{result}. {method}. In favour: {inFavor}; against: {against}; abstentions: {abstentions}.",
         "spokenSecret": "{result}. {method}. In favour: {inFavor}; against: {against}; blank: {blank}."
       }
+    },
+    "alternatives": {
+      "open": "Vote between alternatives",
+      "title": "Vote between alternatives",
+      "description": "Split the amendments into two options. The one with most votes wins: its amendments are approved and the other's rejected.",
+      "optionsTitle": "Options",
+      "emptyOption": "No amendments yet",
+      "collision": "{option}: {a} collides with {b}",
+      "collisionsTitle": "Some amendments of the same option collide",
+      "project": "Project the options",
+      "onScreen": "Options on screen",
+      "countsTitle": "Votes",
+      "method": "Voting method",
+      "note": "Note (optional)",
+      "winsPreview": "Option {letter} wins",
+      "tiePreview": "Tie: no option wins",
+      "shortPreview": "No option reaches the required majority ({threshold} votes)",
+      "inconsistent": "More votes were cast than members are present",
+      "tieTitle": "Tie between the options",
+      "shortTitle": "No option reaches the majority",
+      "undecidedDescription": "Choose what to do: reject every amendment, repeat the vote, or leave them undecided.",
+      "repeat": "Repeat the vote",
+      "noEffect": "Leave them undecided",
+      "rejectAll": "Reject them all",
+      "record": "Record the vote",
+      "recorded": "Vote between alternatives recorded",
+      "assentBlocked": "Alternatives are on screen: they are decided by voting between them, not by assent",
+      "reopenTitle": "Reopen {code}?",
+      "reopenDescription": "It was decided in a vote between alternatives. Reopening it voids that vote and also reopens: {codes}.",
+      "reopenConfirm": "Void the vote and reopen them",
+      "errors": {
+        "record": "The vote could not be recorded",
+        "onScreen": "It is on screen as an alternative of a vote: it is decided by voting between the options"
+      }
     }
   },
   "projection": {
@@ -4621,6 +4677,8 @@
       "other": "Vote",
       "approved": "Approved",
       "rejected": "Rejected",
+      "rejectedAll": "All rejected",
+      "noEffect": "Left undecided",
       "inFavor": "In favour",
       "against": "Against",
       "abstentions": "Abstentions",
@@ -6657,6 +6715,7 @@
       "amendment_approved": "Amendment approved",
       "amendment_rejected": "Amendment rejected",
       "amendment_reopened": "Amendment reopened",
+      "amendment_vote_without_effect": "Vote between alternatives without effect",
       "amendment_transacted": "Amendment absorbed by a transactional",
       "amendment_lapsed": "Amendment lapsed",
       "transactional_source_dropped": "A non-admitted amendment leaves a transactional",

@@ -145,6 +145,12 @@ export const liveState = pgTable("live_state", {
    * `voteId`.
    */
   amendmentBloc: jsonb("amendment_bloc").$type<string[]>(),
+  /**
+   * The bloc on screen as alternatives to vote between (user's decision of
+   * 2026-11-20): the amendments of each option, in order (A, B…); null for
+   * a bloc proposed for approval. Set and cleared with `amendmentBloc`.
+   */
+  amendmentBlocOptions: jsonb("amendment_bloc_options").$type<string[][]>(),
   voteId: text("vote_id"),
   message: text("message"),
   /** The Mesa shows who has the floor (and who is next) to attendees. */

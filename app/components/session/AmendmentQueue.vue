@@ -584,6 +584,20 @@ useEventListener(scroller, "pointerdown", letGo);
           :disabled="blocSelected.length === 0 || !session.inSession.value"
           @click="session.openAssent(blocSelected)"
         />
+        <!-- Two or more amendments put to a vote between alternatives
+             (user's decision of 2026-11-20). -->
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-scale"
+          :label="t('session.alternatives.open')"
+          :disabled="
+            (blocSelected.length < 2 && !session.roomAlternatives.value) ||
+            !session.inSession.value
+          "
+          @click="session.openAlternatives(blocSelected)"
+        />
         <UButton
           size="sm"
           color="neutral"

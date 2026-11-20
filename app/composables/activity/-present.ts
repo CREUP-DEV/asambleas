@@ -171,6 +171,7 @@ export const ACTIVITY_ACTION_ICONS = {
   amendment_transacted: "i-lucide-git-merge",
   amendment_lapsed: "i-lucide-hourglass",
   transactional_source_dropped: "i-lucide-unlink",
+  amendment_vote_without_effect: "i-lucide-scale",
   transactional_revision_proposed: "i-lucide-git-pull-request-arrow",
   transactional_revision_answered: "i-lucide-message-square-reply",
   transactional_revision_ready: "i-lucide-inbox",

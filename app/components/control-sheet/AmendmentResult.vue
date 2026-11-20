@@ -139,9 +139,26 @@ async function confirm(): Promise<void> {
   const action: OutcomeAction =
     what === "assent"
       ? { action: "approve", method: "assent" }
-      : { action: what };
+      : what === "reopen" && alternativesSiblings.value.length > 0
+        ? { action: "reopen", wholeVote: true }
+        : { action: what };
   if (await run(action)) confirming.value = null;
 }
+
+/**
+ * Decided in a vote between alternatives: reopening it voids that vote and
+ * reopens these too (user's decision of 2026-11-20), which the dialog says.
+ */
+const alternativesSiblings = computed(() => {
+  const vote = props.amendment.outcomeVote;
+  if (!vote?.options) return [];
+  const codeOf = (id: string) =>
+    props.amendments.find((item) => item.id === id)?.code ?? "?";
+  return vote.options
+    .flatMap((option) => option.amendmentIds)
+    .filter((id) => id !== props.amendment.id)
+    .map(codeOf);
+});
 
 const voteOpen = ref(false);
 const majority = computed(() =>
@@ -230,7 +247,13 @@ async function submitVote(vote: VoteInput): Promise<void> {
           ? t(`controlSheet.results.confirm.${confirming}`, { code })
           : ''
       "
-      :description="t('controlSheet.results.notProjected')"
+      :description="
+        confirming === 'reopen' && alternativesSiblings.length > 0
+          ? t('session.alternatives.reopenDescription', {
+              codes: alternativesSiblings.join(', '),
+            })
+          : t('controlSheet.results.notProjected')
+      "
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">

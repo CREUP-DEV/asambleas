@@ -28,6 +28,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const alternativesText = useAlternativesVoteText();
 
 /** Undecided rows say nothing: the highlight already marks the one debated. */
 const QUIET: ReadonlySet<LiveAmendmentState> = new Set(["debating", "pending"]);
@@ -82,6 +83,21 @@ function outcomeOf(row: LiveAmendmentRow): Outcome | null {
       : { icon, text: label, counts: null, spoken: label };
   }
   const vote = row.amendment.outcomeVote;
+  // A vote between alternatives: its option and that option's votes.
+  const optionIndex =
+    vote?.options?.findIndex((option) =>
+      option.amendmentIds.includes(row.amendment.id),
+    ) ?? -1;
+  if (vote && optionIndex >= 0) {
+    const option = alternativesText.optionName(optionIndex);
+    const count = vote.options![optionIndex]!.count;
+    return {
+      icon,
+      text: label,
+      counts: `${option} · ${count}`,
+      spoken: `${label}. ${option}: ${count}`,
+    };
+  }
   if (vote && (row.state === "approved" || row.state === "rejected")) {
     return {
       icon,

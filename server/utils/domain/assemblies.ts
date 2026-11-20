@@ -81,6 +81,7 @@ import {
   changedLiveFields,
   nextLivePointer,
   normalizeBloc,
+  normalizeBlocOptions,
   type LivePointerFields,
 } from "~~/shared/utils/liveBloc";
 import { loadCalendarRules } from "./calendarRules";
@@ -889,6 +890,7 @@ const EMPTY_LIVE_STATE: LiveStateDto = {
   documentId: null,
   amendmentId: null,
   amendmentBloc: [],
+  amendmentBlocOptions: null,
   vote: null,
   message: null,
   speakersVisible: false,
@@ -918,6 +920,10 @@ export async function loadLiveStateDto(
     documentId: row.state.documentId,
     amendmentId: row.state.amendmentId,
     amendmentBloc: row.state.amendmentBloc ?? [],
+    amendmentBlocOptions: normalizeBlocOptions(
+      row.state.amendmentBlocOptions,
+      normalizeBloc(row.state.amendmentBloc),
+    ),
     vote: row.vote ? toVoteDto(row.vote) : null,
     message: row.state.message,
     speakersVisible: row.state.speakersVisible,
@@ -1026,6 +1032,10 @@ export async function updateLiveState(
       documentId: current?.documentId ?? null,
       amendmentId: current?.amendmentId ?? null,
       amendmentBloc: normalizeBloc(current?.amendmentBloc),
+      amendmentBlocOptions: normalizeBlocOptions(
+        current?.amendmentBlocOptions,
+        normalizeBloc(current?.amendmentBloc),
+      ),
       voteId: current?.voteId ?? null,
       message: current?.message ?? null,
       speakersVisible: current?.speakersVisible ?? false,
@@ -1123,7 +1133,9 @@ export async function updateLiveState(
         422,
         pointer.error === "bloc_with_pointer"
           ? "Un bloque no se proyecta junto a una enmienda o una votación"
-          : "La enmienda no pertenece al documento indicado",
+          : pointer.error === "bloc_options"
+            ? "Las opciones tienen que repartir exactamente las enmiendas del bloque"
+            : "La enmienda no pertenece al documento indicado",
       );
     }
     const next: LiveStateFields = {
@@ -1211,6 +1223,9 @@ export async function updateLiveState(
         documentId: next.documentId,
         amendmentId: next.amendmentId,
         amendmentBloc: next.amendmentBloc,
+        ...(next.amendmentBlocOptions
+          ? { amendmentBlocOptions: next.amendmentBlocOptions }
+          : {}),
         voteId: next.voteId,
         speakersVisible: next.speakersVisible,
         recess: recessStartedAt !== null,

@@ -1046,6 +1046,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   amendment_transacted: ["code"],
   amendment_lapsed: ["reason", "by", "code", "sourceCodes"],
   transactional_source_dropped: ["sourceCode", "reason"],
+  amendment_vote_without_effect: ["option", "winningOption", "tieResolution"],
   transactional_revision_proposed: ["addedCodes"],
   transactional_revision_answered: ["decision"],
   transactional_revision_ready: [],

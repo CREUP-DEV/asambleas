@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { voteTextKey } from "~~/shared/utils/votes";
+import { alternativeLetter } from "~~/shared/utils/alternativesVote";
 import type { TimelineItem } from "@nuxt/ui";
 import {
   PROPONENT_POSITIONS,
@@ -170,6 +171,7 @@ const ICONS: Record<string, string> = {
   amendment_transacted: "i-lucide-git-merge",
   amendment_approved: "i-lucide-circle-check",
   amendment_rejected: "i-lucide-circle-x",
+  amendment_vote_without_effect: "i-lucide-scale",
   amendment_reopened: "i-lucide-rotate-ccw",
   position_changed: "i-lucide-message-square",
   acceptance_recorded: "i-lucide-handshake",
@@ -411,6 +413,34 @@ function admissionDetail(
   return parts.filter(Boolean).join(" · ") || null;
 }
 
+/**
+ * A vote between alternatives (user's decisions of 2026-11-20): the option
+ * it was in and whether it won, or what the Mesa did when none did.
+ */
+function alternativesDetail(payload: Record<string, unknown>): string {
+  if (payload.tieResolution === "reject_all") {
+    return t("amendment.history.alternatives.rejectedAll");
+  }
+  if (payload.tieResolution === "no_effect") {
+    return t("amendment.history.alternatives.noEffect");
+  }
+  const option = typeof payload.option === "number" ? payload.option : 0;
+  const winner =
+    typeof payload.winningOption === "number" ? payload.winningOption : null;
+  const count =
+    typeof payload.optionCount === "number" ? payload.optionCount : 0;
+  return winner === option
+    ? t("amendment.history.alternatives.won", {
+        option: alternativeLetter(option),
+        count,
+      })
+    : t("amendment.history.alternatives.lost", {
+        option: alternativeLetter(option),
+        count,
+        winner: alternativeLetter(winner ?? 0),
+      });
+}
+
 function detailOf(event: EventDto): string | null {
   const payload = event.payload ?? {};
   switch (event.type) {
@@ -532,7 +562,10 @@ function detailOf(event: EventDto): string | null {
       ].filter((line): line is string => line !== null);
       return lines.length > 0 ? lines.join(" ") : null;
     }
+    case "amendment_vote_without_effect":
+      return alternativesDetail(payload);
     case "amendment_approved": {
+      if (payload.alternatives === true) return alternativesDetail(payload);
       const method = text(payload.method);
       // Accepted by the main presenter under the "incorporate" rule, or by
       // itself when it is formal.
@@ -544,6 +577,7 @@ function detailOf(event: EventDto): string | null {
       return method ? t(`amendment.approvalMethods.${method}`) : null;
     }
     case "amendment_rejected":
+      if (payload.alternatives === true) return alternativesDetail(payload);
       // A formal one its main presenter rejected: not debated by default.
       return payload.reason === "formal_rejected"
         ? t("amendment.history.rejectedFormalByPresenter")

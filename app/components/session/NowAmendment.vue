@@ -59,6 +59,7 @@ const props = defineProps<{ amendment: AmendmentDto }>();
 const session = useSessionConsoleContext();
 const answer = useSessionPosition(session);
 const { t } = useI18n();
+const alternativesText = useAlternativesVoteText();
 /** Shortcut letters show only while this browser keeps them on. */
 const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 function kbdsOf(key: string): string[] | undefined {
@@ -186,7 +187,9 @@ const outcomeDetail = computed(() => {
     );
   }
   const vote = props.amendment.outcomeVote;
-  if (vote) {
+  if (vote && alternativesText.isAlternatives(vote)) {
+    parts.push(alternativesText.summary(vote));
+  } else if (vote) {
     parts.push(
       t(voteTextKey("session.card.voteCounts", vote.method), {
         inFavor: vote.inFavor,

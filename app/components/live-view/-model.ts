@@ -698,7 +698,11 @@ export type LiveVoteCountKey =
 export function liveVoteCounts(
   vote: VoteDto,
 ): { key: LiveVoteCountKey; value: number }[] {
-  return shownVoteCounts(vote);
+  const counts = shownVoteCounts(vote);
+  // A vote between alternatives counts each option instead.
+  return vote.options && vote.options.length > 0
+    ? counts.filter((row) => row.key !== "inFavor" && row.key !== "against")
+    : counts;
 }
 
 // A secret vote being counted --------------------------------------------------

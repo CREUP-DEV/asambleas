@@ -19,6 +19,11 @@ const props = withDefaults(
 );
 
 const { t } = useI18n();
+const alternativesText = useAlternativesVoteText();
+/** A vote between alternatives: each option's votes, the winner named. */
+const alternatives = computed(() =>
+  alternativesText.isAlternatives(props.vote),
+);
 
 const approved = computed(() => props.vote.result === "approved");
 const counts = computed(() => liveVoteCounts(props.vote));
@@ -32,7 +37,9 @@ const assentKey = computed(() => liveAssentKey(props.vote));
       approved ? 'border-success bg-success/10' : 'border-error bg-error/10'
     "
   >
-    <p class="text-muted text-sm">{{ subject }}</p>
+    <p class="text-muted text-sm">
+      {{ alternatives ? t("amendment.vote.alternatives.title") : subject }}
+    </p>
     <p
       v-if="question"
       class="text-highlighted mt-0.5 font-medium whitespace-pre-line"
@@ -47,11 +54,36 @@ const assentKey = computed(() => liveAssentKey(props.vote));
           : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
       "
     >
-      {{
-        approved ? t("projection.vote.approved") : t("projection.vote.rejected")
-      }}
+      <template v-if="alternatives">
+        {{ alternativesText.outcome(vote) }}
+      </template>
+      <template v-else>
+        {{
+          approved
+            ? t("projection.vote.approved")
+            : t("projection.vote.rejected")
+        }}
+      </template>
     </p>
-    <p v-if="assentKey" class="text-default mt-1">
+    <dl v-if="alternatives" class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+      <div v-for="(option, index) in vote.options ?? []" :key="index">
+        <dt class="text-muted text-xs">
+          {{ alternativesText.optionName(index) }}
+        </dt>
+        <dd class="text-highlighted text-lg font-semibold tabular-nums">
+          {{ option.count }}
+        </dd>
+      </div>
+      <div v-for="count in counts" :key="count.key">
+        <dt class="text-muted text-xs">
+          {{ t(`projection.vote.${count.key}`) }}
+        </dt>
+        <dd class="text-highlighted text-lg font-semibold tabular-nums">
+          {{ count.value }}
+        </dd>
+      </div>
+    </dl>
+    <p v-else-if="assentKey" class="text-default mt-1">
       {{ t(assentKey) }}
     </p>
     <dl v-else class="mt-2 flex flex-wrap gap-x-6 gap-y-2">

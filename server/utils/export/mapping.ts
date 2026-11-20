@@ -139,10 +139,18 @@ export interface AnnexAmendment {
   sourceIds: string[];
   /** Transactionals built on this amendment. */
   derivedIds: string[];
-  vote: Pick<
-    ExportVote,
-    "inFavor" | "against" | "abstentions" | "blank" | "method"
-  > | null;
+  vote:
+    | (Pick<
+        ExportVote,
+        "inFavor" | "against" | "abstentions" | "blank" | "method"
+      > & {
+        /**
+         * Decided in a vote between alternatives: its option («A») and that
+         * option's votes, instead of in favour and against.
+         */
+        alternative?: { option: string; count: number };
+      })
+    | null;
 }
 
 /** Short code shown in superscript in the text: "CEUM 4", "T1" or "12". */

@@ -57,6 +57,10 @@ const ALLOWLIST: AllowlistEntry[] = [
       "The Mesa is the body's own name, kept untranslated in English too.",
   },
   {
+    pattern: /^amendment\.vote\.alternatives\.optionCount$/,
+    reason: "Placeholders and punctuation only: «{option}: {count}».",
+  },
+  {
     pattern: /^admin\.roles\.title$/,
     reason: "Role management label is identical in Spanish and English.",
   },

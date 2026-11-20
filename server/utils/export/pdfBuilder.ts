@@ -123,10 +123,15 @@ export interface ExportAnnexRow {
   admission: AdmissionStatus;
   late: boolean;
   approvalMethod: ApprovalMethod | null;
-  vote: Pick<
-    ExportVote,
-    "inFavor" | "against" | "abstentions" | "blank" | "method"
-  > | null;
+  vote:
+    | (Pick<
+        ExportVote,
+        "inFavor" | "against" | "abstentions" | "blank" | "method"
+      > & {
+        /** Its option in a vote between alternatives, and its votes. */
+        alternative?: { option: string; count: number };
+      })
+    | null;
   /** Codes of the parents of a transactional. */
   sourceCodes: string[];
   /** Codes of the transactionals that absorbed this amendment. */
@@ -708,9 +713,14 @@ function annexRow(row: ExportAnnexRow, t: Translate): TableCell[] {
     { stack: kind, style: "tableCell" },
     { stack: outcome, style: "tableCell" },
     {
-      text: row.vote
-        ? `${row.vote.inFavor} / ${row.vote.against} / ${thirdCount(row.vote)}`
-        : "-",
+      text: row.vote?.alternative
+        ? t("alternativeOption", {
+            option: row.vote.alternative.option,
+            count: row.vote.alternative.count,
+          })
+        : row.vote
+          ? `${row.vote.inFavor} / ${row.vote.against} / ${thirdCount(row.vote)}`
+          : "-",
       alignment: "center",
       style: "tableCell",
     },

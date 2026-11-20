@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { VoteDto } from "~~/shared/types/api";
 import { shownVoteCounts, voteTextKey } from "~~/shared/utils/votes";
+import { useAmendmentLinks } from "~/composables/amendment/amendmentLinks";
+import { useAlternativesVoteText } from "~/composables/vote/useAlternativesVoteText";
 
 /**
  * Result and counts of a recorded vote (on an amendment or the final text).
@@ -17,6 +19,15 @@ const props = withDefaults(
 );
 
 const { t, locale } = useI18n();
+const alternativesText = useAlternativesVoteText();
+/** A vote between alternatives: options instead of in favour and against. */
+const alternatives = computed(() =>
+  alternativesText.isAlternatives(props.vote),
+);
+const links = useAmendmentLinks();
+function codeOf(id: string): string {
+  return links?.get(id)?.code ?? "?";
+}
 
 const counts = computed(() => {
   const vote = props.vote;
@@ -37,34 +48,79 @@ const methodLabel = computed(() =>
 );
 
 const summary = computed(() =>
-  isAssent.value
-    ? methodLabel.value
-    : t(voteTextKey("amendment.vote.inline", props.vote.method), {
-        inFavor: props.vote.inFavor,
-        against: props.vote.against,
-        abstentions: props.vote.abstentions,
-        blank: props.vote.blank,
-      }),
+  alternatives.value
+    ? alternativesText.summary(props.vote)
+    : isAssent.value
+      ? methodLabel.value
+      : t(voteTextKey("amendment.vote.inline", props.vote.method), {
+          inFavor: props.vote.inFavor,
+          against: props.vote.against,
+          abstentions: props.vote.abstentions,
+          blank: props.vote.blank,
+        }),
 );
 </script>
 
 <template>
   <div v-if="compact" class="flex flex-wrap items-center gap-2 text-sm">
-    <CommonStatusBadge kind="vote" :value="vote.result" size="xs" />
+    <CommonStatusBadge
+      v-if="!alternatives"
+      kind="vote"
+      :value="vote.result"
+      size="xs"
+    />
     <span class="text-muted tabular-nums">{{ summary }}</span>
   </div>
 
   <div v-else class="space-y-3">
     <div class="flex flex-wrap items-center gap-2">
-      <CommonStatusBadge kind="vote" :value="vote.result" />
+      <CommonStatusBadge
+        v-if="!alternatives"
+        kind="vote"
+        :value="vote.result"
+      />
       <span class="text-muted text-sm">
+        <template v-if="alternatives">
+          {{ t("amendment.vote.alternatives.title") }} ·
+        </template>
         {{ methodLabel }}
         ·
         {{ t(`amendment.vote.majorities.${vote.majority}`) }}
       </span>
     </div>
+    <!-- A vote between alternatives: each option, its amendments and votes,
+         the winner marked; then what came of it. -->
+    <template v-if="alternatives">
+      <ul class="space-y-2">
+        <li
+          v-for="(option, index) in vote.options ?? []"
+          :key="index"
+          class="rounded-md border px-3 py-2"
+          :class="
+            vote.winningOption === index
+              ? 'border-success bg-success/5'
+              : 'border-default'
+          "
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-highlighted font-semibold">
+              {{ alternativesText.optionName(index) }}
+            </span>
+            <span class="text-highlighted text-lg font-semibold tabular-nums">
+              {{ option.count }}
+            </span>
+          </div>
+          <p class="text-muted text-sm">
+            <AmendmentCodeLinks :ids="option.amendmentIds" :label-of="codeOf" />
+          </p>
+        </li>
+      </ul>
+      <p class="text-default text-sm">
+        {{ alternativesText.outcome(vote) }}
+      </p>
+    </template>
     <dl
-      v-if="!isAssent"
+      v-if="!isAssent && !alternatives"
       class="grid grid-cols-2 gap-2 sm:grid-cols-3"
       :aria-label="t('amendment.vote.counts')"
     >

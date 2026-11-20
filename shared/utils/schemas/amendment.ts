@@ -218,6 +218,7 @@ export const outcomeBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("reopen"),
     note: noteSchema,
+    wholeVote: z.boolean().optional(),
     updatedAt: updatedAtSchema,
   }),
 ]);

@@ -219,6 +219,14 @@ export const liveStateBodySchema = z.object({
     })
     .nullable()
     .optional(),
+  // The bloc as alternatives: each option's amendments (nextLivePointer
+  // checks they split the bloc exactly).
+  amendmentBlocOptions: z
+    .array(z.array(assemblyEntityId).min(1).max(LIVE_BLOC_MAX_AMENDMENTS))
+    .min(2)
+    .max(10)
+    .nullable()
+    .optional(),
   voteId: assemblyEntityId.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
   speakersVisible: z.boolean().optional(),

@@ -1,7 +1,13 @@
 import { z } from "zod/v4";
 import { MAJORITIES, VOTE_METHODS } from "../../constants/domain";
 import { foreignBallotKeys } from "../votes";
+import {
+  ALTERNATIVES_OPTION_COUNT,
+  ALTERNATIVES_TIE_RESOLUTIONS,
+  alternativesSetsProblem,
+} from "../alternativesVote";
 import type {
+  AlternativesVoteBody,
   ItemVoteBody,
   VoteInput,
   VoteUnanimityBody,
@@ -64,6 +70,57 @@ export const voteInputSchema = z
 
 const updatedAt = z.iso.datetime({ offset: true });
 
+/**
+ * Body of POST .../amendments/alternatives (AlternativesVoteBody): as many
+ * options as ALTERNATIVES_OPTION_COUNT, none empty, no amendment in two;
+ * no assent; blank and invalid ballots only in a secret vote.
+ */
+export const alternativesVoteBodySchema = z
+  .object({
+    method: z.enum(VOTE_METHODS).exclude(["assent"]),
+    options: z
+      .array(
+        z.object({
+          items: z
+            .array(z.object({ id: z.string().min(1).max(64), updatedAt }))
+            .min(1)
+            .max(200),
+          count,
+        }),
+      )
+      .length(ALTERNATIVES_OPTION_COUNT),
+    abstentions: count.optional(),
+    blank: count.optional(),
+    invalid: count.optional(),
+    notCast: count.optional(),
+    present: count.nullable().optional(),
+    note: noteSchema,
+    tieResolution: z.enum(ALTERNATIVES_TIE_RESOLUTIONS).optional(),
+    project: z.boolean().optional(),
+  })
+  .superRefine((body, ctx) => {
+    const problem = alternativesSetsProblem(
+      body.options.map((option) => option.items.map((item) => item.id)),
+    );
+    if (problem) {
+      ctx.addIssue({ code: "custom", path: ["options"], message: problem });
+    }
+    const secret = body.method === "secret";
+    for (const key of secret
+      ? (["abstentions"] as const)
+      : (["blank", "invalid"] as const)) {
+      if ((body[key] ?? 0) > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: secret
+            ? "A secret vote counts blank ballots, not abstentions"
+            : "Only a secret vote counts blank and invalid ballots",
+        });
+      }
+    }
+  });
+
 /** Body of POST .../agenda/[item]/votes (ItemVoteBody). */
 export const itemVoteBodySchema = z.object({
   question: z
@@ -88,6 +145,7 @@ export const voteUnanimityBodySchema = z.object({
 type Assignable<T, U extends T> = U;
 export type _VoteSchemaChecks = [
   Assignable<VoteInput, z.output<typeof voteInputSchema>>,
+  Assignable<AlternativesVoteBody, z.output<typeof alternativesVoteBodySchema>>,
   Assignable<ItemVoteBody, z.output<typeof itemVoteBodySchema>>,
   Assignable<VoteVoidBody, z.output<typeof voteVoidBodySchema>>,
   Assignable<VoteUnanimityBody, z.output<typeof voteUnanimityBodySchema>>,

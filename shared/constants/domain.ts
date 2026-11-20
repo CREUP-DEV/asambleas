@@ -448,12 +448,18 @@ export const VOTE_SUBJECTS = [
 ] as const;
 export type VoteSubject = (typeof VOTE_SUBJECTS)[number];
 
+/** New values go at the end, as VOTE_SUBJECTS says. */
 export const DECISION_KINDS = [
   "admit_late",
   "inadmission",
   "unify",
   "agenda_change",
   "other",
+  /**
+   * A vote between alternatives: sets of amendments, the winner's approved
+   * and the others' rejected (shared/utils/alternativesVote.ts).
+   */
+  "alternatives",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 

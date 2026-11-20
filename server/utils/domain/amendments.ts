@@ -63,6 +63,8 @@ import type {
   AcceptanceBody,
   AcceptanceDto,
   AdmissionBody,
+  AlternativesVoteBody,
+  AlternativesVoteDto,
   AmendmentAuthorsBody,
   AmendmentCapabilities,
   AmendmentComposerAuthorsDto,
@@ -119,6 +121,7 @@ import {
   type VoteCounts,
   type VoteOutcome,
 } from "../../../shared/utils/votes";
+import { computeAlternativesOutcome } from "../../../shared/utils/alternativesVote";
 import { isUniqueConstraintViolation } from "../errors";
 import {
   buildOptimisticLockCondition,
@@ -5280,6 +5283,12 @@ export async function applyBulkAssent(
     fail(403, "No tienes permiso para realizar esta acción");
   }
   assertSessionOpen(ctx.assembly.status);
+  // Alternatives on screen are decided by a vote between them, never by
+  // assent: approving them all would approve both options.
+  await assertNotOnScreenAsAlternatives(
+    ctx.assembly.id,
+    body.items.map((item) => item.id),
+  );
   const results: AmendmentOutcomeDto[] = [];
   const failed: BulkAssentDto["failed"] = [];
   for (const item of body.items) {
@@ -5364,6 +5373,9 @@ export async function applyAmendmentOutcome(
         409,
         "La Secretaría tiene que publicar la enmienda antes de decidirla",
       );
+    }
+    if (body.action === "approve") {
+      await assertNotOnScreenAsAlternatives(ctx.assembly.id, [amendment.id]);
     }
     // The members present come from the Mesa's latest headcount unless typed.
     const based =
@@ -5620,6 +5632,41 @@ export async function applyAmendmentOutcome(
   if (!reopenable.includes(amendment.status)) {
     fail(409, "Esta enmienda no se puede reabrir");
   }
+  // Decided in a vote between alternatives, it is reopened with every
+  // amendment that vote decided: reopening one voids the vote (user's
+  // decision of 2026-11-20). The console asks first, and says which.
+  const alternatives = await alternativesVoteSiblings(
+    document.id,
+    amendment.outcomeVoteId,
+  );
+  if (alternatives && body.wholeVote !== true) {
+    fail(
+      409,
+      "Se decidió en una votación entre alternativas: reabrirla anula la votación y reabre todas sus enmiendas",
+      {
+        messageKey: "amendment.reopenAlternatives.required",
+        amendmentIds: alternatives.amendmentIds,
+      },
+    );
+  }
+  const reopenIds = alternatives?.amendmentIds ?? [amendment.id];
+  const siblings = alternatives
+    ? await findAmendments(
+        db,
+        and(
+          eq(amendments.documentId, document.id),
+          inArray(amendments.id, reopenIds),
+        ),
+      )
+    : [amendment];
+  const sourcesById = new Map(
+    siblings.map((row) => [
+      row.id,
+      row.kind === "transactional"
+        ? row.sources.map((source) => source.sourceId)
+        : [],
+    ]),
+  );
   await db.transaction(async (tx) => {
     // The projection may stop showing the voided vote, which is only known
     // under the amendment lock: assembly before document ("Row locks").
@@ -5631,49 +5678,62 @@ export async function applyAmendmentOutcome(
     // stays closed (transactionalReopenBlocker). With them, the
     // transactionals its settling closed and what those group: they come
     // back (restoreDependents).
-    const dependents = await findCompetitors(tx, document.id, null, [
-      amendment.id,
-    ]);
+    const dependents = await findCompetitors(tx, document.id, null, reopenIds);
     const locked = await lockAmendments(
       tx,
       document.id,
       unique([
-        amendment.id,
-        ...sourceIds,
-        ...restoreLockIds(dependents.sourceMap, [amendment.id]),
+        ...reopenIds,
+        ...[...sourcesById.values()].flat(),
+        ...restoreLockIds(dependents.sourceMap, reopenIds),
       ]),
     );
-    const current = locked.find((row) => row.id === amendment.id);
-    if (!current) fail(409, "La enmienda ha cambiado. Recarga la página");
+    const currents = reopenIds.map((id) => {
+      const row = locked.find((item) => item.id === id);
+      // Every amendment of the vote must still be decided by it.
+      if (
+        !row ||
+        !reopenable.includes(row.status) ||
+        (alternatives && row.outcomeVoteId !== alternatives.voteId)
+      ) {
+        fail(409, "La enmienda ha cambiado. Recarga la página");
+      }
+      return row;
+    });
+    const current = currents.find((row) => row.id === amendment.id)!;
+    const transactionalIds = siblings
+      .filter((row) => row.kind === "transactional")
+      .map((row) => row.id);
     const partyIds = unique([
-      ...(transactional ? [amendment.id] : []),
-      ...transactionalsOverIds(dependents.sourceMap, [amendment.id]),
+      ...transactionalIds,
+      ...transactionalsOverIds(dependents.sourceMap, reopenIds),
     ]);
     const parties =
       partyIds.length > 0 ? await lockParties(tx, partyIds, "share") : [];
-    if (transactional) {
+    for (const id of transactionalIds) {
+      const row = currents.find((item) => item.id === id)!;
+      const sources = sourcesById.get(id) ?? [];
       const blocker = transactionalReopenBlocker({
         kind: "transactional",
-        validatedAt: current.validatedAt,
+        validatedAt: row.validatedAt,
         authorsApproval: authorsApproval({
           kind: "transactional",
-          acceptances: parties.filter(
-            (party) => party.amendmentId === amendment.id,
-          ),
+          acceptances: parties.filter((party) => party.amendmentId === id),
         }),
-        sources: locked.filter((row) => sourceIds.includes(row.id)),
+        sources: locked.filter((item) => sources.includes(item.id)),
       });
       if (blocker) fail(409, TRANSACTIONAL_REOPEN_MESSAGES[blocker]);
     }
+    const reopened = {
+      status: "submitted" as const,
+      approvalMethod: null,
+      outcomeVoteId: null,
+      outcomeNote: body.note ?? null,
+      decidedAt: null,
+    };
     const updated = await tx
       .update(amendments)
-      .set({
-        status: "submitted",
-        approvalMethod: null,
-        outcomeVoteId: null,
-        outcomeNote: body.note ?? null,
-        decidedAt: null,
-      })
+      .set(reopened)
       .where(
         and(
           eq(amendments.id, amendment.id),
@@ -5684,24 +5744,46 @@ export async function applyAmendmentOutcome(
       .returning({ id: amendments.id });
     if (updated.length === 0)
       fail(409, "La enmienda ha cambiado. Recarga la página");
-    await recordEvent(tx, {
-      ...base,
-      entityId: amendment.id,
-      type: "amendment_reopened",
-      payload: {
-        previousStatus: current.status,
-        ...(current.outcomeVoteId
-          ? { voidedVoteId: current.outcomeVoteId }
-          : {}),
-      },
-    });
-    await restoreDependents(tx, ctx, dependents.sourceMap, locked, parties, [
-      current,
-    ]);
+    const others = reopenIds.filter((id) => id !== amendment.id);
+    if (others.length > 0 && alternatives) {
+      const rest = await tx
+        .update(amendments)
+        .set(reopened)
+        .where(
+          and(
+            inArray(amendments.id, others),
+            inArray(amendments.status, reopenable),
+            eq(amendments.outcomeVoteId, alternatives.voteId),
+          ),
+        )
+        .returning({ id: amendments.id });
+      if (rest.length !== others.length)
+        fail(409, "La enmienda ha cambiado. Recarga la página");
+    }
+    for (const row of currents) {
+      await recordEvent(tx, {
+        ...base,
+        entityId: row.id,
+        type: "amendment_reopened",
+        payload: {
+          previousStatus: row.status,
+          ...(row.outcomeVoteId ? { voidedVoteId: row.outcomeVoteId } : {}),
+          ...(alternatives ? { alternatives: true } : {}),
+        },
+      });
+    }
+    await restoreDependents(
+      tx,
+      ctx,
+      dependents.sourceMap,
+      locked,
+      parties,
+      currents,
+    );
     // Undecided again and still unanswered: a formal one is answered by
     // itself (the transactionals over it are in restoreLockIds).
     await autoAcceptFormal(tx, ctx, {
-      ids: [amendment.id],
+      ids: reopenIds,
       lockedIds: locked.map((row) => row.id),
       sourceMap: dependents.sourceMap,
       parties,
@@ -5715,7 +5797,7 @@ export async function applyAmendmentOutcome(
     // incorporated again, as when accepted (positionEffect). Same locks as
     // autoAcceptFormal above; a transactional is left as it is.
     await incorporateOnAdmission(tx, ctx, {
-      ids: [amendment.id],
+      ids: reopenIds,
       lockedIds: locked.map((row) => row.id),
       sourceMap: dependents.sourceMap,
       rule,
@@ -5732,6 +5814,438 @@ export async function applyAmendmentOutcome(
     amendment: await amendmentDto(ctx, amendment.id),
     vote: null,
     warnings: null,
+  };
+}
+
+// Votes between alternatives ------------------------------------------------
+
+/**
+ * The amendments a vote between alternatives decided, when `voteId` is one
+ * (it has options): every amendment of the document still pointing at it.
+ * Null for any other vote, or none.
+ */
+async function assertNotOnScreenAsAlternatives(
+  assemblyId: string,
+  ids: readonly string[],
+): Promise<void> {
+  const [live] = await db
+    .select({ options: liveState.amendmentBlocOptions })
+    .from(liveState)
+    .where(eq(liveState.assemblyId, assemblyId));
+  const onScreen = new Set((live?.options ?? []).flat());
+  if (ids.some((id) => onScreen.has(id))) {
+    fail(
+      409,
+      "Está en pantalla como alternativa de una votación: se decide votando entre las opciones",
+      { messageKey: "session.alternatives.errors.onScreen" },
+    );
+  }
+}
+
+async function alternativesVoteSiblings(
+  documentId: string,
+  voteId: string | null,
+): Promise<{ voteId: string; amendmentIds: string[] } | null> {
+  if (!voteId) return null;
+  const [vote] = await db
+    .select({ options: votes.options })
+    .from(votes)
+    .where(eq(votes.id, voteId));
+  if (!vote?.options) return null;
+  const rows = await db
+    .select({ id: amendments.id })
+    .from(amendments)
+    .where(
+      and(
+        eq(amendments.documentId, documentId),
+        eq(amendments.outcomeVoteId, voteId),
+      ),
+    )
+    .orderBy(asc(amendments.id));
+  return { voteId, amendmentIds: rows.map((row) => row.id) };
+}
+
+/**
+ * A vote between alternatives (POST .../amendments/alternatives; user's
+ * decisions of 2026-11-20): the room chooses between sets of amendments of
+ * the document or abstains, in one vote recorded once (subject "decision",
+ * decision kind "alternatives"). The option with most votes wins and, where
+ * the document's amendments need an absolute majority (RRI art. 65.5),
+ * reaches it: its amendments are approved and the others' rejected, all
+ * pointing at that vote. When none wins the Mesa chose already
+ * (`tieResolution`, else 409 `{ tie: true }`): every amendment rejected, or
+ * none changed. Everything happens in one transaction: one amendment that
+ * cannot be decided (decided meanwhile, changed since it was seen, not
+ * admitted or public, a transactional still waiting for its parties)
+ * refuses the whole vote. Each decided amendment closes the transactionals
+ * over it, and an approved transactional replaces its sources, as a single
+ * vote does.
+ */
+export async function decideAlternatives(
+  ctx: DocumentAmendmentContext,
+  body: AlternativesVoteBody,
+  options: { controlsProjection?: boolean } = {},
+): Promise<AlternativesVoteDto> {
+  const { actor, document, now } = ctx;
+  if (!canRecordResults(actor)) {
+    fail(403, "No tienes permiso para realizar esta acción");
+  }
+  assertNotFinal(ctx);
+  assertSessionOpen(ctx.assembly.status);
+  const optionIds = body.options.map((option) =>
+    option.items.map((item) => item.id),
+  );
+  const allIds = optionIds.flat();
+  const allSet = new Set(allIds);
+  const seenAt = new Map(
+    body.options.flatMap((option) =>
+      option.items.map((item) => [item.id, item.updatedAt] as const),
+    ),
+  );
+  const loaded = await findAmendments(
+    db,
+    and(eq(amendments.documentId, document.id), inArray(amendments.id, allIds)),
+  );
+  if (
+    loaded.length !== allIds.length ||
+    !loaded.every((row) => isVisible(ctx, row))
+  ) {
+    fail(404, "Enmienda no encontrada");
+  }
+  const byId = new Map(loaded.map((row) => [row.id, row]));
+  const sourcesOf = (id: string) => {
+    const row = byId.get(id)!;
+    return row.kind === "transactional"
+      ? row.sources.map((source) => source.sourceId)
+      : [];
+  };
+
+  // The members present come from the Mesa's latest headcount unless typed.
+  const based = await withHeadcount(
+    ctx.assembly.id,
+    {
+      method: body.method,
+      abstentions: body.abstentions ?? 0,
+      blank: body.blank ?? 0,
+      invalid: body.invalid ?? 0,
+      notCast: body.notCast ?? 0,
+      present: body.present ?? null,
+      note: body.note ?? null,
+    },
+    ctx.settings,
+  );
+  const present = based.vote.present ?? null;
+  // Absolute in a reform of the Estatutos or a regulation (RRI art. 65.5).
+  const majority = amendmentVoteMajority(document.kind);
+  const outcome = computeAlternativesOutcome(
+    {
+      options: body.options.map((option) => option.count),
+      abstentions: body.abstentions ?? 0,
+      blank: body.blank ?? 0,
+      invalid: body.invalid ?? 0,
+      present,
+    },
+    majority,
+    ctx.settings,
+  );
+  if (outcome.inconsistent) {
+    fail(422, "Los votos emitidos superan a los miembros presentes", {
+      reasons: [{ index: -1, reason: "inconsistent_counts" }],
+    });
+  }
+  const winner = outcome.winner;
+  if (winner === null && !body.tieResolution) {
+    fail(
+      409,
+      outcome.undecided === "short"
+        ? "Ninguna opción alcanza la mayoría: la Mesa decide qué hacer"
+        : "Empate: la Mesa decide qué hacer",
+      { tie: true, undecided: outcome.undecided },
+    );
+  }
+  const tieResolution = winner === null ? (body.tieResolution ?? null) : null;
+  const statusOf = (
+    index: number,
+  ): Extract<AmendmentStatus, "approved" | "rejected"> | null =>
+    winner !== null
+      ? index === winner
+        ? "approved"
+        : "rejected"
+      : tieResolution === "reject_all"
+        ? "rejected"
+        : null;
+  const projectVote =
+    body.project !== false &&
+    canModerate(actor) &&
+    options.controlsProjection === true;
+  const base = {
+    assemblyId: ctx.assembly.id,
+    documentId: document.id,
+    entityType: "amendment" as const,
+    actor,
+  };
+
+  const result = await db.transaction(async (tx) => {
+    // The vote goes on screen: assembly before document ("Row locks").
+    await shareLockAssembly(tx, ctx.assembly.id);
+    const { agendaItemId } = await lockDocument(tx, document.id, "share");
+    // The amendments, what their transactionals replace and the other
+    // transactionals over any of them (which deciding them closes), in one
+    // ordered pass.
+    const allSources = unique(allIds.flatMap(sourcesOf));
+    const found = await findCompetitors(
+      tx,
+      document.id,
+      null,
+      unique([...allIds, ...allSources]),
+    );
+    const competitors: Competitors = {
+      sourceMap: found.sourceMap,
+      ids: found.ids.filter((id) => !allSet.has(id)),
+    };
+    const locked = await lockAmendments(
+      tx,
+      document.id,
+      unique([...allIds, ...allSources, ...competitors.ids]),
+    );
+    const lockedById = new Map(locked.map((row) => [row.id, row]));
+    for (const id of allIds) {
+      const row = lockedById.get(id);
+      if (!row || row.status !== "submitted") {
+        fail(409, "Alguna enmienda ya está decidida. Recarga la página");
+      }
+      if (row.admission !== "admitted") {
+        fail(409, "Alguna enmienda no está admitida");
+      }
+      if (!row.publishedAt) {
+        fail(
+          409,
+          "La Secretaría tiene que publicar cada enmienda antes de decidirla",
+        );
+      }
+    }
+    const transactionalIds = allIds.filter(
+      (id) => byId.get(id)!.kind === "transactional",
+    );
+    if (transactionalIds.length > 0) {
+      const parties = await lockParties(tx, transactionalIds, "share");
+      for (const id of transactionalIds) {
+        if (
+          authorsApproval({
+            kind: "transactional",
+            acceptances: parties.filter((party) => party.amendmentId === id),
+          }) !== "accepted"
+        ) {
+          fail(409, AWAITS_AUTHORS_MESSAGE);
+        }
+        const sources = sourcesOf(id);
+        if (
+          sourcesAwaitAdmission(
+            locked.filter((row) => sources.includes(row.id)),
+          )
+        ) {
+          fail(409, AWAITS_ADMISSION_MESSAGE);
+        }
+      }
+    }
+
+    const decisionId = cuid();
+    const [voteRow] = await tx
+      .insert(votes)
+      .values({
+        assemblyId: ctx.assembly.id,
+        subjectType: "decision",
+        subjectId: decisionId,
+        method: body.method,
+        inFavor: 0,
+        against: 0,
+        abstentions: body.abstentions ?? 0,
+        blank: body.blank ?? 0,
+        invalid: body.invalid ?? 0,
+        notCast: body.notCast ?? 0,
+        present,
+        headcountId: based.headcountId,
+        majority,
+        result: winner !== null ? "approved" : "rejected",
+        note: body.note ?? null,
+        options: body.options.map((option, index) => ({
+          amendmentIds: optionIds[index]!,
+          count: option.count,
+        })),
+        winningOption: winner,
+        tieResolution,
+        recordedByUserId: actor.user.id,
+      })
+      .returning();
+    const [decision] = await tx
+      .insert(decisions)
+      .values({
+        id: decisionId,
+        assemblyId: ctx.assembly.id,
+        kind: "alternatives",
+        method: "vote",
+        voteId: voteRow!.id,
+        subjectIds: allIds,
+        note: body.note ?? null,
+        decidedByUserId: actor.user.id,
+      })
+      .returning();
+    await recordEvent(tx, {
+      ...base,
+      entityType: "vote",
+      entityId: voteRow!.id,
+      type: "vote_recorded",
+      payload: {
+        subjectType: "decision",
+        subjectId: decisionId,
+        result: voteRow!.result,
+      },
+    });
+    await recordEvent(tx, {
+      ...base,
+      entityType: "decision",
+      entityId: decisionId,
+      type: "decision_recorded",
+      payload: {
+        kind: "alternatives",
+        method: "vote",
+        subjectIds: allIds,
+        winningOption: winner,
+        ...(tieResolution ? { tieResolution } : {}),
+      },
+    });
+
+    const decided: {
+      id: string;
+      code: string | null;
+      status: AmendmentStatus;
+    }[] = [];
+    for (const [index, ids] of optionIds.entries()) {
+      const status = statusOf(index);
+      for (const id of ids) {
+        const amendment = byId.get(id)!;
+        const payload = {
+          method: "vote",
+          voteId: voteRow!.id,
+          decisionId,
+          alternatives: true,
+          option: index,
+          optionCount: body.options[index]!.count,
+          winningOption: winner,
+          ...(tieResolution ? { tieResolution } : {}),
+        };
+        if (!status) {
+          // Nobody won and the Mesa left them undecided: the amendment's
+          // history still says it was voted.
+          await recordEvent(tx, {
+            ...base,
+            entityId: id,
+            type: "amendment_vote_without_effect",
+            payload,
+          });
+          continue;
+        }
+        const updated = await tx
+          .update(amendments)
+          .set({
+            status,
+            approvalMethod: status === "approved" ? "vote" : null,
+            outcomeVoteId: voteRow!.id,
+            outcomeNote: body.note ?? null,
+            decidedAt: now,
+          })
+          .where(
+            and(
+              eq(amendments.id, id),
+              eq(amendments.status, "submitted"),
+              eq(amendments.admission, "admitted"),
+              buildOptimisticLockCondition(
+                amendments.updatedAt,
+                seenAt.get(id)!,
+              ),
+            ),
+          )
+          .returning({ id: amendments.id });
+        if (updated.length === 0) {
+          fail(
+            409,
+            `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
+          );
+        }
+        await recordEvent(tx, {
+          ...base,
+          entityId: id,
+          type:
+            status === "approved" ? "amendment_approved" : "amendment_rejected",
+          payload,
+        });
+        const sources = sourcesOf(id);
+        if (status === "approved" && sources.length > 0) {
+          await replaceSources(tx, {
+            assemblyId: ctx.assembly.id,
+            documentId: document.id,
+            actor,
+            now,
+            transactional: { id, code: amendment.code },
+            sources: locked.filter((row) => sources.includes(row.id)),
+            competitors: lockedCompetitors(competitors, locked),
+            allowTransacted: true,
+          });
+        }
+        decided.push({ id, code: amendment.code, status });
+      }
+    }
+    if (decided.length > 0) {
+      await closeDependents(tx, ctx, competitors, locked, decided);
+    }
+
+    // What the approved ones now collide with outside this vote.
+    const approvedIds = decided
+      .filter((entry) => entry.status === "approved")
+      .map((entry) => entry.id);
+    const collected: ApprovalWarnings = {
+      overlapsWithApproved: [],
+      incompatible: [],
+    };
+    for (const id of approvedIds) {
+      const found = await approvalWarnings(tx, document.id, byId.get(id)!);
+      collected.overlapsWithApproved.push(...found.overlapsWithApproved);
+      collected.incompatible.push(...found.incompatible);
+    }
+    const warnings: ApprovalWarnings | null =
+      approvedIds.length > 0
+        ? {
+            overlapsWithApproved: unique(
+              collected.overlapsWithApproved.filter((id) => !allSet.has(id)),
+            ),
+            incompatible: unique(
+              collected.incompatible.filter((id) => !allSet.has(id)),
+            ),
+          }
+        : null;
+    if (projectVote) {
+      await pointLiveVote(tx, {
+        assemblyId: ctx.assembly.id,
+        voteId: voteRow!.id,
+        actor,
+        subject: { documentId: document.id, agendaItemId, amendmentId: null },
+      });
+    }
+    return { voteRow: voteRow!, decision: decision!, warnings };
+  });
+
+  return {
+    decision: {
+      id: result.decision.id,
+      kind: result.decision.kind,
+      method: result.decision.method,
+      subjectIds: result.decision.subjectIds,
+      note: result.decision.note,
+      vote: toVoteDto(result.voteRow),
+      decidedAt: result.decision.decidedAt.toISOString(),
+    },
+    amendments: await Promise.all(allIds.map((id) => amendmentDto(ctx, id))),
+    warnings: result.warnings,
   };
 }
 

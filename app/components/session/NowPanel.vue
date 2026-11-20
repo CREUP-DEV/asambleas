@@ -689,7 +689,11 @@ const announcement = computed(() => {
                     class="text-primary size-4 shrink-0"
                     aria-hidden="true"
                   />
-                  {{ t("session.bloc.onScreen") }}
+                  {{
+                    session.roomAlternatives.value
+                      ? t("session.alternatives.onScreen")
+                      : t("session.bloc.onScreen")
+                  }}
                   <span class="text-muted font-normal tabular-nums">
                     {{
                       t("session.bloc.progress", {
@@ -710,8 +714,19 @@ const announcement = computed(() => {
                   </li>
                 </ul>
                 <div class="flex flex-wrap items-center gap-2">
+                  <!-- Alternatives on screen are voted between, never
+                       approved by assent. -->
                   <UButton
-                    v-if="blocOpenIds.length > 0"
+                    v-if="session.roomAlternatives.value"
+                    size="sm"
+                    color="primary"
+                    icon="i-lucide-scale"
+                    :label="t('session.alternatives.open')"
+                    :disabled="closed"
+                    @click="session.openAlternatives([])"
+                  />
+                  <UButton
+                    v-else-if="blocOpenIds.length > 0"
                     size="sm"
                     color="success"
                     icon="i-lucide-check-check"

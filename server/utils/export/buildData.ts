@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { alternativeLetter } from "../../../shared/utils/alternativesVote";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../db";
@@ -105,6 +106,24 @@ export function toExportAssembly(assembly: AssemblyRow): ExportAssembly {
     startDate: assembly.startDate,
     endDate: assembly.endDate,
     location: assembly.location,
+  };
+}
+
+/** Its option in a vote between alternatives, and that option's votes. */
+function alternativeOf(
+  vote: VoteRow,
+  amendmentId: string,
+): { alternative?: { option: string; count: number } } {
+  const index =
+    vote.options?.findIndex((option) =>
+      option.amendmentIds.includes(amendmentId),
+    ) ?? -1;
+  if (index < 0) return {};
+  return {
+    alternative: {
+      option: alternativeLetter(index),
+      count: vote.options![index]!.count,
+    },
   };
 }
 
@@ -289,6 +308,7 @@ async function loadAnnexAmendments(
             abstentions: vote.abstentions,
             blank: vote.blank,
             method: vote.method,
+            ...alternativeOf(vote, row.id),
           }
         : null,
       ops: row.ops,

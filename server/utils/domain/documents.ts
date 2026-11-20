@@ -158,6 +158,7 @@ import { computeVoteOutcome } from "~~/shared/utils/votes";
 import {
   changedLiveFields,
   normalizeBloc,
+  normalizeBlocOptions,
   type LivePointerFields,
 } from "~~/shared/utils/liveBloc";
 
@@ -2494,14 +2495,19 @@ async function lockLiveState(
       documentId: liveState.documentId,
       amendmentId: liveState.amendmentId,
       amendmentBloc: liveState.amendmentBloc,
+      amendmentBlocOptions: liveState.amendmentBlocOptions,
       voteId: liveState.voteId,
     })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId))
     .for("no key update");
-  return row
-    ? { ...row, amendmentBloc: normalizeBloc(row.amendmentBloc) }
-    : null;
+  if (!row) return null;
+  const bloc = normalizeBloc(row.amendmentBloc);
+  return {
+    ...row,
+    amendmentBloc: bloc,
+    amendmentBlocOptions: normalizeBlocOptions(row.amendmentBlocOptions, bloc),
+  };
 }
 
 async function writeLiveState(
@@ -2566,6 +2572,7 @@ export async function pointLiveVote(
     ...previous,
     voteId: input.voteId,
     amendmentBloc: null,
+    amendmentBlocOptions: null,
   };
   if (input.subject) {
     if (input.subject.documentId !== previous.documentId) {
@@ -2602,7 +2609,12 @@ export async function projectItemVote(
     tx,
     input.assemblyId,
     previous,
-    { ...previous, voteId: input.voteId, amendmentBloc: null },
+    {
+      ...previous,
+      voteId: input.voteId,
+      amendmentBloc: null,
+      amendmentBlocOptions: null,
+    },
     input.actor,
   );
   endLiveTally(input.assemblyId);
@@ -2651,6 +2663,7 @@ async function clearLiveDocument(
       documentId: null,
       amendmentId: null,
       amendmentBloc: null,
+      amendmentBlocOptions: null,
       voteId: null,
     },
     input.actor,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alternativeLetter } from "~~/shared/utils/alternativesVote";
 import type {
   AgendaDto,
   AssemblyDto,
@@ -96,6 +97,7 @@ definePageMeta({ layout: false });
 
 const route = useRoute();
 const { t, locale } = useI18n();
+const alternativesText = useAlternativesVoteText();
 const localePath = useLocalePath();
 const api = useApi();
 const me = useMe();
@@ -630,6 +632,18 @@ const blocIds = computed(
 const blocApproved = computed(
   () => blocEntries.value.filter((entry) => entry.approved).length,
 );
+/**
+ * The bloc as alternatives to vote between (user's decision of
+ * 2026-11-20): each option's chips, in text order, under «Opción A»,
+ * «Opción B»…; null for a bloc proposed for approval.
+ */
+const blocOptions = computed(() => {
+  const options = live.value?.amendmentBlocOptions;
+  if (!options || options.length === 0) return null;
+  return options.map((ids) =>
+    blocEntries.value.filter((entry) => ids.includes(entry.id)),
+  );
+});
 
 const mode = computed<"recess" | "amendment" | "bloc" | "document" | "idle">(
   () => {
@@ -707,8 +721,46 @@ const voteSubjectKind = computed(() =>
     : null,
 );
 const voteSubject = computed(() =>
-  voteSubjectKind.value ? liveVoteSubjectText(voteSubjectKind.value, t) : "",
+  voteAlternatives.value
+    ? t("amendment.vote.alternatives.title")
+    : voteSubjectKind.value
+      ? liveVoteSubjectText(voteSubjectKind.value, t)
+      : "",
 );
+/**
+ * A vote between alternatives on screen (user's decisions of 2026-11-20):
+ * each option's codes and votes, the winner marked; the headline names the
+ * winner, or what the Mesa did when none won.
+ */
+const voteAlternatives = computed(() => {
+  const options = vote.value?.options;
+  if (!options || options.length === 0) return null;
+  const codeOf = (id: string) =>
+    amendments.value.find((item) => item.id === id)?.code ?? "?";
+  return options.map((option, index) => ({
+    name: alternativesText.optionName(index),
+    codes: option.amendmentIds.map(codeOf).join(", "),
+    count: option.count,
+    won: vote.value?.winningOption === index,
+  }));
+});
+const voteHeadline = computed(() => {
+  const current = vote.value;
+  if (!current) return "";
+  if (!voteAlternatives.value) {
+    return current.result === "approved"
+      ? t("projection.vote.approved")
+      : t("projection.vote.rejected");
+  }
+  if (current.winningOption !== null) {
+    return t("amendment.vote.alternatives.won", {
+      letter: alternativeLetter(current.winningOption),
+    });
+  }
+  return current.tieResolution === "no_effect"
+    ? t("projection.vote.noEffect")
+    : t("projection.vote.rejectedAll");
+});
 /** What an agenda item's vote decided, unless the heading already says it. */
 const voteQuestion = computed(() =>
   vote.value && voteSubjectKind.value
@@ -1302,14 +1354,46 @@ useHead(() => ({
               : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
           "
         >
-          {{
-            vote.result === "approved"
-              ? t("projection.vote.approved")
-              : t("projection.vote.rejected")
-          }}
+          {{ voteHeadline }}
         </p>
+        <!-- Alternatives: each option's codes and votes. -->
+        <dl
+          v-if="voteAlternatives"
+          class="mt-[clamp(0.5rem,1vw,1rem)] flex flex-wrap gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2"
+        >
+          <div
+            v-for="option in voteAlternatives"
+            :key="option.name"
+            class="rounded-xl px-[0.5em]"
+            :class="option.won ? 'bg-success/15' : ''"
+          >
+            <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
+              {{ option.name }} · {{ option.codes }}
+            </dt>
+            <dd
+              class="text-[clamp(1.75rem,3.5vw,3.75rem)] leading-tight font-bold tabular-nums"
+            >
+              {{ option.count }}
+            </dd>
+          </div>
+          <div
+            v-for="count in voteCounts.filter(
+              (row) => row.key !== 'inFavor' && row.key !== 'against',
+            )"
+            :key="count.key"
+          >
+            <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
+              {{ t(`projection.vote.${count.key}`) }}
+            </dt>
+            <dd
+              class="text-[clamp(1.75rem,3.5vw,3.75rem)] leading-tight font-bold tabular-nums"
+            >
+              {{ count.value }}
+            </dd>
+          </div>
+        </dl>
         <p
-          v-if="voteAssentKey"
+          v-else-if="voteAssentKey"
           class="mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-semibold"
         >
           {{ t(voteAssentKey) }}
@@ -1469,10 +1553,15 @@ useHead(() => ({
                 id="projection-bloc-title"
                 class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
               >
-                {{ t("projection.bloc.title") }}
+                {{
+                  blocOptions
+                    ? t("amendment.vote.alternatives.title")
+                    : t("projection.bloc.title")
+                }}
               </h1>
             </div>
             <p
+              v-if="!blocOptions"
               class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold tabular-nums"
             >
               {{
@@ -1485,7 +1574,58 @@ useHead(() => ({
           </div>
           <!-- Every chip fits: they shrink together (blocBox, fitDiff) down
                to a readable floor, and only past it does the list scroll. -->
+          <!-- Alternatives: one column per option, its chips inside. -->
+          <div
+            v-if="blocOptions"
+            ref="blocBox"
+            class="projection-bloc projection-scroll grid min-h-0 flex-1 grid-cols-2 content-start gap-[1.25em] overflow-y-auto"
+            aria-labelledby="projection-bloc-title"
+          >
+            <section
+              v-for="(option, index) in blocOptions"
+              :key="index"
+              class="border-primary/40 bg-primary/5 flex flex-col gap-[0.75em] rounded-3xl border-4 p-[1em]"
+            >
+              <h2 class="text-[2.2em] leading-none font-extrabold">
+                {{ alternativesText.optionName(index) }}
+              </h2>
+              <ul class="flex flex-wrap content-start gap-[0.75em]">
+                <li
+                  v-for="entry in option"
+                  :key="entry.id"
+                  class="border-default bg-elevated/40 flex min-w-[6em] flex-col gap-[0.25em] rounded-2xl border-4 px-[1em] py-[0.5em]"
+                >
+                  <span
+                    class="text-[2.4em] leading-none font-extrabold tabular-nums"
+                  >
+                    {{ entry.code }}
+                  </span>
+                  <span
+                    v-if="entry.author"
+                    class="text-muted text-[1.05em] leading-tight font-semibold"
+                  >
+                    {{ entry.author.acronym }}
+                  </span>
+                  <span
+                    v-if="entry.transacts.length > 0"
+                    class="text-default flex items-center gap-[0.3em] text-[0.95em] leading-tight font-semibold"
+                  >
+                    <UIcon
+                      name="i-lucide-git-merge"
+                      class="size-[1em] shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span class="sr-only">{{
+                      t("projection.bloc.transacts")
+                    }}</span>
+                    {{ entry.transacts.join(" · ") }}
+                  </span>
+                </li>
+              </ul>
+            </section>
+          </div>
           <ul
+            v-else
             ref="blocBox"
             class="projection-bloc projection-scroll flex min-h-0 flex-1 flex-wrap content-start gap-[0.75em] overflow-y-auto"
             aria-labelledby="projection-bloc-title"

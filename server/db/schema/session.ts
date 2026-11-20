@@ -27,7 +27,14 @@ import {
   SPEAKING_TURN_STATUSES,
 } from "../../../shared/constants/domain";
 import { ATTENDANCE_MARKS } from "../../../shared/utils/headcount";
+import type { AlternativesTieResolution } from "../../../shared/utils/alternativesVote";
 import { majorityEnum } from "./document";
+
+/** One option of a vote between alternatives: its amendments and votes. */
+export interface VoteOptionRow {
+  amendmentIds: string[];
+  count: number;
+}
 
 export const voteMethodEnum = pgEnum("vote_method", VOTE_METHODS);
 export const voteResultEnum = pgEnum("vote_result", VOTE_RESULTS);
@@ -168,6 +175,19 @@ export const votes = pgTable(
     question: text("question"),
     /** An assent vote nobody objected to when unanimity was asked. */
     unanimous: boolean("unanimous").notNull().default(false),
+    /**
+     * A vote between alternatives (decision kind "alternatives"): the
+     * amendments of each option and its votes, in order (A, B…); null on
+     * other votes, whose `inFavor` and `against` these replace (both 0).
+     */
+    options: jsonb("options").$type<VoteOptionRow[]>(),
+    /** The option that won (its index); null when none did. */
+    winningOption: integer("winning_option"),
+    /**
+     * What the Mesa did when no option won: every amendment rejected, or
+     * none changed (shared/utils/alternativesVote.ts).
+     */
+    tieResolution: text("tie_resolution").$type<AlternativesTieResolution>(),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

@@ -21,9 +21,17 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const alternativesText = useAlternativesVoteText();
+/** A vote between alternatives: options, not in favour and against. */
+const alternatives = computed(() =>
+  alternativesText.isAlternatives(props.vote),
+);
 
 const counts = computed(() => {
   if (props.vote.method === "assent") return "";
+  if (alternatives.value) {
+    return `${alternativesText.counts(props.vote)} · ${alternativesText.outcome(props.vote)}`;
+  }
   return shownVoteCounts(props.vote)
     .map(({ key, value }) => `${t(`amendment.vote.${key}`)} ${value}`)
     .join(" · ");
@@ -54,7 +62,16 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         :label="t('controlSheet.itemVotes.voided')"
       />
       <!-- The size of «Resultado»'s badges, so the cell reads as one. -->
+      <UBadge
+        v-if="alternatives"
+        color="neutral"
+        variant="subtle"
+        size="sm"
+        icon="i-lucide-scale"
+        :label="t('amendment.vote.alternatives.title')"
+      />
       <CommonStatusBadge
+        v-else
         kind="vote"
         :value="vote.result"
         size="sm"

@@ -127,6 +127,20 @@ function base(ctx: Context): {
   };
 }
 
+/**
+ * «, en una votación entre alternativas en la que ganó la opción A»: what a
+ * vote between alternatives adds to the outcome (user's decisions of
+ * 2026-11-20); nothing for any other vote.
+ */
+function alternativesClause(payload: Record<string, unknown>): string {
+  if (payload.alternatives !== true) return "";
+  const winner = payload.winningOption;
+  if (typeof winner === "number") {
+    return `, en una votación entre alternativas en la que ganó la opción ${String.fromCharCode(65 + winner)}`;
+  }
+  return ", en una votación entre alternativas en la que ninguna opción ganó";
+}
+
 function amendmentLink(documentPath: string, amendment: { id: string }) {
   return `${documentPath}?enmienda=${encodeURIComponent(amendment.id)}`;
 }
@@ -498,7 +512,7 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
         // A formal amendment is accepted by itself, not by the presenter.
         lead =
           payload.method !== "proponent"
-            ? `La asamblea ha aprobado tu enmienda ${c} ${of}.`
+            ? `La asamblea ha aprobado tu enmienda ${c} ${of}${alternativesClause(payload)}.`
             : payload.reason === "formal"
               ? `Tu enmienda de forma ${c} ${of} se ha aceptado automáticamente y queda incorporada al texto. Quien presenta el documento todavía puede cambiar esa respuesta.`
               : `Quien presenta el documento ha aceptado tu enmienda ${c} ${of}, que queda incorporada al texto.`;
@@ -510,7 +524,7 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
         lead =
           payload.reason === "formal_rejected"
             ? `Quien presenta el documento ha rechazado tu enmienda de forma ${c} ${of}, así que queda rechazada sin debate. La Mesa puede reabrirla para debatirla y votarla.`
-            : `La asamblea ha rechazado tu enmienda ${c} ${of}.`;
+            : `La asamblea ha rechazado tu enmienda ${c} ${of}${alternativesClause(payload)}.`;
         break;
       case "amendment_inadmissible": {
         heading = "Tu enmienda no se ha admitido";

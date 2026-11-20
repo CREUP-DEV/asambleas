@@ -442,6 +442,7 @@ defineShortcuts({
       <SessionLapseOfferDialog />
       <SessionWordingDialog />
       <SessionBulkAssentDialog />
+      <SessionAlternativesVoteDialog />
       <SessionTransactionalComposer />
 
       <template #fallback>

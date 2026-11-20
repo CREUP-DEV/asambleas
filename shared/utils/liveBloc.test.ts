@@ -13,6 +13,7 @@ const empty: LivePointerFields = {
   documentId: null,
   amendmentId: null,
   amendmentBloc: null,
+  amendmentBlocOptions: null,
   voteId: null,
 };
 const onDocument: LivePointerFields = {
@@ -165,5 +166,40 @@ describe("the bloc in PUT .../live-state", () => {
     expect(
       liveStateBodySchema.safeParse({ amendmentBloc: ["Not an id"] }).success,
     ).toBe(false);
+  });
+});
+
+describe("bloc options", () => {
+  it("go on screen with their bloc, split exactly", () => {
+    expect(
+      next(onDocument, {
+        amendmentBloc: ["a", "b", "c"],
+        amendmentBlocOptions: [["a"], ["b", "c"]],
+      }).amendmentBlocOptions,
+    ).toEqual([["a"], ["b", "c"]]);
+    expect(
+      nextLivePointer(
+        onDocument,
+        { amendmentBloc: ["a", "b"], amendmentBlocOptions: [["a"], ["c"]] },
+        null,
+      ),
+    ).toEqual({ error: "bloc_options" });
+  });
+
+  it("leave with their bloc, or when a plain bloc replaces it", () => {
+    const alternatives = next(onDocument, {
+      amendmentBloc: ["a", "b"],
+      amendmentBlocOptions: [["a"], ["b"]],
+    });
+    expect(next(alternatives, { voteId: "v" }).amendmentBlocOptions).toBeNull();
+    expect(
+      next(alternatives, { amendmentBloc: ["a", "b"] }).amendmentBlocOptions,
+    ).toBeNull();
+    expect(
+      changedLiveFields(alternatives, {
+        ...alternatives,
+        amendmentBlocOptions: null,
+      }),
+    ).toEqual(["amendmentBlocOptions"]);
   });
 });

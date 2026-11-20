@@ -1697,6 +1697,7 @@
         "amendment_approved": "Aprobada",
         "amendment_rejected": "Rechazada",
         "amendment_reopened": "Reabierta",
+        "amendment_vote_without_effect": "Votación sin efecto",
         "position_changed": "Respuesta de quien presenta el documento",
         "acceptance_recorded": "Respuesta a una transaccional",
         "relation_created": "Relación añadida",
@@ -1735,7 +1736,13 @@
       "validatedPublished": "Publicada a la vez: ya la ve toda la asamblea",
       "wasPublished": "Estaba publicada: ha dejado de ser visible para todos.",
       "wasValidated": "Estaba validada: ha dejado de estarlo.",
-      "positionReset": "Se borró la respuesta de quien presenta el documento."
+      "positionReset": "Se borró la respuesta de quien presenta el documento.",
+      "alternatives": {
+        "won": "Votación entre alternativas: ganó su opción, la {option} ({count} votos)",
+        "lost": "Votación entre alternativas: estaba en la opción {option} ({count} votos) y ganó la {winner}",
+        "rejectedAll": "Votación entre alternativas sin opción ganadora: la Mesa las rechazó todas",
+        "noEffect": "Votación entre alternativas sin opción ganadora: la Mesa las dejó sin decidir"
+      }
     },
     "vote": {
       "counts": "Recuento",
@@ -1761,7 +1768,18 @@
         "absolute": "Mayoría absoluta",
         "two_thirds": "Mayoría de dos tercios"
       },
-      "unanimous": "@:projection.vote.unanimous"
+      "unanimous": "@:projection.vote.unanimous",
+      "alternatives": {
+        "title": "Votación entre alternativas",
+        "option": "Opción {letter}",
+        "optionCount": "{option}: {count}",
+        "abstentions": "Ninguna abstención | 1 abstención | {count} abstenciones",
+        "blank": "Ningún voto en blanco | 1 en blanco | {count} en blanco",
+        "won": "Ganó la opción {letter}",
+        "rejectedAll": "Ninguna opción ganó: la Mesa las rechazó todas",
+        "noEffect": "Ninguna opción ganó: la Mesa las dejó sin decidir",
+        "amendments": "Enmiendas"
+      }
     },
     "composer": {
       "titleNew": "Presentar una enmienda",
@@ -2005,6 +2023,9 @@
       },
       "sheetTitle": "En la hoja de control",
       "sheetEdited": "Última edición: {name}, {when}"
+    },
+    "reopenAlternatives": {
+      "required": "Se decidió en una votación entre alternativas: reabrirla anula la votación y reabre todas sus enmiendas"
     }
   },
   "admin": {
@@ -2531,6 +2552,7 @@
       },
       "emptyDocument": "Este documento no tiene texto.",
       "voteCounts": "votos a favor: {inFavor}, en contra: {against}, abstenciones: {abstentions}",
+      "alternativeOption": "Opción {option}: {count}",
       "voteCountsSecret": "votos a favor: {inFavor}, en contra: {against}, en blanco: {blank}",
       "finalVote": {
         "approved": "Aprobado en la {assembly} el {date} por {majority} ({counts}).",
@@ -4567,6 +4589,40 @@
         "spoken": "{result}. {method}. A favor: {inFavor}; en contra: {against}; abstenciones: {abstentions}.",
         "spokenSecret": "{result}. {method}. A favor: {inFavor}; en contra: {against}; en blanco: {blank}."
       }
+    },
+    "alternatives": {
+      "open": "Votar entre alternativas",
+      "title": "Votación entre alternativas",
+      "description": "Reparte las enmiendas en dos opciones. Gana la que tenga más votos: sus enmiendas se aprueban y las de la otra se rechazan.",
+      "optionsTitle": "Opciones",
+      "emptyOption": "Sin enmiendas todavía",
+      "collision": "{option}: {a} choca con {b}",
+      "collisionsTitle": "Hay enmiendas de una misma opción que chocan entre sí",
+      "project": "Proyectar las opciones",
+      "onScreen": "Opciones en pantalla",
+      "countsTitle": "Votos",
+      "method": "Forma de votación",
+      "note": "Nota (opcional)",
+      "winsPreview": "Gana la opción {letter}",
+      "tiePreview": "Empate: ninguna opción gana",
+      "shortPreview": "Ninguna opción llega a la mayoría necesaria ({threshold} votos)",
+      "inconsistent": "Los votos emitidos superan a los miembros presentes",
+      "tieTitle": "Empate entre las opciones",
+      "shortTitle": "Ninguna opción alcanza la mayoría",
+      "undecidedDescription": "Decide qué hacer: rechazar todas las enmiendas, repetir la votación o dejarlas sin decidir.",
+      "repeat": "Repetir la votación",
+      "noEffect": "Dejarlas sin decidir",
+      "rejectAll": "Rechazarlas todas",
+      "record": "Registrar la votación",
+      "recorded": "Votación entre alternativas registrada",
+      "assentBlocked": "Hay alternativas en pantalla: se deciden votando entre ellas, no por asentimiento",
+      "reopenTitle": "¿Reabrir {code}?",
+      "reopenDescription": "Se decidió en una votación entre alternativas. Reabrirla anula esa votación y reabre también: {codes}.",
+      "reopenConfirm": "Anular la votación y reabrirlas",
+      "errors": {
+        "record": "No se ha podido registrar la votación",
+        "onScreen": "Está en pantalla como alternativa de una votación: se decide votando entre las opciones"
+      }
     }
   },
   "projection": {
@@ -4621,6 +4677,8 @@
       "other": "Votación",
       "approved": "Aprobada",
       "rejected": "Rechazada",
+      "rejectedAll": "Rechazadas todas",
+      "noEffect": "Sin decidir",
       "inFavor": "A favor",
       "against": "En contra",
       "abstentions": "Abstenciones",
@@ -6657,6 +6715,7 @@
       "amendment_approved": "Enmienda aprobada",
       "amendment_rejected": "Enmienda rechazada",
       "amendment_reopened": "Enmienda reabierta",
+      "amendment_vote_without_effect": "Votación entre alternativas sin efecto",
       "amendment_transacted": "Enmienda absorbida por una transaccional",
       "amendment_lapsed": "Enmienda decaída",
       "transactional_source_dropped": "Una enmienda no admitida sale de una transaccional",

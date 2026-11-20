@@ -38,6 +38,7 @@ import type {
   VoteResult,
   VoteSubject,
 } from "../constants/domain";
+import type { AlternativesTieResolution } from "../utils/alternativesVote";
 import type { SeatAssignment } from "../utils/seating/groups";
 import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
 import type { SeatingAssignmentOp } from "../utils/seating/proposal";
@@ -1383,7 +1384,16 @@ export type OutcomeAction =
   | { action: "vote"; vote: VoteInput }
   | { action: "withdraw"; note?: string | null }
   | { action: "lapse"; note?: string | null }
-  | { action: "reopen"; note?: string | null };
+  | {
+      action: "reopen";
+      note?: string | null;
+      /**
+       * It was decided in a vote between alternatives: reopening it voids
+       * that vote and reopens every amendment it decided (409
+       * `amendment.reopenAlternatives.required` without it).
+       */
+      wholeVote?: boolean;
+    };
 
 export type OutcomeBody = OutcomeAction & {
   updatedAt: IsoDate;
@@ -1529,6 +1539,16 @@ export interface VoteDto {
   question: string | null;
   /** An assent vote nobody objected to when unanimity was asked. */
   unanimous: boolean;
+  /**
+   * A vote between alternatives (user's decisions of 2026-11-20): each
+   * option's amendments and votes, in order (A, B…); null on other votes,
+   * where `inFavor` and `against` count instead (both 0 here).
+   */
+  options: VoteOptionDto[] | null;
+  /** The option that won (its index); null when none did. */
+  winningOption: number | null;
+  /** What the Mesa did when no option won. */
+  tieResolution: AlternativesTieResolution | null;
   recordedAt: IsoDate;
   /** Lock token for voiding it and changing its unanimity. */
   updatedAt: IsoDate;
@@ -1590,6 +1610,53 @@ export interface VoteUnanimityBody {
   updatedAt: IsoDate;
 }
 
+/** One option of a vote between alternatives. */
+export interface VoteOptionDto {
+  amendmentIds: string[];
+  count: number;
+}
+
+/**
+ * POST .../documents/[document]/amendments/alternatives (results:record):
+ * a vote between alternatives (user's decisions of 2026-11-20). Each option
+ * lists its amendments, each with the `updatedAt` it was seen at, and its
+ * votes. The option with most votes wins (and, where the document's
+ * amendments need an absolute or two-thirds majority, reaches it): its
+ * amendments are approved and the others' rejected. When none wins the
+ * request needs `tieResolution` (409 `{ tie: true }` without it): reject
+ * them all, or leave them undecided; repeating the vote sends nothing.
+ */
+export interface AlternativesVoteBody {
+  method: Exclude<VoteMethod, "assent">;
+  options: {
+    items: { id: string; updatedAt: IsoDate }[];
+    count: number;
+  }[];
+  /** Show of hands, roll call and the portal. */
+  abstentions?: number;
+  /** A secret vote only. */
+  blank?: number;
+  invalid?: number;
+  notCast?: number;
+  present?: number | null;
+  note?: string | null;
+  tieResolution?: AlternativesTieResolution;
+  /** As OutcomeBody's: false leaves the projection where it is. */
+  project?: boolean;
+}
+
+/** Response of POST .../amendments/alternatives. */
+export interface AlternativesVoteDto {
+  decision: DecisionDto;
+  /** The amendments of every option, as they ended up. */
+  amendments: AmendmentDto[];
+  /**
+   * What the approved ones now collide with outside the vote (the lapse
+   * offer); null when none was approved.
+   */
+  warnings: ApprovalWarnings | null;
+}
+
 export interface DecisionDto {
   id: string;
   kind: DecisionKind;
@@ -1648,6 +1715,12 @@ export interface LiveStateDto {
    * Never with `amendmentId` or `vote`.
    */
   amendmentBloc: string[];
+  /**
+   * The bloc as alternatives to vote between (user's decision of
+   * 2026-11-20): the amendments of each option, in order (A, B…); null for
+   * a bloc proposed for approval.
+   */
+  amendmentBlocOptions: string[][] | null;
   vote: VoteDto | null;
   message: string | null;
   /** Attendees see who has the floor and who is next. */
@@ -1670,6 +1743,12 @@ export interface LiveStateBody {
    * `amendmentId` or `voteId` is refused (422).
    */
   amendmentBloc?: string[] | null;
+  /**
+   * The bloc as alternatives (user's decision of 2026-11-20): each option's
+   * amendments, which must be exactly those of `amendmentBloc`; null or
+   * left out puts it on screen as a bloc proposed for approval.
+   */
+  amendmentBlocOptions?: string[][] | null;
   voteId?: string | null;
   message?: string | null;
   speakersVisible?: boolean;

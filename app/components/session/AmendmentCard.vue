@@ -72,6 +72,7 @@ const props = withDefaults(
 const session = useSessionConsoleContext();
 const answer = useSessionPosition(session);
 const { t } = useI18n();
+const alternativesText = useAlternativesVoteText();
 /** Shortcut letters show only while this browser keeps them on. */
 const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 function kbdsOf(key: string): string[] | undefined {
@@ -179,6 +180,9 @@ const replacingCodes = computed(() =>
 const voteSummary = computed(() => {
   const vote = props.amendment.outcomeVote;
   if (!vote) return null;
+  if (alternativesText.isAlternatives(vote)) {
+    return alternativesText.summary(vote);
+  }
   return t(voteTextKey("session.card.voteCounts", vote.method), {
     inFavor: vote.inFavor,
     against: vote.against,

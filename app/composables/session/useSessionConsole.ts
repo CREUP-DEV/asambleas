@@ -2,6 +2,8 @@ import type { InjectionKey, MaybeRefOrGetter, Ref } from "vue";
 import type {
   AdmissionBody,
   AgendaDto,
+  AlternativesVoteBody,
+  AlternativesVoteDto,
   AmendmentAdmissionDto,
   AmendmentDto,
   AmendmentOutcomeDto,
@@ -51,6 +53,8 @@ import {
   liveStateClearsOnly,
 } from "~~/shared/utils/sessionGate";
 import { useApi } from "../api/useApi";
+import { useAlternativesVoteText } from "../vote/useAlternativesVoteText";
+import type { AlternativesTieResolution } from "~~/shared/utils/alternativesVote";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import {
   keepLastGoodData,
@@ -247,6 +251,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const api = useApi();
   const toast = useToast();
   const { t } = useI18n();
+  const alternativesText = useAlternativesVoteText();
 
   // Inside the assembly hub (app/pages/asambleas/[assembly].vue) the hub
   // already holds the assembly and the one live stream of the tab; on its
@@ -1513,12 +1518,144 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * own selection of 17 while the room read a bloc of 12 on screen.
    */
   function openAssent(ids?: string[]): void {
+    // Alternatives on screen are decided by voting between them: approving
+    // them all would approve both options (the server refuses it too).
+    if (roomAlternatives.value) {
+      toast.add({
+        id: "session-assent-alternatives",
+        title: t("session.alternatives.assentBlocked"),
+        color: "warning",
+        icon: "i-lucide-scale",
+      });
+      return;
+    }
     const target = roomBlocOpen.value.length > 0 ? roomBlocOpen.value : ids;
     assentDialog.ids =
       target ?? assentPlan.value.ready.map((amendment) => amendment.id);
     assentDialog.bloc = target !== undefined;
     assentDialog.onScreen = roomBlocOpen.value.length > 0;
     assentDialog.open = true;
+  }
+  /**
+   * The bloc on screen as alternatives to vote between, while it is this
+   * document's: each option's amendments (user's decision of 2026-11-20).
+   */
+  const roomAlternatives = computed<string[][] | null>(() => {
+    const state = liveState.value;
+    if (!state || state.documentId !== documentId.value) return null;
+    return state.amendmentBlocOptions ?? null;
+  });
+  /** The dialog of a vote between alternatives, on the amendments chosen. */
+  const alternativesDialog = reactive({
+    open: false,
+    ids: [] as string[],
+    /** The options it starts with: those on screen, if any. */
+    options: null as string[][] | null,
+  });
+  /**
+   * Opens it on the bloc chosen; while alternatives are on screen, on
+   * those, split as they are.
+   */
+  function openAlternatives(ids: string[]): void {
+    if (!requireInSession()) return;
+    const onScreen = roomAlternatives.value;
+    alternativesDialog.ids = onScreen ? onScreen.flat() : [...ids];
+    alternativesDialog.options = onScreen
+      ? onScreen.map((option) => [...option])
+      : null;
+    alternativesDialog.open = true;
+  }
+  /** Puts the options on screen, as a bloc split in alternatives. */
+  async function projectAlternatives(options: string[][]): Promise<boolean> {
+    if (!inControl.value || options.some((ids) => ids.length === 0)) {
+      return false;
+    }
+    const liveDocument = liveState.value?.documentId ?? null;
+    if (liveDocument !== null && liveDocument !== documentId.value) {
+      const confirmed = await confirm({
+        title: t("session.bloc.otherDocumentTitle"),
+        description: t("session.debateConfirm.otherDocument"),
+        confirmLabel: t("session.debateConfirm.moveDebate"),
+        confirmIcon: "i-lucide-radio",
+      });
+      if (!confirmed) return false;
+    }
+    return setLive({
+      amendmentBloc: options.flat(),
+      amendmentBlocOptions: options,
+      amendmentId: null,
+      voteId: null,
+    });
+  }
+  /**
+   * Records a vote between alternatives. Without a winner and without the
+   * Mesa's choice it answers `undecided` and records nothing: the dialog
+   * then offers rejecting them all, repeating, or leaving them undecided.
+   */
+  async function voteAlternatives(input: {
+    method: AlternativesVoteBody["method"];
+    options: { ids: string[]; count: number }[];
+    abstentions: number;
+    blank: number;
+    invalid: number;
+    present: number | null;
+    note: string | null;
+    tieResolution?: AlternativesTieResolution;
+  }): Promise<
+    | { ok: true; vote: VoteDto }
+    | { ok: false; undecided: "tie" | "short" | null }
+  > {
+    if (!requireInSession()) return { ok: false, undecided: null };
+    const body: AlternativesVoteBody = {
+      method: input.method,
+      options: input.options.map((option) => ({
+        items: option.ids.map((id) => ({
+          id,
+          updatedAt: byId.value.get(id)?.updatedAt ?? "",
+        })),
+        count: option.count,
+      })),
+      ...(input.method === "secret"
+        ? { blank: input.blank, invalid: input.invalid }
+        : { abstentions: input.abstentions }),
+      present: input.present,
+      note: input.note,
+      ...(input.tieResolution ? { tieResolution: input.tieResolution } : {}),
+      project: inControl.value,
+    };
+    try {
+      const result = await track("alternatives", () =>
+        api.send<AlternativesVoteDto>(documentApi("/amendments/alternatives"), {
+          body,
+        }),
+      );
+      for (const amendment of result.amendments) upsertAmendment(amendment);
+      void refreshAmendments();
+      const vote = result.decision.vote!;
+      toast.add({
+        id: `session-alternatives-${result.decision.id}`,
+        title: t("session.alternatives.recorded"),
+        description: alternativesText.outcome(vote),
+        color: "success",
+        icon: "i-lucide-check",
+      });
+      cancelBloc();
+      const approved = result.amendments.find(
+        (amendment) => amendment.status === "approved",
+      );
+      if (approved) offerLapses(approved, result.warnings);
+      return { ok: true, vote };
+    } catch (error) {
+      const data = sessionErrorData(error);
+      if (data?.tie === true) {
+        return {
+          ok: false,
+          undecided: data.undecided === "short" ? "short" : "tie",
+        };
+      }
+      api.notifyError(error, "session.alternatives.errors.record");
+      return { ok: false, undecided: null };
+    }
   }
   const lapseDialog = reactive<SessionLapseDialog>({
     open: false,
@@ -1687,6 +1824,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       finalVoteDialog.open ||
       finalVoteAnnulDialog.open ||
       assentDialog.open ||
+      alternativesDialog.open ||
       lapseDialog.open ||
       wordingDialog.open ||
       speakerRenameDialog.open ||
@@ -2012,7 +2150,36 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
   }
 
-  function reopen(amendment: AmendmentDto) {
+  /**
+   * Reopens a decision. One taken in a vote between alternatives voids
+   * that vote and reopens every amendment it decided, so it asks first and
+   * says which (user's decision of 2026-11-20).
+   */
+  async function reopen(amendment: AmendmentDto) {
+    const vote = amendment.outcomeVote;
+    if (vote?.options && vote.options.length > 0) {
+      const others = vote.options
+        .flatMap((option) => option.amendmentIds)
+        .filter((id) => id !== amendment.id)
+        .map((id) => label(id));
+      const confirmed = await confirm({
+        title: t("session.alternatives.reopenTitle", {
+          code: label(amendment.id),
+        }),
+        description: t("session.alternatives.reopenDescription", {
+          codes: others.join(", "),
+        }),
+        confirmLabel: t("session.alternatives.reopenConfirm"),
+        confirmIcon: "i-lucide-rotate-ccw",
+        confirmColor: "warning",
+      });
+      if (!confirmed) return null;
+      return runOutcome(
+        amendment,
+        { action: "reopen", wholeVote: true },
+        { offer: false },
+      );
+    }
     return runOutcome(amendment, { action: "reopen" }, { offer: false });
   }
 
@@ -2816,6 +2983,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteDialog,
     finalVoteAnnulDialog,
     assentDialog,
+    roomAlternatives,
+    alternativesDialog,
+    openAlternatives,
+    projectAlternatives,
+    voteAlternatives,
     assentDialogPlan,
     openAssent,
     lapseDialog,
