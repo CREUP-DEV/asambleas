@@ -109,6 +109,7 @@ import { agendaWithTitles } from "~/utils/agendaTitles";
 import { numberedAgendaTitle } from "~/utils/agendaTree";
 import { staleSheetRow } from "~/components/control-sheet/-model";
 import { sessionMarkAction } from "~~/shared/utils/sessionProgress";
+import { amendmentRule } from "~~/shared/utils/positions";
 import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
@@ -2368,11 +2369,15 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     amendment: AmendmentDto,
     position: ProponentPosition,
   ): Promise<AmendmentDto | null> {
-    // Accepting where accepted amendments are incorporated approves it,
-    // which withdraws a pending transactional over it: ask first.
+    // Accepting where accepted amendments are incorporated (always a
+    // formal one, amendmentRule) approves it, which withdraws a pending
+    // transactional over it: ask first.
     if (
       position === "accept" &&
-      incorporatesAccepted.value &&
+      amendmentRule(
+        amendment.kind,
+        document.value?.acceptedAmendments ?? "vote",
+      ) === "incorporate" &&
       !(await confirmSettling(
         byId.value.get(amendment.id) ?? amendment,
         "incorporate",

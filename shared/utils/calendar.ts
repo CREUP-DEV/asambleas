@@ -6,7 +6,8 @@ import type { QuorumThreshold } from "./headcount";
 /** The assemblies' time zone: every date is set and shown in it. */
 export const ASSEMBLY_TIME_ZONE = "Europe/Madrid";
 
-const HOUR = 3_600_000;
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
@@ -332,12 +333,37 @@ export function amendmentWindow(
   };
 }
 
+/**
+ * Since when a deadline's own minute counts as on time (user's decision of
+ * 2026-11-20): a deadline at 23:59 takes everything sent during 23:59.
+ * What was sent before keeps the earlier reading (late once past the
+ * deadline's exact second), so nothing already late changes.
+ */
+export const DEADLINE_MINUTE_COUNTS_SINCE = new Date("2026-11-20T19:40:00Z");
+
+/**
+ * Whether `at` comes after the deadline `close`. The deadline's minute
+ * counts as on time: a deadline at 23:59 is past at 00:00, never during
+ * 23:59 (DEADLINE_MINUTE_COUNTS_SINCE). Every deadline check reads it: the
+ * amendment window (isWindowOpen, isLateSubmission), the documents'
+ * deadlines and the clients' countdowns.
+ */
+export function isPastDeadline(
+  close: Date | string | number,
+  at: Date | string | number = Date.now(),
+): boolean {
+  const closeMs = new Date(close).getTime();
+  const atMs = new Date(at).getTime();
+  if (atMs < DEADLINE_MINUTE_COUNTS_SINCE.getTime()) return atMs > closeMs;
+  return atMs >= Math.floor(closeMs / MINUTE) * MINUTE + MINUTE;
+}
+
 export function isWindowOpen(
   window: AmendmentWindow,
   now = new Date(),
 ): boolean {
   if (window.opensAt && now < window.opensAt) return false;
-  if (window.closesAt && now > window.closesAt) return false;
+  if (window.closesAt && isPastDeadline(window.closesAt, now)) return false;
   return true;
 }
 
@@ -345,7 +371,7 @@ export function isLateSubmission(
   window: AmendmentWindow,
   at = new Date(),
 ): boolean {
-  return Boolean(window.closesAt && at > window.closesAt);
+  return Boolean(window.closesAt && isPastDeadline(window.closesAt, at));
 }
 
 /**

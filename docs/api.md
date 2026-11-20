@@ -1122,7 +1122,12 @@ onReview: true }`, plus `afterValidation`, `published`, `afterCorrection`
   `by: "auto"`), the answer goes back to `pending` (`position_changed`
   with `by: "auto"`), which reopens it if that acceptance had incorporated
   it (`amendment_reopened` with `reason: "position_changed"` and
-  `by: "auto"`). An answer given by hand stays. Locks: the document
+  `by: "auto"`). An answer given by hand stays, and the amendment follows
+  its new kind's rule (`reclassifyIncorporation`): made `formal`,
+  undecided and admitted with an acceptance, it is incorporated; made
+  `partial` under the `vote` rule while that acceptance had incorporated
+  it, it is reopened (`amendment_reopened` with `reason: "reclassified"`)
+  and what its incorporation closed comes back. Locks: the document
   (share), the amendment with the transactionals over it and what they
   group, their acceptances, then its position row.
 - Correcting who presents an amendment: `POST .../[amendment]/authors`
@@ -1290,6 +1295,13 @@ memberId }`, the main presenter) after `position_changed`, and closes the
 - Locks: the document (share), the amendment (and what a transactional
   replaces, with the other transactionals over that or over the amendment)
   in id order, its acceptances, then its position row.
+- A formal amendment follows the `incorporate` rule whatever the
+  document's (user's decision of 2026-11-20, `amendmentRule`): an
+  acceptance incorporates it, also under `vote`, and switching the document
+  to `vote` leaves it in the text. Validating one always publishes it
+  (`publishOnValidation`, as a transactional; `publish: false` is ignored
+  for it). Those validated before this rule are published, accepted and
+  incorporated once at boot (`settleFormalAmendments`).
 - The automatic answer: a "de forma" amendment (`kind: "formal"`) does not
   wait for the main presenter. The moment it can be answered
   (`positionBlocker`) with no answer yet (none, or `pending`), it is
@@ -1298,7 +1310,7 @@ memberId }`, the main presenter) after `position_changed`, and closes the
   `recordPosition` with this endpoint): the stored answer (with
   `decidedByUserId` the user whose act made it answerable),
   `position_changed` with `by: "auto"` (and `memberId`, the main
-  presenter) and, under the `incorporate` rule, the approval
+  presenter) and, as a formal one follows `incorporate`, the approval
   (`amendment_approved` with `{ method: "proponent", byPosition: true,
 memberId, reason: "formal" }`) that closes the pending transactionals
   over it. It runs at the end of the transaction that made it answerable,
@@ -1314,7 +1326,8 @@ memberId, reason: "formal" }`) that closes the pending transactionals
   news name nobody for it (`automatic`).
 - A formal amendment its main presenter rejects is not debated by default
   (user's decision of 2026-11-20): under either rule the answer rejects an
-  undecided, admitted one at once (`positionEffect` "reject":
+  admitted one at once, undecided or incorporated by its acceptance
+  (`positionEffect` "reject":
   `status: rejected` with no vote, `amendment_rejected` with
   `{ method: "proponent", byPosition: true, reason: "formal_rejected",
 memberId }`, what waited on it closed). Rejected that way

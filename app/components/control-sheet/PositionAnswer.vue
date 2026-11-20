@@ -12,7 +12,10 @@ import {
   amendmentPositionBlocker,
   presenterSeesValidated,
 } from "~/composables/amendment/workspace";
-import { answerableAfterDecision } from "~~/shared/utils/positions";
+import {
+  amendmentRule,
+  answerableAfterDecision,
+} from "~~/shared/utils/positions";
 import { sessionPositionMenu } from "~/composables/session/sessionModel";
 import type { AmendmentSheetRow } from "./-model";
 
@@ -138,8 +141,13 @@ watch(current, (value, previous) => {
   if (!busy.value && choice.value === previous) choice.value = value;
 });
 
+/** Its acceptance incorporates it (always a formal one, amendmentRule). */
 const incorporates = computed(
-  () => props.document?.acceptedAmendments === "incorporate",
+  () =>
+    amendmentRule(
+      amendment.value.kind,
+      props.document?.acceptedAmendments ?? "vote",
+    ) === "incorporate",
 );
 /**
  * Approved by the assembly: the answer is recorded and the approval and

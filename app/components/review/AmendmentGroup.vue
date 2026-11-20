@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type { DropdownMenuItem } from "@nuxt/ui";
+import { alwaysPublishedOnValidation } from "~~/shared/utils/positions";
 import type {
   AmendmentCorrectionBody,
   AmendmentDto,
@@ -413,8 +414,9 @@ function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
       void runValidate([amendment.id], true, amendment.id);
       break;
     case "validate_only":
-      // A transactional replaces public amendments: never kept private.
-      if (amendment.kind !== "transactional") {
+      // A transactional replaces public amendments and a formal one goes
+      // into the text: never kept private.
+      if (!alwaysPublishedOnValidation(amendment.kind)) {
         void runValidate([amendment.id], false, amendment.id);
       }
       break;
@@ -456,7 +458,8 @@ async function runUnvalidate(amendment: AmendmentDto) {
 
 /**
  * Secondary bulk action, under "Más" as on each card. It leaves the
- * selected transactionals out: they are always published when validated.
+ * selected transactionals and formal amendments out: they are always
+ * published when validated.
  */
 const bulkMoreItems = computed<DropdownMenuItem[]>(() => [
   {

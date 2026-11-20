@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AssemblyDto,
@@ -226,7 +227,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
   const now = appNow.value;
   if (opensAt.value && opensAt.value.getTime() > now) return "upcoming";
   if (!closesAt.value) return null;
-  return closesAt.value.getTime() > now ? "open" : "closed";
+  return isPastDeadline(closesAt.value, now) ? "closed" : "open";
 });
 </script>
 

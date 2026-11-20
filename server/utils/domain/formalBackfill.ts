@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   amendmentPositions,
@@ -10,8 +10,8 @@ import {
 import { logError, logInfo } from "../core/logger";
 import { loadExportActor } from "../export/actor";
 import {
-  acceptAnswerableFormalAmendments,
   buildDocumentAmendmentContext,
+  settleFormalAmendments,
 } from "./amendments";
 import { loadMilestones } from "./documents";
 import { loadAnswersOnValidation } from "./executiveMembers";
@@ -19,15 +19,17 @@ import { withCoProponentIds } from "./presenters";
 
 /**
  * Formal amendments are accepted by themselves the moment they can be
- * answered. The ones that could be answered before that rule existed
- * (user's decision of 2026-11-17) get the same automatic acceptance once,
- * at boot: presented, undecided and validated, in an assembly that is not
- * closed, with no answer and no `position_changed` ever (an answer someone
- * set back to pending is a choice, never overridden). Each one goes through
- * acceptAnswerableFormalAmendments, which checks it can be answered now and
- * records what any automatic acceptance records, with the account that
- * validated it as the one who made it answerable. Running it again finds
- * nothing left.
+ * answered (user's decision of 2026-11-17), published when validated and
+ * incorporated by that acceptance whatever the document's rule (user's
+ * decision of 2026-11-20). The ones validated before those rules get the
+ * same once, at boot: presented and undecided, validated, in an assembly
+ * that is not closed and a document not voted, and still private, or with
+ * no answer and no `position_changed` ever (an answer someone set back to
+ * pending is a choice, never overridden), or admitted with an acceptance.
+ * Each one goes through settleFormalAmendments, which checks each step
+ * again and records what the validation would have, with the account that
+ * validated it as the one who made it answerable. A rejected one stays as
+ * it is. Running it again finds nothing left.
  */
 export async function backfillFormalAnswers(): Promise<void> {
   const answered = db
@@ -59,8 +61,19 @@ export async function backfillFormalAnswers(): Promise<void> {
         isNotNull(amendments.validatedAt),
         isNotNull(amendments.validatedByUserId),
         ne(assemblies.status, "closed"),
-        sql`coalesce(${amendmentPositions.position}::text, 'pending') = 'pending'`,
-        sql`${amendments.id} not in (${answered})`,
+        isNull(documents.finalVoteId),
+        isNull(documents.consolidatedVersionId),
+        or(
+          isNull(amendments.publishedAt),
+          and(
+            sql`coalesce(${amendmentPositions.position}::text, 'pending') = 'pending'`,
+            sql`${amendments.id} not in (${answered})`,
+          ),
+          and(
+            eq(amendments.admission, "admitted"),
+            eq(amendmentPositions.position, "accept"),
+          ),
+        ),
       ),
     );
   if (rows.length === 0) return;
@@ -101,7 +114,7 @@ export async function backfillFormalAnswers(): Promise<void> {
         await loadMilestones(assembly.id),
         await loadAnswersOnValidation(document),
       );
-      await acceptAnswerableFormalAmendments(ctx, group.ids);
+      await settleFormalAmendments(ctx, group.ids);
       done += group.ids.length;
     } catch (error) {
       logError("amendments.formal_backfill", error, {
@@ -109,21 +122,21 @@ export async function backfillFormalAnswers(): Promise<void> {
       });
     }
   }
-  const accepted = await db
-    .select({ id: amendmentPositions.amendmentId })
-    .from(amendmentPositions)
+  const incorporated = await db
+    .select({ id: amendments.id })
+    .from(amendments)
     .where(
       and(
         inArray(
-          amendmentPositions.amendmentId,
+          amendments.id,
           rows.map((row) => row.id),
         ),
-        eq(amendmentPositions.position, "accept"),
+        eq(amendments.status, "approved"),
       ),
     );
   logInfo("amendments.formal_backfill", {
     candidates: rows.length,
     checked: done,
-    accepted: accepted.length,
+    incorporated: incorporated.length,
   });
 }

@@ -690,9 +690,25 @@ describe("saving", () => {
     expect(goneKey(undefined)).toBe("gone");
   });
 
-  it("explains Aceptar by the document's rule", () => {
-    expect(acceptHelpKey("incorporate")).toBe("acceptHelpIncorporate");
-    expect(acceptHelpKey("vote")).toBe("acceptHelpVote");
+  it("explains Aceptar by the amendment's rule", () => {
+    const partial = { kind: "partial" as const };
+    const formal = { kind: "formal" as const };
+    expect(acceptHelpKey(partial, "incorporate")).toBe("acceptHelpIncorporate");
+    expect(acceptHelpKey(partial, "vote")).toBe("acceptHelpVote");
+    // A formal one is always incorporated.
+    expect(acceptHelpKey(formal, "vote")).toBe("acceptHelpIncorporate");
+  });
+
+  it("incorporates an accepted formal amendment under either rule", () => {
+    expect(
+      acceptIncorporates({ kind: "partial", status: "submitted" }, "vote"),
+    ).toBe(false);
+    expect(
+      acceptIncorporates({ kind: "formal", status: "submitted" }, "vote"),
+    ).toBe(true);
+    expect(
+      acceptIncorporates({ kind: "formal", status: "approved" }, "vote"),
+    ).toBe(false);
   });
 
   it("says when an answer incorporated the amendment or took it out", () => {
@@ -1133,8 +1149,8 @@ describe("emptyReviewReason", () => {
 });
 
 describe("what accepting sets off", () => {
-  const open = { status: "submitted" as const };
-  const approved = { status: "approved" as const };
+  const open = { kind: "partial" as const, status: "submitted" as const };
+  const approved = { kind: "partial" as const, status: "approved" as const };
 
   it("applies only while accepting incorporates an undecided amendment", () => {
     expect(acceptIncorporates(open, "incorporate")).toBe(true);

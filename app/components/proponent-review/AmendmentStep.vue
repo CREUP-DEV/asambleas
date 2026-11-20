@@ -177,7 +177,7 @@ const mainAuthor = computed(() =>
 function choiceHelp(choice: ProponentAnswer): string {
   if (choice === "accept") {
     const help = t(
-      `proponentReview.answer.${acceptHelpKey(props.acceptedAmendments)}`,
+      `proponentReview.answer.${acceptHelpKey(props.amendment, props.acceptedAmendments)}`,
     );
     return incorporates.value && props.answersReserved
       ? `${help} ${t("proponentReview.answer.acceptRevealsApproval")}`

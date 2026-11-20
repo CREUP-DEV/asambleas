@@ -526,6 +526,22 @@ describe("splitReviewSelection", () => {
     ).toEqual({ validate: ["v1", "t1"], validateOnly: ["v1"], publish: [] });
   });
 
+  it("never keeps a formal amendment private when validating (2026-11-20)", () => {
+    const f1 = {
+      ...amendment("f1", "pending_validation"),
+      kind: "formal" as const,
+    };
+    expect(
+      splitReviewSelection(
+        {
+          toValidate: [amendment("v1", "pending_validation"), f1],
+          toPublish: [],
+        },
+        new Set(["v1", "f1"]),
+      ),
+    ).toEqual({ validate: ["v1", "f1"], validateOnly: ["v1"], publish: [] });
+  });
+
   it("validates only the first of two transactionals that share an amendment", () => {
     const t1 = transactional("t1", ["a", "b"]);
     const t2 = transactional("t2", ["b", "c"]);

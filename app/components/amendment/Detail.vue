@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type {
   AmendmentDto,
@@ -267,7 +268,8 @@ const decided = computed(
 const now = useAppNow();
 const windowClosed = computed(() => {
   const closesAt = toDate(props.document.window.closesAt);
-  return Boolean(closesAt && closesAt.getTime() <= now.value);
+  // The closing minute is still on time (isPastDeadline).
+  return Boolean(closesAt && isPastDeadline(closesAt, now.value));
 });
 const canManageRelations = computed(
   () =>

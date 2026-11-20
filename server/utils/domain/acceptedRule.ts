@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { db } from "../../db";
 import {
   amendmentAcceptances,
@@ -32,6 +32,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *   pending transactionals over them (closeTransactionalsOver);
  * - to "vote", the ones its acceptance approved go back to undecided
  *   (amendment_reopened with reason "rule_changed"), keeping the answer,
+ *   except the formal ones, which always follow "incorporate",
  *   and the transactionals their incorporation closed come back
  *   (reopenTransactionalsClosedBy).
  * The caller holds the document NO KEY UPDATE (updateDocument), which every
@@ -70,6 +71,8 @@ export async function applyAcceptedAmendmentsRule(
           : and(
               eq(amendments.status, "approved"),
               eq(amendments.approvalMethod, "proponent"),
+              // A formal one always follows "incorporate" (amendmentRule).
+              ne(amendments.kind, "formal"),
             ),
       ),
     );

@@ -32,6 +32,7 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import {
+  amendmentRule,
   answerableAfterDecision,
   rejectedByAnswer,
 } from "~~/shared/utils/positions";
@@ -488,7 +489,7 @@ function positionWait(
 ): AmendmentPositionBlocker | "decided" | null {
   if (context.finalVoted) return "decided";
   if (
-    rule === "incorporate" &&
+    amendmentRule(amendment.kind, rule) === "incorporate" &&
     amendment.status === "approved" &&
     amendment.approvalMethod === "proponent"
   ) {
@@ -597,11 +598,11 @@ export function amendmentPositionBlocker(
  * it.
  */
 export function amendmentAcceptBlocked(
-  amendment: Pick<AmendmentDto, "status" | "reviewState">,
+  amendment: Pick<AmendmentDto, "kind" | "status" | "reviewState">,
   rule: AcceptedAmendmentRule,
 ): boolean {
   return (
-    rule === "incorporate" &&
+    amendmentRule(amendment.kind, rule) === "incorporate" &&
     amendment.status === "submitted" &&
     amendment.reviewState === "validated"
   );
@@ -634,7 +635,8 @@ export function amendmentPositionNext(
     return amendmentAnswerable(amendment, rule, context) ? "decided" : null;
   }
   const answer = amendment.position?.position ?? "pending";
-  if (rule === "incorporate") {
+  // A formal one always follows "incorporate" (amendmentRule).
+  if (amendmentRule(amendment.kind, rule) === "incorporate") {
     if (answer === "accept") return "incorporated";
     return answer === "pending" ? "incorporateIfAccepted" : "vote";
   }

@@ -2,9 +2,10 @@ import { logError } from "../utils/core/logger";
 import { backfillFormalAnswers } from "../utils/domain/formalBackfill";
 
 /**
- * Once per boot, the automatic acceptance of the formal amendments that
- * could be answered before it existed (backfillFormalAnswers): after the
- * first boot of the release that brought it, nothing is left to do.
+ * Once per boot, the formal amendments validated before today's rules are
+ * published, accepted by themselves and incorporated as those rules would
+ * have done (backfillFormalAnswers): after the first boot of the release
+ * that brought them, nothing is left to do.
  */
 export default defineNitroPlugin(() => {
   if (!process.env.DATABASE_URL) return;

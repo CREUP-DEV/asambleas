@@ -956,6 +956,20 @@ describe("the main presenter's answer", () => {
     );
   });
 
+  it("incorporates a formal amendment whatever the document's rule (2026-11-20)", () => {
+    const formal = amendment("f", [], { kind: "formal" });
+    expect(amendmentPositionNext(formal, "vote")).toBe("incorporateIfAccepted");
+    const incorporated = {
+      ...formal,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(amendmentAwaitsPosition(incorporated, "vote")).toBe(true);
+    expect(
+      amendmentAwaitsPosition({ ...incorporated, kind: "partial" }, "vote"),
+    ).toBe(false);
+  });
+
   it("takes no answer once the document was voted", () => {
     const voted = { finalVoted: true };
     for (const rule of rules) {

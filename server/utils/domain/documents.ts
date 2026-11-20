@@ -134,6 +134,7 @@ import type {
 import type { Block } from "~~/shared/types/content";
 import {
   amendmentWindow,
+  isPastDeadline,
   isWindowOpen,
   type AmendmentWindow,
   type Milestones,
@@ -297,7 +298,7 @@ export function documentsDeadlinePassed(
   now = new Date(),
 ): boolean {
   const close = milestones.documents_close;
-  return Boolean(close && now > close);
+  return Boolean(close && isPastDeadline(close, now));
 }
 
 /** What the presentation rules read of the agenda item a document hangs from. */

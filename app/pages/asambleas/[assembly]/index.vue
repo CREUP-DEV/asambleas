@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type { MeWorkDto } from "~~/shared/types/api";
 import { isDocumentLeft, readNeighbours } from "~~/shared/utils/readMarks";
@@ -82,7 +83,7 @@ const now = useAppNow();
 const documentsClosed = computed(
   () =>
     documentsClose.value !== null &&
-    new Date(documentsClose.value).getTime() <= now.value,
+    isPastDeadline(documentsClose.value, now.value),
 );
 
 async function onDocumentCreated(): Promise<void> {

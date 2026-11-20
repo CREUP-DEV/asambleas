@@ -4,6 +4,9 @@ import {
   assemblyDayOffset,
   checkCalendar,
   defaultMilestones,
+  isLateSubmission,
+  isPastDeadline,
+  isWindowOpen,
   milestoneOffsetBefore,
   respectsNotice,
   wholeDaysBeforeStart,
@@ -460,5 +463,33 @@ describe("assemblyDayOffset", () => {
 
   it("is NaN for an invalid date", () => {
     expect(assemblyDayOffset(Number.NaN)).toBeNaN();
+  });
+});
+
+describe("isPastDeadline", () => {
+  // 23:59 in Madrid (CET) on 1 December 2026.
+  const close = new Date("2026-12-01T22:59:00.000Z");
+
+  it("counts the deadline's own minute as on time (2026-11-20)", () => {
+    expect(isPastDeadline(close, "2026-12-01T22:59:00.000Z")).toBe(false);
+    expect(isPastDeadline(close, "2026-12-01T22:59:59.999Z")).toBe(false);
+    expect(isPastDeadline(close, "2026-12-01T23:00:00.000Z")).toBe(true);
+    expect(isPastDeadline(close, "2026-12-01T22:58:00.000Z")).toBe(false);
+  });
+
+  it("keeps the earlier reading for what was sent before the rule", () => {
+    const before = new Date("2026-11-14T22:59:00.000Z");
+    expect(isPastDeadline(before, "2026-11-14T22:59:30.000Z")).toBe(true);
+    expect(isPastDeadline(before, "2026-11-14T22:59:00.000Z")).toBe(false);
+  });
+
+  it("drives the amendment window", () => {
+    const window = { opensAt: null, closesAt: close };
+    const inMinute = new Date("2026-12-01T22:59:45.000Z");
+    const after = new Date("2026-12-01T23:00:00.000Z");
+    expect(isLateSubmission(window, inMinute)).toBe(false);
+    expect(isWindowOpen(window, inMinute)).toBe(true);
+    expect(isLateSubmission(window, after)).toBe(true);
+    expect(isWindowOpen(window, after)).toBe(false);
   });
 });

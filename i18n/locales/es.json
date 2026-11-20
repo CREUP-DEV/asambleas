@@ -1361,7 +1361,8 @@
         "publishFailed": "No se ha podido publicar la enmienda",
         "correctionFailed": "No se ha podido pedir la corrección"
       },
-      "transactionalPublishHint": "Una transaccional se publica al validarla, porque sustituye a enmiendas que ya ve toda la asamblea."
+      "transactionalPublishHint": "Una transaccional se publica al validarla, porque sustituye a enmiendas que ya ve toda la asamblea.",
+      "formalPublishHint": "Una enmienda de forma se publica al validarla y entra en el texto al momento; quien presenta el documento puede rechazarla."
     },
     "reviewAction": {
       "accept": "Validar",
@@ -3961,7 +3962,7 @@
       "assentHint": "Aprobar por asentimiento",
       "vote": "Votar",
       "voteHint": "Registrar la votación",
-      "formal": "De forma",
+      "formal": "Aprobar como de forma",
       "withdraw": "Marcar como retirada",
       "lapse": "Marcar como decaída",
       "reopen": "Reabrir",
@@ -4906,7 +4907,7 @@
       "awaitingAuthorsHelp": "Primero tiene que aceptarlas el autor principal de cada enmienda que agrupan; después podrás validarlas, y al hacerlo se publican. Si alguno la rechaza, o si alguna de esas enmiendas se resuelve antes (se decide, se retira o la sustituye otra transaccional), se cierra sola y sale de esta lista.",
       "countAwaitingAuthors": "{count} transaccional espera a sus autores | {count} transaccionales esperan a sus autores",
       "sharesSourcesWith": "Comparte enmiendas con {label}, que ya has seleccionado. Solo una de las dos puede sustituirlas: al validar una, la otra se cierra.",
-      "bulkValidateOnlySkipsTransactionals": "Las transaccionales seleccionadas no se incluyen: al validarlas siempre se publican.",
+      "bulkValidateOnlySkipsTransactionals": "Las transaccionales y las enmiendas de forma seleccionadas no se incluyen: al validarlas siempre se publican.",
       "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas.",
       "unvalidateHelp": "Vuelve a «Por revisar» tal como está",
       "correctValidatedHelp": "Vuelve a sus autores con una nota para que la corrijan",

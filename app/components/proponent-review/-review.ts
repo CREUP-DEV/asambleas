@@ -33,6 +33,7 @@ import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
 import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 import { positionRecorderKey } from "~/utils/format";
 import {
+  amendmentRule,
   positionsArePublic,
   type PositionsPublication,
 } from "~~/shared/utils/positions";
@@ -357,28 +358,38 @@ export function goneKey(
 }
 
 /**
- * What the answer means under the document's rule, as the key under
- * `proponentReview.answer` that explains "Aceptar": incorporated into the
- * text without a vote, or voted by the assembly.
+ * What the answer means under the amendment's rule (amendmentRule: a formal
+ * one is always incorporated), as the key under `proponentReview.answer`
+ * that explains "Aceptar": incorporated into the text without a vote, or
+ * voted by the assembly.
  */
-export function acceptHelpKey(rule: AcceptedAmendmentRule): string {
-  return rule === "incorporate" ? "acceptHelpIncorporate" : "acceptHelpVote";
+export function acceptHelpKey(
+  amendment: Pick<AmendmentDto, "kind">,
+  rule: AcceptedAmendmentRule,
+): string {
+  return amendmentRule(amendment.kind, rule) === "incorporate"
+    ? "acceptHelpIncorporate"
+    : "acceptHelpVote";
 }
 
 // What accepting sets off ------------------------------------------------------
 
 /**
- * Accepting it now approves it at once: the document's rule is
- * "incorporate" and it is still undecided (one already incorporated has
+ * Accepting it now approves it at once: its rule is "incorporate" (the
+ * document's, or always for a formal one, amendmentRule) and it is still
+ * undecided (one already incorporated has
  * nothing left to set off). The quiet notes about what accepting does (a
  * clash with what is already in the text, the transactionals it withdraws,
  * the approval everyone sees) apply only then.
  */
 export function acceptIncorporates(
-  amendment: Pick<AmendmentDto, "status">,
+  amendment: Pick<AmendmentDto, "kind" | "status">,
   rule: AcceptedAmendmentRule,
 ): boolean {
-  return rule === "incorporate" && amendment.status === "submitted";
+  return (
+    amendmentRule(amendment.kind, rule) === "incorporate" &&
+    amendment.status === "submitted"
+  );
 }
 
 /**
@@ -388,7 +399,7 @@ export function acceptIncorporates(
  * `overlaps`; ids `byId` does not hold are left out.
  */
 export function incorporatedClashIds(
-  amendment: Pick<AmendmentDto, "status">,
+  amendment: Pick<AmendmentDto, "kind" | "status">,
   rule: AcceptedAmendmentRule,
   overlaps: readonly { id: string }[],
   byId: ReadonlyMap<string, Pick<AmendmentDto, "status">>,

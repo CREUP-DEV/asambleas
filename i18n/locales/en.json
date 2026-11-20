@@ -1361,7 +1361,8 @@
         "publishFailed": "The amendment could not be published",
         "correctionFailed": "The correction could not be requested"
       },
-      "transactionalPublishHint": "A transactional is published when validated, because it replaces amendments the whole assembly can already see."
+      "transactionalPublishHint": "A transactional is published when validated, because it replaces amendments the whole assembly can already see.",
+      "formalPublishHint": "A formal amendment is published when validated and goes into the text at once; the document's presenter can reject it."
     },
     "reviewAction": {
       "accept": "Validate",
@@ -3961,7 +3962,7 @@
       "assentHint": "Approve by assent",
       "vote": "Vote",
       "voteHint": "Record the vote",
-      "formal": "Formal correction",
+      "formal": "Approve as a formal correction",
       "withdraw": "Mark as withdrawn",
       "lapse": "Mark as lapsed",
       "reopen": "Reopen",
@@ -4906,7 +4907,7 @@
       "awaitingAuthorsHelp": "First the main author of each amendment they group has to accept them; then you can validate them, which publishes them. If any of them rejects one, or one of those amendments is settled first (decided, withdrawn or replaced by another transactional), it closes by itself and leaves this list.",
       "countAwaitingAuthors": "{count} transactional waiting for its authors | {count} transactionals waiting for their authors",
       "sharesSourcesWith": "It shares amendments with {label}, which you already selected. Only one of them can replace them: validating one closes the other.",
-      "bulkValidateOnlySkipsTransactionals": "The selected transactionals are left out: they are always published when validated.",
+      "bulkValidateOnlySkipsTransactionals": "The selected transactionals and formal amendments are left out: they are always published when validated.",
       "transactionalsPublished": "Transactionals are always published when you validate them, because they replace amendments that are already public.",
       "unvalidateHelp": "Back to “To review” as it is",
       "correctValidatedHelp": "Back to its authors with a note to fix it",

@@ -14,6 +14,7 @@ import type {
   ReviewQueueAmendmentDto,
   ReviewQueueDto,
 } from "~~/shared/types/api";
+import { alwaysPublishedOnValidation } from "~~/shared/utils/positions";
 
 /** Shared fetch key of an assembly's review queue (hub, sidebar, inbox). */
 export function reviewQueueKey(assemblyId: string): string {
@@ -361,8 +362,9 @@ export interface ReviewSelection {
   validate: string[];
   /**
    * Those of `validate` that may stay private once validated: all but the
-   * transactionals, which replace public amendments and so are always
-   * published when validated.
+   * transactionals, which replace public amendments, and the formal ones,
+   * which go into the text at once, so they are always published when
+   * validated (alwaysPublishedOnValidation).
    */
   validateOnly: string[];
   /** Selected amendments the actor may publish now. */
@@ -384,7 +386,7 @@ export function splitReviewSelection(
   return {
     validate: validate.map((amendment) => amendment.id),
     validateOnly: validate
-      .filter((amendment) => amendment.kind !== "transactional")
+      .filter((amendment) => !alwaysPublishedOnValidation(amendment.kind))
       .map((amendment) => amendment.id),
     publish: publishableNow(group)
       .filter((amendment) => selected.has(amendment.id))

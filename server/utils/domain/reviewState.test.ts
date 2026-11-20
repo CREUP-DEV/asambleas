@@ -23,6 +23,7 @@ import {
   positionEffect,
   positionRecordedBy,
   publishOnValidation,
+  reclassifyIncorporation,
   reclassifyPositionPlan,
   reviewInadmissionCase,
   shouldAutoAcceptPosition,
@@ -766,6 +767,7 @@ describe("countPositionsPending", () => {
 
 describe("acceptedRulePlan", () => {
   const answered = {
+    kind: "partial" as const,
     status: "submitted" as const,
     admission: "admitted" as const,
     validatedAt: at,
@@ -806,6 +808,8 @@ describe("acceptedRulePlan", () => {
           { ...incorporated, id: "a" },
           { ...incorporated, id: "b", approvalMethod: "vote" },
           { ...answered, id: "c" },
+          // A formal one always follows "incorporate" (2026-11-20).
+          { ...incorporated, id: "d", kind: "formal" },
         ],
         "vote",
       ),
@@ -1140,6 +1144,97 @@ describe("publishOnValidation", () => {
   it("always publishes a transactional", () => {
     expect(publishOnValidation({ kind: "transactional" }, false)).toBe(true);
     expect(publishOnValidation({ kind: "transactional" }, true)).toBe(true);
+  });
+
+  it("always publishes a formal amendment (2026-11-20)", () => {
+    expect(publishOnValidation({ kind: "formal" }, false)).toBe(true);
+  });
+});
+
+describe("formal amendments follow incorporate whatever the document (2026-11-20)", () => {
+  const formal = {
+    status: "submitted" as const,
+    approvalMethod: null,
+    admission: "admitted" as const,
+    kind: "formal" as const,
+    outcomeVoteId: null,
+  };
+  const incorporated = {
+    ...formal,
+    status: "approved" as const,
+    approvalMethod: "proponent" as const,
+  };
+
+  it("incorporates an accepted formal amendment under the vote rule", () => {
+    expect(positionEffect(formal, "accept", "vote")).toBe("approve");
+    expect(
+      positionEffect({ ...formal, kind: "partial" }, "accept", "vote"),
+    ).toBeNull();
+    // A late one waits for the assembly's admission.
+    expect(
+      positionEffect({ ...formal, admission: "pending" }, "accept", "vote"),
+    ).toBeNull();
+  });
+
+  it("rejects an incorporated formal amendment its presenter rejects", () => {
+    for (const rule of ["incorporate", "vote"] as const) {
+      expect(positionEffect(incorporated, "reject", rule)).toBe("reject");
+      expect(positionEffect(incorporated, "pending", rule)).toBe("reopen");
+      expect(positionEffect(incorporated, "accept", rule)).toBeNull();
+    }
+  });
+
+  it("takes out what stopped being formal under the vote rule", () => {
+    const partial = { ...incorporated, kind: "partial" as const };
+    expect(positionEffect(partial, "pending", "vote")).toBe("reopen");
+  });
+
+  it("keeps the answer of an incorporated formal one open under the vote rule", () => {
+    const row = {
+      ...incorporated,
+      validatedAt: at,
+      publishedAt: at,
+    };
+    expect(positionBlocker(row, "vote")).toBeNull();
+    expect(positionBlocker({ ...row, kind: "partial" }, "vote")).toBe(
+      "decided",
+    );
+  });
+
+  it("follows the new kind's rule when reclassified with an acceptance by hand", () => {
+    const submitted = {
+      status: "submitted" as const,
+      approvalMethod: null,
+      admission: "admitted" as const,
+    };
+    const approved = {
+      ...submitted,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(reclassifyIncorporation(submitted, "formal", "accept", "vote")).toBe(
+      "approve",
+    );
+    expect(
+      reclassifyIncorporation(submitted, "formal", "reject", "vote"),
+    ).toBeNull();
+    expect(
+      reclassifyIncorporation(
+        { ...submitted, admission: "pending" },
+        "formal",
+        "accept",
+        "vote",
+      ),
+    ).toBeNull();
+    expect(reclassifyIncorporation(approved, "partial", "accept", "vote")).toBe(
+      "reopen",
+    );
+    expect(
+      reclassifyIncorporation(approved, "partial", "accept", "incorporate"),
+    ).toBeNull();
+    expect(
+      reclassifyIncorporation(submitted, "partial", "accept", "vote"),
+    ).toBeNull();
   });
 });
 

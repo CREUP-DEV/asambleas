@@ -199,6 +199,7 @@ import {
   positionEffect,
   positionRecordedBy,
   positionRecorder,
+  reclassifyIncorporation,
   reclassifyPositionPlan,
   REVIEW_INADMISSION_MESSAGE,
   reviewInadmissionCase,
@@ -3968,20 +3969,26 @@ export async function publishAmendments(
 }
 
 /**
- * Accepts by itself, as it would have the moment it became answerable, every
- * formal amendment among `ids` of the document that can be answered now and
- * has no answer yet (autoAcceptFormal): for the ones that became answerable
- * before the automatic answer existed (backfillFormalAnswers). The same
- * locks as publishAmendments; `ctx.actor` is who made them answerable.
+ * Brings the formal amendments among `ids` of the document to where today's
+ * rules would have left them (backfillFormalAnswers): a validated one still
+ * private is published (publishOnValidation, user's decision of
+ * 2026-11-20; amendment_published, numbered as on publication), one that
+ * can be answered now with no answer yet is accepted by itself
+ * (autoAcceptFormal), and an admitted, undecided one its main presenter
+ * accepted is incorporated (incorporateOnAdmission: a formal one always
+ * follows "incorporate", amendmentRule). Nothing once the document is
+ * voted. The same locks as publishAmendments; `ctx.actor` is who validated
+ * them, who made them answerable.
  */
-export async function acceptAnswerableFormalAmendments(
+export async function settleFormalAmendments(
   ctx: DocumentAmendmentContext,
   ids: string[],
 ): Promise<void> {
   if (ids.length === 0) return;
-  const { document } = ctx;
+  const { actor, document, now } = ctx;
   await db.transaction(async (tx) => {
     const documentRow = await lockDocumentRow(tx, document.id, "share");
+    if (documentVoted(documentRow)) return;
     const sourceMap = await loadSourceMap(tx, document.id);
     const overIds = transactionalsOverIds(sourceMap, ids);
     const lockedAll = await lockAmendments(
@@ -3991,13 +3998,54 @@ export async function acceptAnswerableFormalAmendments(
     );
     const parties =
       overIds.length > 0 ? await lockParties(tx, overIds, "share") : [];
+    const toPublish = lockedAll
+      .filter(
+        (row) =>
+          ids.includes(row.id) &&
+          row.kind === "formal" &&
+          row.status === "submitted" &&
+          isAmendmentPublishable(row),
+      )
+      .map((row) => row.id);
+    if (toPublish.length > 0) {
+      await tx
+        .update(amendments)
+        .set({ publishedAt: now })
+        .where(
+          and(
+            inArray(amendments.id, toPublish),
+            isNotNull(amendments.validatedAt),
+            isNull(amendments.publishedAt),
+          ),
+        );
+      await numberAmendments(tx, document.id, toPublish);
+      for (const id of toPublish) {
+        await recordEvent(tx, {
+          assemblyId: ctx.assembly.id,
+          documentId: document.id,
+          entityType: "amendment",
+          entityId: id,
+          type: "amendment_published",
+          payload: {},
+          actor,
+        });
+      }
+    }
+    const lockedIds = lockedAll.map((row) => row.id);
     await autoAcceptFormal(tx, ctx, {
       ids,
-      lockedIds: lockedAll.map((row) => row.id),
+      lockedIds,
       sourceMap,
       parties,
       rule: documentRow.acceptedAmendments,
-      voted: documentVoted(documentRow),
+      voted: false,
+    });
+    await incorporateOnAdmission(tx, ctx, {
+      ids,
+      lockedIds,
+      sourceMap,
+      rule: documentRow.acceptedAmendments,
+      voted: false,
     });
   });
 }
@@ -4382,7 +4430,10 @@ export async function declareInadmissibleOnReview(
  * answerable and unanswered, it is accepted by itself; made a content
  * amendment while its answer is still that automatic acceptance, the
  * answer goes back to pending, which reopens it if the acceptance had
- * incorporated it (recordPosition). An answer given by hand stays.
+ * incorporated it (recordPosition). An answer given by hand stays, and the
+ * amendment follows its new kind's rule (reclassifyIncorporation): an
+ * acceptance incorporates a formal one, and one made a content amendment
+ * under "vote" leaves the text (amendment_reopened, reason "reclassified").
  * Optimistic lock on the amendment; the event carries both kinds. Locks
  * the document (share), then the amendment with the transactionals over
  * it and what they group (restoreLockIds), then their acceptances, then
@@ -4477,6 +4528,50 @@ export async function reclassifyAmendment(
         locked,
         parties,
       });
+      return;
+    }
+    // An acceptance given by hand stays, and the amendment follows its new
+    // kind's rule (amendmentRule): made formal it goes into the text, made
+    // a content amendment under "vote" it leaves it.
+    const move = reclassifyIncorporation(current, to, position, rule);
+    if (move === "approve") {
+      await incorporateOnAdmission(tx, ctx, {
+        ids: [amendment.id],
+        lockedIds: locked.map((row) => row.id),
+        sourceMap,
+        rule,
+        voted: false,
+      });
+    } else if (move === "reopen") {
+      const reopened = await tx
+        .update(amendments)
+        .set({
+          status: "submitted",
+          approvalMethod: null,
+          outcomeNote: null,
+          decidedAt: null,
+        })
+        .where(
+          and(
+            eq(amendments.id, amendment.id),
+            eq(amendments.status, "approved"),
+            eq(amendments.approvalMethod, "proponent"),
+          ),
+        )
+        .returning({ id: amendments.id });
+      if (reopened.length === 0)
+        fail(409, "La enmienda ha cambiado. Recarga la página");
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: ctx.document.id,
+        entityType: "amendment",
+        entityId: amendment.id,
+        type: "amendment_reopened",
+        payload: { previousStatus: "approved", reason: "reclassified" },
+        actor,
+      });
+      // What its incorporation closed comes back.
+      await restoreDependents(tx, ctx, sourceMap, locked, parties, [current]);
     }
   });
 
@@ -4799,8 +4894,9 @@ async function recordPosition(
   } else if (effect === "reject") {
     // A formal amendment its main presenter rejects is not debated by
     // default (user's decision of 2026-11-20): rejected at once, with no
-    // vote (rejectedByAnswer), and what waited on it closed. The Mesa may
-    // reopen it to debate and vote it.
+    // vote (rejectedByAnswer), also when its acceptance had incorporated
+    // it, and what waited on it closed (what its incorporation closed
+    // stays closed). The Mesa may reopen it to debate and vote it.
     const updated = await tx
       .update(amendments)
       .set({
@@ -4813,8 +4909,14 @@ async function recordPosition(
       .where(
         and(
           eq(amendments.id, current.id),
-          eq(amendments.status, "submitted"),
           eq(amendments.admission, "admitted"),
+          or(
+            eq(amendments.status, "submitted"),
+            and(
+              eq(amendments.status, "approved"),
+              eq(amendments.approvalMethod, "proponent"),
+            ),
+          ),
         ),
       )
       .returning({ id: amendments.id });
@@ -4956,7 +5058,8 @@ async function incorporateAcceptance(
 }
 
 /**
- * Under the "incorporate" rule, approves the amendments among `ids` that
+ * Under the "incorporate" rule (always for a formal one, amendmentRule),
+ * approves the amendments among `ids` that
  * have just become undecided and admitted with their main presenter's
  * acceptance already on record: the late ones the assembly has just
  * admitted (user's decision of 2026-11-17: a late one is answered once
@@ -4976,12 +5079,18 @@ async function incorporateOnAdmission(
     voted: boolean;
   },
 ): Promise<void> {
-  if (input.voted || input.rule !== "incorporate" || input.ids.length === 0) {
-    return;
-  }
+  if (input.voted || input.ids.length === 0) return;
   const documentId = ctx.document.id;
   const lockedIds = unique([...input.ids, ...input.lockedIds]);
-  const ids = [...input.ids].sort();
+  // Under "vote" only the formal ones follow "incorporate" (amendmentRule).
+  const ids = (
+    input.rule === "incorporate"
+      ? [...input.ids]
+      : (await rereadLocked(tx, documentId, input.ids))
+          .filter((row) => row.kind === "formal")
+          .map((row) => row.id)
+  ).sort();
+  if (ids.length === 0) return;
   const positions = await lockPositions(tx, ids);
   for (const id of ids) {
     if (positions.get(id)?.position !== "accept") continue;

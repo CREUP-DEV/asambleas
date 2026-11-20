@@ -7,6 +7,7 @@ import {
   nextItemId,
 } from "~/composables/document/agendaReturn";
 import { memberSubmissionKinds } from "~/composables/document/documentKinds";
+import { isPastDeadline } from "~~/shared/utils/calendar";
 
 /**
  * The new-document modal of a hub page (home, agenda): who may add, under
@@ -48,7 +49,7 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
     const close = value.milestones.find(
       (milestone) => milestone.key === "documents_close",
     );
-    return !close || new Date(close.at).getTime() > now.value;
+    return !close || !isPastDeadline(close.at, now.value);
   });
 
   /** Every item in agenda order, numbered as on the agenda. */

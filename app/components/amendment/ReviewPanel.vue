@@ -13,6 +13,7 @@ import type {
   ValidateAmendmentsBody,
 } from "~~/shared/types/api";
 import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
+import { alwaysPublishedOnValidation } from "~~/shared/utils/positions";
 import { transactionalProgressOf } from "~/composables/amendment/transactional";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
@@ -220,9 +221,9 @@ const ICON_CLASSES = {
   error: "text-error",
 } as const;
 const canValidate = computed(() => props.amendment.can.validate);
-/** Validating a transactional always publishes it. */
-const publishesOnValidation = computed(
-  () => props.amendment.kind === "transactional",
+/** Validating a transactional or a formal one always publishes it. */
+const publishesOnValidation = computed(() =>
+  alwaysPublishedOnValidation(props.amendment.kind),
 );
 const canPublish = computed(() => props.amendment.can.publish);
 /** The note is needed to send it back; not to close it (user's decision of 2026-11-20). */
@@ -653,7 +654,9 @@ async function askCorrection(): Promise<void> {
       <p class="text-muted text-xs">
         {{
           publishesOnValidation
-            ? t("amendment.review.transactionalPublishHint")
+            ? amendment.kind === "formal"
+              ? t("amendment.review.formalPublishHint")
+              : t("amendment.review.transactionalPublishHint")
             : t("amendment.review.validateOnlyHint")
         }}
       </p>

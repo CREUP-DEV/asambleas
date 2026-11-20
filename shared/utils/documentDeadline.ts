@@ -1,4 +1,5 @@
 import type { DocumentKind, MilestoneKey } from "../constants/domain";
+import { isPastDeadline } from "./calendar";
 
 /**
  * The calendar milestone after which a presented document reads as late
@@ -22,12 +23,15 @@ export function lateNeedsAssembly(kind: DocumentKind): boolean {
   return kind !== "report";
 }
 
-/** Whether a document was sent after its deadline (documentDeadlineKey). */
+/**
+ * Whether a document was sent after its deadline (documentDeadlineKey),
+ * the deadline's own minute on time (isPastDeadline).
+ */
 export function sentAfterDeadline(
   document: { kind: DocumentKind; submittedAt: string | Date | null },
   milestoneAt: (key: MilestoneKey) => string | Date | null | undefined,
 ): boolean {
   const due = milestoneAt(documentDeadlineKey(document.kind));
   if (!due || document.submittedAt === null) return false;
-  return new Date(document.submittedAt).getTime() > new Date(due).getTime();
+  return isPastDeadline(due, document.submittedAt);
 }

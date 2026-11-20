@@ -1,8 +1,39 @@
 import type {
+  AcceptedAmendmentRule,
   AmendmentKind,
   AmendmentStatus,
   ApprovalMethod,
 } from "../constants/domain";
+
+/**
+ * The rule an amendment's acceptance follows: a formal amendment ("de
+ * forma") is always incorporated by its main presenter's acceptance (the
+ * automatic one included), whatever the document's rule (user's decision of
+ * 2026-11-20); rejecting it rejects it (rejectedByAnswer), and the Mesa may
+ * reopen it. Any other kind follows the document
+ * (documents.acceptedAmendments). Read
+ * on the server (positionEffect, positionBlocker, acceptedRulePlan) and on
+ * the client, so both say the same.
+ */
+export function amendmentRule(
+  kind: AmendmentKind | undefined,
+  documentRule: AcceptedAmendmentRule,
+): AcceptedAmendmentRule {
+  return kind === "formal" ? "incorporate" : documentRule;
+}
+
+/**
+ * Whether the Secretaría's validation always publishes an amendment of this
+ * kind, whatever it chose: a transactional replaces amendments everyone
+ * already reads, and a formal one goes into the text at once (amendmentRule,
+ * user's decision of 2026-11-20). The server's publishOnValidation and the
+ * review forms (no «Validar sin publicar» for them) read it.
+ */
+export function alwaysPublishedOnValidation(
+  kind: AmendmentKind | undefined,
+): boolean {
+  return kind === "transactional" || kind === "formal";
+}
 
 /**
  * Whether the main presenter's answers to a document's amendments are
@@ -61,10 +92,12 @@ export function answerableAfterDecision(row: {
 /**
  * A formal amendment its main presenter's rejection closed (user's decision
  * of 2026-11-20): formal ones the presenter rejects are not debated by
- * default, so the answer rejects it at once (positionEffect "reject"). It
- * is told by its having no vote: the Mesa rejects only by vote. Its answer
- * stays open until the final vote: any other answer reopens it
- * ("reopen_rejected"), and the Mesa may reopen it to debate and vote it.
+ * default, so the answer rejects it at once (positionEffect "reject"), also
+ * once its acceptance had incorporated it. It is told by its having no
+ * vote: the Mesa rejects only by vote. Its answer stays open until the
+ * final vote: any other answer reopens it ("reopen_rejected", and an
+ * acceptance incorporates it again), and the Mesa may reopen it to debate
+ * and vote it.
  */
 export function rejectedByAnswer(
   row: { kind: AmendmentKind; status: AmendmentStatus },

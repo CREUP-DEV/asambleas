@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
+import { alwaysPublishedOnValidation } from "~~/shared/utils/positions";
 import type { Block } from "~~/shared/types/content";
 import {
   canReclassifyAmendment,
@@ -239,8 +240,12 @@ const selectBlocked = computed(
  * publicar". Not for a transactional: it replaces public amendments, so
  * validating it publishes it.
  */
+/** A transactional and a formal one are always published when validated. */
 const canValidateOnly = computed(
-  () => canAct.value && stage.value === "validate" && !isTransactional.value,
+  () =>
+    canAct.value &&
+    stage.value === "validate" &&
+    !alwaysPublishedOnValidation(props.amendment.kind),
 );
 
 const moreItems = computed<DropdownMenuItem[]>(() => {

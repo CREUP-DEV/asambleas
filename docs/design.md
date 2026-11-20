@@ -789,7 +789,10 @@ presenter itself or the Secretaría changes who the main presenter is.
    accepts is approved at once without a vote (approval method
    "proponent"); if the presenter changes its answer before the final vote,
    the amendment goes back to undecided. With "vote" every amendment is
-   voted.
+   voted, except the formal ones ("de forma"), which always follow
+   "incorporate" (user's decision of 2026-11-20): published when validated,
+   accepted by themselves and so in the text at once; the presenter may
+   reject one, which rejects it, and the Mesa may reopen it to debate it.
 
 **Proponent review.** The main presenter goes through the amendments it has
 to answer one by one in a review mode: the change in large type, its

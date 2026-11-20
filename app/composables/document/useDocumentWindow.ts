@@ -1,5 +1,5 @@
 import type { DocumentSummaryDto } from "~~/shared/types/api";
-import { isWindowOpen } from "~~/shared/utils/calendar";
+import { isPastDeadline, isWindowOpen } from "~~/shared/utils/calendar";
 
 /**
  * A document's amendment window against the shared clock, so a window that
@@ -41,7 +41,7 @@ export function useDocumentWindow(document: () => DocumentSummaryDto) {
   const countdown = computed<{ label: string; at: string } | null>(() => {
     if (!hasWindow.value) return null;
     const { opensAt, closesAt } = document().window;
-    if (openNow.value && closesAt && new Date(closesAt).getTime() > now.value) {
+    if (openNow.value && closesAt && !isPastDeadline(closesAt, now.value)) {
       return { label: t("agenda.document.windowCloses"), at: closesAt };
     }
     if (!openNow.value && opensAt && new Date(opensAt).getTime() > now.value) {

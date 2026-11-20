@@ -11,7 +11,10 @@ import type {
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AmendmentReviewState } from "~~/shared/types/api";
 import { amendmentCodeSeq } from "~~/shared/utils/amendmentCode";
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import {
+  alwaysPublishedOnValidation,
+  amendmentRule,
   answerableAfterDecision,
   rejectedByAnswer,
 } from "~~/shared/utils/positions";
@@ -342,15 +345,18 @@ export function awaitsPartyAnswer(input: {
 
 /**
  * Whether the Secretaría's validation publishes an amendment: as it chose
- * (`requested`), except a transactional, which always is. Validating a
- * transactional makes it replace published amendments, so it cannot stay
- * private: delegates would see the originals replaced by nothing.
+ * (`requested`), except a transactional and a formal one, which always are.
+ * Validating a transactional makes it replace published amendments, so it
+ * cannot stay private: delegates would see the originals replaced by
+ * nothing. A formal one goes into the text as soon as it is validated
+ * (user's decision of 2026-11-20: accepted by itself and incorporated,
+ * amendmentRule), so everyone reads it at once.
  */
 export function publishOnValidation(
   row: { kind: AmendmentKind },
   requested: boolean,
 ): boolean {
-  return requested || row.kind === "transactional";
+  return requested || alwaysPublishedOnValidation(row.kind);
 }
 
 /**
@@ -574,7 +580,7 @@ export function positionBlocker(
     return null;
   }
   if (
-    rule === "incorporate" &&
+    amendmentRule(row.kind, rule) === "incorporate" &&
     row.status === "approved" &&
     row.approvalMethod === "proponent"
   ) {
@@ -673,34 +679,43 @@ export function positionRecorder(
  * amendment approved that way away from "accept" reopens it (back to
  * submitted). A late one the assembly has not admitted yet keeps the
  * acceptance and is approved when admitted (incorporateOnAdmission). Under
- * "vote" an acceptance never decides anything.
- * Under either rule (user's decision of 2026-11-20), rejecting an
- * undecided, admitted formal amendment rejects it at once ("reject": not
- * debated by default), and any other answer to one rejected that way
- * reopens it ("reopen_rejected", rejectedByAnswer); under "incorporate" an
- * acceptance then incorporates it.
+ * "vote" an acceptance never decides anything. A formal amendment always
+ * follows "incorporate" (amendmentRule, user's decision of 2026-11-20):
+ * accepted (by itself, as a rule) it goes into the text.
+ * Under either rule, rejecting an admitted formal amendment, undecided or
+ * incorporated by its acceptance, rejects it at once ("reject": not debated
+ * by default; the Mesa may reopen it), and any other answer to one rejected
+ * that way reopens it ("reopen_rejected", rejectedByAnswer), after which an
+ * acceptance incorporates it. Moving any other amendment the acceptance
+ * approved away from "accept" reopens it under either rule, so one that
+ * stopped being formal under "vote" leaves the text too.
  */
 export function positionEffect(
   row: {
     status: AmendmentStatus;
     approvalMethod: ApprovalMethod | null;
     admission: AdmissionStatus;
-    /** With `outcomeVoteId`: the formal ones' own effects (above). */
+    /**
+     * Its rule (amendmentRule) and, with `outcomeVoteId`, the formal ones'
+     * own effects (above).
+     */
     kind?: AmendmentKind;
     outcomeVoteId?: string | null;
   },
   position: ProponentPosition,
   rule: AcceptedAmendmentRule,
 ): "approve" | "reopen" | "reject" | "reopen_rejected" | null {
+  const incorporated =
+    row.status === "approved" && row.approvalMethod === "proponent";
+  if (
+    row.kind === "formal" &&
+    row.admission === "admitted" &&
+    (row.status === "submitted" || incorporated) &&
+    position === "reject"
+  ) {
+    return "reject";
+  }
   if (row.kind !== undefined && row.outcomeVoteId !== undefined) {
-    if (
-      row.kind === "formal" &&
-      row.status === "submitted" &&
-      row.admission === "admitted" &&
-      position === "reject"
-    ) {
-      return "reject";
-    }
     if (
       rejectedByAnswer(
         { kind: row.kind, status: row.status },
@@ -711,20 +726,14 @@ export function positionEffect(
       return "reopen_rejected";
     }
   }
-  if (rule !== "incorporate") return null;
+  if (incorporated && position !== "accept") return "reopen";
+  if (amendmentRule(row.kind, rule) !== "incorporate") return null;
   if (
     row.status === "submitted" &&
     row.admission === "admitted" &&
     position === "accept"
   ) {
     return "approve";
-  }
-  if (
-    row.status === "approved" &&
-    row.approvalMethod === "proponent" &&
-    position !== "accept"
-  ) {
-    return "reopen";
   }
   return null;
 }
@@ -785,6 +794,34 @@ export function reclassifyPositionPlan(
 }
 
 /**
+ * What reclassifying an amendment the main presenter accepted by hand does
+ * to its place in the text, once its kind is `to` (reclassifyPositionPlan
+ * left the answer as it is): made formal, undecided and admitted, it is
+ * incorporated ("approve"), since a formal one always follows
+ * "incorporate" (amendmentRule); made a content amendment while that
+ * acceptance had incorporated it, under the "vote" rule it leaves the text
+ * ("reopen"), back to undecided for the assembly. Null otherwise.
+ */
+export function reclassifyIncorporation(
+  row: {
+    status: AmendmentStatus;
+    approvalMethod: ApprovalMethod | null;
+    admission: AdmissionStatus;
+  },
+  to: AmendmentKind,
+  position: ProponentPosition | null,
+  rule: AcceptedAmendmentRule,
+): "approve" | "reopen" | null {
+  if (position !== "accept") return null;
+  if (row.status === "approved" && row.approvalMethod === "proponent") {
+    return amendmentRule(to, rule) === "incorporate" ? null : "reopen";
+  }
+  return positionEffect({ ...row, kind: to }, "accept", rule) === "approve"
+    ? "approve"
+    : null;
+}
+
+/**
  * What changing a document's rule for accepted amendments
  * (documents.acceptedAmendments) does to the amendments already answered,
  * so the rule always says what an accepted amendment is:
@@ -795,12 +832,14 @@ export function reclassifyPositionPlan(
  *   sources (`keepsSources`, only a transactional presented under the
  *   earlier rule, which the Mesa approves);
  * - to "vote": every amendment the presenter's acceptance approved goes
- *   back to undecided, keeping the answer, for the assembly to vote.
+ *   back to undecided, keeping the answer, for the assembly to vote,
+ *   except a formal one, which always follows "incorporate" (amendmentRule).
  * Ids in input order.
  */
 export function acceptedRulePlan(
   rows: {
     id: string;
+    kind: AmendmentKind;
     status: AmendmentStatus;
     admission: AdmissionStatus;
     validatedAt: Date | null;
@@ -833,7 +872,9 @@ export function acceptedRulePlan(
     reopen: rows
       .filter(
         (row) =>
-          row.status === "approved" && row.approvalMethod === "proponent",
+          row.status === "approved" &&
+          row.approvalMethod === "proponent" &&
+          amendmentRule(row.kind, rule) === "vote",
       )
       .map((row) => row.id),
   };
@@ -963,7 +1004,7 @@ export function isDocumentOverdue(
   return (
     document.status === "draft" &&
     document.dueAt !== null &&
-    document.dueAt.getTime() < now.getTime()
+    isPastDeadline(document.dueAt, now)
   );
 }
 

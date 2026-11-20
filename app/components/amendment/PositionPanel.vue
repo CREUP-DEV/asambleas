@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProponentPosition } from "~~/shared/constants/domain";
+import { amendmentRule } from "~~/shared/utils/positions";
 import type {
   AmendmentDto,
   DocumentDto,
@@ -168,7 +169,10 @@ const items = computed(() =>
     description: afterDecision.value
       ? undefined
       : value === "accept" &&
-          props.document.acceptedAmendments === "incorporate"
+          amendmentRule(
+            props.amendment.kind,
+            props.document.acceptedAmendments,
+          ) === "incorporate"
         ? [
             t("amendment.position.descriptions.acceptIncorporate"),
             ...acceptConsequences.value,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AgendaDto,
@@ -133,7 +134,7 @@ const documentsClosed = computed(() => {
   const close = assembly.value?.milestones.find(
     (milestone) => milestone.key === "documents_close",
   );
-  return Boolean(close && new Date(close.at).getTime() <= now.value);
+  return Boolean(close && isPastDeadline(close.at, now.value));
 });
 
 const submitBlockedReason = computed<string | null>(() => {

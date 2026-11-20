@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { createId } from "@paralleldrive/cuid2";
 import type { Editor } from "@tiptap/core";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -423,7 +424,8 @@ const intro = computed(() =>
 const now = useAppNow();
 const windowClosed = computed(() => {
   const closesAt = toDate(props.document.window.closesAt);
-  return Boolean(closesAt && closesAt.getTime() <= now.value);
+  // The closing minute is still on time (isPastDeadline).
+  return Boolean(closesAt && isPastDeadline(closesAt, now.value));
 });
 /**
  * Sending now makes it late. A correction keeps the timing of its first

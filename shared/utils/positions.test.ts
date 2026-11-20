@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  alwaysPublishedOnValidation,
+  amendmentRule,
   answerableAfterDecision,
   positionsArePublic,
   positionsUnpublishable,
@@ -60,5 +62,23 @@ describe("answerableAfterDecision", () => {
         false,
       );
     }
+  });
+});
+
+describe("amendmentRule", () => {
+  it("incorporates a formal amendment whatever the document's rule", () => {
+    expect(amendmentRule("formal", "vote")).toBe("incorporate");
+    expect(amendmentRule("formal", "incorporate")).toBe("incorporate");
+    expect(amendmentRule("partial", "vote")).toBe("vote");
+    expect(amendmentRule("transactional", "incorporate")).toBe("incorporate");
+    expect(amendmentRule(undefined, "vote")).toBe("vote");
+  });
+});
+
+describe("alwaysPublishedOnValidation", () => {
+  it("publishes transactionals and formal amendments", () => {
+    expect(alwaysPublishedOnValidation("transactional")).toBe(true);
+    expect(alwaysPublishedOnValidation("formal")).toBe(true);
+    expect(alwaysPublishedOnValidation("partial")).toBe(false);
   });
 });

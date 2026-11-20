@@ -30,6 +30,7 @@ import {
 } from "../../db/schema";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { accountAvatarText } from "~~/shared/utils/accountAvatar";
+import { isPastDeadline } from "~~/shared/utils/calendar";
 import { avatarUrl } from "../auth/avatarFiles";
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type {
@@ -682,7 +683,9 @@ async function loadMemberWork(assemblyId: string) {
         ...(coProponents.get(row.id) ?? []),
       ],
       late: Boolean(
-        row.dueAt && row.submittedAt && row.submittedAt > row.dueAt,
+        row.dueAt &&
+        row.submittedAt &&
+        isPastDeadline(row.dueAt, row.submittedAt),
       ),
     })),
     amendments: presentedAmendments.map((row) => {
