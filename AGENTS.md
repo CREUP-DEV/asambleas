@@ -12,7 +12,7 @@ These instructions are the source of truth for agents editing this repository. [
 - Background work and persistent state use PostgreSQL, pg-boss or in-memory cache as described here. Local email goes to Mailpit (`docker-compose.yml`).
 - Validate all untrusted input with Zod v4 from `zod/v4`.
 - Protect every mutation with CSRF and same-origin checks.
-- Store document content as structured blocks validated with `blocksSchema`; never store or echo raw HTML. Render it only through `shared/utils/content/render.ts`, which escapes everything.
+- Store document content as structured blocks validated with `blocksSchema`; never store or echo raw HTML. Render it only through `shared/utils/content/render.ts`, which escapes everything. Formulas are the one markup it does not build itself: MathML that Temml makes from their LaTeX source (`shared/utils/content/formula.ts`), untrusted (no `\href`, `\url` or HTML macros, an unknown command shown as source) and checked tag by tag and attribute by attribute against a MathML allowlist (`isSafeMathMl`), else shown as its escaped source.
 - Store amendments as operations anchored to the document's frozen base version. Never store modified copies of the text.
 - Use optimistic locking on shared PUT/PATCH mutations.
 - Run the verification checklist before finishing code changes.
@@ -259,6 +259,8 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - Deleting an item removes its sub-items and every document under them (`removeDocument` for each, one `agenda_item_deleted` per item). Amendments keep it: any amendment row of any status under it answers 409 `agenda_item_amendments`. So do the control sheet's notes and a vote on one of the items themselves, voided too (409 `agenda_item_sheet`, `sheetNotesIn`). During the session, 409 `agenda_item_live` while the projection or an open speaking turn is on one of them.
 
 ### Documents
+
+- Formulas (user's decision of 2026-11-20): a `formula` block (a displayed formula) and a `formula` mark (one inside a sentence) keep their LaTeX source as text, so amendments, diffs, the automatic merge and the Mesa's wordings treat them as any text. A formula block has no marks and no format (`blockFormatOf` is null, as for an image); a formula mark overlaps no other mark (`blocksSchema` splits the others around it). They are drawn as MathML on screen (`renderFormula`), as SVG by MathJax in PDFs (`server/utils/export/formulaSvg.ts`, base and AMS macros only; inline ones as text with real subscripts, `formulaRuns`) and as native Word equations on export (`formulaToDocx`, from Temml's MathML), text when a source does not parse. A diff shows a changed formula block's source with its changes marked and the formula drawn before and after; a formula a diff segment cuts shows its source. The editor edits the source as plain text (`FormulaBlockExtension`, `FormulaExtension`, `code` so no typing rule touches it) with the formula drawn below, and the toolbar's «Fórmula» inserts one. The DOCX import reads Word equations (Office Math): the converter replaces each `m:oMath`/`m:oMathPara` by a marker carrying its tree (`MATH_SCRIPT` in docx.ts), the server checks it and writes LaTeX (`server/utils/content/omml.ts`), a block when alone in its paragraph, a mark otherwise; one that cannot be read is left out with the warning `formulas_dropped`.
 
 - `format`:
   - `structured`: blocks, amendable when `amendable`;

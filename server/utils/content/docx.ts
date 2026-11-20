@@ -362,6 +362,70 @@ const HIGHLIGHT_PATTERN = /<w:highlight\s+w:val="(?!none")/;
  * Checked against the numbers Word itself shows (Word.Paragraph ListString)
  * for drafts with several lists sharing an abstract numbering.
  */
+/**
+ * Word equations (Office Math), for the converter process (plain
+ * JavaScript, no backslashes: it lives in a template string). mammoth drops
+ * them, so before it reads document.xml every m:oMath or m:oMathPara is
+ * replaced by a run whose text carries the equation as a small tree
+ * (`n` element name, `v` m:val, `c` children, strings for text) in JSON,
+ * base64, between FORMULA_OPEN and FORMULA_CLOSE. The parent reads it back
+ * (formulasFromMarkers, omml.ts) as a formula block or mark. Depth and size
+ * are bounded here, and again where it is read.
+ */
+const MATH_SCRIPT = `
+const MATH_NAMESPACE = "{http://schemas.openxmlformats.org/officeDocument/2006/math}";
+const FORMULA_OPEN = String.fromCharCode(0xe000);
+const FORMULA_CLOSE = String.fromCharCode(0xe001);
+function mathTree(node, depth, budget) {
+  if (node.type === "text") return node.value;
+  if (node.type !== "element") return null;
+  budget.count += 1;
+  if (depth > 40 || budget.count > 4000) return null;
+  const name = node.name.indexOf(MATH_NAMESPACE) === 0
+    ? node.name.slice(MATH_NAMESPACE.length)
+    : node.name.replace(/^.*:/, "");
+  const out = { n: name.slice(0, 40) };
+  const value = node.attributes && node.attributes[MATH_NAMESPACE + "val"];
+  if (typeof value === "string") out.v = value.slice(0, 40);
+  const kids = [];
+  for (const child of node.children || []) {
+    const converted = mathTree(child, depth + 1, budget);
+    if (converted !== null && converted !== "") kids.push(converted);
+  }
+  if (kids.length) out.c = kids;
+  return out;
+}
+function replaceMath(element, nodes) {
+  if (!element || !element.children) return;
+  element.children = element.children.map((child) => {
+    if (
+      child.type === "element" &&
+      (child.name === MATH_NAMESPACE + "oMath" ||
+        child.name === MATH_NAMESPACE + "oMathPara")
+    ) {
+      const tree = mathTree(child, 0, { count: 0 });
+      if (!tree) return child;
+      const payload = Buffer.from(JSON.stringify(tree), "utf8").toString("base64");
+      return nodes.element("w:r", {}, [
+        nodes.element("w:t", {}, [nodes.text(FORMULA_OPEN + payload + FORMULA_CLOSE)]),
+      ]);
+    }
+    replaceMath(child, nodes);
+    return child;
+  });
+}
+function readMath(reader, nodes) {
+  const read = reader.readXmlFromZipFile;
+  reader.readXmlFromZipFile = function (file, part) {
+    return read.call(this, file, part).then((document) => {
+      // The body and its notes; the other parts hold no equations.
+      if (document) replaceMath(document, nodes);
+      return document;
+    });
+  };
+}
+`;
+
 const NUMBERING_SCRIPT = `
 const NUMBER_FORMATS = {
   decimal: (n) => String(n),
@@ -742,14 +806,20 @@ function reply(header, body) {
   process.stdout.write(body ? Buffer.concat([head, body]) : head);
 }
 ${NUMBERING_SCRIPT}
+${MATH_SCRIPT}
 process.stdin.on("data", (chunk) => input.push(chunk));
 process.stdin.on("end", () => {
   let mammoth;
   let documents;
   try {
-    mammoth = require(entry);
-    // mammoth's own modules, the ones its reader and converter use.
+    // mammoth's own modules, the ones its reader and converter use. Its
+    // reader of document.xml is wrapped before mammoth binds it (readMath).
     const lib = path.dirname(entry);
+    readMath(
+      require(path.join(lib, "docx", "office-xml-reader.js")),
+      require(path.join(lib, "xml", "nodes.js")),
+    );
+    mammoth = require(entry);
     wrapNumberingReader(require(path.join(lib, "docx", "numbering-xml.js")));
     const nodes = require(path.join(lib, "xml", "nodes.js"));
     honourOffHeaders(nodes);
@@ -1552,6 +1622,7 @@ export async function convertDocx(
       prepareImportedHtml(document as unknown as Document, {
         documentTitle,
         onTablesSplit: () => warnings.add("tables_split"),
+        onFormulaDropped: () => warnings.add("formulas_dropped"),
       });
       let produced = 0;
       const blocks = htmlElementToBlocks(
@@ -1585,6 +1656,7 @@ export async function convertDocx(
     "images_without_alt",
     "tables_flattened",
     "tables_split",
+    "formulas_dropped",
     "highlight",
   ];
   return {

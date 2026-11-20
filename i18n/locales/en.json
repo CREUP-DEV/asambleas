@@ -138,7 +138,9 @@
         "list_continue": "the numbering carries on from before",
         "align_start": "is aligned to the left",
         "align_center": "is centred",
-        "align_right": "is aligned to the right"
+        "align_right": "is aligned to the right",
+        "formula_on": "becomes a formula",
+        "formula_off": "stops being a formula"
       },
       "fragmentFrom": "{text} (from amendment {label})",
       "outline": {
@@ -230,6 +232,13 @@
         "pastedSkipped": "Images in what you pasted were not copied: insert them with the image button or paste each image on its own.",
         "notHere": "Images cannot be added here: an amendment can only keep or remove those in the text.",
         "notThisDocument": "A pasted image belongs to another document. Remove it and insert it again from its file."
+      },
+      "formula": {
+        "menu": "Formula",
+        "block": "Formula on its own line",
+        "blockHint": "Written in LaTeX (\\frac for fractions, _ for subscripts) and drawn below.",
+        "inline": "Formula inside the text",
+        "inlineHint": "Turns the selection, written in LaTeX, into a formula in the sentence."
       }
     },
     "staleData": {
@@ -890,7 +899,8 @@
         "images_without_alt": "Some images have no description: they show a dashed border. Add one from their menu (right-click) before sending the document.",
         "tables_flattened": "Tables inside another table were turned into one paragraph per row, with cells separated by \"{'|'}\".",
         "tables_split": "Tables placed side by side were split into separate tables, one after the other.",
-        "highlight": "Text highlighting was lost; check whether it marked anything important."
+        "highlight": "Text highlighting was lost; check whether it marked anything important.",
+        "formulas_dropped": "Some formulas could not be read and were not imported: add them with the «Formula» button."
       },
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
       "busy": "An import is already in progress. Wait a few seconds and try again.",

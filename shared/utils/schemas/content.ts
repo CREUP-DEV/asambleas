@@ -40,21 +40,59 @@ const markSchema = z.object({
 });
 
 /**
- * Marks clipped to a text of `length`, empty ones dropped, and links kept
- * only with an address that is safe to follow.
+ * A formula inside a sentence is one piece: formula marks never overlap each
+ * other (the first one stays) and the other marks leave their ranges (split
+ * around them).
+ */
+function separateFormulas(marks: Mark[]): Mark[] {
+  const formulas: Mark[] = [];
+  for (const mark of marks
+    .filter((item) => item.type === "formula")
+    .sort((a, b) => a.from - b.from)) {
+    const last = formulas.at(-1);
+    if (!last || mark.from >= last.to) formulas.push(mark);
+  }
+  if (formulas.length === 0) return marks;
+  const others = marks.filter((mark) => mark.type !== "formula");
+  const split: Mark[] = [];
+  for (const mark of others) {
+    let pieces: Mark[] = [mark];
+    for (const formula of formulas) {
+      pieces = pieces.flatMap((piece) => {
+        if (piece.to <= formula.from || piece.from >= formula.to) {
+          return [piece];
+        }
+        const out: Mark[] = [];
+        if (piece.from < formula.from) {
+          out.push({ ...piece, to: formula.from });
+        }
+        if (piece.to > formula.to) out.push({ ...piece, from: formula.to });
+        return out;
+      });
+    }
+    split.push(...pieces);
+  }
+  return [...split, ...formulas];
+}
+
+/**
+ * Marks clipped to a text of `length`, empty ones dropped, links kept only
+ * with an address that is safe to follow, and formulas kept apart.
  */
 function cleanMarks(marks: z.infer<typeof markSchema>[], length: number) {
-  return marks
-    .map((mark): Mark => ({
-      type: mark.type,
-      from: Math.min(mark.from, length),
-      to: Math.min(mark.to, length),
-      ...(mark.type === "link" && isSafeHref(mark.href)
-        ? { href: mark.href.trim() }
-        : {}),
-    }))
-    .filter((mark) => mark.from < mark.to)
-    .filter((mark) => mark.type !== "link" || "href" in mark);
+  return separateFormulas(
+    marks
+      .map((mark): Mark => ({
+        type: mark.type,
+        from: Math.min(mark.from, length),
+        to: Math.min(mark.to, length),
+        ...(mark.type === "link" && isSafeHref(mark.href)
+          ? { href: mark.href.trim() }
+          : {}),
+      }))
+      .filter((mark) => mark.from < mark.to)
+      .filter((mark) => mark.type !== "link" || "href" in mark),
+  );
 }
 
 const spanSchema = z.number().int().min(2).max(100).optional();
@@ -137,6 +175,12 @@ export const blockSchema = z
       return result;
     }
     const text = normalizeText(block.text);
+    // A formula block is its LaTeX source alone: no marks, no format.
+    if (block.type === "formula") {
+      const result: Block = { id: block.id, type: "formula", text, marks: [] };
+      if (block.cell) result.cell = block.cell;
+      return result;
+    }
     const marks = cleanMarks(block.marks, text.length);
     const result: Block = { id: block.id, type: block.type, text, marks };
     if (block.type === "heading") result.level = block.level ?? 1;

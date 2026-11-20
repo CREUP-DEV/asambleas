@@ -138,7 +138,9 @@
         "list_continue": "la numeración sigue la de antes",
         "align_start": "pasa a estar alineado a la izquierda",
         "align_center": "pasa a estar centrado",
-        "align_right": "pasa a estar alineado a la derecha"
+        "align_right": "pasa a estar alineado a la derecha",
+        "formula_on": "pasa a ser una fórmula",
+        "formula_off": "deja de ser una fórmula"
       },
       "fragmentFrom": "{text} (de la enmienda {label})",
       "outline": {
@@ -230,6 +232,13 @@
         "pastedSkipped": "Las imágenes que venían en lo pegado no se han copiado: insértalas con el botón de imagen o pega cada imagen sola.",
         "notHere": "Aquí no se pueden añadir imágenes: una enmienda solo puede conservar o quitar las del texto.",
         "notThisDocument": "La imagen pegada es de otro documento. Quítala e insértala de nuevo desde su archivo."
+      },
+      "formula": {
+        "menu": "Fórmula",
+        "block": "Fórmula en su propia línea",
+        "blockHint": "Se escribe en LaTeX (\\frac para fracciones, _ para subíndices) y se ve dibujada debajo.",
+        "inline": "Fórmula dentro del texto",
+        "inlineHint": "Convierte lo seleccionado, escrito en LaTeX, en una fórmula de la frase."
       }
     },
     "staleData": {
@@ -890,7 +899,8 @@
         "images_without_alt": "Algunas imágenes no tienen descripción: aparecen con un borde discontinuo. Añádesela desde su menú (clic derecho) antes de enviar el documento.",
         "tables_flattened": "Las tablas dentro de otra tabla se han convertido en un párrafo por fila, con las celdas separadas por «{'|'}».",
         "tables_split": "Las tablas que estaban una al lado de otra se han separado en tablas seguidas, una debajo de otra.",
-        "highlight": "Se ha perdido el resaltado de color del texto; revisa si marcaba algo importante."
+        "highlight": "Se ha perdido el resaltado de color del texto; revisa si marcaba algo importante.",
+        "formulas_dropped": "Alguna fórmula no se ha podido leer y no se ha importado: añádela con el botón «Fórmula»."
       },
       "tooComplex": "El documento es demasiado extenso o complejo para importarlo. Divídelo en partes o simplifica su formato.",
       "busy": "Ya hay una importación en curso. Espera unos segundos y vuelve a intentarlo.",

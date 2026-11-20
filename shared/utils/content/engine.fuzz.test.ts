@@ -241,6 +241,12 @@ const HOSTILE_WORDS = [
 ];
 
 const SEPARATORS = [" ", " ", " ", " ", "", "  ", "\n", " \n"] as const;
+
+/**
+ * The marks the properties draw from: all but formulas, which render as
+ * MathML rather than as their text (formula.test.ts covers them).
+ */
+const FUZZ_MARK_TYPES = MARK_TYPES.filter((type) => type !== "formula");
 const CHARS = ["a", "é", "\u{1F600}", " ", "<", "&", "\n", "́"] as const;
 const LIST_STYLES = ["bullet", "ordered"] as const;
 
@@ -325,7 +331,7 @@ function randomMarks(
   for (let n = rng.int(0, options.maxMarks ?? 3); n > 0; n -= 1) {
     const a = rng.int(0, offsets.length - 2);
     const b = rng.int(a + 1, offsets.length - 1);
-    let type = rng.pick(MARK_TYPES);
+    let type = rng.pick(FUZZ_MARK_TYPES);
     // At most one link per block: overlapping links have no single rendering.
     if (type === "link" && linked) type = "bold";
     const mark: Mark = { type, from: offsets[a]!, to: offsets[b]! };

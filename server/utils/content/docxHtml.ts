@@ -6,10 +6,13 @@
  * note's content into a <div> and write its "[1]" before it, and move the
  * cells of tables laid side by side into new <table> and <tr> elements at
  * the same depth (one table more per part, one row more per row and part;
- * every new row holds a cell inspectHtml counted).
+ * every new row holds a cell inspectHtml counted). Word equations, which
+ * the converter hands over as markers, become one <code data-formula> each,
+ * or a <div data-formula> for one alone in its paragraph (formulas).
  */
 
 import { nearestCellFill } from "../../../shared/constants/cellFills";
+import { ommlToLatex, parseOmmlTree } from "./omml";
 import {
   tableGrid,
   type GridCell,
@@ -19,6 +22,8 @@ import {
 export interface PrepareImportedHtmlOptions {
   /** The title of the document the import is for. */
   documentTitle?: string;
+  /** Called when an equation could not be read (left out). */
+  onFormulaDropped?: () => void;
   /** Called when tables laid side by side were split (tableGaps). */
   onTablesSplit?: () => void;
 }
@@ -500,6 +505,71 @@ function linkUnderlines(document: Document): void {
   }
 }
 
+/** A Word equation as the converter marks it (MATH_SCRIPT in docx.ts). */
+const FORMULA_MARKER = /\uE000([A-Za-z0-9+/=]{1,400000})\uE001/g;
+
+function textNodesWithin(node: Node, found: Text[]): Text[] {
+  for (const child of Array.from(node.childNodes)) {
+    if (child.nodeType === 3) {
+      if ((child.textContent ?? "").includes("\uE000"))
+        found.push(child as Text);
+    } else {
+      textNodesWithin(child, found);
+    }
+  }
+  return found;
+}
+
+/**
+ * Word equations: each marker the converter left becomes the equation's
+ * LaTeX (omml.ts) in a <code data-formula>, a formula inside a sentence;
+ * one alone in its paragraph becomes a <div data-formula>, a formula block.
+ * One that cannot be read is left out and said.
+ */
+function formulas(document: Document, onDropped?: () => void): void {
+  const placed: Element[] = [];
+  for (const node of textNodesWithin(document, [])) {
+    const text = node.textContent ?? "";
+    const fragment = document.createDocumentFragment();
+    let last = 0;
+    for (const match of text.matchAll(FORMULA_MARKER)) {
+      fragment.append(document.createTextNode(text.slice(last, match.index)));
+      last = match.index + match[0].length;
+      const tree = parseOmmlTree(
+        Buffer.from(match[1]!, "base64").toString("utf8"),
+      );
+      const latex = tree ? ommlToLatex(tree) : "";
+      if (!latex) {
+        onDropped?.();
+        continue;
+      }
+      const code = document.createElement("code");
+      code.setAttribute("data-formula", "");
+      code.textContent = latex;
+      fragment.append(code);
+      placed.push(code);
+    }
+    fragment.append(
+      document.createTextNode(text.slice(last).replace(/[\uE000\uE001]/g, "")),
+    );
+    node.replaceWith(fragment);
+  }
+  for (const code of placed) {
+    const paragraph = code.closest("p");
+    if (
+      !paragraph ||
+      paragraph.querySelectorAll("code[data-formula], img").length !== 1 ||
+      (paragraph.textContent ?? "").trim() !== (code.textContent ?? "").trim()
+    ) {
+      continue;
+    }
+    const block = document.createElement("div");
+    block.setAttribute("data-formula", "");
+    block.textContent = code.textContent;
+    paragraph.replaceWith(block);
+  }
+}
+
 /** The text right before `node` within its paragraph, as far as one step up. */
 function textBefore(node: Node): string {
   let current: Node | null = node;
@@ -532,6 +602,8 @@ export function prepareImportedHtml(
   flattenNotes(document);
   listLabels(document);
   alignments(document);
+  // After the alignment markers are gone: a centred equation is alone.
+  formulas(document, options.onFormulaDropped);
   liftImages(document);
   cellFills(document);
   if (tableGaps(document)) options.onTablesSplit?.();

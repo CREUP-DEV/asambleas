@@ -199,6 +199,7 @@ const WARNING_ICONS: Record<DocxImportDto["warnings"][number], string> = {
   images_without_alt: "i-lucide-image",
   tables_flattened: "i-lucide-table",
   tables_split: "i-lucide-columns-2",
+  formulas_dropped: "i-lucide-sigma",
   highlight: "i-lucide-highlighter",
 };
 

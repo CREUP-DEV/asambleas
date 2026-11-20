@@ -17,6 +17,10 @@ import {
   stripUnsafeLinks,
 } from "~/utils/editor/links";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
+import {
+  FormulaBlockExtension,
+  FormulaExtension,
+} from "~/utils/editor/formulaExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
 import { SpanishQuotesExtension } from "~/utils/editor/spanishQuotesExtension";
@@ -183,6 +187,9 @@ const extensions = [
   TableIdsExtension,
   CellFillExtension,
   BlockImageExtension,
+  // Formulas, kept as their LaTeX source (formulaExtension.ts).
+  FormulaBlockExtension,
+  FormulaExtension,
   // Blocks keep centred and right-aligned text (BLOCK_ALIGNMENTS); left is
   // the default and stores nothing.
   TextAlign.configure({
@@ -490,6 +497,28 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ),
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
+  // Formulas, written in LaTeX with the formula drawn below while editing
+  // (formulaExtension.ts).
+  const formula = {
+    icon: "i-lucide-sigma",
+    trailingIcon: "i-lucide-chevron-down",
+    "aria-label": t("common.editor.formula.menu"),
+    tooltip: { text: t("common.editor.formula.menu") },
+    items: [
+      {
+        icon: "i-lucide-square-sigma",
+        label: t("common.editor.formula.block"),
+        description: t("common.editor.formula.blockHint"),
+        onSelect: () => run((chain) => chain.insertFormulaBlock()),
+      },
+      {
+        icon: "i-lucide-sigma",
+        label: t("common.editor.formula.inline"),
+        description: t("common.editor.formula.inlineHint"),
+        onSelect: () => run((chain) => chain.toggleFormula()),
+      },
+    ],
+  } as EditorToolbarItem;
   const tables: EditorToolbarItem[] = [tableMenu.value];
   if (props.uploadImage && !props.compact && !props.amend) {
     tables.push({
@@ -529,7 +558,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ]),
   ];
   // Amendments may change a table's text, rows and columns too.
-  if (props.compact) return [marks, link, tables, history];
+  if (props.compact) return [marks, link, [formula], tables, history];
 
   // The colour of the cells, as a row of swatches while in a table.
   const fills =
@@ -586,6 +615,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ...fills,
     marks,
     link,
+    [formula],
     history,
   ];
   // What the page adds at the toolbar's end (saving the text, say).

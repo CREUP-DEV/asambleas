@@ -319,6 +319,19 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
           }
           break;
         }
+        case "formulaBlock": {
+          // A formula's LaTeX source, without marks (FormulaBlockExtension).
+          const text = (node.content ?? [])
+            .map((child) => (child.type === "text" ? (child.text ?? "") : ""))
+            .join("");
+          blocks.push(
+            inCell(
+              { id: idFor(node), type: "formula", text, marks: [] },
+              context,
+            ),
+          );
+          break;
+        }
         case "blockquote":
           walk(node.content, { ...context, quote: true });
           break;
@@ -503,6 +516,17 @@ function flowNodes(blocks: Block[]): EditorNode[] {
       i += 1;
       continue;
     }
+    if (block.type === "formula") {
+      content.push({
+        type: "formulaBlock",
+        attrs: { blockId: block.id },
+        ...(block.text
+          ? { content: [{ type: "text", text: block.text }] }
+          : {}),
+      });
+      i += 1;
+      continue;
+    }
     if (block.type === "heading") {
       const inline = inlineNodes(block);
       content.push({
@@ -679,6 +703,10 @@ export function htmlElementToBlocks(
       if (tag === "em" || tag === "i")
         next.push({ type: "italic", from: 0, to: 0 });
       if (tag === "u") next.push({ type: "underline", from: 0, to: 0 });
+      // A formula inside a sentence: its LaTeX source (FormulaExtension).
+      if (el.hasAttribute("data-formula")) {
+        next.push({ type: "formula", from: 0, to: 0 });
+      }
       if (tag === "s" || tag === "del" || tag === "strike")
         next.push({ type: "strike", from: 0, to: 0 });
       if (tag === "a" && el.getAttribute("href")) {
@@ -744,6 +772,12 @@ export function htmlElementToBlocks(
             ...inline,
             ...alignFrom(child),
           });
+        }
+      } else if (child.hasAttribute("data-formula") && tag !== "code") {
+        // A displayed formula: its LaTeX source (FormulaBlockExtension).
+        const text = (child.textContent ?? "").trim();
+        if (text) {
+          blocks.push({ id: newId(), type: "formula", text, marks: [] });
         }
       } else if (tag === "p" || tag === "div") {
         if (

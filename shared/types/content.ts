@@ -8,12 +8,19 @@
 
 import type { CellFillName } from "../constants/cellFills";
 
+/**
+ * - `formula`: a displayed formula, its `text` the LaTeX source (user's
+ *   decision of 2026-11-20), drawn as MathML on screen and as SVG in PDFs
+ *   (shared/utils/content/formula.ts). No marks; amendments change its
+ *   source as any text, never its format.
+ */
 export const BLOCK_TYPES = [
   "heading",
   "paragraph",
   "list_item",
   "quote",
   "image",
+  "formula",
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
@@ -95,12 +102,17 @@ export const IMAGE_URL_PREFIX = "/api/uploads/images/";
 export const BLOCK_ALIGNMENTS = ["center", "right"] as const;
 export type BlockAlign = (typeof BLOCK_ALIGNMENTS)[number];
 
+/**
+ * - `formula`: a formula inside a sentence, the marked text its LaTeX
+ *   source, drawn as one piece. It overlaps no other mark.
+ */
 export const MARK_TYPES = [
   "bold",
   "italic",
   "underline",
   "strike",
   "link",
+  "formula",
 ] as const;
 export type MarkType = (typeof MARK_TYPES)[number];
 
@@ -141,7 +153,7 @@ export interface Block {
  * block of the base. Never an image, and never the table cell it sits in.
  */
 export interface BlockFormat {
-  type: Exclude<BlockType, "image">;
+  type: Exclude<BlockType, "image" | "formula">;
   /** Heading level (1-4) or list depth (0-based). */
   level?: number;
   list?: "bullet" | "ordered";
@@ -214,6 +226,8 @@ export const FORMAT_CHANGE_CODES = [
   "link_on",
   "link_off",
   "link_changed",
+  "formula_on",
+  "formula_off",
   "paragraph",
   "heading",
   "quote",

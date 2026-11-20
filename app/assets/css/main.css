@@ -459,6 +459,88 @@ html {
     border-radius: var(--ui-radius);
   }
 
+  /*
+   * Formulas (formula.ts): a displayed one centred on its own line, sideways
+   * scroll when wider than the text; one inside a sentence flows with it.
+   * Their LaTeX source, where shown (a diff, the editor, one that does not
+   * parse), reads in the monospace face.
+   */
+  .rich-text .cx-formula-block {
+    margin-block: 1.25rem;
+    overflow: auto hidden;
+    padding-block: 0.25rem;
+    text-align: center;
+  }
+
+  .rich-text .cx-formula-block math {
+    font-size: 1.1em;
+  }
+
+  .rich-text .cx-formula-block > .cx-formula-source {
+    display: block;
+    margin-bottom: 0.5rem;
+    text-align: start;
+    white-space: pre-wrap;
+  }
+
+  .cx-formula-source {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding-inline: 0.2em;
+    border-radius: calc(var(--ui-radius) / 2);
+    background: var(--ui-bg-elevated);
+  }
+
+  /* A changed formula in a diff: drawn before and after, side by side. */
+  .rich-text .cx-formula-compare {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+
+  .rich-text .cx-formula-before,
+  .rich-text .cx-formula-after {
+    overflow: auto hidden;
+    padding: 0.5rem;
+    border-radius: var(--ui-radius);
+  }
+
+  .rich-text .cx-formula-before {
+    border: 1px solid var(--cx-del-line, var(--ui-border-accented));
+    opacity: 0.7;
+  }
+
+  .rich-text .cx-formula-after {
+    border: 1px solid var(--cx-ins-line, var(--ui-border-accented));
+  }
+
+  .cx-formula-error .cx-formula-source {
+    border: 1px dashed var(--ui-border-accented);
+  }
+
+  .content-editor .cx-formula-editor {
+    margin-block: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--ui-border-accented);
+    border-radius: var(--ui-radius);
+  }
+
+  .content-editor .cx-formula-editor-source {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    white-space: pre-wrap;
+  }
+
+  .content-editor .cx-formula-editor-preview {
+    margin-top: 0.5rem;
+    /* overflow-x alone turns overflow-y to auto too: a scrollbar for the
+       few pixels a fraction's descent spills. */
+    overflow: auto hidden;
+    padding-block: 0.25rem;
+    text-align: center;
+    user-select: none;
+  }
+
   .rich-text .cx-table-wrap,
   .content-editor .tableWrapper {
     overflow-x: auto;

@@ -23,6 +23,7 @@ export const BLOCK_ID_NODE_TYPES = [
   "paragraph",
   "heading",
   "blockImage",
+  "formulaBlock",
 ] as const;
 export const blockIdPluginKey = new PluginKey("blockId");
 

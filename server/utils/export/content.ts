@@ -38,6 +38,8 @@ import {
 } from "../../../shared/utils/content/tables";
 import { PAGE_WIDTH, TEMPLATE_MARGINS } from "./brand";
 import { isSafeHref } from "../../../shared/utils/content/render";
+import { formulaRuns } from "../../../shared/utils/content/formula";
+import { formulaSvg } from "./formulaSvg";
 import { constantLayout } from "./pdfSerial";
 
 /**
@@ -207,7 +209,33 @@ function withDecorations(inline: Inline, decorations: Decoration[]): Inline {
   return { ...inline, decoration: unique.length === 1 ? unique[0] : unique };
 }
 
-/** Pieces of `text` with the marks that apply to them; `offset` shifts the marks. */
+/**
+ * A formula inside a sentence as text (formulaRuns): subscripts and
+ * superscripts raised, fractions "a/b". One a range cuts (a change inside
+ * it) prints its source as it is.
+ */
+function formulaInlines(
+  source: string,
+  whole: boolean,
+  extra?: SegmentStyle,
+): Inline[] {
+  const runs = whole ? formulaRuns(source) : [{ text: source }];
+  return runs.map((run) => {
+    const piece: Inline = { text: run.text, italics: whole };
+    if ("script" in run && run.script === "sub") piece.sub = true;
+    if ("script" in run && run.script === "sup") piece.sup = true;
+    if (!extra) return piece;
+    piece.decorationColor = extra.decorationColor;
+    if (extra.decorationStyle) piece.decorationStyle = extra.decorationStyle;
+    if (extra.color) piece.color = extra.color;
+    return withDecorations(piece, [extra.decoration]);
+  });
+}
+
+/**
+ * Pieces of `text` with the marks that apply to them; `offset` shifts the
+ * marks. Formulas print as text (formulaInlines).
+ */
 function markedInlines(
   text: string,
   marks: Mark[],
@@ -215,7 +243,60 @@ function markedInlines(
   ctx: PdfContentContext,
   extra?: SegmentStyle,
 ): Inline[] {
+  const formulas = marks
+    .filter((mark) => mark.type === "formula")
+    .map((mark) => ({
+      from: Math.max(0, mark.from - offset),
+      to: Math.min(text.length, mark.to - offset),
+      whole: mark.from - offset >= 0 && mark.to - offset <= text.length,
+    }))
+    .filter((mark) => mark.from < mark.to)
+    .sort((a, b) => a.from - b.from);
+  if (formulas.length === 0) {
+    return plainMarkedInlines(text, marks, offset, ctx, extra);
+  }
+  const inlines: Inline[] = [];
+  let at = 0;
+  for (const formula of formulas) {
+    if (formula.from < at) continue;
+    if (formula.from > at) {
+      inlines.push(
+        ...plainMarkedInlines(
+          text.slice(at, formula.from),
+          marks,
+          offset + at,
+          ctx,
+          extra,
+        ),
+      );
+    }
+    inlines.push(
+      ...formulaInlines(
+        text.slice(formula.from, formula.to),
+        formula.whole,
+        extra,
+      ),
+    );
+    at = formula.to;
+  }
+  if (at < text.length) {
+    inlines.push(
+      ...plainMarkedInlines(text.slice(at), marks, offset + at, ctx, extra),
+    );
+  }
+  return inlines;
+}
+
+/** `text` with its marks other than formulas. */
+function plainMarkedInlines(
+  text: string,
+  marks: Mark[],
+  offset: number,
+  ctx: PdfContentContext,
+  extra?: SegmentStyle,
+): Inline[] {
   const local = marks
+    .filter((mark) => mark.type !== "formula")
     .map((mark) => ({
       mark,
       from: Math.max(0, mark.from - offset),
@@ -301,6 +382,11 @@ interface BlockShape {
 interface Item {
   shape: BlockShape;
   inlines: Inline[];
+  /**
+   * A formula block: its source as it reads now, and whether a change
+   * inside it is shown (then its source prints, changes marked, above it).
+   */
+  formula?: { source: string; changed: boolean };
   /** Whether the item takes a number in an ordered list (deleted ones do not). */
   countable: boolean;
 }
@@ -483,9 +569,39 @@ function imageNode(item: Item, ctx: PdfContentContext): Content {
   };
 }
 
+/**
+ * A formula block: drawn (formulaSvg), centred, no wider than the text; one
+ * that cannot be drawn prints as text (formulaRuns). A change inside it
+ * prints its source with the change marked above how it reads now.
+ */
+function formulaNode(item: Item): Content {
+  const source = item.formula?.source ?? plainText(item.inlines);
+  const drawn = formulaSvg(source);
+  const faded = item.countable ? {} : { opacity: 0.35 };
+  const formula: Content = drawn
+    ? {
+        svg: drawn.svg,
+        width: Math.min(TABLE_WIDTH, drawn.width),
+        alignment: "center",
+        margin: [0, 6, 0, 10],
+        ...faded,
+      }
+    : {
+        text: formulaInlines(source, true),
+        style: "paragraph",
+        alignment: "center",
+        ...faded,
+      };
+  if (!item.formula?.changed) return formula;
+  return {
+    stack: [{ text: emptySafe(item.inlines), style: "paragraph" }, formula],
+  };
+}
+
 function blockNode(item: Item, ctx: PdfContentContext): Content {
   if (item.shape.type === "heading") return headingNode(item, ctx);
   if (item.shape.type === "image") return imageNode(item, ctx);
+  if (item.shape.type === "formula") return formulaNode(item);
   const text = emptySafe(item.inlines);
   const align = alignment(item.shape);
   if (item.shape.type === "quote") return { text, style: "quote", ...align };
@@ -799,6 +915,9 @@ export function blocksToPdf(
       shape: block,
       inlines: markedInlines(block.text, block.marks, 0, ctx),
       countable: true,
+      ...(block.type === "formula"
+        ? { formula: { source: block.text, changed: false } }
+        : {}),
     })),
     ctx,
   );
@@ -899,6 +1018,19 @@ export function annotatedToPdf(
       shape: block,
       inlines,
       countable: block.status !== "deleted",
+      ...(block.type === "formula"
+        ? {
+            formula: {
+              source: block.segments
+                .filter((segment) => !segment.removed)
+                .map((segment) => segment.text)
+                .join(""),
+              changed:
+                block.status === "kept" &&
+                block.segments.some((segment) => segment.source),
+            },
+          }
+        : {}),
     };
   });
   return assemble(items, ctx);

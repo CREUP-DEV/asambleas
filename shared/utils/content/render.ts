@@ -10,13 +10,16 @@ import type {
 } from "../../types/content";
 import { IMAGE_ASSET_PATTERN, IMAGE_URL_PREFIX } from "../../types/content";
 import { cellFillOf } from "../../constants/cellFills";
+import { renderFormula } from "./formula";
 import { markerOf } from "./lists";
 import { groupTables, type TableGroup } from "./tables";
 
 /**
  * HTML rendering of structured content. Text is always escaped and links are
  * restricted to safe schemes, so the output is safe for v-html by
- * construction: no stored HTML is ever echoed back.
+ * construction: no stored HTML is ever echoed back. Formulas are the one
+ * markup not built here: MathML from their LaTeX source, checked against an
+ * allowlist (formula.ts).
  */
 
 const MARK_ORDER: MarkType[] = [
@@ -26,7 +29,7 @@ const MARK_ORDER: MarkType[] = [
   "underline",
   "strike",
 ];
-const MARK_TAGS: Record<Exclude<MarkType, "link">, string> = {
+const MARK_TAGS: Record<Exclude<MarkType, "link" | "formula">, string> = {
   bold: "strong",
   italic: "em",
   underline: "u",
@@ -50,9 +53,41 @@ function escapeText(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
-/** Renders `text` with the marks that apply to it; `offset` shifts the marks. */
+/**
+ * Renders `text` with the marks that apply to it; `offset` shifts the marks.
+ * A formula is drawn whole; one cut by the range (a change inside it, in a
+ * diff) shows its source instead, so half a formula is never drawn.
+ */
 export function renderInline(text: string, marks: Mark[], offset = 0): string {
+  const formulas = marks
+    .filter((mark) => mark.type === "formula")
+    .map((mark) => ({
+      from: Math.max(0, mark.from - offset),
+      to: Math.min(text.length, mark.to - offset),
+      whole: mark.from - offset >= 0 && mark.to - offset <= text.length,
+    }))
+    .filter((mark) => mark.from < mark.to)
+    .sort((a, b) => a.from - b.from);
+  if (formulas.length === 0) return renderMarked(text, marks, offset);
+  let html = "";
+  let at = 0;
+  for (const formula of formulas) {
+    if (formula.from < at) continue;
+    html += renderMarked(text.slice(at, formula.from), marks, offset + at);
+    const source = text.slice(formula.from, formula.to);
+    html += formula.whole
+      ? renderFormula(source, false)
+      : `<code class="cx-formula-source">${escapeText(source)}</code>`;
+    at = formula.to;
+  }
+  return html + renderMarked(text.slice(at), marks, offset + at);
+}
+
+/** `text` with its marks other than formulas. */
+function renderMarked(text: string, marks: Mark[], offset: number): string {
+  if (!text) return "";
   const local = marks
+    .filter((mark) => mark.type !== "formula")
     .map((mark) => ({
       ...mark,
       from: Math.max(0, mark.from - offset),
@@ -81,7 +116,7 @@ export function renderInline(text: string, marks: Mark[], offset = 0): string {
         if (isSafeHref(mark.href)) {
           piece = `<a href="${escapeHtml(mark.href.trim())}" rel="noopener noreferrer nofollow" target="_blank">${piece}</a>`;
         }
-      } else {
+      } else if (type !== "formula") {
         const tag = MARK_TAGS[type];
         piece = `<${tag}>${piece}</${tag}>`;
       }
@@ -272,6 +307,8 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
         : `<p ${attrsOf(item, "cx-heading", `cx-heading-${level}`)}>${item.inner}</p>`;
     } else if (item.type === "quote") {
       html += `<blockquote ${attrs}><p>${item.inner}</p></blockquote>`;
+    } else if (item.type === "formula") {
+      html += `<div ${attrsOf(item, "cx-formula-block")}>${item.inner}</div>`;
     } else if (item.type === "image") {
       // Its inner text is only the diff's hidden label, if any.
       const label = item.inner === "<br>" ? "" : item.inner;
@@ -292,7 +329,10 @@ export function renderBlocks(
   return wrapBlocks(
     blocks.map((block) => ({
       ...block,
-      inner: renderInline(block.text, block.marks) || "<br>",
+      inner:
+        block.type === "formula"
+          ? renderFormula(block.text, true)
+          : renderInline(block.text, block.marks) || "<br>",
     })),
     options.headings,
   );
@@ -459,6 +499,40 @@ function segmentHtml(
 }
 
 /**
+ * A formula block as annotated: drawn, unless a diff changes its source
+ * inside it; then its source with the changes marked (`inner`, built from
+ * the segments), and how it reads now drawn below.
+ */
+function formulaInner(
+  block: ConsolidatedBlock,
+  inner: string,
+  options: AnnotatedOptions,
+): string {
+  const text = block.segments
+    .filter((segment) => !segment.removed)
+    .map((segment) => segment.text)
+    .join("");
+  const changed = block.segments.some((segment) => segment.source);
+  if (options.mode !== "diff" || block.status !== "kept" || !changed) {
+    return renderFormula(text, true);
+  }
+  // Drawn before and after, side by side (stacked when narrow), each said
+  // to screen readers with the diff's own words; the source, its changes
+  // marked, above them for whoever needs the detail.
+  const before = block.segments
+    .filter((segment) => !segment.source || segment.removed || segment.format)
+    .map((segment) => segment.text)
+    .join("");
+  return (
+    `<code class="cx-formula-source">${inner}</code>` +
+    `<div class="cx-formula-compare">` +
+    `<div class="cx-formula-before">${srOnly(options.diffLabels?.removed)}${renderFormula(before, true)}</div>` +
+    `<div class="cx-formula-after">${srOnly(options.diffLabels?.inserted)}${renderFormula(text, true)}</div>` +
+    `</div>`
+  );
+}
+
+/**
  * Renders consolidated blocks in one of three modes:
  * - `diff`: insertions as <ins>, removals as <del> (styled by the diff mode),
  *   and formatting changes as their text in its new format, said in words in
@@ -500,6 +574,10 @@ export function renderAnnotated(
         isShownFormatSegment(block, segment),
         wholeBlock,
       );
+    }
+
+    if (block.type === "formula") {
+      inner = formulaInner(block, inner, options);
     }
 
     let attrs = "";

@@ -33,6 +33,8 @@ import {
   orderedListNumbers,
 } from "../../../shared/utils/content/lists";
 import { isSafeHref } from "../../../shared/utils/content/render";
+import { formulaRuns } from "../../../shared/utils/content/formula";
+import { formulaToDocx } from "./formulaDocx";
 import { groupTables, tableGrid } from "../../../shared/utils/content/tables";
 import {
   CONTACT,
@@ -100,6 +102,25 @@ interface RunStyle {
   color?: string;
 }
 
+/**
+ * A formula as Word text (formulaRuns): italic, subscripts and
+ * superscripts raised and lowered, fractions "a/b". For a source Word's
+ * equations cannot take (formulaToDocx), so it still reads.
+ */
+function formulaTextRuns(source: string, style: RunStyle = {}): TextRun[] {
+  return formulaRuns(source).map(
+    (run) =>
+      new TextRun({
+        text: run.text,
+        italics: true,
+        bold: style.bold,
+        color: style.color,
+        subScript: run.script === "sub" || undefined,
+        superScript: run.script === "sup" || undefined,
+      }),
+  );
+}
+
 /** The text split where marks start and end, each run with its marks. */
 function markedRuns(
   text: string,
@@ -119,6 +140,17 @@ function markedRuns(
     const active = marks.filter((mark) => mark.from <= from && mark.to >= to);
     const has = (type: Mark["type"]) =>
       active.some((mark) => mark.type === type);
+    const formula = active.find((mark) => mark.type === "formula");
+    if (formula) {
+      // A formula is one piece (the schema keeps other marks out of it).
+      if (from === formula.from) {
+        const source = text.slice(formula.from, formula.to);
+        const equation = formulaToDocx(source, false);
+        if (equation) children.push(equation);
+        else children.push(...formulaTextRuns(source, style));
+      }
+      continue;
+    }
     const href = active.find((mark) => mark.type === "link")?.href;
     const link = isSafeHref(href) ? href : null;
     const runs = textRuns(text.slice(from, to), {
@@ -206,6 +238,14 @@ function blockParagraph(
   style: RunStyle = {},
 ): Paragraph {
   if (block.type === "image") return imageParagraph(block, images);
+  if (block.type === "formula") {
+    // A native Word equation, centred; text when Word cannot take it.
+    const equation = formulaToDocx(block.text, true);
+    return new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: equation ? [equation] : formulaTextRuns(block.text, style),
+    });
+  }
   const align = alignment(block);
   if (block.type === "heading") {
     const level = Math.min(Math.max(block.level ?? 1, 1), 4);

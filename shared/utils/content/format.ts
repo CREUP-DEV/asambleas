@@ -71,9 +71,12 @@ type Formatted = Pick<
   "type" | "level" | "list" | "marker" | "start" | "align"
 >;
 
-/** The format of a block; null for an image, which has none to amend. */
+/**
+ * The format of a block; null for an image or a formula, which have none to
+ * amend (a formula's amendments change its source).
+ */
 export function blockFormatOf(block: Formatted): BlockFormat | null {
-  if (block.type === "image") return null;
+  if (block.type === "image" || block.type === "formula") return null;
   return normalizeBlockFormat({
     type: block.type,
     level: block.level,

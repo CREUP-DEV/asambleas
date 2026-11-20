@@ -1049,6 +1049,7 @@ export interface DocxImportDto {
     | "images_without_alt"
     | "tables_flattened"
     | "tables_split"
+    | "formulas_dropped"
     | "highlight"
   )[];
 }
