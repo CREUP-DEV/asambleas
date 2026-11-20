@@ -603,7 +603,9 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
       }
       return make("home.news.amendment.approved", "success");
     case "amendment_rejected":
-      return make("home.news.amendment.rejected", "error");
+      return news.value === "proponent"
+        ? make("home.news.amendment.rejectedByPresenter", "error")
+        : make("home.news.amendment.rejected", "error");
     case "amendment_validated":
       // Validated but late: the assembly still decides whether to treat it.
       return news.value === "pending"

@@ -329,6 +329,11 @@ export interface LiveBlocEntry {
   approved: boolean;
   /** Decided some other way (rejected, withdrawn, lapsed...). */
   settled: boolean;
+  /**
+   * A transactional's sources the room reads, in text order (user's
+   * decision of 2026-11-20): its chip says which ones it transacts.
+   */
+  transacts: string[];
 }
 
 /**
@@ -355,6 +360,7 @@ export function liveBlocEntries(
     author: item.authors[0] ?? null,
     approved: item.status === "approved",
     settled: item.status !== "approved" && item.status !== "submitted",
+    transacts: liveTransactedCodes(item, list),
   }));
 }
 

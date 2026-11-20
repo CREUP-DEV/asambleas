@@ -263,21 +263,38 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         </template>
       </p>
 
-      <div class="flex min-w-0 items-center gap-1">
+      <!-- Unfolded, the details button follows the title's last word, on
+           its line (user's decision of 2026-11-20), instead of floating
+           beside a title of several lines; folded, the title is one cut
+           line with the button after it. -->
+      <div
+        class="min-w-0"
+        :class="
+          folded ? 'flex items-center gap-1' : 'flex items-baseline gap-1'
+        "
+      >
         <slot name="lead" />
-        <component
-          :is="headingLevel === 1 ? 'h1' : 'h2'"
-          class="text-highlighted min-w-0 font-semibold motion-safe:transition-[font-size] motion-safe:duration-300"
-          :class="
-            folded
-              ? 'truncate text-lg'
-              : 'text-xl text-pretty break-words sm:text-2xl'
-          "
-          :title="folded ? document.title : undefined"
-        >
-          {{ document.title }}
-        </component>
-        <DocumentDetails v-if="detailsCard" :document="document" />
+        <div class="min-w-0" :class="folded ? 'flex items-center gap-1' : ''">
+          <component
+            :is="headingLevel === 1 ? 'h1' : 'h2'"
+            class="text-highlighted min-w-0 font-semibold motion-safe:transition-[font-size] motion-safe:duration-300"
+            :class="
+              folded
+                ? 'truncate text-lg'
+                : 'inline text-xl text-pretty break-words sm:text-2xl'
+            "
+            :title="folded ? document.title : undefined"
+          >
+            {{ document.title }}
+          </component>
+          <span
+            v-if="detailsCard"
+            class="shrink-0"
+            :class="folded ? 'flex' : 'ms-1 inline-flex align-text-bottom'"
+          >
+            <DocumentDetails :document="document" />
+          </span>
+        </div>
       </div>
 
       <CommonCollapse v-if="hasLines" :open="!folded">

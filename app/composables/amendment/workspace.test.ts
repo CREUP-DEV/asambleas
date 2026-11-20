@@ -552,7 +552,7 @@ describe("markers and groups", () => {
     const rejected = { ...c, position: answer("reject") };
     const accepted = { ...b, position: answer("accept") };
 
-    it("sorts accepted, rejected, the rest, each in text order", () => {
+    it("sorts accepted, transactions, rejected, the rest, each in text order", () => {
       const list = [
         amendment("n", [], { positionKey: 0 }),
         amendment("r", [], { positionKey: 1, position: answer("reject") }),
@@ -568,7 +568,7 @@ describe("markers and groups", () => {
         "y",
       ]);
       expect(sortAmendments(list, { byAnswer: true }).map((x) => x.id)).toEqual(
-        ["t", "y", "r", "n", "p"],
+        ["y", "t", "r", "n", "p"],
       );
     });
 

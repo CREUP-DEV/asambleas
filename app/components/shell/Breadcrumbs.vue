@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import type { BreadcrumbItem } from "@nuxt/ui";
-
 /**
  * The breadcrumb row, under the page's navbar: where the page is and the
  * way back up. Pages place it in the header of their panel, after the
  * navbar; the assembly hub does it for every page of an assembly.
  *
- * Large screens show the whole trail; the last crumb is the page on show
- * and is not a link. Below `lg` it is a single link to the level above.
+ * Large screens show the whole trail (ShellBreadcrumbTrail: its start and
+ * its end always show, the middle gives way); the last crumb is the page
+ * on show and is not a link. Below `lg` it is a single link to the level above.
  * A page with no level above it gets no row (user's decision of
  * 2026-11-20): its navbar already names it.
  *
@@ -30,23 +29,14 @@ const props = withDefaults(
 
 const { t } = useI18n();
 const { crumbs, parent } = useBreadcrumbs();
-
-const items = computed<BreadcrumbItem[]>(() =>
-  crumbs.value.map((crumb) =>
-    crumb.current
-      ? { label: crumb.label, active: true }
-      : { label: crumb.label, to: crumb.to, active: false },
-  ),
-);
 </script>
 
 <template>
-  <UBreadcrumb
+  <ShellBreadcrumbTrail
     v-if="props.placement === 'inline' && crumbs.length > 0"
-    :items="items"
-    color="neutral"
-    class="min-w-0 print:hidden"
-    :aria-label="t('shell.breadcrumb.label')"
+    :crumbs="crumbs"
+    class="min-w-0 flex-1 print:hidden"
+    :label="t('shell.breadcrumb.label')"
   />
   <!-- Only with a level above it: a top-level page (Asambleas, Mi
        actividad) would repeat in a row of its own what its navbar already
@@ -56,11 +46,10 @@ const items = computed<BreadcrumbItem[]>(() =>
     class="border-default flex h-(--shell-breadcrumb-height) shrink-0 items-center border-b px-4 sm:px-6 print:hidden"
     :class="props.placement === 'compact' ? 'lg:hidden' : ''"
   >
-    <UBreadcrumb
-      :items="items"
-      color="neutral"
-      class="hidden lg:block"
-      :aria-label="t('shell.breadcrumb.label')"
+    <ShellBreadcrumbTrail
+      :crumbs="crumbs"
+      class="hidden min-w-0 flex-1 lg:flex"
+      :label="t('shell.breadcrumb.label')"
     />
 
     <nav

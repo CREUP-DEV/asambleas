@@ -1287,6 +1287,18 @@ memberId, reason: "formal" }`) that closes the pending transactionals
   until the final vote. `position_changed` sends no email; the
   `amendment_approved` email says it was accepted automatically, and the
   news name nobody for it (`automatic`).
+- A formal amendment its main presenter rejects is not debated by default
+  (user's decision of 2026-11-20): under either rule the answer rejects an
+  undecided, admitted one at once (`positionEffect` "reject":
+  `status: rejected` with no vote, `amendment_rejected` with
+  `{ method: "proponent", byPosition: true, reason: "formal_rejected",
+memberId }`, what waited on it closed). Rejected that way
+  (`rejectedByAnswer`: formal, rejected, no `outcomeVoteId`), its answer
+  stays open until the final vote: any other answer reopens it
+  (`amendment_reopened` with `reason: "position_changed"`), and under
+  `incorporate` an acceptance then incorporates it. The Mesa may reopen it
+  (`reopen`) to debate and vote it; the answer stays "reject" and nothing
+  rejects it again until the presenter answers again.
 
 **Outcome.** The body is an `OutcomeBody`; the response is an
 `AmendmentOutcomeDto`.

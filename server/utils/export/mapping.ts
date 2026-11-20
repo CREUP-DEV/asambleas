@@ -173,15 +173,25 @@ function byNumber(a: AnnexAmendment, b: AnnexAmendment): number {
 
 /**
  * The order amendments are shown and debated in (user's decision of
- * 2026-11-19): by answer once the answers are public (transactionals and
- * accepted, rejected, the rest), then where they act in the text, then
- * presentation order.
+ * 2026-11-19 and 2026-11-20): by answer once the answers are public
+ * (shared/utils/amendmentOrder.ts: accepted, transactions, rejected, the
+ * rest, rejected formal ones last), then where they act in the text, then
+ * presentation order. The annex has no parties: a transactional ranks by
+ * the main presenter's own answer.
  */
 function inDebateOrder(byAnswer: boolean) {
   return (a: AnnexAmendment, b: AnnexAmendment): number =>
     compareAmendmentAnswers(
-      { kind: a.kind, position: a.answer ? { position: a.answer } : null },
-      { kind: b.kind, position: b.answer ? { position: b.answer } : null },
+      {
+        kind: a.kind,
+        status: a.status,
+        position: a.answer ? { position: a.answer } : null,
+      },
+      {
+        kind: b.kind,
+        status: b.status,
+        position: b.answer ? { position: b.answer } : null,
+      },
       { byAnswer },
     ) ||
     a.positionKey - b.positionKey ||

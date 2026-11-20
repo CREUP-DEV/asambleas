@@ -18,7 +18,14 @@ import { thirdCount, voteTextKey } from "~~/shared/utils/votes";
  * transactional that replaced it (an icon and its code), and the rest
  * their state (user's decision of 2026-11-20).
  */
-const props = defineProps<{ rows: LiveAmendmentRow[] }>();
+const props = defineProps<{
+  rows: LiveAmendmentRow[];
+  /**
+   * The amendments of a bloc on screen: marked with a lighter tint than
+   * the one on screen (user's decision of 2026-11-20).
+   */
+  marked?: ReadonlySet<string>;
+}>();
 
 const { t } = useI18n();
 
@@ -113,9 +120,14 @@ const entries = computed(() =>
       :key="entry.row.amendment.id"
       class="relative flex flex-wrap items-baseline gap-x-3 rounded-xl px-4 py-2 text-[clamp(1rem,1.3vw,1.5rem)] transition-colors duration-500 motion-reduce:transition-none"
       :class="
-        entry.row.current ? 'bg-primary text-inverted font-bold' : 'text-muted'
+        entry.row.current
+          ? 'bg-primary text-inverted font-bold'
+          : props.marked?.has(entry.row.amendment.id)
+            ? 'bg-primary/15 text-highlighted font-semibold'
+            : 'text-muted'
       "
       :aria-current="entry.row.current ? 'step' : undefined"
+      :data-marked="props.marked?.has(entry.row.amendment.id) || undefined"
     >
       <span class="shrink-0 font-semibold tabular-nums">{{ entry.code }}</span>
       <!-- Acronyms on screen, full names for screen readers. -->

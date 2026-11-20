@@ -11,7 +11,10 @@ import type {
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AmendmentReviewState } from "~~/shared/types/api";
 import { amendmentCodeSeq } from "~~/shared/utils/amendmentCode";
-import { answerableAfterDecision } from "~~/shared/utils/positions";
+import {
+  answerableAfterDecision,
+  rejectedByAnswer,
+} from "~~/shared/utils/positions";
 
 /**
  * Pure rules of the Secretaría's review (docs/design.md, "Validation by the
@@ -537,6 +540,12 @@ export function positionBlocker(
     validatedAt: Date | null;
     publishedAt: Date | null;
     approvalMethod: ApprovalMethod | null;
+    /**
+     * With its vote (`outcomeVoteId`), to tell a formal amendment the
+     * presenter's rejection closed (rejectedByAnswer): still answered.
+     */
+    kind?: AmendmentKind;
+    outcomeVoteId?: string | null;
     authorsApproval?: AcceptanceDecision | null;
     /**
      * The document's main presenter reads it once validated, before it is
@@ -554,6 +563,16 @@ export function positionBlocker(
   | "not_published"
   | null {
   if (voted) return "voted";
+  if (
+    row.kind !== undefined &&
+    row.outcomeVoteId !== undefined &&
+    rejectedByAnswer(
+      { kind: row.kind, status: row.status },
+      row.outcomeVoteId !== null,
+    )
+  ) {
+    return null;
+  }
   if (
     rule === "incorporate" &&
     row.status === "approved" &&
@@ -654,17 +673,44 @@ export function positionRecorder(
  * amendment approved that way away from "accept" reopens it (back to
  * submitted). A late one the assembly has not admitted yet keeps the
  * acceptance and is approved when admitted (incorporateOnAdmission). Under
- * "vote" an answer never decides anything.
+ * "vote" an acceptance never decides anything.
+ * Under either rule (user's decision of 2026-11-20), rejecting an
+ * undecided, admitted formal amendment rejects it at once ("reject": not
+ * debated by default), and any other answer to one rejected that way
+ * reopens it ("reopen_rejected", rejectedByAnswer); under "incorporate" an
+ * acceptance then incorporates it.
  */
 export function positionEffect(
   row: {
     status: AmendmentStatus;
     approvalMethod: ApprovalMethod | null;
     admission: AdmissionStatus;
+    /** With `outcomeVoteId`: the formal ones' own effects (above). */
+    kind?: AmendmentKind;
+    outcomeVoteId?: string | null;
   },
   position: ProponentPosition,
   rule: AcceptedAmendmentRule,
-): "approve" | "reopen" | null {
+): "approve" | "reopen" | "reject" | "reopen_rejected" | null {
+  if (row.kind !== undefined && row.outcomeVoteId !== undefined) {
+    if (
+      row.kind === "formal" &&
+      row.status === "submitted" &&
+      row.admission === "admitted" &&
+      position === "reject"
+    ) {
+      return "reject";
+    }
+    if (
+      rejectedByAnswer(
+        { kind: row.kind, status: row.status },
+        row.outcomeVoteId !== null,
+      ) &&
+      position !== "reject"
+    ) {
+      return "reopen_rejected";
+    }
+  }
   if (rule !== "incorporate") return null;
   if (
     row.status === "submitted" &&

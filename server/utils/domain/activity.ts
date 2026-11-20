@@ -1032,6 +1032,8 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   ],
   amendment_rejected: [
     "method",
+    "byPosition",
+    "reason",
     "inFavor",
     "against",
     "abstentions",

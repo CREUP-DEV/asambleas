@@ -543,6 +543,11 @@ function detailOf(event: EventDto): string | null {
       }
       return method ? t(`amendment.approvalMethods.${method}`) : null;
     }
+    case "amendment_rejected":
+      // A formal one its main presenter rejected: not debated by default.
+      return payload.reason === "formal_rejected"
+        ? t("amendment.history.rejectedFormalByPresenter")
+        : null;
     case "amendment_submitted":
       return payload.late === true ? t("amendment.late") : null;
     case "amendment_admitted":

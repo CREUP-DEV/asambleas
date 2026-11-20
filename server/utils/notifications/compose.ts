@@ -481,7 +481,12 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
         break;
       case "amendment_rejected":
         heading = "Tu enmienda está rechazada";
-        lead = `La asamblea ha rechazado tu enmienda ${c} ${of}.`;
+        // A formal one its main presenter rejected is not debated by
+        // default (positionEffect "reject").
+        lead =
+          payload.reason === "formal_rejected"
+            ? `Quien presenta el documento ha rechazado tu enmienda de forma ${c} ${of}, así que queda rechazada sin debate. La Mesa puede reabrirla para debatirla y votarla.`
+            : `La asamblea ha rechazado tu enmienda ${c} ${of}.`;
         break;
       case "amendment_inadmissible": {
         heading = "Tu enmienda no se ha admitido";

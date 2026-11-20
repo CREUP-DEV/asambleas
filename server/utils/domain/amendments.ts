@@ -4702,6 +4702,85 @@ async function recordPosition(
       input.parties,
       [current],
     );
+  } else if (effect === "reject") {
+    // A formal amendment its main presenter rejects is not debated by
+    // default (user's decision of 2026-11-20): rejected at once, with no
+    // vote (rejectedByAnswer), and what waited on it closed. The Mesa may
+    // reopen it to debate and vote it.
+    const updated = await tx
+      .update(amendments)
+      .set({
+        status: "rejected",
+        approvalMethod: null,
+        outcomeVoteId: null,
+        outcomeNote: null,
+        decidedAt: ctx.now,
+      })
+      .where(
+        and(
+          eq(amendments.id, current.id),
+          eq(amendments.status, "submitted"),
+          eq(amendments.admission, "admitted"),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      ...base,
+      type: "amendment_rejected",
+      payload: {
+        method: "proponent",
+        byPosition: true,
+        reason: "formal_rejected",
+        memberId: answeredFor,
+      },
+    });
+    await closeDependents(tx, ctx, input.competitors, input.locked, [
+      { id: current.id, code: current.code, status: "rejected" },
+    ]);
+  } else if (effect === "reopen_rejected") {
+    // Another answer to a formal amendment its rejection closed: it is
+    // undecided again, with what that closed brought back; accepted under
+    // "incorporate", it is incorporated as any acceptance.
+    const updated = await tx
+      .update(amendments)
+      .set({ status: "submitted", outcomeNote: null, decidedAt: null })
+      .where(
+        and(
+          eq(amendments.id, current.id),
+          eq(amendments.status, "rejected"),
+          eq(amendments.kind, "formal"),
+          isNull(amendments.outcomeVoteId),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      ...base,
+      type: "amendment_reopened",
+      payload: {
+        previousStatus: "rejected",
+        reason: "position_changed",
+        memberId: answeredFor,
+      },
+    });
+    await restoreDependents(
+      tx,
+      ctx,
+      input.competitors.sourceMap,
+      input.locked,
+      input.parties,
+      [current],
+    );
+    await incorporateOnAdmission(tx, ctx, {
+      ids: [current.id],
+      lockedIds: input.locked.map((row) => row.id),
+      sourceMap: input.competitors.sourceMap,
+      rule: input.rule,
+      voted: false,
+    });
   }
 }
 

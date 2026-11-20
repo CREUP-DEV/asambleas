@@ -515,7 +515,9 @@ describe("annex", () => {
         byAnswer,
       }).map((row) => row.id);
     expect(order(false)).toEqual(["n", "r", "x", "a", "t"]);
-    expect(order(true)).toEqual(["x", "a", "t", "r", "n"]);
+    // Accepted, transactions, rejected, the rest; a transactional the main
+    // presenter did not accept goes with the rest (no parties in the annex).
+    expect(order(true)).toEqual(["a", "x", "r", "n", "t"]);
   });
 
   it("leaves approved amendments without operations out of consolidation", () => {

@@ -623,6 +623,10 @@ const recess = computed(() => live.value?.recess ?? null);
 const blocEntries = computed(() =>
   liveBlocEntries(live.value?.amendmentBloc, amendments.value),
 );
+/** The bloc's amendments, marked in the list beside it. */
+const blocIds = computed(
+  () => new Set(blocEntries.value.map((entry) => entry.id)),
+);
 const blocApproved = computed(
   () => blocEntries.value.filter((entry) => entry.approved).length,
 );
@@ -660,7 +664,10 @@ const placed = new WeakSet<HTMLElement>();
 
 /** Scrolls a list so its current row sits in the middle of its box. */
 function centerCurrent(box: HTMLElement | null): void {
-  const current = box?.querySelector<HTMLElement>("[aria-current]");
+  // The row on screen, or the first one of a bloc.
+  const current = box?.querySelector<HTMLElement>(
+    "[aria-current], [data-marked]",
+  );
   // Not laid out yet (hidden, or before the first layout): the first
   // placement that counts is the one that can measure, and it jumps.
   if (!box || !current || box.clientHeight === 0) return;
@@ -829,7 +836,12 @@ const amendmentRows = computed(() =>
   }),
 );
 watch(
-  () => [debated.value?.id, amendmentsNav.value, amendmentRows.value.length],
+  () => [
+    debated.value?.id,
+    blocEntries.value[0]?.id,
+    amendmentsNav.value,
+    amendmentRows.value.length,
+  ],
   () => centerCurrent(amendmentsNav.value),
   { flush: "post" },
 );
@@ -969,10 +981,36 @@ watch(
 // The room left for it changed: a vote, the message or the speakers came
 // or went, or the window was resized.
 useResizeObserver(diffBox, layoutDiff);
+
+/**
+ * A bloc's chips shrink together until every one fits (user's decision of
+ * 2026-11-20), as the amendment's text does (fitDiff, same floor).
+ */
+const blocBox = ref<HTMLElement | null>(null);
+let blocFrame = 0;
+function layoutBloc(): void {
+  if (!import.meta.client || blocFrame) return;
+  blocFrame = requestAnimationFrame(() => {
+    blocFrame = 0;
+    if (blocBox.value) fitDiff(blocBox.value);
+  });
+}
+watch(
+  () => [
+    blocEntries.value.map((entry) => `${entry.id}:${entry.approved}`).join(),
+    blocBox.value,
+  ],
+  layoutBloc,
+  { flush: "post" },
+);
+useResizeObserver(blocBox, layoutBloc);
 // The content font (Raleway or the reader's preference) may land after the
 // first layout and change the height of the text.
 onMounted(() => {
-  void window.document.fonts?.ready.then(layoutDiff);
+  void window.document.fonts?.ready.then(() => {
+    layoutDiff();
+    layoutBloc();
+  });
 });
 onBeforeUnmount(() => {
   if (layoutFrame) cancelAnimationFrame(layoutFrame);
@@ -1046,12 +1084,11 @@ useHead(() => ({
         <p class="text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-bold">
           {{ assembly?.label }}
         </p>
-        <!-- Only with a bloc on screen, or an amendment on a narrow
-             screen: otherwise the column beside the text names the item. -->
+        <!-- An amendment or a bloc on a narrow screen: otherwise the column
+             beside it names the item. -->
         <p
           v-if="currentRow && (mode === 'amendment' || mode === 'bloc')"
-          class="text-muted truncate text-[clamp(1rem,1.4vw,1.5rem)]"
-          :class="mode === 'amendment' ? 'lg:hidden' : ''"
+          class="text-muted truncate text-[clamp(1rem,1.4vw,1.5rem)] lg:hidden"
         >
           <AgendaItemNumber :number="currentRow.number" />
           {{ currentRow.item.title }}
@@ -1348,14 +1385,16 @@ useHead(() => ({
         </p>
       </section>
 
-      <!-- The amendment takes most of the screen; beside it, a narrow
-           column names the agenda item, counts and lists the
-           document's amendments, the one on screen highlighted. -->
+      <!-- An amendment, or a bloc of them, takes most of the screen; beside
+           it, a narrow column names the agenda item, counts and lists the
+           document's amendments: the one on screen highlighted, or those
+           of the bloc marked (user's decisions of 2026-11-20). -->
       <section
-        v-else-if="mode === 'amendment' && debated"
+        v-else-if="(mode === 'amendment' && debated) || mode === 'bloc'"
         class="grid min-h-0 flex-1 gap-[clamp(1rem,2.5vw,2.5rem)] lg:grid-cols-[minmax(0,1fr)_clamp(15rem,21vw,26rem)]"
       >
         <div
+          v-if="mode === 'amendment' && debated"
           class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
           aria-live="polite"
         >
@@ -1411,6 +1450,93 @@ useHead(() => ({
             />
           </div>
         </div>
+        <!-- A bloc: the codes, large, each with its main author (and what a
+             transactional transacts); each turns green as it is approved. -->
+        <div
+          v-else
+          class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
+          aria-live="polite"
+        >
+          <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <div class="min-w-0">
+              <h1
+                id="projection-bloc-title"
+                class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
+              >
+                {{ t("projection.bloc.title") }}
+              </h1>
+            </div>
+            <p
+              class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold tabular-nums"
+            >
+              {{
+                t("projection.bloc.progress", {
+                  approved: blocApproved,
+                  total: blocEntries.length,
+                })
+              }}
+            </p>
+          </div>
+          <!-- Every chip fits: they shrink together (blocBox, fitDiff) down
+               to a readable floor, and only past it does the list scroll. -->
+          <ul
+            ref="blocBox"
+            class="projection-bloc projection-scroll flex min-h-0 flex-1 flex-wrap content-start gap-[0.75em] overflow-y-auto"
+            aria-labelledby="projection-bloc-title"
+          >
+            <li
+              v-for="entry in blocEntries"
+              :key="entry.id"
+              class="flex min-w-[6em] flex-col gap-[0.25em] rounded-2xl border-4 px-[1em] py-[0.5em] transition-colors duration-300"
+              :class="
+                entry.approved
+                  ? 'border-success bg-success/10'
+                  : entry.settled
+                    ? 'border-default opacity-60'
+                    : 'border-default bg-elevated/40'
+              "
+            >
+              <span
+                class="flex items-center gap-[0.3em] text-[2.4em] leading-none font-extrabold tabular-nums"
+              >
+                <UIcon
+                  v-if="entry.approved"
+                  name="i-lucide-check"
+                  class="text-success size-[0.8em] shrink-0"
+                  aria-hidden="true"
+                />
+                {{ entry.code }}
+              </span>
+              <span
+                v-if="entry.author"
+                class="text-muted text-[1.05em] leading-tight font-semibold"
+              >
+                {{ entry.author.acronym }}
+              </span>
+              <!-- A transactional says which ones it transacts. -->
+              <span
+                v-if="entry.transacts.length > 0"
+                class="text-default flex items-center gap-[0.3em] text-[0.95em] leading-tight font-semibold"
+              >
+                <UIcon
+                  name="i-lucide-git-merge"
+                  class="size-[1em] shrink-0"
+                  aria-hidden="true"
+                />
+                <span class="sr-only">{{
+                  t("projection.bloc.transacts")
+                }}</span>
+                {{ entry.transacts.join(" · ") }}
+              </span>
+              <span
+                v-if="entry.approved"
+                class="text-[0.85em] font-bold text-(--ui-color-success-800) uppercase dark:text-(--ui-color-success-300)"
+              >
+                {{ t("projection.bloc.approved") }}
+              </span>
+            </li>
+          </ul>
+        </div>
         <aside
           :aria-label="t('projection.amendments')"
           class="hidden min-h-0 flex-col gap-[clamp(0.5rem,1vw,1rem)] lg:flex"
@@ -1440,82 +1566,12 @@ useHead(() => ({
             :aria-label="t('projection.amendments')"
             class="projection-scroll min-h-0 flex-1 overflow-y-auto"
           >
-            <SessionProjectionAmendments :rows="amendmentRows" />
+            <SessionProjectionAmendments
+              :rows="amendmentRows"
+              :marked="mode === 'bloc' ? blocIds : undefined"
+            />
           </nav>
         </aside>
-      </section>
-
-      <!-- A bloc: the codes, large, each with its main author; each turns
-           green as the Mesa approves it. -->
-      <section
-        v-else-if="mode === 'bloc'"
-        class="flex min-h-0 flex-1 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
-        aria-live="polite"
-      >
-        <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
-          <div class="min-w-0">
-            <p class="text-muted text-[clamp(1rem,1.4vw,1.5rem)]">
-              {{ document?.reference ?? document?.title }}
-            </p>
-            <h1
-              id="projection-bloc-title"
-              class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
-            >
-              {{ t("projection.bloc.title") }}
-            </h1>
-          </div>
-          <p
-            class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold tabular-nums"
-          >
-            {{
-              t("projection.bloc.progress", {
-                approved: blocApproved,
-                total: blocEntries.length,
-              })
-            }}
-          </p>
-        </div>
-        <ul
-          class="projection-scroll flex min-h-0 flex-1 flex-wrap content-start gap-[clamp(0.75rem,1.5vw,1.5rem)] overflow-y-auto"
-          aria-labelledby="projection-bloc-title"
-        >
-          <li
-            v-for="entry in blocEntries"
-            :key="entry.id"
-            class="flex min-w-[clamp(8rem,14vw,14rem)] flex-col gap-[clamp(0.25rem,0.5vw,0.5rem)] rounded-2xl border-4 px-[clamp(1rem,2vw,2rem)] py-[clamp(0.5rem,1.2vw,1.25rem)] transition-colors duration-300"
-            :class="
-              entry.approved
-                ? 'border-success bg-success/10'
-                : entry.settled
-                  ? 'border-default opacity-60'
-                  : 'border-default bg-elevated/40'
-            "
-          >
-            <span
-              class="flex items-center gap-[0.3em] text-[clamp(2rem,4vw,4.5rem)] leading-none font-extrabold tabular-nums"
-            >
-              <UIcon
-                v-if="entry.approved"
-                name="i-lucide-check"
-                class="text-success size-[0.8em] shrink-0"
-                aria-hidden="true"
-              />
-              {{ entry.code }}
-            </span>
-            <span
-              v-if="entry.author"
-              class="text-muted text-[clamp(1.125rem,1.8vw,2rem)] leading-tight font-semibold"
-            >
-              {{ entry.author.acronym }}
-            </span>
-            <span
-              v-if="entry.approved"
-              class="text-[clamp(1rem,1.4vw,1.5rem)] font-bold text-(--ui-color-success-800) uppercase dark:text-(--ui-color-success-300)"
-            >
-              {{ t("projection.bloc.approved") }}
-            </span>
-          </li>
-        </ul>
       </section>
 
       <section
@@ -1706,6 +1762,17 @@ useHead(() => ({
  * (fitDiff), never below the readable floor; past it, the box scrolls to
  * the first change.
  */
+/*
+ * A bloc's chips are sized in em on this: every chip shrinks together
+ * until they all fit (layoutBloc), never below a readable floor.
+ */
+.projection-bloc {
+  font-size: max(
+    0.75rem,
+    calc(clamp(1rem, 1.6vw, 1.875rem) * var(--projection-fit, 1))
+  );
+}
+
 .projection-text :deep(.rich-text) {
   font-size: max(
     1.375rem,

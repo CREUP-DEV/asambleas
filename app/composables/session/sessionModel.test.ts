@@ -219,10 +219,10 @@ describe("session model", () => {
       );
     });
 
-    it("groups accepted, rejected and the rest once public, in text order", () => {
+    it("groups accepted, transactions, rejected and the rest once public, in text order", () => {
       expect(ids(sortSessionAmendments(list, { byAnswer: true }))).toEqual([
-        "t1",
         "c1",
+        "t1",
         "r1",
         "r2",
         "p1",
@@ -230,7 +230,7 @@ describe("session model", () => {
       ]);
       expect(
         sessionQueueOrder(buildSessionQueue(list, { byAnswer: true })),
-      ).toEqual(["t1", "c1", "r1", "r2", "p1", "n1"]);
+      ).toEqual(["c1", "t1", "r1", "r2", "p1", "n1"]);
     });
 
     it("keeps a passage's amendments together, where the first one lands", () => {

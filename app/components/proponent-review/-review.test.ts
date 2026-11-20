@@ -912,8 +912,9 @@ describe("proponentReviewItems", () => {
         (item) => item.id,
       );
     expect(ids(false)).toEqual(["no", "first", "2", "in", "late"]);
-    // A transactional goes with the accepted, whatever its answer.
-    expect(ids(true)).toEqual(["first", "2", "in", "no", "late"]);
+    // Accepted first; a transactional the main presenter has not accepted
+    // goes with the rest (user's decision of 2026-11-20).
+    expect(ids(true)).toEqual(["first", "in", "no", "2", "late"]);
   });
 
   it("counts the progress over the amendments to answer", () => {

@@ -256,6 +256,9 @@ export function newsValue(
       return text(payload.code);
     case "amendment_approved":
       return text(payload.method);
+    case "amendment_rejected":
+      // A formal one its main presenter rejected (positionEffect "reject").
+      return payload.byPosition === true ? "proponent" : null;
     case "amendment_inadmissible":
       // The Secretaría's no while reviewing it: it cannot be corrected.
       return payload.onReview === true ? "review" : null;

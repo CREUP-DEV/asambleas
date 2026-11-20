@@ -32,8 +32,12 @@ import {
   compareAmendmentCodes,
 } from "~/composables/amendment/workspace";
 import { cellFillOf } from "~~/shared/constants/cellFills";
-import { answerableAfterDecision } from "~~/shared/utils/positions";
 import {
+  answerableAfterDecision,
+  rejectedByAnswer,
+} from "~~/shared/utils/positions";
+import {
+  amendmentAnswerRank,
   compareAmendmentAnswers,
   type AmendmentOrderOptions,
 } from "~~/shared/utils/amendmentOrder";
@@ -725,7 +729,8 @@ export function sessionPositionMenu(
   if (
     amendment.status !== "submitted" &&
     !isSessionIncorporated(amendment) &&
-    !answerableAfterDecision(amendment)
+    !answerableAfterDecision(amendment) &&
+    !rejectedByAnswer(amendment, amendment.outcomeVote !== null)
   ) {
     return null;
   }
@@ -766,7 +771,8 @@ export function isSessionPositionByMesa(
 /**
  * Text order (as positionKey encodes it), then number. Once the document's
  * answers are public (`byAnswer`), grouped first by the main
- * presenter's answer: accepted or transacted, rejected, the rest
+ * presenter's answer: accepted, transactions, rejected, the rest,
+ * rejected formal ones last
  * (shared/utils/amendmentOrder.ts).
  */
 export function sortSessionAmendments(
@@ -1480,7 +1486,10 @@ export interface SessionAssentPlan {
 
 /**
  * Admitted, undecided, public amendments the document's main presenter
- * accepted, ready to be approved together by assent. Skipped and reported,
+ * accepted, ready to be approved together by assent: the first group of the
+ * debate order (amendmentAnswerRank 0), never a transactional nor one a
+ * transactional replaced, which are dealt with apart (user's decision of
+ * 2026-11-20). Skipped and reported,
  * in this order of precedence:
  * - transactionals still missing an acceptance;
  * - amendments with a pending transactional over them
@@ -1515,7 +1524,7 @@ export function sessionAssentPlan(
       isSessionBlocCandidate(amendment) &&
       (selected
         ? selected.has(amendment.id)
-        : amendment.position?.position === "accept"),
+        : amendmentAnswerRank(amendment) === 0),
   );
 
   const skipped: SessionAssentPlan["skipped"] = [];

@@ -31,7 +31,10 @@ import {
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { diffPassage } from "~~/shared/utils/content/diff";
-import { answerableAfterDecision } from "~~/shared/utils/positions";
+import {
+  answerableAfterDecision,
+  rejectedByAnswer,
+} from "~~/shared/utils/positions";
 import {
   firstTouchedBlockId,
   touchedBlockIds,
@@ -46,7 +49,9 @@ type AmendmentLike = Pick<
   AmendmentDto,
   "id" | "kind" | "status" | "ops" | "positionKey" | "number" | "code"
 > &
-  Partial<Pick<AmendmentDto, "submittedAt" | "decidedAt" | "position">>;
+  Partial<
+    Pick<AmendmentDto, "submittedAt" | "decidedAt" | "position" | "acceptances">
+  >;
 
 // Status and labels ------------------------------------------------------------
 
@@ -415,7 +420,8 @@ type PositionInput = Pick<
   | "validatedAt"
   | "acceptances"
   | "approvalMethod"
->;
+> &
+  Partial<Pick<AmendmentDto, "outcomeVote">>;
 
 /**
  * Why the main presenter cannot answer an undecided amendment yet, by what
@@ -485,6 +491,14 @@ function positionWait(
     rule === "incorporate" &&
     amendment.status === "approved" &&
     amendment.approvalMethod === "proponent"
+  ) {
+    return null;
+  }
+  // A formal one its rejection closed keeps its answer open (another one
+  // reopens it); the server tells it the same way (rejectedByAnswer).
+  if (
+    amendment.outcomeVote !== undefined &&
+    rejectedByAnswer(amendment, amendment.outcomeVote !== null)
   ) {
     return null;
   }
@@ -723,7 +737,7 @@ function timeOf(value: string | null | undefined): number {
 /**
  * Text order: position in the base, then number, then submission time.
  * Once the document's answers are public (`byAnswer`), grouped first
- * by the main presenter's answer: accepted or transacted, rejected, the
+ * by the main presenter's answer: accepted, transactions, rejected, the
  * rest (shared/utils/amendmentOrder.ts).
  */
 export function compareAmendments(

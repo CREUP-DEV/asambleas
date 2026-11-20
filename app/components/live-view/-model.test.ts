@@ -868,10 +868,48 @@ describe("a bloc on screen (2026-11-19)", () => {
 
   it("lists its amendments in text order, with author and state", () => {
     expect(liveBlocEntries(["e5", "e3", "e9"], list)).toEqual([
-      { id: "e3", code: "E3", author: null, approved: true, settled: false },
-      { id: "e5", code: "E5", author: ugr, approved: false, settled: false },
-      { id: "e9", code: "E9", author: null, approved: false, settled: true },
+      {
+        id: "e3",
+        code: "E3",
+        author: null,
+        approved: true,
+        settled: false,
+        transacts: [],
+      },
+      {
+        id: "e5",
+        code: "E5",
+        author: ugr,
+        approved: false,
+        settled: false,
+        transacts: [],
+      },
+      {
+        id: "e9",
+        code: "E9",
+        author: null,
+        approved: false,
+        settled: true,
+        transacts: [],
+      },
     ]);
+  });
+
+  it("says which amendments a transactional of the bloc transacts", () => {
+    const withTransactional = [
+      ...list,
+      amendment("t1", {
+        code: "T1",
+        positionKey: 5,
+        kind: "transactional",
+        sourceIds: ["e5", "e1", "e7"],
+      }),
+    ];
+    expect(
+      liveBlocEntries(["t1"], withTransactional).map(
+        (entry) => entry.transacts,
+      ),
+    ).toEqual([["E1", "E5"]]);
   });
 
   it("leaves out what the room cannot read, and is empty without a bloc", () => {

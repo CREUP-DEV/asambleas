@@ -1401,7 +1401,7 @@
     },
     "list": {
       "label": "Enmiendas en orden del texto",
-      "labelByAnswer": "Enmiendas: aceptadas y transaccionales, rechazadas y sin respuesta, cada grupo en el orden del texto",
+      "labelByAnswer": "Enmiendas: aceptadas; transacciones aceptadas; rechazadas; sin respuesta, y al final las de forma rechazadas; cada grupo en el orden del texto",
       "overlapGroup": "Mismo pasaje · una enmienda | Mismo pasaje · {count} enmiendas",
       "count": "Ninguna enmienda | Una enmienda | {count} enmiendas",
       "loading": "Cargando enmiendas",
@@ -1703,6 +1703,7 @@
       },
       "byPresenter": "Sin votación: la aceptó quien presenta el documento",
       "byFormalRule": "Sin votación: se aceptó automáticamente por ser de forma",
+      "rejectedFormalByPresenter": "Sin votación: la rechazó quien presenta el documento y, al ser de forma, no se debate salvo que la Mesa la reabra",
       "closedByRejection": "Cerrada: la rechazó un autor principal",
       "closedBySources": "Cerrada: una de las enmiendas que agrupa ya está resuelta",
       "closedBySourcesDetail": "Enmienda resuelta: {source}",
@@ -2739,6 +2740,7 @@
     "breadcrumb": {
       "label": "Dónde estás",
       "backTo": "Volver a {label}",
+      "folded": "Más niveles",
       "assembly": "Asamblea",
       "agendaItem": "Punto",
       "document": "Documento",
@@ -3032,6 +3034,7 @@
         "approved": "Se ha aprobado {amendment}: su cambio pasa al texto.",
         "incorporated": "Quien presenta el documento aceptó {amendment}: ya está en el texto sin votación.",
         "rejected": "Se ha rechazado {amendment}: el texto queda como estaba.",
+        "rejectedByPresenter": "Quien presenta el documento ha rechazado {amendment}: al ser de forma, no se debate salvo que la Mesa la reabra.",
         "transacted": "Una transaccional sustituye a {amendment} y se debate en su lugar.",
         "lapsed": "Ha decaído {amendment}: ya no se vota.",
         "withdrawn": "Se ha retirado {amendment}: ya no se debatirá.",
@@ -3810,7 +3813,7 @@
       "empty": "No se han presentado enmiendas",
       "emptyHint": "Si el documento se vota, puedes pasar a la votación final.",
       "late": "Fuera de plazo",
-      "listLabelByAnswer": "Enmiendas: aceptadas y transaccionales, rechazadas y sin respuesta, cada grupo en el orden del texto",
+      "listLabelByAnswer": "Enmiendas: aceptadas; transacciones aceptadas; rechazadas; sin respuesta, y al final las de forma rechazadas; cada grupo en el orden del texto",
       "clusterLabel": "Grupo de {count} enmiendas sobre el mismo pasaje",
       "clusterTitle": "{codes} modifican el mismo pasaje",
       "clusterHint": "No pueden aprobarse todas tal cual: transaccionadlas, retirad alguna o votad una de ellas.",
@@ -4546,6 +4549,7 @@
     "bloc": {
       "title": "Se propone aprobar en bloque",
       "progress": "{approved} de {total} aprobadas",
+      "transacts": "Transacciona:",
       "approved": "Aprobada"
     },
     "tally": {
@@ -4848,6 +4852,8 @@
     "retry": "Reintentar",
     "follow": "Seguir el debate",
     "followHint": "Abre lo que la Mesa tiene en debate y lo señala. En «Enmiendas», las del documento en debate.",
+    "following": "Siguiendo el debate",
+    "followingHint": "Te lleva a lo que se debate. Si te alejas o abres otro documento, deja de seguirlo.",
     "live": "En debate",
     "noVote": "Sin votar",
     "positionNone": "Sin respuesta",

@@ -1,4 +1,8 @@
-import type { AmendmentStatus, ApprovalMethod } from "../constants/domain";
+import type {
+  AmendmentKind,
+  AmendmentStatus,
+  ApprovalMethod,
+} from "../constants/domain";
 
 /**
  * Whether the main presenter's answers to a document's amendments are
@@ -52,4 +56,19 @@ export function answerableAfterDecision(row: {
     row.approvalMethod !== null &&
     row.approvalMethod !== "proponent"
   );
+}
+
+/**
+ * A formal amendment its main presenter's rejection closed (user's decision
+ * of 2026-11-20): formal ones the presenter rejects are not debated by
+ * default, so the answer rejects it at once (positionEffect "reject"). It
+ * is told by its having no vote: the Mesa rejects only by vote. Its answer
+ * stays open until the final vote: any other answer reopens it
+ * ("reopen_rejected"), and the Mesa may reopen it to debate and vote it.
+ */
+export function rejectedByAnswer(
+  row: { kind: AmendmentKind; status: AmendmentStatus },
+  hasVote: boolean,
+): boolean {
+  return row.kind === "formal" && row.status === "rejected" && !hasVote;
 }

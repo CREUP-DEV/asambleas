@@ -629,6 +629,63 @@ describe("position of the main presenter", () => {
     ).toBeNull();
   });
 
+  it("rejects a formal amendment its presenter rejects, and reopens it on another answer (2026-11-20)", () => {
+    const formal = {
+      status: "submitted" as const,
+      approvalMethod: null,
+      admission: "admitted" as const,
+      kind: "formal" as const,
+      outcomeVoteId: null,
+    };
+    for (const rule of ["incorporate", "vote"] as const) {
+      expect(positionEffect(formal, "reject", rule)).toBe("reject");
+      expect(
+        positionEffect({ ...formal, kind: "partial" }, "reject", rule),
+      ).toBeNull();
+      // Not admitted yet (late): it waits.
+      expect(
+        positionEffect({ ...formal, admission: "pending" }, "reject", rule),
+      ).toBeNull();
+      const rejected = { ...formal, status: "rejected" as const };
+      expect(positionEffect(rejected, "accept", rule)).toBe("reopen_rejected");
+      expect(positionEffect(rejected, "pending", rule)).toBe("reopen_rejected");
+      expect(positionEffect(rejected, "reject", rule)).toBeNull();
+      // Rejected by a vote: the answer changes nothing.
+      expect(
+        positionEffect({ ...rejected, outcomeVoteId: "v1" }, "accept", rule),
+      ).toBeNull();
+    }
+    // Without its kind and vote (callers that never decide), as before.
+    expect(
+      positionEffect(
+        { status: "submitted", approvalMethod: null, admission: "admitted" },
+        "reject",
+        "incorporate",
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the answer of a formal amendment its rejection closed open", () => {
+    const rejected = {
+      status: "rejected" as const,
+      admission: "admitted" as const,
+      validatedAt: new Date(),
+      publishedAt: new Date(),
+      approvalMethod: null,
+      kind: "formal" as const,
+      outcomeVoteId: null,
+    };
+    expect(positionBlocker(rejected, "vote")).toBeNull();
+    expect(positionBlocker(rejected, "incorporate")).toBeNull();
+    expect(positionBlocker({ ...rejected, outcomeVoteId: "v1" }, "vote")).toBe(
+      "decided",
+    );
+    expect(positionBlocker({ ...rejected, kind: "partial" }, "vote")).toBe(
+      "decided",
+    );
+    expect(positionBlocker(rejected, "vote", true)).toBe("voted");
+  });
+
   it("decides nothing when accepted amendments are voted", () => {
     expect(
       positionEffect(

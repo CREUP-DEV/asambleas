@@ -371,6 +371,7 @@ const selectedDocumentId = computed<string | undefined>({
   set: (id) => {
     const document = documentOptions.value.find((entry) => entry.id === id);
     if (!document) return;
+    leaveDebateFor(document.id);
     void router.replace({
       query: { ...route.query, [DOCUMENT_QUERY]: document.slug },
     });
@@ -1312,6 +1313,7 @@ function openDocumentAmendments(document: SheetRowDocument): void {
     (entry) => entry.id === document.id,
   );
   if (!option) return;
+  leaveDebateFor(option.id);
   void router.replace({
     query: {
       ...route.query,
@@ -1673,6 +1675,104 @@ watch(
   },
 );
 
+/**
+ * Following stops once the reader leaves what is in debate (user's decision
+ * of 2026-11-20): opening another document's amendments, or scrolling the
+ * row in debate out of view. Moving between «General» and «Enmiendas» on
+ * the same document does not count; the button takes it back.
+ */
+function leaveDebateFor(documentId: string): void {
+  if (follow.value && debateDocument.value?.id !== documentId) {
+    follow.value = false;
+  }
+}
+
+/** The row in debate as the list on show has it, if it is in the page. */
+function debatedRow(): HTMLElement | null {
+  const state = live.value;
+  if (!state || !import.meta.client) return null;
+  const id =
+    tab.value === "amendments"
+      ? (state.amendmentId ?? null)
+      : tab.value === "general"
+        ? state.agendaItemId
+        : null;
+  if (!id) return null;
+  return (
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        `[data-sheet-row="${CSS.escape(id)}"]`,
+      ),
+    ].find((element) => element.getClientRects().length > 0) ?? null
+  );
+}
+
+/**
+ * When the reader last moved the page themself (wheel, touch, keys, the
+ * scrollbar): only their scrolling stops following, never the sheet's own
+ * (following, coming back, a refetch).
+ */
+let readerScrolledAt = 0;
+const READER_SCROLL_WINDOW_MS = 800;
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+function noteReaderScroll(): void {
+  readerScrolledAt = Date.now();
+}
+function noteScrollKey(event: KeyboardEvent): void {
+  if (SCROLL_KEYS.has(event.key)) noteReaderScroll();
+}
+/** A press on the scroll area itself is its scrollbar, not a button in it. */
+function noteScrollbarPress(event: PointerEvent): void {
+  if (event.target === scrollWatched) noteReaderScroll();
+}
+// Turning it on scrolls to the debate: that scroll is the sheet's own.
+watch(follow, (on) => {
+  if (on) readerScrolledAt = 0;
+});
+function onSheetScroll(): void {
+  if (!follow.value) return;
+  if (Date.now() - readerScrolledAt > READER_SCROLL_WINDOW_MS) return;
+  const row = debatedRow();
+  const area = scrollArea();
+  if (!row || !area) return;
+  const box = row.getBoundingClientRect();
+  const view = area.getBoundingClientRect();
+  if (box.bottom <= view.top || box.top >= view.bottom) follow.value = false;
+}
+
+let scrollWatched: HTMLElement | null = null;
+onMounted(() => {
+  void nextTick(() => {
+    scrollWatched = scrollArea();
+    if (!scrollWatched) return;
+    scrollWatched.addEventListener("scroll", onSheetScroll, { passive: true });
+    scrollWatched.addEventListener("wheel", noteReaderScroll, {
+      passive: true,
+    });
+    scrollWatched.addEventListener("touchmove", noteReaderScroll, {
+      passive: true,
+    });
+    // The scrollbar: a press on the scroll area itself.
+    scrollWatched.addEventListener("pointerdown", noteScrollbarPress);
+    window.addEventListener("keydown", noteScrollKey);
+  });
+});
+onBeforeUnmount(() => {
+  scrollWatched?.removeEventListener("scroll", onSheetScroll);
+  scrollWatched?.removeEventListener("wheel", noteReaderScroll);
+  scrollWatched?.removeEventListener("touchmove", noteReaderScroll);
+  scrollWatched?.removeEventListener("pointerdown", noteScrollbarPress);
+  window.removeEventListener("keydown", noteScrollKey);
+});
+
 // Back to where the reader left it (-return.ts) -------------------------------
 
 /**
@@ -1882,12 +1982,27 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           {{ t(internal ? "controlSheet.intro" : "controlSheet.introPublic") }}
         </p>
       </div>
-      <USwitch
-        v-model="follow"
-        :label="t('controlSheet.follow')"
-        :description="t('controlSheet.followHint')"
-        class="max-w-xs"
-      />
+      <!-- One button: it says when the sheet follows the debate, and
+           takes it back there when it does not (user's decision of
+           2026-11-20). -->
+      <UTooltip
+        :text="
+          follow
+            ? t('controlSheet.followingHint')
+            : t('controlSheet.followHint')
+        "
+      >
+        <UButton
+          :color="follow ? 'primary' : 'neutral'"
+          :variant="follow ? 'soft' : 'outline'"
+          icon="i-lucide-radio"
+          :label="
+            follow ? t('controlSheet.following') : t('controlSheet.follow')
+          "
+          :aria-pressed="follow"
+          @click="follow = !follow"
+        />
+      </UTooltip>
     </div>
 
     <div v-if="loading" class="space-y-3" role="status">
@@ -2304,5 +2419,24 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         </div>
       </template>
     </UModal>
+
+    <!-- Away from the debate, the way back stays at hand at the bottom of
+         the screen (the button above may be far up the sheet). -->
+    <div
+      v-if="
+        !follow &&
+        assembly.status === 'in_session' &&
+        live?.agendaItemId &&
+        tab !== 'turns'
+      "
+      class="pointer-events-none sticky bottom-4 z-20 flex justify-center print:hidden"
+    >
+      <UButton
+        class="pointer-events-auto shadow-lg"
+        icon="i-lucide-radio"
+        :label="t('controlSheet.follow')"
+        @click="follow = true"
+      />
+    </div>
   </div>
 </template>

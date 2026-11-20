@@ -1401,7 +1401,7 @@
     },
     "list": {
       "label": "Amendments in text order",
-      "labelByAnswer": "Amendments: accepted and transactional, rejected and unanswered, each group in text order",
+      "labelByAnswer": "Amendments: accepted; accepted transactions; rejected; unanswered, and last the rejected formal ones; each group in text order",
       "overlapGroup": "Same passage · one amendment | Same passage · {count} amendments",
       "count": "No amendments | One amendment | {count} amendments",
       "loading": "Loading amendments",
@@ -1703,6 +1703,7 @@
       },
       "byPresenter": "Without a vote: the document's presenter accepted it",
       "byFormalRule": "Without a vote: accepted automatically as a formal amendment",
+      "rejectedFormalByPresenter": "Without a vote: the document's presenter rejected it and, being a formal amendment, it is not debated unless the Mesa reopens it",
       "closedByRejection": "Closed: a main author rejected it",
       "closedBySources": "Closed: one of the amendments it groups is already settled",
       "closedBySourcesDetail": "Settled amendment: {source}",
@@ -2739,6 +2740,7 @@
     "breadcrumb": {
       "label": "Where you are",
       "backTo": "Back to {label}",
+      "folded": "More levels",
       "assembly": "Assembly",
       "agendaItem": "Item",
       "document": "Document",
@@ -3032,6 +3034,7 @@
         "approved": "Approved: {amendment} goes into the text.",
         "incorporated": "The document's presenter accepted {amendment}: it is already in the text without a vote.",
         "rejected": "Rejected: {amendment} leaves the text as it was.",
+        "rejectedByPresenter": "The document's presenter rejected {amendment}: being a formal amendment, it is not debated unless the Mesa reopens it.",
         "transacted": "A transactional replaces {amendment} and is debated in its place.",
         "lapsed": "Lapsed: {amendment} is no longer voted on.",
         "withdrawn": "Withdrawn: {amendment} will no longer be debated.",
@@ -3810,7 +3813,7 @@
       "empty": "No amendments were submitted",
       "emptyHint": "If the document is voted on, you can go to the final vote.",
       "late": "Late",
-      "listLabelByAnswer": "Amendments: accepted and transactional, rejected and unanswered, each group in text order",
+      "listLabelByAnswer": "Amendments: accepted; accepted transactions; rejected; unanswered, and last the rejected formal ones; each group in text order",
       "clusterLabel": "Group of {count} amendments on the same passage",
       "clusterTitle": "{codes} change the same passage",
       "clusterHint": "They cannot all be approved as written: transact them, withdraw some or vote on one.",
@@ -4546,6 +4549,7 @@
     "bloc": {
       "title": "Proposed for approval as a bloc",
       "progress": "{approved} of {total} approved",
+      "transacts": "Combines:",
       "approved": "Approved"
     },
     "tally": {
@@ -4848,6 +4852,8 @@
     "retry": "Try again",
     "follow": "Follow the debate",
     "followHint": "Opens what the Mesa is debating and marks it. In «Amendments», those of the document in debate.",
+    "following": "Following the debate",
+    "followingHint": "It takes you to what is debated. If you move away or open another document, it stops following.",
     "live": "Under debate",
     "noVote": "Not voted",
     "positionNone": "No answer",
