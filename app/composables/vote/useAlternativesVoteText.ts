@@ -49,12 +49,16 @@ export function useAlternativesVoteText() {
 
   /** «Ganó la opción A», or what the Mesa did when none won. */
   function outcome(
-    vote: Pick<VoteDto, "winningOption" | "tieResolution">,
+    vote: Pick<VoteDto, "winningOption" | "tieResolution"> &
+      Partial<Pick<VoteDto, "winnerOutcome">>,
   ): string {
     if (vote.winningOption !== null) {
-      return t("amendment.vote.alternatives.won", {
-        letter: alternativeLetter(vote.winningOption),
-      });
+      return t(
+        vote.winnerOutcome === "keep"
+          ? "amendment.vote.alternatives.wonKeep"
+          : "amendment.vote.alternatives.won",
+        { letter: alternativeLetter(vote.winningOption) },
+      );
     }
     return vote.tieResolution === "no_effect"
       ? t("amendment.vote.alternatives.noEffect")

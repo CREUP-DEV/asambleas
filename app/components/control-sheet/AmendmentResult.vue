@@ -144,7 +144,7 @@ async function confirm(): Promise<void> {
   const action: OutcomeAction =
     what === "assent"
       ? { action: "approve", method: "assent" }
-      : what === "reopen" && alternativesSiblings.value.length > 0
+      : what === "reopen" && props.amendment.outcomeVote?.options
         ? { action: "reopen", wholeVote: true }
         : { action: what };
   if (await run(action)) confirming.value = null;
@@ -159,9 +159,15 @@ const alternativesSiblings = computed(() => {
   if (!vote?.options) return [];
   const codeOf = (id: string) =>
     props.amendments.find((item) => item.id === id)?.code ?? "?";
+  // Those the vote decided: a winner it kept undecided is not reopened.
   return vote.options
     .flatMap((option) => option.amendmentIds)
-    .filter((id) => id !== props.amendment.id)
+    .filter(
+      (id) =>
+        id !== props.amendment.id &&
+        props.amendments.find((item) => item.id === id)?.outcomeVote?.id ===
+          vote.id,
+    )
     .map(codeOf);
 });
 
@@ -253,10 +259,12 @@ async function submitVote(vote: VoteInput): Promise<void> {
           : ''
       "
       :description="
-        confirming === 'reopen' && alternativesSiblings.length > 0
-          ? t('session.alternatives.reopenDescription', {
-              codes: alternativesSiblings.join(', '),
-            })
+        confirming === 'reopen' && amendment.outcomeVote?.options
+          ? alternativesSiblings.length > 0
+            ? t('session.alternatives.reopenDescription', {
+                codes: alternativesSiblings.join(', '),
+              })
+            : t('session.alternatives.reopenDescriptionAlone')
           : t('controlSheet.results.notProjected')
       "
     >

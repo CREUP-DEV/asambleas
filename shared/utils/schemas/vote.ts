@@ -4,6 +4,7 @@ import { foreignBallotKeys } from "../votes";
 import {
   ALTERNATIVES_OPTION_COUNT,
   ALTERNATIVES_TIE_RESOLUTIONS,
+  ALTERNATIVES_WINNER_OUTCOMES,
   alternativesSetsProblem,
 } from "../alternativesVote";
 import type {
@@ -96,6 +97,7 @@ export const alternativesVoteBodySchema = z
     present: count.nullable().optional(),
     note: noteSchema,
     tieResolution: z.enum(ALTERNATIVES_TIE_RESOLUTIONS).optional(),
+    winnerOutcome: z.enum(ALTERNATIVES_WINNER_OUTCOMES).optional(),
     project: z.boolean().optional(),
   })
   .superRefine((body, ctx) => {

@@ -39,6 +39,12 @@ describe("answerableAfterDecision", () => {
     }
   });
 
+  it("keeps it open on a rejected one too (user's decision of 2026-11-21)", () => {
+    expect(
+      answerableAfterDecision({ status: "rejected", approvalMethod: null }),
+    ).toBe(true);
+  });
+
   it("leaves out incorporated, undecided and closed amendments", () => {
     expect(
       answerableAfterDecision({
@@ -52,7 +58,6 @@ describe("answerableAfterDecision", () => {
     for (const status of [
       "draft",
       "submitted",
-      "rejected",
       "withdrawn",
       "lapsed",
       "transacted",

@@ -1618,10 +1618,10 @@
         "incorporated": "Está incorporada al texto sin votación. Si cambia la respuesta antes de la votación final, volverá a quedar pendiente.",
         "vote": "La votará la asamblea.",
         "voteAnyway": "La votará la asamblea, la acepte o no quien presenta el documento.",
-        "decided": "Ya está aprobada: cambiar la respuesta no cambia la aprobación ni el texto."
+        "decided": "Ya está decidida: cambiar la respuesta no cambia el resultado ni el texto."
       },
       "savedIncorporated": "Se ha incorporado al texto sin votación.",
-      "savedDecided": "Sigue aprobada: la respuesta no cambia la decisión.",
+      "savedDecided": "La decisión sigue igual: la respuesta no la cambia.",
       "savedReopened": "Ya no está incorporada: vuelve a estar pendiente de decisión.",
       "later": "Podrá responderla {member} más adelante.",
       "laterYou": "Podrás responderla después.",
@@ -1777,6 +1777,7 @@
       "positionReset": "Se borró la respuesta de quien presenta el documento.",
       "alternatives": {
         "won": "Votación entre alternativas: ganó su opción, la {option} ({count} votos)",
+        "wonKeep": "Votación entre alternativas: ganó su opción, la {option} ({count} votos); queda por votar frente al texto original",
         "lost": "Votación entre alternativas: estaba en la opción {option} ({count} votos) y ganó la {winner}",
         "rejectedAll": "Votación entre alternativas sin opción ganadora: la Mesa las rechazó todas",
         "noEffect": "Votación entre alternativas sin opción ganadora: la Mesa las dejó sin decidir"
@@ -1814,6 +1815,7 @@
         "abstentions": "Ninguna abstención | 1 abstención | {count} abstenciones",
         "blank": "Ningún voto en blanco | 1 en blanco | {count} en blanco",
         "won": "Ganó la opción {letter}",
+        "wonKeep": "Ganó la opción {letter}: queda por votar frente al texto original",
         "rejectedAll": "Ninguna opción ganó: la Mesa las rechazó todas",
         "noEffect": "Ninguna opción ganó: la Mesa las dejó sin decidir",
         "amendments": "Enmiendas"
@@ -4673,9 +4675,13 @@
       "project": "Proyectar las opciones",
       "onScreen": "Opciones en pantalla",
       "countsTitle": "Votos",
+      "winnerOutcome": "Si gana una opción",
+      "winnerApprove": "Se aprueban sus enmiendas y se rechazan las de la otra",
+      "winnerKeep": "Solo se rechazan las de la otra: la ganadora se vota después frente al texto original",
       "method": "Forma de votación",
       "note": "Nota (opcional)",
       "winsPreview": "Gana la opción {letter}",
+      "winsPreviewKeep": "Gana la opción {letter}: se rechaza la otra y la {letter} queda por votar",
       "tiePreview": "Empate: ninguna opción gana",
       "shortPreview": "Ninguna opción llega a la mayoría necesaria ({threshold} votos)",
       "inconsistent": "Los votos emitidos superan a los miembros presentes",
@@ -4691,7 +4697,9 @@
       "splitUpdated": "Han cambiado las opciones en pantalla: el reparto es ahora el proyectado. Los votos anotados se mantienen.",
       "reopenTitle": "¿Reabrir {code}?",
       "reopenDescription": "Se decidió en una votación entre alternativas. Reabrirla anula esa votación y reabre también: {codes}.",
+      "reopenDescriptionAlone": "Se decidió en una votación entre alternativas. Reabrirla anula esa votación.",
       "reopenConfirm": "Anular la votación y reabrirlas",
+      "reopenConfirmAlone": "Anular la votación y reabrirla",
       "errors": {
         "record": "No se ha podido registrar la votación",
         "onScreen": "Está en pantalla como alternativa de una votación: se decide votando entre las opciones",
@@ -4753,6 +4761,7 @@
       "rejected": "Rechazada",
       "rejectedAll": "Rechazadas todas",
       "noEffect": "Sin decidir",
+      "keepNote": "Queda por votar frente al texto original",
       "inFavor": "A favor",
       "against": "En contra",
       "abstentions": "Abstenciones",

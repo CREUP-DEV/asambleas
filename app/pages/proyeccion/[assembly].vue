@@ -1417,6 +1417,13 @@ useHead(() => ({
         >
           {{ voteHeadline }}
         </p>
+        <!-- The winner kept undecided, voted next against the original. -->
+        <p
+          v-if="voteAlternatives && vote.winnerOutcome === 'keep'"
+          class="mt-[clamp(0.25rem,0.6vw,0.6rem)] text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-semibold"
+        >
+          {{ t("projection.vote.keepNote") }}
+        </p>
         <!-- Alternatives: each option's codes and votes. -->
         <dl
           v-if="voteAlternatives"

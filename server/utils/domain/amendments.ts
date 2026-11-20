@@ -6375,12 +6375,18 @@ export async function decideAlternatives(
     );
   }
   const tieResolution = winner === null ? (body.tieResolution ?? null) : null;
+  // The winner approved, or kept undecided to be voted against the original
+  // text, only the others rejected (user's decision of 2026-11-21).
+  const winnerOutcome =
+    winner !== null ? (body.winnerOutcome ?? "approve") : null;
   const statusOf = (
     index: number,
   ): Extract<AmendmentStatus, "approved" | "rejected"> | null =>
     winner !== null
       ? index === winner
-        ? "approved"
+        ? winnerOutcome === "keep"
+          ? null
+          : "approved"
         : "rejected"
       : tieResolution === "reject_all"
         ? "rejected"
@@ -6491,6 +6497,7 @@ export async function decideAlternatives(
         })),
         winningOption: winner,
         tieResolution,
+        winnerOutcome: winnerOutcome === "keep" ? "keep" : null,
         recordedByUserId: actor.user.id,
       })
       .returning();
@@ -6529,6 +6536,7 @@ export async function decideAlternatives(
         subjectIds: allIds,
         winningOption: winner,
         ...(tieResolution ? { tieResolution } : {}),
+        ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
       },
     });
 
@@ -6550,9 +6558,11 @@ export async function decideAlternatives(
           optionCount: body.options[index]!.count,
           winningOption: winner,
           ...(tieResolution ? { tieResolution } : {}),
+          ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
         };
         if (!status) {
-          // Nobody won and the Mesa left them undecided: the amendment's
+          // Nobody won and the Mesa left them undecided, or this option won
+          // and is voted next against the original text: the amendment's
           // history still says it was voted. Its token moves on, so the
           // same request sent twice (two consoles, a retry) records one
           // vote and the second gets 409; a new vote on the same options

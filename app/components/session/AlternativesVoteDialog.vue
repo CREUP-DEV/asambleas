@@ -6,6 +6,7 @@ import {
   alternativeLetter,
   computeAlternativesOutcome,
   type AlternativesTieResolution,
+  type AlternativesWinnerOutcome,
 } from "~~/shared/utils/alternativesVote";
 import {
   alternativesSplitConflict,
@@ -47,6 +48,12 @@ const blank = ref(0);
 const invalid = ref(0);
 const present = ref<number | null>(null);
 const note = ref("");
+/**
+ * What a win does to the winning option (user's decision of 2026-11-21):
+ * approve it, or only reject the other and vote the winner next against
+ * the original text.
+ */
+const winnerOutcome = ref<AlternativesWinnerOutcome>("approve");
 /** The server found no winner (the members present may differ). */
 const serverUndecided = ref<"tie" | "short" | null>(null);
 const busy = ref(false);
@@ -71,6 +78,7 @@ watch(open, (value) => {
     session.alternativesDialog.options,
   );
   method.value = "show_of_hands";
+  winnerOutcome.value = "approve";
   resetCounts();
   note.value = "";
 });
@@ -199,9 +207,12 @@ const preview = computed(() => {
   if (!counted.value) return null;
   if (outcome.value.inconsistent) return t("session.alternatives.inconsistent");
   if (outcome.value.winner !== null) {
-    return t("session.alternatives.winsPreview", {
-      letter: alternativeLetter(outcome.value.winner),
-    });
+    return t(
+      winnerOutcome.value === "keep"
+        ? "session.alternatives.winsPreviewKeep"
+        : "session.alternatives.winsPreview",
+      { letter: alternativeLetter(outcome.value.winner) },
+    );
   }
   return outcome.value.undecided === "short"
     ? t("session.alternatives.shortPreview", {
@@ -235,6 +246,7 @@ async function record(tieResolution?: AlternativesTieResolution) {
       present: present.value,
       note: note.value.trim() || null,
       tieResolution,
+      winnerOutcome: winnerOutcome.value,
     });
     if (result.ok) {
       open.value = false;
@@ -361,6 +373,20 @@ function amendmentLine(id: string): string {
           <h3 class="text-highlighted text-sm font-medium">
             {{ t("session.alternatives.countsTitle") }}
           </h3>
+          <URadioGroup
+            v-model="winnerOutcome"
+            :legend="t('session.alternatives.winnerOutcome')"
+            :items="[
+              {
+                value: 'approve',
+                label: t('session.alternatives.winnerApprove'),
+              },
+              {
+                value: 'keep',
+                label: t('session.alternatives.winnerKeep'),
+              },
+            ]"
+          />
           <UFormField :label="t('session.alternatives.method')">
             <USelect
               v-model="method"

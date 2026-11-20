@@ -514,7 +514,6 @@ describe("position of the main presenter", () => {
     expect(positionBlocker(incorporated, "incorporate")).toBeNull();
     expect(positionBlocker(incorporated, "vote")).toBe("decided");
     for (const status of [
-      "rejected",
       "withdrawn",
       "lapsed",
       "transacted",
@@ -526,6 +525,38 @@ describe("position of the main presenter", () => {
         );
       }
     }
+  });
+
+  it("keeps the answer open on a rejected one, which stays rejected", () => {
+    for (const kind of ["partial", "formal", "transactional"] as const) {
+      // Rejected by a vote (it has one): accepting it does not approve it.
+      const rejected = {
+        ...answerable,
+        status: "rejected" as const,
+        kind,
+        outcomeVoteId: "vote1",
+      };
+      for (const rule of ["vote", "incorporate"] as const) {
+        expect(positionBlocker(rejected, rule)).toBeNull();
+        expect(positionBlocker(rejected, rule, true)).toBe("voted");
+        for (const position of ["accept", "reject", "pending"] as const) {
+          expect(positionEffect(rejected, position, rule)).toBeNull();
+        }
+      }
+    }
+    // A formal one the presenter's rejection closed still reopens.
+    expect(
+      positionEffect(
+        {
+          ...answerable,
+          status: "rejected",
+          kind: "formal",
+          outcomeVoteId: null,
+        },
+        "accept",
+        "incorporate",
+      ),
+    ).toBe("reopen_rejected");
   });
 
   it("keeps the answer open on what the assembly approved, until the final vote", () => {
@@ -678,12 +709,13 @@ describe("position of the main presenter", () => {
     };
     expect(positionBlocker(rejected, "vote")).toBeNull();
     expect(positionBlocker(rejected, "incorporate")).toBeNull();
-    expect(positionBlocker({ ...rejected, outcomeVoteId: "v1" }, "vote")).toBe(
-      "decided",
-    );
-    expect(positionBlocker({ ...rejected, kind: "partial" }, "vote")).toBe(
-      "decided",
-    );
+    // Rejected by a vote: answered too (2026-11-21), without effect.
+    expect(
+      positionBlocker({ ...rejected, outcomeVoteId: "v1" }, "vote"),
+    ).toBeNull();
+    expect(
+      positionBlocker({ ...rejected, kind: "partial" }, "vote"),
+    ).toBeNull();
     expect(positionBlocker(rejected, "vote", true)).toBe("voted");
   });
 

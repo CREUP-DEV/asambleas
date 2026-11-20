@@ -429,6 +429,12 @@ function alternativesDetail(payload: Record<string, unknown>): string {
     typeof payload.winningOption === "number" ? payload.winningOption : null;
   const count =
     typeof payload.optionCount === "number" ? payload.optionCount : 0;
+  if (winner === option && payload.winnerOutcome === "keep") {
+    return t("amendment.history.alternatives.wonKeep", {
+      option: alternativeLetter(option),
+      count,
+    });
+  }
   return winner === option
     ? t("amendment.history.alternatives.won", {
         option: alternativeLetter(option),

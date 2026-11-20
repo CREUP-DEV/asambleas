@@ -68,20 +68,23 @@ export function positionsUnpublishable(
 }
 
 /**
- * An amendment the assembly already approved (by a vote, by assent, or as a
- * formal one) whose main presenter may still change its answer until the
- * document's final vote (user's decision of 2026-11-19): the answer is
- * recorded and nothing else changes (positionEffect returns null), so the
- * approval and the text stay as they are. One the presenter's acceptance
- * incorporated (approval method "proponent") follows its own rule, and a
- * rejected one stays closed. The server's positionBlocker and the client's
- * mirror (amendmentAnswerable in ~/composables/amendment/workspace) both
- * read it, so they never drift.
+ * An amendment the assembly already decided whose main presenter may still
+ * change its answer until the document's final vote: one approved by a
+ * vote, by assent or as a formal one (user's decision of 2026-11-19), and
+ * one rejected (2026-11-21). The answer is recorded and nothing else
+ * changes (positionEffect returns null), so the outcome and the text stay as
+ * they are: accepting a rejected one does not approve it. One the
+ * presenter's acceptance incorporated (approval method "proponent") follows
+ * its own rule, as does a formal one the presenter's rejection closed
+ * (rejectedByAnswer). The server's positionBlocker and the client's mirror
+ * (amendmentAnswerable in ~/composables/amendment/workspace) both read it,
+ * so they never drift.
  */
 export function answerableAfterDecision(row: {
   status: AmendmentStatus;
   approvalMethod: ApprovalMethod | null;
 }): boolean {
+  if (row.status === "rejected") return true;
   return (
     row.status === "approved" &&
     row.approvalMethod !== null &&

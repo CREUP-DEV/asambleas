@@ -1618,11 +1618,11 @@
         "incorporated": "It is in the text without a vote. If the answer changes before the final vote, it will be undecided again.",
         "vote": "The assembly will vote on it.",
         "voteAnyway": "The assembly will vote on it, whether the document's presenter accepts it or not.",
-        "decided": "It is already approved: changing the answer changes neither the approval nor the text."
+        "decided": "It is already decided: changing the answer changes neither the outcome nor the text."
       },
       "savedIncorporated": "It has been put in the text without a vote.",
       "savedReopened": "It is no longer in the text: it is undecided again.",
-      "savedDecided": "It is still approved: the answer does not change the decision.",
+      "savedDecided": "The decision stays as it was: the answer does not change it.",
       "later": "It can be answered later by {member}.",
       "laterYou": "You can answer it later.",
       "yourTurn": "It is your turn to answer it.",
@@ -1777,6 +1777,7 @@
       "positionReset": "The answer of whoever presents the document was cleared.",
       "alternatives": {
         "won": "Vote between alternatives: its option, {option}, won ({count} votes)",
+        "wonKeep": "Vote between alternatives: its option, {option}, won ({count} votes); it is voted next against the original text",
         "lost": "Vote between alternatives: it was in option {option} ({count} votes) and {winner} won",
         "rejectedAll": "Vote between alternatives with no winning option: the Mesa rejected them all",
         "noEffect": "Vote between alternatives with no winning option: the Mesa left them undecided"
@@ -1814,6 +1815,7 @@
         "abstentions": "No abstentions | 1 abstention | {count} abstentions",
         "blank": "No blank ballots | 1 blank | {count} blank",
         "won": "Option {letter} won",
+        "wonKeep": "Option {letter} won: it is voted next against the original text",
         "rejectedAll": "No option won: the Mesa rejected them all",
         "noEffect": "No option won: the Mesa left them undecided",
         "amendments": "Amendments"
@@ -4673,9 +4675,13 @@
       "project": "Project the options",
       "onScreen": "Options on screen",
       "countsTitle": "Votes",
+      "winnerOutcome": "If an option wins",
+      "winnerApprove": "Its amendments are approved and the other's rejected",
+      "winnerKeep": "Only the other's are rejected: the winner is voted next against the original text",
       "method": "Voting method",
       "note": "Note (optional)",
       "winsPreview": "Option {letter} wins",
+      "winsPreviewKeep": "Option {letter} wins: the other is rejected and {letter} is voted next",
       "tiePreview": "Tie: no option wins",
       "shortPreview": "No option reaches the required majority ({threshold} votes)",
       "inconsistent": "More votes were cast than members are present",
@@ -4691,7 +4697,9 @@
       "splitUpdated": "The options on screen changed: the split is now the projected one. The votes entered are kept.",
       "reopenTitle": "Reopen {code}?",
       "reopenDescription": "It was decided in a vote between alternatives. Reopening it voids that vote and also reopens: {codes}.",
+      "reopenDescriptionAlone": "It was decided in a vote between alternatives. Reopening it voids that vote.",
       "reopenConfirm": "Void the vote and reopen them",
+      "reopenConfirmAlone": "Void the vote and reopen it",
       "errors": {
         "record": "The vote could not be recorded",
         "onScreen": "It is on screen as an alternative of a vote: it is decided by voting between the options",
@@ -4753,6 +4761,7 @@
       "rejected": "Rejected",
       "rejectedAll": "All rejected",
       "noEffect": "Left undecided",
+      "keepNote": "Voted next against the original text",
       "inFavor": "In favour",
       "against": "Against",
       "abstentions": "Abstentions",

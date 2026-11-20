@@ -351,6 +351,13 @@
       "when": 1795181336509,
       "tag": "0049_premium_lightspeed",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795217387180,
+      "tag": "0050_serious_jocasta",
+      "breakpoints": true
     }
   ]
 }

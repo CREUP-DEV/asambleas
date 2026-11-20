@@ -38,7 +38,10 @@ import type {
   VoteResult,
   VoteSubject,
 } from "../constants/domain";
-import type { AlternativesTieResolution } from "../utils/alternativesVote";
+import type {
+  AlternativesTieResolution,
+  AlternativesWinnerOutcome,
+} from "../utils/alternativesVote";
 import type { SeatAssignment } from "../utils/seating/groups";
 import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
 import type { SeatingAssignmentOp } from "../utils/seating/proposal";
@@ -1576,6 +1579,12 @@ export interface VoteDto {
   winningOption: number | null;
   /** What the Mesa did when no option won. */
   tieResolution: AlternativesTieResolution | null;
+  /**
+   * What the winning option's amendments became: approved, or left
+   * undecided to be voted against the original text (`keep`); null on
+   * other votes and where none won.
+   */
+  winnerOutcome: AlternativesWinnerOutcome | null;
   recordedAt: IsoDate;
   /** Lock token for voiding it and changing its unanimity. */
   updatedAt: IsoDate;
@@ -1668,6 +1677,11 @@ export interface AlternativesVoteBody {
   present?: number | null;
   note?: string | null;
   tieResolution?: AlternativesTieResolution;
+  /**
+   * What a win does to the winning option's amendments: approve them (the
+   * default), or keep them undecided and only reject the others.
+   */
+  winnerOutcome?: AlternativesWinnerOutcome;
   /** As OutcomeBody's: false leaves the projection where it is. */
   project?: boolean;
 }

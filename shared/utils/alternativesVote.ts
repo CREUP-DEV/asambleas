@@ -16,6 +16,16 @@ import { majorityThreshold } from "./votes";
 export const ALTERNATIVES_OPTION_COUNT = 2;
 
 /** What the Mesa does when no option wins. Repeating records nothing. */
+/**
+ * What the winning option's amendments become (user's decision of
+ * 2026-11-21): approved (`approve`, the default), or left undecided
+ * (`keep`), only the other options' rejected, so the winner is voted next
+ * against the original text, as the 80.ª AGO did.
+ */
+export const ALTERNATIVES_WINNER_OUTCOMES = ["approve", "keep"] as const;
+export type AlternativesWinnerOutcome =
+  (typeof ALTERNATIVES_WINNER_OUTCOMES)[number];
+
 export const ALTERNATIVES_TIE_RESOLUTIONS = [
   "reject_all",
   "no_effect",

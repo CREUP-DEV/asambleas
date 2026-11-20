@@ -1388,9 +1388,17 @@ describe("session model", () => {
       ).toBe(null);
       // Decided, except an incorporated one: changing its answer takes it
       // out of the text again.
+      // A rejected one is answered too (2026-11-21), without effect.
       expect(
         sessionPositionMenu(
           { ...answerable, status: "rejected" },
+          "vote",
+          false,
+        ),
+      ).toMatchObject({ waitsPublication: false });
+      expect(
+        sessionPositionMenu(
+          { ...answerable, status: "withdrawn" },
           "vote",
           false,
         ),
@@ -2234,6 +2242,7 @@ describe("agenda item votes", () => {
     options: null,
     winningOption: null,
     tieResolution: null,
+    winnerOutcome: null,
     recordedAt: "2026-11-15T10:00:00Z",
     updatedAt: "2026-11-15T10:00:00Z",
     voidedAt: null,

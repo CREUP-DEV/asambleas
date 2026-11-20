@@ -1043,7 +1043,8 @@ describe("the main presenter's answer", () => {
         status: "rejected",
         decidedAt: "2026-11-02T10:00:00.000Z",
       });
-      expect(amendmentAnswerable(rejected, rule)).toBe(false);
+      // A rejected one too (2026-11-21): the answer changes nothing else.
+      expect(amendmentAnswerable(rejected, rule)).toBe(true);
       // Undecided ones answer as before.
       expect(amendmentAnswerable(amendment("a", []), rule)).toBe(true);
     }
@@ -1182,12 +1183,13 @@ describe("the main presenter's answer", () => {
         "vote",
       ),
     ).toBeNull();
+    // Rejected: answerable, and the answer leaves it decided.
     expect(
       amendmentPositionNext(
         amendment("a", [], { status: "rejected", decidedAt: "2026-11-02" }),
         "incorporate",
       ),
-    ).toBeNull();
+    ).toBe("decided");
   });
 });
 

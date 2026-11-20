@@ -27,7 +27,10 @@ import {
   SPEAKING_TURN_STATUSES,
 } from "../../../shared/constants/domain";
 import { ATTENDANCE_MARKS } from "../../../shared/utils/headcount";
-import type { AlternativesTieResolution } from "../../../shared/utils/alternativesVote";
+import type {
+  AlternativesTieResolution,
+  AlternativesWinnerOutcome,
+} from "../../../shared/utils/alternativesVote";
 import { majorityEnum } from "./document";
 
 /** One option of a vote between alternatives: its amendments and votes. */
@@ -188,6 +191,12 @@ export const votes = pgTable(
      * none changed (shared/utils/alternativesVote.ts).
      */
     tieResolution: text("tie_resolution").$type<AlternativesTieResolution>(),
+    /**
+     * What the win did to the winning option's amendments: `keep` left them
+     * undecided, only the others rejected (2026-11-21); null approved them,
+     * as every vote before it did.
+     */
+    winnerOutcome: text("winner_outcome").$type<AlternativesWinnerOutcome>(),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

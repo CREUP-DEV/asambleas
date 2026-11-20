@@ -56,7 +56,10 @@ import {
 } from "~~/shared/utils/sessionGate";
 import { useApi } from "../api/useApi";
 import { useAlternativesVoteText } from "../vote/useAlternativesVoteText";
-import type { AlternativesTieResolution } from "~~/shared/utils/alternativesVote";
+import type {
+  AlternativesTieResolution,
+  AlternativesWinnerOutcome,
+} from "~~/shared/utils/alternativesVote";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import {
   keepLastGoodData,
@@ -1706,6 +1709,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     present: number | null;
     note: string | null;
     tieResolution?: AlternativesTieResolution;
+    winnerOutcome?: AlternativesWinnerOutcome;
   }): Promise<
     | { ok: true; vote: VoteDto }
     | { ok: false; undecided: "tie" | "short" | null }
@@ -1726,6 +1730,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       present: input.present,
       note: input.note,
       ...(input.tieResolution ? { tieResolution: input.tieResolution } : {}),
+      ...(input.winnerOutcome ? { winnerOutcome: input.winnerOutcome } : {}),
       project: inControl.value,
     };
     try {
@@ -2271,18 +2276,29 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   async function reopen(amendment: AmendmentDto) {
     const vote = amendment.outcomeVote;
     if (vote?.options && vote.options.length > 0) {
+      // Those the vote decided: a winner it kept undecided is not reopened.
       const others = vote.options
         .flatMap((option) => option.amendmentIds)
-        .filter((id) => id !== amendment.id)
+        .filter(
+          (id) =>
+            id !== amendment.id &&
+            byId.value.get(id)?.outcomeVote?.id === vote.id,
+        )
         .map((id) => label(id));
       const confirmed = await confirm({
         title: t("session.alternatives.reopenTitle", {
           code: label(amendment.id),
         }),
-        description: t("session.alternatives.reopenDescription", {
-          codes: others.join(", "),
-        }),
-        confirmLabel: t("session.alternatives.reopenConfirm"),
+        description:
+          others.length > 0
+            ? t("session.alternatives.reopenDescription", {
+                codes: others.join(", "),
+              })
+            : t("session.alternatives.reopenDescriptionAlone"),
+        confirmLabel:
+          others.length > 0
+            ? t("session.alternatives.reopenConfirm")
+            : t("session.alternatives.reopenConfirmAlone"),
         confirmIcon: "i-lucide-rotate-ccw",
         confirmColor: "warning",
       });
