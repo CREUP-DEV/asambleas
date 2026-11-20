@@ -24,7 +24,7 @@ const props = withDefaults(
 );
 
 const { member } = useMe();
-const { summary } = useTransactionalProgressText();
+const { summary, summaryLinks } = useTransactionalProgressText();
 
 const view = computed(() =>
   transactionalProgressOf(
@@ -33,6 +33,10 @@ const view = computed(() =>
     props.statusOf,
     props.awaitsAdmissionOf,
   ),
+);
+
+const links = computed(() =>
+  view.value ? summaryLinks(view.value, props.labelOf) : null,
 );
 
 const ICON_CLASSES = {
@@ -54,7 +58,19 @@ const ICON_CLASSES = {
     <span
       :class="view.actorTurn ? 'text-highlighted font-medium' : 'text-default'"
     >
-      {{ summary(view, labelOf) }}
+      <!-- The amendments it replaced open, with a preview, where the page
+           provides AMENDMENT_LINKS_KEY. -->
+      <i18n-t
+        v-if="links && labelOf"
+        :keypath="links.key"
+        tag="span"
+        scope="global"
+      >
+        <template #list>
+          <AmendmentCodeLinks :ids="links.ids" :label-of="labelOf" />
+        </template>
+      </i18n-t>
+      <template v-else>{{ summary(view, labelOf) }}</template>
     </span>
   </span>
 </template>

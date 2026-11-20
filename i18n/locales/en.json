@@ -1529,6 +1529,9 @@
       "approvedByPresidencia": "Approved without a vote: the Presidency accepted it on behalf of the document's presenter",
       "approvedAuto": "Approved without a vote: a formal amendment, accepted automatically"
     },
+    "links": {
+      "open": "Open the amendment"
+    },
     "position": {
       "title": "Answer from the document's presenter",
       "edit": "Change the answer",
@@ -2438,6 +2441,10 @@
           "title": "Validated or admitted",
           "description": "When their document is published or their amendment validated or admitted."
         },
+        "presenter_transactional": {
+          "title": "Transactional to their document",
+          "description": "When the Secretariat validates a member's transactional to the document they present, so they answer it. Not when their own member proposed it."
+        },
         "presenter_decided": {
           "title": "Settled",
           "description": "When their document is voted or their amendment is approved, rejected, declared inadmissible, lapses, is transacted or closed."
@@ -2452,6 +2459,7 @@
         "presenter_assigned": "Whoever presents the document",
         "presenter_correction": "Whoever presents it",
         "presenter_validated": "Whoever presents it",
+        "presenter_transactional": "The document's presenters",
         "presenter_decided": "Whoever presents it",
         "presenter_changed": "Whoever presents it"
       },

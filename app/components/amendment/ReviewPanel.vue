@@ -184,6 +184,7 @@ const status = computed(() => {
       icon: progress.value.icon,
       color: progress.value.color,
       title: progressText.summary(progress.value, props.labelOf),
+      titleLinks: progressText.summaryLinks(progress.value, props.labelOf),
       sentence: progressSentence.value,
       private: view.value?.private ?? false,
     };
@@ -479,7 +480,21 @@ async function askCorrection(): Promise<void> {
       />
       <div class="min-w-0 flex-1 space-y-1">
         <p class="text-highlighted text-sm font-semibold">
-          {{ status.title }}
+          <!-- The amendments it combines open, with a preview. -->
+          <i18n-t
+            v-if="'titleLinks' in status && status.titleLinks && labelOf"
+            :keypath="status.titleLinks.key"
+            tag="span"
+            scope="global"
+          >
+            <template #list>
+              <AmendmentCodeLinks
+                :ids="status.titleLinks.ids"
+                :label-of="labelOf"
+              />
+            </template>
+          </i18n-t>
+          <template v-else>{{ status.title }}</template>
         </p>
         <p class="text-default text-sm">
           {{ status.sentence }}

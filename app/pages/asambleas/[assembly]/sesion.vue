@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import {
   isSessionDecidable,
   isSessionOpen,
@@ -33,6 +34,20 @@ const localePath = useLocalePath();
 const param = computed(() => String(route.params.assembly ?? ""));
 const session = useSessionConsole(param);
 provideSessionConsole(session);
+
+// Codes of other amendments in the console preview them and, clicked, bring
+// their row into view (user's decision of 2026-11-20).
+provideAmendmentLinks({
+  get: (id) => session.byId.value.get(id),
+  baseOf: () => session.base.value,
+  open: (id) => {
+    session.focusedId.value = id;
+    if (!import.meta.client) return;
+    const row = window.document.getElementById(`session-amendment-${id}`);
+    row?.scrollIntoView({ block: "center" });
+    row?.focus({ preventScroll: true });
+  },
+});
 
 const assembly = computed(() => session.assembly.value);
 

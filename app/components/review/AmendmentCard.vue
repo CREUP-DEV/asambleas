@@ -59,7 +59,7 @@ const props = withDefaults(
      * Codes of the amendments a transactional groups ("CEUM 4"), in its
      * order; null until the parent has them.
      */
-    sourceLabels?: string[] | null;
+    sourceLabels?: { id: string; label: string }[] | null;
     /**
      * Code of the selected transactional that groups some of the same
      * amendments: this one cannot be selected with it. Null otherwise.
@@ -377,15 +377,20 @@ const moreBusy = computed(
               amendment.sourceIds.length,
             )
           }}</span>
+          <!-- Each opens a preview, and from it its amendment. -->
           <UBadge
-            v-for="(source, index) in sources"
-            :key="`${index}-${source}`"
+            v-for="source in sources"
+            :key="source.id"
             color="neutral"
             variant="outline"
             size="sm"
             class="tabular-nums"
-            :label="source"
-          />
+          >
+            <AmendmentCodeLinks
+              :ids="[source.id]"
+              :label-of="() => source.label"
+            />
+          </UBadge>
         </div>
         <p v-if="amendment.submittedAt" class="text-muted text-sm">
           {{ t("review.amendments.sent") }}

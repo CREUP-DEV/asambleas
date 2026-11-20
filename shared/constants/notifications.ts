@@ -41,6 +41,12 @@ export const NOTIFICATION_KINDS = [
   /** The document was published, the amendment validated or admitted. */
   "presenter_validated",
   /**
+   * The Secretaría validated a member's transactional to the document: its
+   * presenters are told, to answer it (user's decision of 2026-11-20). Not
+   * when their own member proposed it, nor for the Mesa's own.
+   */
+  "presenter_transactional",
+  /**
    * The document or the amendment was settled by someone else: voted,
    * approved, rejected, inadmissible, lapsed, transacted or closed.
    */
@@ -68,6 +74,7 @@ export const NOTIFICATION_AUDIENCE: Record<
   presenter_assigned: "presenters",
   presenter_correction: "presenters",
   presenter_validated: "presenters",
+  presenter_transactional: "presenters",
   presenter_decided: "presenters",
   presenter_changed: "presenters",
 };
@@ -121,6 +128,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
     presenter_assigned: kind(),
     presenter_correction: kind(),
     presenter_validated: kind(),
+    presenter_transactional: kind(),
     presenter_decided: kind(),
     presenter_changed: kind(),
   },
@@ -143,6 +151,7 @@ export const NOTIFICATION_GROUPS: {
       "presenter_assigned",
       "presenter_correction",
       "presenter_validated",
+      "presenter_transactional",
       "presenter_decided",
       "presenter_changed",
     ],

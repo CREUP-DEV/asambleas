@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import { createId } from "@paralleldrive/cuid2";
 import type {
   AmendmentDto,
@@ -89,6 +90,13 @@ const props = withDefaults(
   }>(),
   { initialSourceIds: () => [], revise: null, transactAny: true },
 );
+
+// The chosen amendments open a preview; going to one would leave the text
+// being written, so they do not open (user's decision of 2026-11-20).
+provideAmendmentLinks({
+  get: (id) => props.amendments.find((item) => item.id === id),
+  baseOf: () => props.base,
+});
 
 const emit = defineEmits<{
   close: [];
@@ -975,12 +983,12 @@ const stepBadge =
           class="flex flex-wrap gap-1.5"
         >
           <li v-for="source in sources" :key="source.id">
-            <UBadge
-              color="secondary"
-              variant="soft"
-              icon="i-lucide-git-merge"
-              :label="`${labelOf(source.id)} · ${authorsOf(source)}`"
-            />
+            <UBadge color="secondary" variant="soft" icon="i-lucide-git-merge">
+              <span>
+                <AmendmentCodeLinks :ids="[source.id]" :label-of="labelOf" />
+                · {{ authorsOf(source) }}
+              </span>
+            </UBadge>
           </li>
         </ul>
         <div

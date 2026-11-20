@@ -41,6 +41,14 @@ const text = computed(() => {
   return sentence("session.collision.meets", value.others);
 });
 
+/** The amendments it collides with: their codes preview and open them. */
+const mentions = computed(() => {
+  const value = impact.value;
+  return value
+    ? [...value.supersedes, ...value.supersededBy, ...value.others]
+    : [];
+});
+
 const shown = ref(false);
 </script>
 
@@ -52,7 +60,13 @@ const shown = ref(false);
         class="text-warning mt-0.5 size-4 shrink-0"
         aria-hidden="true"
       />
-      <span class="min-w-0">{{ text }}</span>
+      <span class="min-w-0">
+        <AmendmentLinkedText
+          :text="text"
+          :ids="mentions"
+          :label-of="session.label"
+        />
+      </span>
     </p>
     <template v-if="!compact">
       <UButton

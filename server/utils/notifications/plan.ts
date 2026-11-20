@@ -34,30 +34,44 @@ export interface PlannedDelivery {
   frequency: NotificationFrequency;
 }
 
+/** The document's main presenter and co-presenters. */
+async function loadDocumentPresenterIds(
+  documentId: string,
+  executor: Executor,
+): Promise<string[]> {
+  const [row] = await executor
+    .select({ proponentMemberId: documents.proponentMemberId })
+    .from(documents)
+    .where(eq(documents.id, documentId));
+  const co = (await loadCoProponentIds([documentId], executor)).get(documentId);
+  return [
+    ...(row?.proponentMemberId ? [row.proponentMemberId] : []),
+    ...(co ?? []),
+  ];
+}
+
 async function loadFacts(
   event: NotifyingEvent,
   executor: Executor,
 ): Promise<PlanFacts> {
   if (event.entityType === "document") {
-    const [row] = await executor
-      .select({ proponentMemberId: documents.proponentMemberId })
-      .from(documents)
-      .where(eq(documents.id, event.entityId));
-    const co = (await loadCoProponentIds([event.entityId], executor)).get(
-      event.entityId,
-    );
     return {
-      documentPresenterIds: [
-        ...(row?.proponentMemberId ? [row.proponentMemberId] : []),
-        ...(co ?? []),
-      ],
+      documentPresenterIds: await loadDocumentPresenterIds(
+        event.entityId,
+        executor,
+      ),
       amendment: null,
     };
   }
   if (event.entityType === "amendment") {
     const [row] = await findAmendmentsByIds([event.entityId]);
     return {
-      documentPresenterIds: [],
+      // A transactional's document presenters answer it once validated
+      // (presenter_transactional).
+      documentPresenterIds:
+        row?.kind === "transactional"
+          ? await loadDocumentPresenterIds(row.documentId, executor)
+          : [],
       amendment: row
         ? {
             transactional: row.kind === "transactional",

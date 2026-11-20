@@ -169,6 +169,14 @@ export function noticesForEvent(
       if (event.payload.method === "mesa") break;
       add("submission_validated");
       add("presenter_validated", authors);
+      // A member's transactional: the document's presenters answer it
+      // next, unless their own member proposed it.
+      if (amendment?.transactional) {
+        add(
+          "presenter_transactional",
+          presenters.filter((id) => !authors.includes(id)),
+        );
+      }
       break;
     case "amendment_correction_requested":
       add("presenter_correction", authors);

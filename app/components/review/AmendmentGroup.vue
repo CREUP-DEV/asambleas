@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type {
   AmendmentCorrectionBody,
@@ -99,14 +100,33 @@ const documentAmendments = useDocumentAmendments({
 });
 
 /** Codes of what a transactional groups; null until they are loaded. */
-function sourceLabelsOf(amendment: AmendmentDto): string[] | null {
+function sourceLabelsOf(
+  amendment: AmendmentDto,
+): { id: string; label: string }[] | null {
   if (amendment.kind !== "transactional") return null;
   if (!documentAmendments.data.value) return null;
   const known = documentAmendments.byId.value;
   return amendment.sourceIds
     .filter((id) => known.has(id))
-    .map((id) => documentAmendments.shortLabelOf(id));
+    .map((id) => ({ id, label: documentAmendments.shortLabelOf(id) }));
 }
+
+// The amendments a transactional groups open a preview, with what they
+// change; «Ver la enmienda» opens it on its document page in a new tab, so
+// the queue stays as it is (user's decision of 2026-11-20).
+const router = useRouter();
+provideAmendmentLinks({
+  get: (id) => documentAmendments.byId.value.get(id),
+  baseOf: () => base.value,
+  open: (id) => {
+    if (!import.meta.client) return;
+    const href = router.resolve({
+      path: props.documentPath,
+      query: { enmienda: id },
+    }).href;
+    window.open(href, "_blank", "noopener");
+  },
+});
 
 const documentUrl = computed(
   () =>

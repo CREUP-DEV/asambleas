@@ -568,7 +568,20 @@ function actorOf(event: EventDto): string | null {
   return event.actorMember?.acronym ?? event.actorName ?? null;
 }
 
-const items = computed<TimelineItem[]>(() =>
+/**
+ * The other amendments an event names, as ids: their codes in its text open
+ * them, with a preview, where the page provides the links (AmendmentLinkedText).
+ */
+function mentionsOf(event: EventDto): string[] {
+  const payload = event.payload ?? {};
+  return [payload.sourceId, payload.transactionalId, payload.otherId]
+    .map((value) => text(value))
+    .filter((id): id is string => id !== null);
+}
+
+type HistoryItem = TimelineItem & { mentions: string[] };
+
+const items = computed<HistoryItem[]>(() =>
   events.value.map((event) => {
     const key = closedByRejection(event)
       ? "amendment.history.closedByRejection"
@@ -604,6 +617,7 @@ const items = computed<TimelineItem[]>(() =>
         .filter(Boolean)
         .join(" · "),
       icon: ICONS[event.type] ?? "i-lucide-circle-dot",
+      mentions: mentionsOf(event),
     };
   }),
 );
@@ -656,6 +670,16 @@ const items = computed<TimelineItem[]>(() =>
       size="xs"
       color="neutral"
       :ui="{ description: 'text-xs' }"
-    />
+    >
+      <template #description="{ item }">
+        <AmendmentLinkedText
+          v-if="labelOf && item.mentions.length > 0"
+          :text="item.description ?? ''"
+          :ids="item.mentions"
+          :label-of="labelOf"
+        />
+        <template v-else>{{ item.description }}</template>
+      </template>
+    </UTimeline>
   </section>
 </template>

@@ -157,6 +157,15 @@ const expanded = computed(
 );
 
 const codes = (ids: string[]) => ids.map(session.label).join(", ");
+/**
+ * The other amendments the card may name: their codes in its lines preview
+ * and open them (AmendmentLinkedText, user's decision of 2026-11-20).
+ */
+const mentions = computed(() => [
+  ...props.amendment.sourceIds,
+  ...sessionReplacingIds(props.amendment, session.byId.value),
+  ...sessionLapsingTransactionalIds(props.amendment, session.byId.value),
+]);
 /** What a transactional combines, and which of those it already replaced. */
 const sourceCodes = computed(() => codes(props.amendment.sourceIds));
 const replacedCodes = computed(() =>
@@ -488,19 +497,23 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     <!-- What happens next with an amendment outside the debate. -->
     <div v-if="awaiting" class="mt-1.5 space-y-1 text-sm">
       <p class="text-default">
-        {{
-          supersededCodes
-            ? t("session.now.stage.superseded", { codes: supersededCodes })
-            : correctionRequested
-              ? t("session.card.correctionRequested")
-              : rejectors
-                ? t("session.now.stage.turned_down", { members: rejectors })
-                : awaitingAuthors
-                  ? t("session.card.awaitingAuthors", { codes: sourceCodes })
-                  : validatable
-                    ? t("session.card.awaitingCanValidate")
-                    : t("session.card.awaiting")
-        }}
+        <AmendmentLinkedText
+          :text="
+            supersededCodes
+              ? t('session.now.stage.superseded', { codes: supersededCodes })
+              : correctionRequested
+                ? t('session.card.correctionRequested')
+                : rejectors
+                  ? t('session.now.stage.turned_down', { members: rejectors })
+                  : awaitingAuthors
+                    ? t('session.card.awaitingAuthors', { codes: sourceCodes })
+                    : validatable
+                      ? t('session.card.awaitingCanValidate')
+                      : t('session.card.awaiting')
+          "
+          :ids="mentions"
+          :label-of="session.label"
+        />
       </p>
       <p
         v-if="correctionRequested && amendment.correctionNote"
@@ -520,23 +533,35 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {{ t("session.now.stage.turned_down", { members: rejectors }) }}
     </p>
     <p v-else-if="closedCodes" class="text-default mt-1.5 text-sm">
-      {{
-        t(
-          closureReversible
-            ? "session.now.stage.closedReversible"
-            : "session.now.stage.closed",
-          { codes: closedCodes },
-        )
-      }}
+      <AmendmentLinkedText
+        :text="
+          t(
+            closureReversible
+              ? 'session.now.stage.closedReversible'
+              : 'session.now.stage.closed',
+            { codes: closedCodes },
+          )
+        "
+        :ids="mentions"
+        :label-of="session.label"
+      />
     </p>
     <p v-else-if="lapsedByCodes" class="text-default mt-1.5 text-sm">
-      {{ t("session.now.stage.lapsedBy", { codes: lapsedByCodes }) }}
+      <AmendmentLinkedText
+        :text="t('session.now.stage.lapsedBy', { codes: lapsedByCodes })"
+        :ids="mentions"
+        :label-of="session.label"
+      />
     </p>
     <p
       v-else-if="!awaiting && supersededCodes"
       class="text-default mt-1.5 text-sm"
     >
-      {{ t("session.now.stage.superseded", { codes: supersededCodes }) }}
+      <AmendmentLinkedText
+        :text="t('session.now.stage.superseded', { codes: supersededCodes })"
+        :ids="mentions"
+        :label-of="session.label"
+      />
     </p>
     <p v-else-if="incorporated" class="text-default mt-1.5 text-sm">
       {{ t("session.card.incorporated") }}
@@ -586,17 +611,29 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         }}
       </span>
       <span v-if="replacedCodes">
-        {{ t("session.card.replaces", { codes: replacedCodes }) }}
+        <AmendmentLinkedText
+          :text="t('session.card.replaces', { codes: replacedCodes })"
+          :ids="mentions"
+          :label-of="session.label"
+        />
       </span>
       <span v-else-if="amendment.sourceIds.length > 0">
-        {{ t("session.card.sources", { codes: sourceCodes }) }}
+        <AmendmentLinkedText
+          :text="t('session.card.sources', { codes: sourceCodes })"
+          :ids="mentions"
+          :label-of="session.label"
+        />
       </span>
       <span v-if="replacingCodes">
-        {{
-          amendment.status === "transacted"
-            ? t("session.card.replacedBy", { codes: replacingCodes })
-            : t("session.card.transactionals", { codes: replacingCodes })
-        }}
+        <AmendmentLinkedText
+          :text="
+            amendment.status === 'transacted'
+              ? t('session.card.replacedBy', { codes: replacingCodes })
+              : t('session.card.transactionals', { codes: replacingCodes })
+          "
+          :ids="mentions"
+          :label-of="session.label"
+        />
       </span>
       <span
         v-if="missing > 0 && !rejectors && !supersededCodes"

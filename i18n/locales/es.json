@@ -1529,6 +1529,9 @@
       "approvedByPresidencia": "Aprobada sin votación: la aceptó la Presidencia en nombre de quien presenta el documento",
       "approvedAuto": "Aprobada sin votación: es de forma y se aceptó automáticamente"
     },
+    "links": {
+      "open": "Ver la enmienda"
+    },
     "position": {
       "title": "Respuesta de quien presenta el documento",
       "edit": "Cambiar la respuesta",
@@ -2438,6 +2441,10 @@
           "title": "Validado o admitido",
           "description": "Cuando se publica su documento o se valida o admite su enmienda."
         },
+        "presenter_transactional": {
+          "title": "Transaccional a su documento",
+          "description": "Cuando la Secretaría valida una transaccional de un miembro al documento que presenta, para que la responda. No si la propuso su propio miembro."
+        },
         "presenter_decided": {
           "title": "Resuelto",
           "description": "Cuando su documento se vota o su enmienda se aprueba, se rechaza, no se admite, decae, se transa o se cierra."
@@ -2452,6 +2459,7 @@
         "presenter_assigned": "Quien presenta el documento",
         "presenter_correction": "Quien lo presenta",
         "presenter_validated": "Quien lo presenta",
+        "presenter_transactional": "Quien presenta el documento",
         "presenter_decided": "Quien lo presenta",
         "presenter_changed": "Quien lo presenta"
       },

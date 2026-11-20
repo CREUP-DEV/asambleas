@@ -11,6 +11,7 @@ import type {
   SpeakersDto,
   SpeakingTurnDto,
 } from "~~/shared/types/api";
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { positionsArePublic } from "~~/shared/utils/positions";
@@ -571,6 +572,18 @@ onLive((events) => {
 const previewAmendmentId = ref<string | null>(null);
 watch(documentId, () => {
   previewAmendmentId.value = null;
+});
+
+// Codes of other amendments in the notes open them in the preview window,
+// the page's only preview (user's decisions of 2026-11-20); in the list,
+// whose rows are buttons, they stay text.
+provideAmendmentLinks({
+  inWindow: true,
+  get: (id) => amendments.value.find((amendment) => amendment.id === id),
+  baseOf: () => null,
+  open: (id) => {
+    previewAmendmentId.value = id;
+  },
 });
 
 const now = useAppNow();

@@ -438,6 +438,30 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
     };
   },
 
+  presenter_transactional(ctx) {
+    const amendment = ctx.amendment;
+    if (!amendment) return null;
+    const paths = base(ctx);
+    const by = acronyms(ctx, amendmentAuthorIds(amendment));
+    return {
+      subject: `Transaccional presentada a tu documento ${quoted(ctx.document.title)}`,
+      heading: "Hay una transaccional a tu documento",
+      lead: `${by} ha presentado la transaccional ${code(amendment)} al documento ${quoted(ctx.document.title)}. Falta tu respuesta como quien presenta el documento.`,
+      details: [
+        ...paths.details,
+        { label: "Presenta", value: by },
+        ...amendmentDetails(ctx, amendment).filter(
+          (detail) => detail.label === "Agrupa",
+        ),
+      ],
+      note: null,
+      action: {
+        label: "Responder en la plataforma",
+        url: amendmentLink(paths.documentPath, amendment),
+      },
+    };
+  },
+
   presenter_decided(ctx) {
     const paths = base(ctx);
     const amendment = ctx.amendment;

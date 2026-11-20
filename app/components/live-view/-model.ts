@@ -418,6 +418,17 @@ export function liveReplacedBy(
  * another transactional got ahead of it, or whether it still waits for its
  * main authors. Null otherwise.
  */
+/**
+ * The other amendments a row's note may name (what it combines and the
+ * transactionals over it), so their codes preview and open them
+ * (AmendmentLinkedText, user's decision of 2026-11-20).
+ */
+export function liveNoteMentions(
+  amendment: Pick<AmendmentDto, "sourceIds" | "transactionalIds">,
+): string[] {
+  return [...amendment.sourceIds, ...amendment.transactionalIds];
+}
+
 export function liveAmendmentNote(
   row: LiveAmendmentRow,
   rows: readonly LiveAmendmentRow[],

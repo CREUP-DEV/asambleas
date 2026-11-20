@@ -86,6 +86,7 @@ import {
 } from "~/components/live-view/-model";
 import type { SheetFilterGroup } from "~/components/control-sheet/Toolbar.vue";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
 import {
   buildAgendaTree,
@@ -406,6 +407,26 @@ const amendmentsData = onlyForKey(
   () => selectedDocument.value?.id,
   (value) => value.documentId,
 );
+
+// Codes of other amendments in the notes open them in the preview window,
+// the page's only preview (user's decisions of 2026-11-20).
+provideAmendmentLinks({
+  inWindow: true,
+  get: (id) =>
+    amendmentsData.value?.amendments.find((amendment) => amendment.id === id),
+  baseOf: () => null,
+  open: (id) => {
+    const amendment = amendmentsData.value?.amendments.find(
+      (item) => item.id === id,
+    );
+    if (!amendment) return;
+    previewDocumentId.value = null;
+    previewAmendment.value = {
+      documentId: amendment.documentId,
+      amendmentId: amendment.id,
+    };
+  },
+});
 
 const generalRows = computed(() =>
   buildGeneralRows(

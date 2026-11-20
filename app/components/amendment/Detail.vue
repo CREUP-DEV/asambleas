@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type {
   AmendmentDto,
   DocumentAmendmentsDto,
@@ -453,6 +454,14 @@ const rejectedBy = computed(() =>
     transactionalRejectedBy(props.amendment).map((member) => member.acronym),
   ),
 );
+
+// Codes of other amendments in this page open them, with a preview
+// (AmendmentCodeLinks, user's decision of 2026-11-20).
+provideAmendmentLinks({
+  get: (id) => byId.value.get(id),
+  open: (id) => emit("select", id),
+  baseOf: () => props.base,
+});
 
 const byId = computed(
   () =>
@@ -1086,15 +1095,21 @@ async function remove(): Promise<void> {
           </p>
           <!-- Replaced: which transactional took its place. -->
           <p v-else-if="amendment.status === 'transacted'" class="text-sm">
-            {{
-              replacedBy.length > 0
-                ? t(
-                    "amendment.detail.replacedBy",
-                    { list: join(replacedBy.map((id) => labelOf(id))) },
-                    replacedBy.length,
-                  )
-                : t("amendment.detail.replacedByUnknown")
-            }}
+            <!-- The transactional that replaced it opens, with a preview. -->
+            <i18n-t
+              v-if="replacedBy.length > 0"
+              keypath="amendment.detail.replacedBy"
+              :plural="replacedBy.length"
+              tag="span"
+              scope="global"
+            >
+              <template #list>
+                <AmendmentCodeLinks :ids="replacedBy" :label-of="labelOf" />
+              </template>
+            </i18n-t>
+            <template v-else>
+              {{ t("amendment.detail.replacedByUnknown") }}
+            </template>
           </p>
           <UButton
             v-if="amendment.status === 'transacted' && standIn"

@@ -80,5 +80,25 @@ export function useTransactionalProgressText() {
     );
   }
 
-  return { summary, sentence, afterSecretaria, join };
+  /**
+   * The amendments the short line names as links (AmendmentCodeLinks,
+   * user's decision of 2026-11-20): the key, and the ids its `list`
+   * stands for, when it names every amendment it combines («Sustituye a
+   * …»); null otherwise, and the line reads as plain text.
+   */
+  function summaryLinks(
+    view: TransactionalProgressView,
+    labelOf?: (id: string) => string,
+  ): { key: string; ids: string[] } | null {
+    if (!labelOf || view.sourceIds.length === 0) return null;
+    const message = transactionalProgressMessage(
+      view,
+      "short",
+      words(view, labelOf),
+    );
+    if (!message || !message.key.endsWith(".replaced")) return null;
+    return { key: message.key, ids: [...view.sourceIds] };
+  }
+
+  return { summary, summaryLinks, sentence, afterSecretaria, join };
 }

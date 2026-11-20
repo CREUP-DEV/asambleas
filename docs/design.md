@@ -1095,21 +1095,22 @@ the notes stay in the panel.
 
 The platform tells people by email what concerns them, as configured at
 `/admin/notificaciones` (`notification:manage`; the Secretaría and the
-Presidencia by default). Ten notices (`NOTIFICATION_KINDS`), in two
+Presidencia by default). Eleven notices (`NOTIFICATION_KINDS`), in two
 audiences:
 
-| Notice                               | Event                                                                                                   | To (default)                       |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `document_submitted`                 | `document_submitted`                                                                                    | Secretaría, Presidencia            |
-| `amendment_submitted`                | `amendment_submitted` (not a transactional)                                                             | Secretaría, Presidencia            |
-| `transactional_ready`                | a transactional every party accepted reaches the Secretaría (its submission, or the last acceptance)    | Secretaría, Presidencia, Moderador |
-| `submission_validated`               | `document_published`, `amendment_validated` (late ones flagged: the Mesa still records their admission) | Moderador                          |
-| `transactional_acceptance_requested` | a member proposes a transactional (`awaitsAuthors`)                                                     | its parties still to answer        |
-| `presenter_assigned`                 | `document_created`, a `document_updated` that names new presenters                                      | the new presenters                 |
-| `presenter_correction`               | `document_correction_requested`, `amendment_correction_requested`                                       | presenters or authors              |
-| `presenter_validated`                | `document_published`, `amendment_validated`, `amendment_admitted`                                       | presenters or authors              |
-| `presenter_decided`                  | `document_voted`, approved, rejected, inadmissible, lapsed, transacted, withdrawn                       | presenters or authors              |
-| `presenter_changed`                  | `amendment_reclassified`, `amendment_authors_changed`, a new internal deadline (`dueAt`)                | presenters or authors              |
+| Notice                               | Event                                                                                                   | To (default)                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `document_submitted`                 | `document_submitted`                                                                                    | Secretaría, Presidencia                                    |
+| `amendment_submitted`                | `amendment_submitted` (not a transactional)                                                             | Secretaría, Presidencia                                    |
+| `transactional_ready`                | a transactional every party accepted reaches the Secretaría (its submission, or the last acceptance)    | Secretaría, Presidencia, Moderador                         |
+| `submission_validated`               | `document_published`, `amendment_validated` (late ones flagged: the Mesa still records their admission) | Moderador                                                  |
+| `transactional_acceptance_requested` | a member proposes a transactional (`awaitsAuthors`)                                                     | its parties still to answer                                |
+| `presenter_assigned`                 | `document_created`, a `document_updated` that names new presenters                                      | the new presenters                                         |
+| `presenter_correction`               | `document_correction_requested`, `amendment_correction_requested`                                       | presenters or authors                                      |
+| `presenter_validated`                | `document_published`, `amendment_validated`, `amendment_admitted`                                       | presenters or authors                                      |
+| `presenter_transactional`            | `amendment_validated` of a member's transactional, so they answer it                                    | the document's presenters, unless their member proposed it |
+| `presenter_decided`                  | `document_voted`, approved, rejected, inadmissible, lapsed, transacted, withdrawn                       | presenters or authors                                      |
+| `presenter_changed`                  | `amendment_reclassified`, `amendment_authors_changed`, a new internal deadline (`dueAt`)                | presenters or authors                                      |
 
 The roles of the first four are settings; the others go to the accounts
 linked to the members concerned. Each notice can be turned off, and goes

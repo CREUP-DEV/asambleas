@@ -1398,37 +1398,43 @@ useHead(() => ({
           class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
           aria-live="polite"
         >
-          <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
-            <div class="min-w-0">
-              <h1
-                id="projection-amendment-title"
-                class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
-              >
-                {{ t("projection.amendment", { code: debated.code ?? "" }) }}
-              </h1>
+          <!-- One line: the code, and beside it what it transacts over who
+               presents it, within the title's height, so the text keeps
+               the screen (user's decision of 2026-11-20); a block too wide
+               wraps below. -->
+          <div
+            class="flex flex-wrap items-center gap-x-[clamp(1.75rem,3.5vw,4rem)] gap-y-2"
+          >
+            <h1
+              id="projection-amendment-title"
+              class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
+            >
+              {{ t("projection.amendment", { code: debated.code ?? "" }) }}
+            </h1>
+            <div class="flex min-w-0 flex-col gap-1">
               <p
                 v-if="transacted"
-                class="text-default mt-[clamp(0.25rem,0.6vw,0.6rem)] text-[clamp(1.25rem,2vw,2rem)] leading-tight font-semibold"
+                class="text-default text-[clamp(1.25rem,2vw,2rem)] leading-tight font-semibold"
               >
                 {{ transacted }}
               </p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2 pb-1">
-              <CommonMemberBadge
-                v-for="author in debated.authors"
-                :key="author.id"
-                :member="author"
-                size="xl"
-                :tooltip="false"
-                show-name
-              />
-              <CommonStatusBadge
-                v-if="debated.status !== 'submitted'"
-                kind="amendment"
-                :value="debated.status"
-                size="xl"
-                variant="solid"
-              />
+              <div class="flex flex-wrap items-center gap-2">
+                <CommonMemberBadge
+                  v-for="author in debated.authors"
+                  :key="author.id"
+                  :member="author"
+                  size="xl"
+                  :tooltip="false"
+                  show-name
+                />
+                <CommonStatusBadge
+                  v-if="debated.status !== 'submitted'"
+                  kind="amendment"
+                  :value="debated.status"
+                  size="xl"
+                  variant="solid"
+                />
+              </div>
             </div>
           </div>
           <!-- Only the blocks it changes: context would push the change off

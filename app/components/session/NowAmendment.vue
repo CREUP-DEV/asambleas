@@ -98,6 +98,16 @@ const replaced = computed(() =>
   sessionReplacedIds(props.amendment, session.byId.value),
 );
 
+/**
+ * The other amendments its lines may name: their codes preview and open
+ * them (AmendmentLinkedText, user's decision of 2026-11-20).
+ */
+const mentions = computed(() => [
+  ...props.amendment.sourceIds,
+  ...sessionReplacingIds(props.amendment, session.byId.value),
+  ...sessionLapsingTransactionalIds(props.amendment, session.byId.value),
+]);
+
 const statusText = computed(() => {
   const value = stage.value;
   switch (value) {
@@ -393,7 +403,13 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
       class="rounded-lg border px-3 py-2"
       :class="STAGE_TONE[stage] ?? 'border-default bg-elevated/40'"
     >
-      <p class="text-highlighted font-medium">{{ statusText }}</p>
+      <p class="text-highlighted font-medium">
+        <AmendmentLinkedText
+          :text="statusText"
+          :ids="mentions"
+          :label-of="session.label"
+        />
+      </p>
       <p v-if="outcomeDetail" class="text-default text-sm tabular-nums">
         {{ outcomeDetail }}
       </p>
@@ -482,7 +498,13 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
         class="text-secondary mt-0.5 size-4 shrink-0"
         aria-hidden="true"
       />
-      {{ t("session.now.replaces", { codes: codes(replaced) }) }}
+      <span>
+        <AmendmentLinkedText
+          :text="t('session.now.replaces', { codes: codes(replaced) })"
+          :ids="replaced"
+          :label-of="session.label"
+        />
+      </span>
     </p>
 
     <!-- Who accepted it once it replaced its sources, or the answers of

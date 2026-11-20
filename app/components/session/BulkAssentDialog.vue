@@ -129,9 +129,17 @@ async function submit(): Promise<void> {
               <span class="font-semibold">{{
                 session.label(entry.amendment.id)
               }}</span>
+              <!-- The amendments it collides with open a preview; going to
+                   one would leave the dialog open behind, so it does not. -->
               <span class="text-muted">
-                · {{ skipReason(entry.reason, entry.conflictsWith) }}</span
-              >
+                ·
+                <AmendmentLinkedText
+                  :text="skipReason(entry.reason, entry.conflictsWith)"
+                  :ids="entry.conflictsWith"
+                  :label-of="codeOf"
+                  preview-only
+                />
+              </span>
             </li>
           </ul>
         </section>

@@ -3,6 +3,7 @@ import type { AmendmentDto, DocumentDto } from "~~/shared/types/api";
 import {
   LIVE_STATE_COLORS,
   liveAmendmentCode,
+  liveNoteMentions,
   livePositionLine,
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
@@ -128,8 +129,10 @@ const positionLine = computed(() => {
         :show-name="amendment.authors.length === 1"
       />
     </div>
+    <!-- Codes of other amendments in it preview and open them, where the
+         page provides the links. -->
     <p v-for="line in stateLines" :key="line" class="text-default">
-      {{ line }}
+      <AmendmentLinkedText :text="line" :ids="liveNoteMentions(amendment)" />
     </p>
     <p v-if="positionLine" class="text-default">
       {{ positionLine }}

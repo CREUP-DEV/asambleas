@@ -298,7 +298,12 @@ const awaitingValidation = computed(
                   class="focus-visible:ring-primary rounded text-start underline-offset-2 outline-none hover:underline focus-visible:ring-2"
                   @click="focusAmendment(conflict.amendmentId)"
                 >
-                  {{ conflictText(conflict) }}
+                  <AmendmentLinkedText
+                    :text="conflictText(conflict)"
+                    :ids="[conflict.amendmentId, ...conflict.conflictsWith]"
+                    :label-of="session.label"
+                    inert
+                  />
                 </button>
               </li>
             </ul>

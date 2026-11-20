@@ -205,6 +205,52 @@ describe("noticesForEvent", () => {
     ).toEqual(["submission_validated", "presenter_validated"]);
   });
 
+  it("asks the document's presenters to answer a validated transactional", () => {
+    const facts = (authorIds: string[]): Facts => ({
+      documentPresenterIds: ["m4", "m5"],
+      amendment: {
+        transactional: true,
+        status: "submitted",
+        validated: true,
+        authorIds,
+        parties: [],
+      },
+    });
+    // Proposed by a party: both presenters answer it.
+    expect(
+      noticesForEvent(
+        event("amendment_validated", { publish: true }),
+        facts(["m2"]),
+      ).find((notice) => notice.kind === "presenter_transactional"),
+    ).toEqual({
+      kind: "presenter_transactional",
+      memberIds: ["m4", "m5"],
+      dedupeKey: "presenter_transactional:ev1",
+    });
+    // Proposed by the presenter: only the other one is told.
+    expect(
+      noticesForEvent(
+        event("amendment_validated", { publish: true }),
+        facts(["m4"]),
+      ).find((notice) => notice.kind === "presenter_transactional")?.memberIds,
+    ).toEqual(["m5"]);
+    // An ordinary amendment, or the Mesa's own transactional: nothing.
+    expect(
+      kinds(
+        noticesForEvent(
+          event("amendment_validated", { publish: true }),
+          amendmentFacts(),
+        ),
+      ),
+    ).not.toContain("presenter_transactional");
+    expect(
+      noticesForEvent(
+        event("amendment_validated", { method: "mesa" }),
+        facts(["m2"]),
+      ),
+    ).toEqual([]);
+  });
+
   it("tells the new presenters only when a document changes hands", () => {
     const notices = noticesForEvent(
       event("document_updated", {

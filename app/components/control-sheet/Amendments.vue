@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { AmendmentDto, MemberDto, MemberRef } from "~~/shared/types/api";
-import { LIVE_STATE_COLORS } from "~/components/live-view/-model";
+import {
+  LIVE_STATE_COLORS,
+  liveNoteMentions,
+} from "~/components/live-view/-model";
 import {
   DEFAULT_AMENDMENT_SORT,
   type AmendmentSortKey,
@@ -305,7 +308,10 @@ const columns = computed(() =>
                 :label="t(`liveView.state.${row.state}.label`)"
               />
               <p v-if="row.note" class="text-muted text-xs">
-                {{ t(row.note.key, row.note.params ?? {}) }}
+                <AmendmentLinkedText
+                  :text="t(row.note.key, row.note.params ?? {})"
+                  :ids="liveNoteMentions(row.amendment)"
+                />
               </p>
             </td>
             <td class="px-3 py-2">
@@ -392,7 +398,10 @@ const columns = computed(() =>
             />
           </div>
           <p v-if="row.note" class="text-muted text-xs">
-            {{ t(row.note.key, row.note.params ?? {}) }}
+            <AmendmentLinkedText
+              :text="t(row.note.key, row.note.params ?? {})"
+              :ids="liveNoteMentions(row.amendment)"
+            />
           </p>
           <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>

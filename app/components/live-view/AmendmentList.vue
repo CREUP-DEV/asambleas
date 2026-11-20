@@ -4,6 +4,7 @@ import {
   liveAmendmentCode,
   liveAmendmentCounts,
   liveAmendmentNote,
+  liveNoteMentions,
   type LiveAmendmentRow,
 } from "~/components/live-view/-model";
 
@@ -124,8 +125,13 @@ function title(row: LiveAmendmentRow): string {
                   row.amendment.authors.map((a) => a.name).join(", ")
                 }}</span>
               </p>
+              <!-- Inside the row's button: its codes stay text. -->
               <p v-if="note(row)" class="text-default mt-0.5 text-sm">
-                {{ note(row) }}
+                <AmendmentLinkedText
+                  :text="note(row)"
+                  :ids="liveNoteMentions(row.amendment)"
+                  inert
+                />
               </p>
             </div>
             <UBadge
