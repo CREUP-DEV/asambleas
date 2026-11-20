@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  AgendaDto,
   AmendmentDto,
   DocumentAmendmentsDto,
   DocumentDto,
@@ -18,6 +17,11 @@ import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "~/composables/api/useApi";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { isDocumentLiveBatch } from "~/composables/document/useDocument";
+import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
+import {
+  sharedAgendaAction,
+  useSharedAgendaFetch,
+} from "~/composables/assembly/useCurrentAssembly";
 import {
   keepLastGoodData,
   useRetryFailed,
@@ -27,6 +31,8 @@ import {
   affectsAgenda,
   affectsLiveVote,
   affectsSpeakers,
+  affectsSpokenTurns,
+  isNewerScroll,
   liveAmendmentCode,
   liveAmendmentNote,
   liveAmendmentRows,
@@ -107,46 +113,52 @@ function nullIfGone(error: unknown): null {
 // Nothing is fetched outside the session. The live state decides which
 // document (and amendments) to fetch, so those wait for it.
 //
-// The agenda (only for the title of the item in debate) has its own fetch
-// rather than the hub's shared useAssemblyAgenda, which refetches on almost
-// every live event: this is the page every delegate keeps open on a phone,
-// and giving the floor or moving a turn must not make each of them fetch
-// the whole agenda again. It refreshes only when the agenda can change
-// (affectsAgenda), as on the projection.
+// Only the live state and the speaking turns hold the page back: the
+// headcounts, the document and its amendments are lazy, and the agenda is
+// not awaited, so a phone that comes back to Directo shows what is in
+// debate after one round of requests instead of two in a row, with
+// placeholders where the rest is still on its way (`itemLoading`,
+// `debateLoading`, `amendmentsReady`).
+// Server rendering still waits for all of them.
+//
+// The agenda (only for the title of the item in debate) is the one the
+// agenda and document pages share (useSharedAgendaFetch, one key), so
+// moving between them and Directo hands over the agenda already downloaded
+// instead of fetching it again; it is not awaited, and not `lazy`, which
+// would refetch an agenda just handed over. Directo keeps its own filter,
+// though: this is the page every delegate keeps open on a phone, and an
+// amendment published or withdrawn must not make each of them fetch the
+// whole agenda again. It refreshes only when the titles can change
+// (affectsAgenda), as on the projection, and only in session; an event it
+// lets through that the agenda pages follow marks the agenda behind, and
+// the next of them refetches it (sharedAgendaAction).
 
-const [liveFetch, speakersFetch, agendaFetch, headcountsFetch] =
-  await Promise.all([
-    useAsyncData(
-      () => `live-view-state-${assemblyKey.value}`,
-      () =>
-        inSession.value
-          ? api.get<LiveStateDto>(`${apiBase.value}/live-state`)
-          : Promise.resolve(null),
-    ),
-    useAsyncData(
-      () => `live-view-speakers-${assemblyKey.value}`,
-      () =>
-        inSession.value
-          ? api.get<SpeakersDto>(`${apiBase.value}/speakers`).catch(nullIfGone)
-          : Promise.resolve(null),
-    ),
-    useAsyncData(
-      () => `live-view-agenda-${assemblyKey.value}`,
-      () =>
-        inSession.value
-          ? api.get<AgendaDto>(`${apiBase.value}/agenda`).catch(nullIfGone)
-          : Promise.resolve(null),
-    ),
-    useAsyncData(
-      () => `live-view-headcounts-${assemblyKey.value}`,
-      () =>
-        inSession.value
-          ? api
-              .get<HeadcountsDto>(`${apiBase.value}/headcounts`)
-              .catch(nullIfGone)
-          : Promise.resolve(null),
-    ),
-  ]);
+const { result: agendaFetch, markBehind: markAgendaBehind } =
+  useSharedAgendaFetch({ immediate: inSession.value });
+const headcountsFetch = useAsyncData(
+  () => `live-view-headcounts-${assemblyKey.value}`,
+  () =>
+    inSession.value
+      ? api.get<HeadcountsDto>(`${apiBase.value}/headcounts`).catch(nullIfGone)
+      : Promise.resolve(null),
+  { lazy: true },
+);
+const [liveFetch, speakersFetch] = await Promise.all([
+  useAsyncData(
+    () => `live-view-state-${assemblyKey.value}`,
+    () =>
+      inSession.value
+        ? api.get<LiveStateDto>(`${apiBase.value}/live-state`)
+        : Promise.resolve(null),
+  ),
+  useAsyncData(
+    () => `live-view-speakers-${assemblyKey.value}`,
+    () =>
+      inSession.value
+        ? api.get<SpeakersDto>(`${apiBase.value}/speakers`).catch(nullIfGone)
+        : Promise.resolve(null),
+  ),
+]);
 const {
   data: liveState,
   stale: liveStale,
@@ -180,24 +192,24 @@ const documentUrl = computed(() =>
     : null,
 );
 
-const [documentFetch, amendmentsFetch] = await Promise.all([
-  useAsyncData(
-    () => `live-view-document-${documentId.value ?? "none"}`,
-    () =>
-      documentUrl.value
-        ? api.get<DocumentDto>(documentUrl.value).catch(nullIfGone)
-        : Promise.resolve(null),
-  ),
-  useAsyncData(
-    () => `live-view-amendments-${documentId.value ?? "none"}`,
-    () =>
-      documentUrl.value
-        ? api
-            .get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
-            .catch(nullIfGone)
-        : Promise.resolve(null),
-  ),
-]);
+const documentFetch = useAsyncData(
+  () => `live-view-document-${documentId.value ?? "none"}`,
+  () =>
+    documentUrl.value
+      ? api.get<DocumentDto>(documentUrl.value).catch(nullIfGone)
+      : Promise.resolve(null),
+  { lazy: true },
+);
+const amendmentsFetch = useAsyncData(
+  () => `live-view-amendments-${documentId.value ?? "none"}`,
+  () =>
+    documentUrl.value
+      ? api
+          .get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
+          .catch(nullIfGone)
+      : Promise.resolve(null),
+  { lazy: true },
+);
 // Reset when the Mesa moves to another document: the previous one must not
 // stand in for it.
 const {
@@ -249,9 +261,20 @@ const document = computed<DocumentDto | null>(() =>
     ? documentData.value
     : null,
 );
+/** The document in debate came back empty: this account cannot see it. */
+const documentGone = computed(
+  () =>
+    documentId.value !== null &&
+    documentFetch.status.value === "success" &&
+    !documentData.value,
+);
 /** The Mesa put a document on screen that is still on its way. */
 const documentLoading = computed(
-  () => documentId.value !== null && !document.value && !documentFailed.value,
+  () =>
+    documentId.value !== null &&
+    !document.value &&
+    !documentFailed.value &&
+    !documentGone.value,
 );
 const amendments = computed<AmendmentDto[]>(() =>
   (amendmentsData.value?.amendments ?? []).filter(
@@ -267,6 +290,40 @@ const amendmentsLoaded = computed(
     Boolean(document.value) &&
     Boolean(amendmentsData.value) &&
     amendmentsFetch.status.value !== "pending",
+);
+/**
+ * The document whose amendments arrived at least once: a refresh keeps the
+ * list on screen, only a first load (entering the page, the Mesa moving to
+ * another document) shows placeholders.
+ */
+const amendmentsSeenFor = ref<string | null>(null);
+watch(
+  [amendmentsLoaded, documentId],
+  ([loaded, id]) => {
+    if (loaded) amendmentsSeenFor.value = id;
+  },
+  { immediate: true },
+);
+/**
+ * The amendments of the document in debate arrived: loaded now, or once
+ * before this refresh. Read from `amendmentsLoaded` too, not only the
+ * watcher's mark: on the server an immediate watcher runs once in setup,
+ * before the lazy fetch resolves, and never again, so the server render
+ * must not wait for it (it would render placeholders the client then
+ * replaces, a hydration mismatch).
+ */
+const amendmentsArrived = computed(
+  () =>
+    documentId.value !== null &&
+    (amendmentsLoaded.value || amendmentsSeenFor.value === documentId.value),
+);
+/** The amendments of the document in debate are here, or will not come. */
+const amendmentsReady = computed(
+  () =>
+    amendmentsArrived.value ||
+    amendmentsFailed.value ||
+    documentFailed.value ||
+    documentGone.value,
 );
 
 // Live updates -----------------------------------------------------------------
@@ -287,10 +344,28 @@ onLive((events) => {
     refreshes.push(liveFetch.refresh());
   }
   if (affectsSpeakers(events)) refreshes.push(speakersFetch.refresh());
-  if (affectsAgenda(events)) refreshes.push(agendaFetch.refresh());
+  const agendaAction = sharedAgendaAction(events, {
+    follows: affectsAgenda,
+    active: inSession.value,
+  });
+  // The shared fetch defers to a request in flight; one that left before
+  // this batch may miss what it changed.
+  if (agendaAction === "refresh") {
+    refreshes.push(agendaFetch.refresh({ dedupe: "cancel" }));
+  } else if (agendaAction === "behind") {
+    markAgendaBehind();
+  }
   if (affectsHeadcounts(events)) refreshes.push(headcountsFetch.refresh());
+  // The amendments follow every event of the document; the document itself
+  // only what may change it, not each vote or answer (affectsDocumentDto).
   if (documentId.value && isDocumentLiveBatch(events, documentId.value)) {
-    refreshes.push(documentFetch.refresh(), amendmentsFetch.refresh());
+    refreshes.push(amendmentsFetch.refresh());
+  }
+  if (
+    documentId.value &&
+    affectsDocumentDto(events, documentId.value, document.value?.finalVote?.id)
+  ) {
+    refreshes.push(documentFetch.refresh());
   }
   // asyncData refreshes resolve even when they fail: only stamp the time
   // when every source is up to date.
@@ -342,11 +417,12 @@ useRetryFailed(
 );
 
 // The session starts or ends while the page is open: the hub refreshes the
-// assembly; the keys stay the same, so fetch again by hand.
-watch(inSession, () => {
+// assembly; the keys stay the same, so fetch again by hand. The agenda only
+// when it starts: outside the session nothing shows it.
+watch(inSession, (now) => {
   void liveFetch.refresh();
   void speakersFetch.refresh();
-  void agendaFetch.refresh();
+  if (now) void agendaFetch.refresh();
   void headcountsFetch.refresh();
 });
 
@@ -358,7 +434,7 @@ async function retryNow(): Promise<void> {
     await Promise.all([
       liveFetch.refresh(),
       speakersFetch.refresh(),
-      agendaFetch.refresh(),
+      inSession.value ? agendaFetch.refresh() : null,
       headcountsFetch.refresh(),
     ]);
     if (!failed.value) lastUpdate.value = new Date();
@@ -420,7 +496,29 @@ const attendance = computed(() =>
 );
 /** The Mesa debates an amendment this view cannot list (not public yet). */
 const amendmentHidden = computed(
-  () => Boolean(debatedId.value) && amendmentsLoaded.value && !debated.value,
+  () =>
+    Boolean(debatedId.value) &&
+    amendmentsArrived.value &&
+    amendmentsFetch.status.value !== "pending" &&
+    !debated.value,
+);
+/** The agenda (for the item's title) is still on its way. */
+const itemLoading = computed(
+  () =>
+    Boolean(live.value?.agendaItemId) &&
+    !currentRow.value &&
+    agendaFetch.status.value === "pending",
+);
+/**
+ * The document in debate, or the amendment in debate, is on its way (the
+ * list is loading, or being read again because it lacked that amendment).
+ */
+const debateLoading = computed(
+  () =>
+    documentLoading.value ||
+    (Boolean(debatedId.value) &&
+      !debated.value &&
+      (!amendmentsReady.value || amendmentsFetch.status.value === "pending")),
 );
 
 // A transactional drafted in the room is put in debate as soon as it is
@@ -526,15 +624,24 @@ async function readMesaScroll(): Promise<void> {
     const scroll = await api.get<LiveScrollDto | null>(
       `${apiBase.value}/live-scroll`,
     );
-    if (scroll) mesaScroll.value = scroll;
+    // A position that came on the stream meanwhile is newer: keep it.
+    if (scroll && isNewerScroll(mesaScroll.value, scroll)) {
+      mesaScroll.value = scroll;
+    }
   } catch {
     // The next position the Mesa sends puts it right.
   }
 }
-/** Opens the window once it knows where the Mesa is. */
-async function openDocumentWindow(): Promise<void> {
-  await readMesaScroll();
+/**
+ * Opens the window at once; it moves to where the Mesa is when that
+ * arrives (its `scroll` prop). The last position is always read in the
+ * background: one the page holds may be old even with the stream up again
+ * (positions missed while it was down or polling are never replayed), and
+ * isNewerScroll keeps a push that arrives meanwhile.
+ */
+function openDocumentWindow(): void {
   documentWindowOpen.value = true;
+  void readMesaScroll();
 }
 watch(documentId, () => {
   if (documentWindowOpen.value) void readMesaScroll();
@@ -549,23 +656,34 @@ const canNoteSpeakers = computed(
     can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
 );
 const spokenTurns = ref<SpeakingTurnDto[]>([]);
+/**
+ * Counts the reads and the editor's own saves: a read that one of them
+ * overtook is dropped, so it never hides a note just saved.
+ */
+let spokenTurnsVersion = 0;
 async function readSpokenTurns(): Promise<void> {
   if (!canNoteSpeakers.value || !inSession.value) return;
+  const version = ++spokenTurnsVersion;
   try {
     const dto = await api.get<SpeakerNotesDto>(
       `${apiBase.value}/speakers/notes`,
     );
-    spokenTurns.value = dto.turns;
+    if (version === spokenTurnsVersion) spokenTurns.value = dto.turns;
   } catch {
     // The next change of the speakers reads them again.
   }
 }
+/** The editor saved: its answer is the newest list. */
+function onSpokenTurnsUpdated(turns: SpeakingTurnDto[]): void {
+  spokenTurnsVersion += 1;
+  spokenTurns.value = turns;
+}
 onMounted(() => void readSpokenTurns());
 watch(inSession, () => void readSpokenTurns());
+// Only what may change the turns that spoke: not a turn joining or moving
+// in the queue (affectsSpokenTurns).
 onLive((events) => {
-  if (events.some((event) => event.entityType === "speakers")) {
-    void readSpokenTurns();
-  }
+  if (affectsSpokenTurns(events)) void readSpokenTurns();
 });
 
 /** The amendment previewed from the list; null when none is. */
@@ -615,10 +733,29 @@ watch(inSession, (open) => {
   if (!open) announcement.value = "";
 });
 
+/**
+ * What was in debate when the page opened is not news: the document and
+ * its amendments load after the page shows (lazy), and their arrival must
+ * not be read out as a change. Set once that first load is over, after the
+ * watcher below has seen it.
+ */
+let announceDebate = !debateLoading.value;
+if (!announceDebate) {
+  const stop = watch(
+    debateLoading,
+    (loading) => {
+      if (loading) return;
+      announceDebate = true;
+      stop();
+    },
+    { flush: "post" },
+  );
+}
+
 watch(
   () => debated.value?.amendment.id ?? document.value?.id ?? null,
   (id, previous) => {
-    if (!id || id === previous) return;
+    if (!id || id === previous || !announceDebate) return;
     if (debated.value) {
       announcement.value = t("liveView.announce.amendment", {
         code:
@@ -879,6 +1016,8 @@ watch(
         :amendment-hidden="amendmentHidden"
         :document-path="documentPath"
         :show-position="showPosition"
+        :item-loading="itemLoading"
+        :loading="debateLoading"
         @view-document="openDocumentWindow"
       />
       <LiveViewDocumentWindow
@@ -921,7 +1060,7 @@ watch(
             :amendment-id="debated?.amendment.id ?? null"
             :turns="spokenTurns"
             :writable="true"
-            @updated="spokenTurns = $event"
+            @updated="onSpokenTurnsUpdated"
           />
         </div>
       </section>
@@ -949,10 +1088,15 @@ watch(
       <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />
 
       <LiveViewAmendmentList
-        v-if="showAmendments && documentPath"
+        v-if="showAmendments && documentPath && amendmentsReady"
         :rows="amendmentRows"
         :consolidated-path="consolidatedPath"
         @preview="previewAmendmentId = $event"
+      />
+      <USkeleton
+        v-else-if="showAmendments && documentPath"
+        aria-hidden="true"
+        class="h-40 w-full"
       />
       <LiveViewAmendmentWindow
         v-if="showAmendments"

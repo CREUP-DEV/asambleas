@@ -54,6 +54,8 @@ import {
   isSessionOpen,
   isSessionTransactable,
   isSessionSpeakersEvent,
+  affectsSessionProgress,
+  sessionLiveMoved,
   sessionAmendmentStage,
   sessionConnectionState,
   sessionElapsedSeconds,
@@ -84,6 +86,7 @@ import {
   sessionItemVotePlan,
   sessionItemVotes,
   sortSessionAmendments,
+  openRoomAlternatives,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -1914,9 +1917,72 @@ describe("session model", () => {
       });
       expect(isSessionSpeakersEvent(event("speakers"))).toBe(true);
       expect(isSessionSpeakersEvent(event("speaking_turn"))).toBe(false);
-      expect(isSessionSpeakersEvent(event("live", "live_changed"))).toBe(true);
+      // The live state moves the Mesa's list only with its agenda item
+      // (sessionLiveMoved), not on every move of the debate.
+      expect(isSessionSpeakersEvent(event("live", "live_changed"))).toBe(false);
       expect(isSessionSpeakersEvent(event("assembly", "poll"))).toBe(true);
       expect(isSessionSpeakersEvent(event("amendment"))).toBe(false);
+    });
+
+    it("refetches the speakers and the progress only when the debate moves on", () => {
+      const at = (agendaItemId: string | null, documentId: string | null) => ({
+        agendaItemId,
+        documentId,
+      });
+      // The first read: the first loads fetch both anyway.
+      expect(sessionLiveMoved(undefined, at("i1", "d1"))).toEqual({
+        speakers: false,
+        progress: false,
+      });
+      // Another amendment or vote of the same document on screen.
+      expect(sessionLiveMoved(at("i1", "d1"), at("i1", "d1"))).toEqual({
+        speakers: false,
+        progress: false,
+      });
+      // Another document of the same item: projected for the first time.
+      expect(sessionLiveMoved(at("i1", "d1"), at("i1", "d2"))).toEqual({
+        speakers: false,
+        progress: true,
+      });
+      // Another agenda item: its own turns.
+      expect(sessionLiveMoved(at("i1", "d1"), at("i2", null))).toEqual({
+        speakers: true,
+        progress: true,
+      });
+      expect(sessionLiveMoved(at(null, null), at("i1", null))).toEqual({
+        speakers: true,
+        progress: true,
+      });
+    });
+
+    it("refetches the progress only with what its rule reads", () => {
+      const event = (
+        entityType: string,
+        entityId = "x",
+        documentId?: string,
+      ) => ({ entityType, entityId, ...(documentId ? { documentId } : {}) });
+      // Kept: the sheet's marks, documents, items, item votes, the final vote.
+      expect(affectsSessionProgress(event("control_sheet"), null)).toBe(true);
+      expect(affectsSessionProgress(event("document", "d1", "d1"), null)).toBe(
+        true,
+      );
+      expect(affectsSessionProgress(event("agenda_item"), null)).toBe(true);
+      expect(affectsSessionProgress(event("assembly"), null)).toBe(true);
+      expect(affectsSessionProgress(event("vote", "v1"), null)).toBe(true);
+      expect(affectsSessionProgress(event("vote", "fv", "d1"), "fv")).toBe(
+        true,
+      );
+      // Dropped: an amendment's vote, the live state, amendments.
+      expect(affectsSessionProgress(event("vote", "v2", "d1"), "fv")).toBe(
+        false,
+      );
+      expect(affectsSessionProgress(event("vote", "v2", "d1"), null)).toBe(
+        false,
+      );
+      expect(affectsSessionProgress(event("live"), null)).toBe(false);
+      expect(affectsSessionProgress(event("amendment", "a1", "d1"), null)).toBe(
+        false,
+      );
     });
   });
 });
@@ -2370,5 +2436,43 @@ describe("bloc selection (2026-11-19)", () => {
     expect(
       sessionBlocToggle([], order, "c", { anchor: "zz", range: true }),
     ).toEqual(["c"]);
+  });
+});
+
+describe("openRoomAlternatives (VOT-3)", () => {
+  const options = [["e3", "e5"], ["e4"]];
+  const byId = (...list: AmendmentDto[]) =>
+    new Map(list.map((amendment) => [amendment.id, amendment]));
+
+  it("keeps the options on screen while any of them is open", () => {
+    expect(
+      openRoomAlternatives(
+        options,
+        byId(am("e3", {}), am("e4", {}), am("e5", {})),
+      ),
+    ).toBe(options);
+    // One withdrawn meanwhile: the vote is still pending.
+    expect(
+      openRoomAlternatives(
+        options,
+        byId(am("e3", { status: "withdrawn" }), am("e4", {}), am("e5", {})),
+      ),
+    ).toBe(options);
+    // Not loaded yet: they still block assent.
+    expect(openRoomAlternatives(options, byId())).toBe(options);
+  });
+
+  it("drops them once a vote decided them all", () => {
+    expect(
+      openRoomAlternatives(
+        options,
+        byId(
+          am("e3", { status: "approved" }),
+          am("e4", { status: "rejected" }),
+          am("e5", { status: "approved" }),
+        ),
+      ),
+    ).toBeNull();
+    expect(openRoomAlternatives(null, byId())).toBeNull();
   });
 });

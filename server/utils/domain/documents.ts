@@ -859,7 +859,8 @@ export type DocumentWithProponent = DocumentRow & {
  * Summaries of document rows the caller already checked with canSeeDocument,
  * from any assembly: `milestones` holds the calendar of each one.
  * `amendmentCount` counts the amendments past draft that the actor can see
- * (see countVisibleAmendments).
+ * (see countVisibleAmendments). `loadedCoProponents` are the co-presenters
+ * of those rows when the caller already read them (loadCoProponents).
  */
 export async function buildDocumentSummaries(
   actor: Actor,
@@ -867,12 +868,15 @@ export async function buildDocumentSummaries(
   milestones: Map<string, Milestones>,
   now = new Date(),
   executor: Executor = db,
+  loadedCoProponents?: Map<string, MemberRef[]>,
 ): Promise<DocumentSummaryDto[]> {
   const ids = rows.map((row) => row.id);
   const [counts, content, coProponents, amended] = await Promise.all([
     countVisibleAmendments(actor, ids, executor),
     loadContentFlags(executor, rows),
-    loadCoProponents(ids, executor),
+    loadedCoProponents
+      ? Promise.resolve(loadedCoProponents)
+      : loadCoProponents(ids, executor),
     seesAmendmentExistence(actor)
       ? loadAmendedDocumentIds(executor, ids)
       : Promise.resolve(null),
@@ -914,12 +918,23 @@ export async function loadDocumentSummaries(
     }),
     loadMilestones(assembly.id),
   ]);
+  // One read of the co-presenters serves both the visibility check (their
+  // ids) and the summaries (their references).
+  const coProponents = await loadCoProponents(rows.map((row) => row.id));
   return buildDocumentSummaries(
     actor,
-    (await withCoProponentIds(rows)).filter((row) =>
-      canSeeDocument(actor, row),
-    ),
+    rows
+      .map((row) => ({
+        ...row,
+        coProponentMemberIds: (coProponents.get(row.id) ?? []).map(
+          (member) => member.id,
+        ),
+      }))
+      .filter((row) => canSeeDocument(actor, row)),
     new Map([[assembly.id, milestones]]),
+    undefined,
+    undefined,
+    coProponents,
   );
 }
 
@@ -932,17 +947,74 @@ async function loadVersion(id: string | null, executor: Executor) {
   return version ?? null;
 }
 
-/** Loads the current row (by id) and everything DocumentDto needs. */
+/**
+ * Whether loadDocumentDto needs the blocks of the working version: only
+ * while the text can change, since a frozen text is the base and the DTO
+ * drops the working copy. A structured text frozen without a base (none is
+ * expected: publishing makes one) still reads it, for `hasContent`.
+ */
+export function needsWorkingBlocks(
+  document: Pick<
+    DocumentRow,
+    "status" | "format" | "baseVersionId" | "publishedAt"
+  >,
+): boolean {
+  return (
+    !isTextFrozen(document) ||
+    (document.format === "structured" && document.baseVersionId === null)
+  );
+}
+
+/**
+ * `hasContent` of one document from the versions loadDocumentDto already
+ * has (what loadContentFlags reads with a query): the PDF in `file` format;
+ * otherwise a working version with blocks. Once the text is frozen the
+ * working version is the copy publishing made of the base, so the base's
+ * blocks answer for it (needsWorkingBlocks).
+ */
+export function documentHasContent(
+  document: Pick<
+    DocumentRow,
+    | "status"
+    | "format"
+    | "fileUrl"
+    | "workingVersionId"
+    | "baseVersionId"
+    | "publishedAt"
+  >,
+  versions: {
+    working: { blocks: readonly unknown[] } | null;
+    base: { blocks: readonly unknown[] } | null;
+  },
+): boolean {
+  if (document.format === "file") return Boolean(document.fileUrl);
+  if (!document.workingVersionId) return false;
+  const source = needsWorkingBlocks(document)
+    ? versions.working
+    : versions.base;
+  return (source?.blocks.length ?? 0) > 0;
+}
+
+/**
+ * Loads the current row (by id) and everything DocumentDto needs. `resolved`
+ * is that row when the caller has just read it (the document GET, through
+ * resolveDocument), so it is not read again; mutations leave it out and
+ * read the row they wrote.
+ */
 export async function loadDocumentDto(
   assembly: AssemblyRow,
   documentId: string,
   actor: Actor,
   executor: Executor = db,
+  resolved?: DocumentRow,
 ): Promise<DocumentDto> {
-  const [row] = await executor
-    .select()
-    .from(documents)
-    .where(eq(documents.id, documentId));
+  const [row] =
+    resolved && resolved.id === documentId
+      ? [resolved]
+      : await executor
+          .select()
+          .from(documents)
+          .where(eq(documents.id, documentId));
   if (!row) fail(404, "Documento no encontrado");
   const now = new Date();
   const coProponents =
@@ -967,7 +1039,10 @@ export async function loadDocumentDto(
           .where(eq(members.id, document.proponentMemberId))
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
-    loadVersion(document.workingVersionId, executor),
+    // A frozen text is the base: its working copy is not sent.
+    needsWorkingBlocks(document)
+      ? loadVersion(document.workingVersionId, executor)
+      : Promise.resolve(null),
     loadVersion(document.baseVersionId, executor),
     loadVersion(document.consolidatedVersionId, executor),
     document.finalVoteId
@@ -978,9 +1053,8 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
-  const [counts, content, anyAmendment] = await Promise.all([
+  const [counts, anyAmendment] = await Promise.all([
     countVisibleAmendments(actor, [document.id], executor),
-    loadContentFlags(executor, [document]),
     hasAnyAmendment(executor, document.id),
   ]);
   return toDocumentDto({
@@ -991,7 +1065,10 @@ export async function loadDocumentDto(
     ...redactPresenters(actor, memberRefOrNull(proponent), coProponents),
     amendmentCount: counts.get(document.id) ?? 0,
     hasAmendments: anyAmendment,
-    hasContent: content.has(document.id),
+    hasContent: documentHasContent(document, {
+      working: workingVersion,
+      base: baseVersion,
+    }),
     workingVersion,
     baseVersion,
     consolidatedVersion,
@@ -2747,7 +2824,9 @@ export async function recordFinalVote(
 
   await db.transaction(async (tx) => {
     // The projection shows the vote: assembly before document ("Row locks").
-    await shareLockAssembly(tx, assembly.id);
+    // The session is still open under that lock (a suspension waits).
+    const lockedAssembly = await shareLockAssembly(tx, assembly.id);
+    assertSessionOpen(lockedAssembly?.status);
     const document = await lockDocument(tx, ctx.document.id);
     if (document.status !== "published")
       fail(409, "El documento no está publicado");

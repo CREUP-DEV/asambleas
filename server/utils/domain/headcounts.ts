@@ -227,7 +227,8 @@ function groupBy<T extends { headcountId: string }>(
  * the guests are people). Entries follow the roll-call order too. Public to
  * everyone who sees the assembly, for transparency: who was in the room, the
  * delegations and the quorum are shown in the live view and on the
- * projection.
+ * projection. Who was counted goes to everyone but the Mesa for the latest
+ * count only (headcountsForReader).
  */
 export async function loadHeadcounts(
   actor: Actor,
@@ -252,16 +253,23 @@ export async function loadHeadcounts(
             .where(inArray(headcountGuests.headcountId, ids)),
         ])
       : [[], []];
+  const mesa = canModerate(actor);
+  // Everyone else reads who was counted in the latest count only
+  // (headcountsForReader): only its members are named.
+  const named = mesa
+    ? entries
+    : entries.filter((entry) => entry.headcountId === ids[0]);
   const memberIds = [
     ...new Set(
-      entries.flatMap((entry) =>
+      named.flatMap((entry) =>
         entry.delegateMemberId
           ? [entry.memberId, entry.delegateMemberId]
           : [entry.memberId],
       ),
     ),
   ];
-  const mesa = canModerate(actor);
+  // The roll call is what a new count lists, the Mesa's; the members an
+  // entry names are all in `counted`.
   const [counted, listed, invited, quorum] = await Promise.all([
     memberIds.length > 0
       ? db
@@ -269,7 +277,7 @@ export async function loadHeadcounts(
           .from(members)
           .where(inArray(members.id, memberIds))
       : Promise.resolve([] as MemberColumns[]),
-    rollCallMembers(db),
+    mesa ? rollCallMembers(db) : Promise.resolve([] as MemberColumns[]),
     mesa ? invitedAccounts(db) : Promise.resolve([]),
     quorumOf(assembly, db),
   ]);
@@ -294,11 +302,29 @@ export async function loadHeadcounts(
     ),
   );
   return {
-    headcounts: dtos,
-    latest: dtos[0] ?? null,
+    ...headcountsForReader(dtos, mesa),
     members: mesa ? listed.map(toHeadcountMember) : [],
     guests: invited,
     quorum,
+  };
+}
+
+/**
+ * The counts (newest first) as a reader gets them: the Mesa, which
+ * corrects any of them, every one whole; everyone else the latest whole in
+ * `latest` and the list as figures only (no entries nor guests, which the
+ * room reads of the latest alone), so a phone neither downloads who was
+ * counted in earlier counts nor the latest twice.
+ */
+export function headcountsForReader(
+  dtos: HeadcountDto[],
+  mesa: boolean,
+): Pick<HeadcountsDto, "headcounts" | "latest"> {
+  const latest = dtos[0] ?? null;
+  if (mesa) return { headcounts: dtos, latest };
+  return {
+    headcounts: dtos.map((dto) => ({ ...dto, entries: [], guests: [] })),
+    latest,
   };
 }
 

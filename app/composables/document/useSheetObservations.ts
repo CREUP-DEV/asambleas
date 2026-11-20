@@ -2,6 +2,7 @@ import type { InjectionKey, MaybeRefOrGetter, Ref } from "vue";
 import type {
   ControlSheetDocumentObservationsDto,
   ControlSheetObservationDto,
+  LiveEventDto,
 } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 
@@ -21,6 +22,25 @@ export interface SheetObservationsContext {
 
 const SHEET_OBSERVATIONS_KEY: InjectionKey<SheetObservationsContext> =
   Symbol("sheet-observations");
+
+/**
+ * Whether a batch of live events may change the observations shown: only
+ * someone writing them (`control_sheet_observations_updated`, from the sheet
+ * or added from an amendment's notes; clearing them too), never
+ * the treated mark, the listing or a result noted by hand, which they do
+ * not carry. "poll" (the stream was down) always does. The stream never
+ * says which document a sheet row is about (only ids: the row, not its
+ * subject), so any document's observations count.
+ */
+export function affectsSheetObservations(
+  events: readonly Pick<LiveEventDto, "type">[],
+): boolean {
+  return events.some(
+    (event) =>
+      event.type === "poll" ||
+      event.type === "control_sheet_observations_updated",
+  );
+}
 
 export function provideSheetObservations(
   documentId: MaybeRefOrGetter<string | null | undefined>,
@@ -51,17 +71,8 @@ export function provideSheetObservations(
     { server: false, lazy: true, watch: [url], default: () => null },
   );
 
-  // Someone wrote in the sheet: the stream never says about what.
   onLive((events) => {
-    if (
-      url.value &&
-      events.some(
-        (event) =>
-          event.type === "poll" || event.entityType === "control_sheet",
-      )
-    ) {
-      void reload();
-    }
+    if (url.value && affectsSheetObservations(events)) void reload();
   });
 
   const context: SheetObservationsContext = {

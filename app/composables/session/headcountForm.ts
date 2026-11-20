@@ -42,6 +42,13 @@ export interface FormGuest {
 /** The guests in the room, by account id. */
 export type GuestForm = Record<string, boolean>;
 
+/** A count as the form holds it: members, guests and note. */
+export interface HeadcountFormState {
+  form: HeadcountForm;
+  guests: GuestForm;
+  note: string;
+}
+
 /** What survives an accidental close of the form (this device only). */
 export interface HeadcountDraft {
   /** The count being corrected, or null for a new one. */
@@ -51,6 +58,67 @@ export interface HeadcountDraft {
   guests?: GuestForm;
   note: string;
   savedAt: string;
+  /**
+   * For a correction, the count as the form started from it and its lock
+   * token: restored after someone else corrected it (another token), the
+   * draft's changes go over that correction (rebaseHeadcountForm) instead
+   * of overwriting it. Absent in older drafts and for a new count.
+   */
+  base?: HeadcountFormState & { updatedAt: string };
+}
+
+function sameRow(a: FormRow | undefined, b: FormRow | undefined): boolean {
+  return (
+    (a?.present ?? false) === (b?.present ?? false) &&
+    (a?.delegateId ?? null) === (b?.delegateId ?? null)
+  );
+}
+
+/**
+ * This device's changes to a count (`mine` against `base`, the form it
+ * started from) put over a newer copy of it (`theirs`: another Mesa
+ * member's correction saved meanwhile): a member or guest this device
+ * changed keeps its change, every other one takes theirs, and so does the
+ * note unless this device changed it. `clashes` are the members and guests
+ * (by id) both changed, each its own way: this device's change stays, and
+ * the form says so. Rows only `theirs` lists come from it; rows it no
+ * longer lists drop out.
+ */
+export function rebaseHeadcountForm(
+  base: HeadcountFormState,
+  mine: HeadcountFormState,
+  theirs: HeadcountFormState,
+): HeadcountFormState & { clashes: string[] } {
+  const clashes: string[] = [];
+  const form: HeadcountForm = {};
+  for (const [id, their] of Object.entries(theirs.form)) {
+    const own = mine.form[id];
+    if (own === undefined || sameRow(own, base.form[id])) {
+      form[id] = their;
+      continue;
+    }
+    form[id] = own;
+    if (!sameRow(their, base.form[id]) && !sameRow(their, own)) {
+      clashes.push(id);
+    }
+  }
+  const guests: GuestForm = {};
+  for (const [id, their] of Object.entries(theirs.guests)) {
+    const own = mine.guests[id];
+    const was = base.guests[id] ?? false;
+    if (own === undefined || own === was) {
+      guests[id] = their;
+      continue;
+    }
+    guests[id] = own;
+    if (their !== was && their !== own) clashes.push(id);
+  }
+  return {
+    form,
+    guests,
+    note: mine.note !== base.note ? mine.note : theirs.note,
+    clashes,
+  };
 }
 
 /**
@@ -225,4 +293,18 @@ export function isHeadcountEvent(event: {
   entityType: string;
 }): boolean {
   return event.type === "poll" || event.entityType === "headcount";
+}
+
+/**
+ * Whether someone else saved `sent` after this device read it: the list,
+ * read again after a 409, holds it with another `updatedAt`. Not so when the
+ * 409 had another cause (the session is not open), nor when the count is
+ * missing from the list or the list could not be read again.
+ */
+export function headcountMovedOn(
+  list: readonly HeadcountDto[] | undefined,
+  sent: Pick<HeadcountDto, "id" | "updatedAt">,
+): boolean {
+  const fresh = list?.find((count) => count.id === sent.id);
+  return Boolean(fresh && fresh.updatedAt !== sent.updatedAt);
 }

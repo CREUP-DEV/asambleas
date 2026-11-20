@@ -513,6 +513,28 @@ export function isSessionOpen(amendment: AmendmentDto): boolean {
 }
 
 /**
+ * The options on screen as alternatives, while any of their amendments is
+ * still open (isSessionOpen; one not loaded yet counts as open). A vote
+ * between them recorded from a console without the projection's control
+ * leaves them on screen (user's decision of 2026-11-19): once all are
+ * decided they no longer block assent nor seed the next vote. Left
+ * undecided ("no_effect"), they still do.
+ */
+export function openRoomAlternatives(
+  options: string[][] | null | undefined,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[][] | null {
+  if (!options || options.length === 0) return null;
+  const open = options.some((ids) =>
+    ids.some((id) => {
+      const amendment = byId.get(id);
+      return amendment === undefined || isSessionOpen(amendment);
+    }),
+  );
+  return open ? options : null;
+}
+
+/**
  * Validated, but late (or manually reviewed) and still waiting for the
  * Mesa's admission decision. Amendments the Secretaría has not validated
  * yet are never here, even though their admission is pending too.
@@ -1328,19 +1350,76 @@ export function sessionFormatDuration(seconds: number): string {
 /**
  * Whether a live event may change the speaking turns: a turn was written
  * down, given the floor, ended, removed or moved, or who sees them changed
- * (`speakers`); the live state changed (the Mesa's list follows the agenda
- * item in debate); or the client lost track and must refetch everything
- * (`poll`).
+ * (`speakers`); or the client lost track and must refetch everything
+ * (`poll`). A change of the live state is not one: the Mesa's list follows
+ * the agenda item in debate, and the console refetches it only when that
+ * item changes (sessionLiveMoved), not on every move of the debate.
  */
 export function isSessionSpeakersEvent(event: {
   type: string;
   entityType: string;
 }): boolean {
-  return (
-    event.type === "poll" ||
-    event.entityType === "speakers" ||
-    event.entityType === "live"
-  );
+  return event.type === "poll" || event.entityType === "speakers";
+}
+
+/**
+ * Whether a live event may change where the agenda items stand in the
+ * session (GET .../session-progress, sessionTreatedItems): a mark in the
+ * control sheet, a document (its final vote and its annulment come as
+ * `document_voted` and `final_vote_annulled`), an agenda item or the
+ * assembly (its status: the session opening), and the
+ * votes that rule reads: an agenda item's own (a `vote` with no document)
+ * and the final vote of the document the console shows. An amendment's
+ * vote changes nothing there, nor does the live state unless it moves to
+ * another document or item (sessionLiveMoved). A poll refetches everything
+ * apart.
+ */
+export function affectsSessionProgress(
+  event: { entityType: string; entityId: string; documentId?: string },
+  finalVoteId: string | null | undefined,
+): boolean {
+  // The assembly: the session opening with a document on screen marks it
+  // projected with no move of the live state (markOnScreenAtOpen).
+  switch (event.entityType) {
+    case "control_sheet":
+    case "document":
+    case "agenda_item":
+    case "assembly":
+      return true;
+    case "vote":
+      return (
+        !event.documentId ||
+        (Boolean(finalVoteId) && event.entityId === finalVoteId)
+      );
+    default:
+      return false;
+  }
+}
+
+/** What of the live state the console's speakers and progress follow. */
+export interface SessionLivePointer {
+  documentId: string | null;
+  agendaItemId: string | null;
+}
+
+/**
+ * How the live state moved between two reads, for what follows it: the
+ * Mesa's speaking turns (`speakers`, the agenda item in debate) and the
+ * session's progress (`progress`, a document marked projected the first
+ * time it goes on screen, without an event of its own). Nothing moved
+ * before the first read (`previous` undefined): the first loads fetch both
+ * anyway.
+ */
+export function sessionLiveMoved(
+  previous: SessionLivePointer | undefined,
+  next: SessionLivePointer | undefined,
+): { speakers: boolean; progress: boolean } {
+  if (!previous || !next) return { speakers: false, progress: false };
+  const item = previous.agendaItemId !== next.agendaItemId;
+  return {
+    speakers: item,
+    progress: item || previous.documentId !== next.documentId,
+  };
 }
 
 /**

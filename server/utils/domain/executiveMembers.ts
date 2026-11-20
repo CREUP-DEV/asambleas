@@ -35,15 +35,39 @@ export const EXECUTIVE_MAIN_REFUSED_REASON = "executive_main";
 export const EXECUTIVE_MAIN_REFUSED_MESSAGE =
   "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.";
 
-/** Ids of every executive area, active or not. */
-export async function loadExecutiveMemberIds(
-  executor: Executor = db,
+/**
+ * The read of loadExecutiveMemberIds in flight outside a transaction.
+ * Requests that need the ids while it runs share it (a room refetching
+ * after a vote asks for them dozens of times at once); nothing is kept once
+ * it answers, so a new office is masked from the next read on.
+ */
+let executiveIdsInFlight: Promise<Set<string>> | null = null;
+
+async function readExecutiveMemberIds(
+  executor: Executor,
 ): Promise<Set<string>> {
   const rows = await executor
     .select({ id: members.id })
     .from(members)
     .where(eq(members.kind, "executive"));
   return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * Ids of every executive area, active or not. Each caller gets its own
+ * set. Inside a transaction (`executor` other than `db`) it always reads.
+ */
+export async function loadExecutiveMemberIds(
+  executor: Executor = db,
+): Promise<Set<string>> {
+  if (executor !== db) return readExecutiveMemberIds(executor);
+  if (!executiveIdsInFlight) {
+    const read = readExecutiveMemberIds(db).finally(() => {
+      if (executiveIdsInFlight === read) executiveIdsInFlight = null;
+    });
+    executiveIdsInFlight = read;
+  }
+  return new Set(await executiveIdsInFlight);
 }
 
 /**

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
-import type { VoteInput } from "~~/shared/types/api";
+import type { HeadcountDto, VoteInput } from "~~/shared/types/api";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
-import { fillPresent } from "./headcounts";
+import { fillPresent, headcountsForReader } from "./headcounts";
 
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("./events", () => ({ recordEvent: vi.fn() }));
@@ -75,6 +75,64 @@ describe("fillPresent", () => {
       threshold: 20,
       denominator: 30,
       inconsistent: false,
+    });
+  });
+});
+
+describe("headcountsForReader", () => {
+  const count = (id: string): HeadcountDto => ({
+    id,
+    eligible: 40,
+    inRoom: 25,
+    delegated: 5,
+    present: 30,
+    attending: 3,
+    required: 21,
+    quorum: true,
+    note: null,
+    takenAt: "2026-11-20T10:00:00.000Z",
+    updatedAt: "2026-11-20T10:00:00.000Z",
+    entries: [
+      {
+        member: {
+          id: "m1",
+          acronym: "CA",
+          name: "Consejo A",
+          kind: "asociado",
+          university: null,
+        },
+        mark: "present",
+        delegate: null,
+        voting: true,
+      },
+    ],
+    guests: [{ userId: "u1", name: "Guest" }],
+  });
+  const dtos = [count("h2"), count("h1")];
+
+  it("gives the Mesa every count whole, which it corrects", () => {
+    expect(headcountsForReader(dtos, true)).toEqual({
+      headcounts: dtos,
+      latest: dtos[0],
+    });
+  });
+
+  it("gives the room who was counted in the latest count only", () => {
+    const view = headcountsForReader(dtos, false);
+    expect(view.latest).toBe(dtos[0]);
+    expect(view.headcounts.map((item) => item.id)).toEqual(["h2", "h1"]);
+    for (const item of view.headcounts) {
+      expect(item.entries).toEqual([]);
+      expect(item.guests).toEqual([]);
+      // The figures stay, attending included.
+      expect(item).toMatchObject({ present: 30, attending: 3, quorum: true });
+    }
+  });
+
+  it("has no latest before the first count", () => {
+    expect(headcountsForReader([], false)).toEqual({
+      headcounts: [],
+      latest: null,
     });
   });
 });

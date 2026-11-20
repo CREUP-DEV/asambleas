@@ -26,6 +26,7 @@ vi.mock("./actor", () => ({
   canManageAssemblies: vi.fn(),
   canManageDocuments: vi.fn(),
   canModerate: vi.fn(),
+  canRecordResults: vi.fn(),
   canReviewAmendments: vi.fn(),
   requireActor: vi.fn(),
   UNLINKED_ACCOUNT_MESSAGE: "Tu cuenta no está vinculada a ningún miembro",
@@ -76,6 +77,14 @@ const {
   transactionalsShareSources,
   unauthorizedTransactionalAuthors,
 } = await import("./amendments");
+const {
+  applyAmendmentOutcome,
+  assertAlternativesUnderLock,
+  lockOpenSession,
+  touchVotedWithoutEffect,
+} = await import("./amendments");
+const documentsModule = await import("./documents");
+const { db: stubDb } = await import("../../db");
 const { buildSourceMap, competingTransactionalIds } =
   await import("./transactionalClosure");
 // The visibility rules are pure too; their actor helpers are the stubs above.
@@ -1335,5 +1344,143 @@ describe("inclusions in a transactional (2026-11-19)", () => {
     expect(revisionAfterAnswers(["accepted", "accepted"], true)).toBe("apply");
     expect(revisionAfterAnswers(["accepted"], false)).toBe("validation");
     expect(revisionAfterAnswers([], false)).toBe("validation");
+  });
+});
+
+/** A transaction whose selects answer `rows` and updates answer `updated`. */
+function fakeTx(rows: unknown[], updated: unknown[] = []) {
+  const chain = (result: unknown[]) => {
+    const node: Record<string, unknown> = {};
+    for (const key of ["from", "where", "set"]) node[key] = () => node;
+    node.returning = async () => result;
+    node.then = (resolve: (value: unknown) => void) => resolve(result);
+    return node;
+  };
+  return {
+    select: () => chain(rows),
+    update: () => chain(updated),
+  } as never;
+}
+
+describe("decisions under the assembly's lock (CON-4)", () => {
+  const shareLock = vi.mocked(documentsModule.shareLockAssembly);
+  const open = () =>
+    shareLock.mockResolvedValueOnce({ status: "in_session" } as never);
+
+  it("refuses a session suspended or closed since the request was read", async () => {
+    open();
+    await expect(lockOpenSession(fakeTx([]), "asm")).resolves.toBeUndefined();
+    for (const status of ["convened", "closed"]) {
+      shareLock.mockResolvedValueOnce({ status } as never);
+      await expect(lockOpenSession(fakeTx([]), "asm")).rejects.toMatchObject({
+        statusCode: 409,
+      });
+    }
+  });
+
+  it("checks the session before the split of a vote between alternatives", async () => {
+    shareLock.mockResolvedValueOnce({ status: "convened" } as never);
+    await expect(
+      assertAlternativesUnderLock(fakeTx([]), {
+        assemblyId: "asm",
+        documentId: "doc",
+        options: [["e3"], ["e4"]],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { messageKey: "common.errors.sessionNotOpen" },
+    });
+  });
+
+  it("refuses a split other than the one on screen for its document", async () => {
+    const input = {
+      assemblyId: "asm",
+      documentId: "doc",
+      options: [["e3", "e5"], ["e4"]],
+    };
+    open();
+    await expect(
+      assertAlternativesUnderLock(
+        fakeTx([{ documentId: "doc", options: [["e3"], ["e4", "e5"]] }]),
+        input,
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { messageKey: "session.alternatives.errors.splitChanged" },
+    });
+    // The same split, another document on screen, or no live state: it goes.
+    for (const rows of [
+      [{ documentId: "doc", options: [["e5", "e3"], ["e4"]] }],
+      [{ documentId: "other", options: [["e3"], ["e4", "e5"]] }],
+      [{ documentId: "doc", options: null }],
+      [],
+    ]) {
+      open();
+      await expect(
+        assertAlternativesUnderLock(fakeTx(rows), input),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  it("refuses withdrawing or lapsing once the session is no longer open", async () => {
+    vi.mocked(actorHelpers.canRecordResults).mockReturnValue(true);
+    const transaction = vi.fn(
+      async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback(fakeTx([])),
+    );
+    Object.assign(stubDb, { transaction });
+    const ctx = {
+      actor: {},
+      now: new Date(),
+      assembly: { id: "asm", status: "in_session" },
+      document: { id: "doc", finalVoteId: null, consolidatedVersionId: null },
+      amendment: {
+        id: "e3",
+        code: "E3",
+        kind: "amendment",
+        status: "submitted",
+        admission: "admitted",
+        sources: [],
+      },
+    } as never;
+    for (const action of ["withdraw", "lapse"] as const) {
+      shareLock.mockResolvedValueOnce({ status: "convened" } as never);
+      await expect(
+        applyAmendmentOutcome(ctx, {
+          action,
+          updatedAt: "2026-11-20T10:00:00.000Z",
+        } as never),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        data: { messageKey: "common.errors.sessionNotOpen" },
+      });
+    }
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("an undecided vote between alternatives sent twice (VOT-2)", () => {
+  it("moves the token on, and answers 409 when it already moved", async () => {
+    await expect(
+      touchVotedWithoutEffect(
+        fakeTx([], [{ id: "e3" }]),
+        "e3",
+        "2026-11-20T10:00:00.000Z",
+        { code: "E3" },
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      touchVotedWithoutEffect(
+        fakeTx([], []),
+        "e3",
+        "2026-11-20T10:00:00.000Z",
+        {
+          code: "E3",
+        },
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "E3 ha cambiado. Recarga la página",
+    });
   });
 });

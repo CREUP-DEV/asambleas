@@ -5,6 +5,7 @@ import {
 } from "~~/shared/constants/domain";
 import type {
   AmendmentDto,
+  AmendmentOutcomeDto,
   ControlSheetAmendmentBody,
   ControlSheetAmendmentRowDto,
   ControlSheetEditDto,
@@ -25,6 +26,21 @@ import {
   type ItemVoteContext,
   type TreatedControl,
 } from "./-model";
+import {
+  LEAVE_SAVE_WAIT_MS,
+  keepMyObservations,
+  newObservationDraft,
+  observationConflicted,
+  observationDirty,
+  observationSaved,
+  observationUnsaved,
+  releaseObservationDraft,
+  settledWithin,
+  syncObservationDraft,
+  takeTheirObservations,
+  unsavedObservationIds,
+  type ObservationDraft,
+} from "./-drafts";
 
 /**
  * Everything one row of the control sheet edits, in a side panel: the
@@ -38,7 +54,11 @@ import {
  * `treated`, `treatedPending`; the lists only show it); a field someone
  * else changed meanwhile shows what is there now (and, for the
  * observations, both texts to choose). The draft is kept apart from fetched data, so a refetch while
- * typing never replaces it.
+ * typing never replaces it, and apart for each row (-drafts.ts): closing
+ * the panel or opening another row while it saves never loses it. What
+ * could not be saved once the panel left its row (a conflict, the network)
+ * stays in its row and says so in one notice that opens it again; leaving
+ * the page with it asks first.
  */
 
 export type RowPanelTarget =
@@ -97,8 +117,17 @@ const emit = defineEmits<{
    * once.
    */
   speakersUpdated: [turns: SpeakingTurnDto[]];
-  /** A result was recorded or annulled here: the page fetches again. */
-  resultChanged: [];
+  /**
+   * A result was recorded or annulled here: the amendment as it stands now
+   * (null: a document's final vote, or a write that failed), for the page
+   * to show at once before it fetches again.
+   */
+  resultChanged: [outcome: AmendmentOutcomeDto | null];
+  /**
+   * Open the panel on this row again: the reader asked for it from the
+   * notice of its unsaved observations.
+   */
+  reopen: [target: RowPanelTarget];
 }>();
 
 const { t, locale } = useI18n();
@@ -119,8 +148,7 @@ const url = computed(() => {
   return `${props.apiBase}/control-sheet/${segment}/${encodeURIComponent(subjectId.value)}`;
 });
 
-const title = computed(() => {
-  const target = props.target;
+function titleOf(target: RowPanelTarget | null | undefined): string {
   if (!target) return "";
   if (target.kind === "amendment") return target.code;
   return numberedAgendaTitle(
@@ -128,7 +156,8 @@ const title = computed(() => {
     target.row.title,
     t("agenda.unlisted.inText"),
   );
-});
+}
+const title = computed(() => titleOf(props.target));
 
 function when(edit: ControlSheetEditDto): string {
   return formatMoment(edit.at, { locale: locale.value }).text;
@@ -158,21 +187,35 @@ async function patch(
 
 // Observations ---------------------------------------------------------------
 
-const draft = ref("");
-/** The text and token the draft started from. */
-const base = ref<{ text: string; token: string | null }>({
-  text: "",
-  token: null,
-});
-const saving = ref(false);
-const savedAt = ref<number | null>(null);
-const conflict = ref<{
-  name: string | null;
-  text: string;
-  token: string | null;
-} | null>(null);
+/** Each row's observations as written here, by item or amendment id. */
+const drafts = reactive(new Map<string, ObservationDraft>()) as Map<
+  string,
+  ObservationDraft
+>;
+/** Where each entry saves, and the row to open again for it. */
+const draftPlaces = new Map<
+  string,
+  { kind: "item" | "amendment"; url: string; target: RowPanelTarget }
+>();
+/** The saves on their way, by row: closing waits for its row's. */
+const savesOnTheWay = new Map<string, Promise<boolean>>();
 
-const dirty = computed(() => draft.value.trim() !== base.value.text);
+/** The row on show's entry. */
+const shownDraft = computed(() =>
+  subjectId.value ? (drafts.get(subjectId.value) ?? null) : null,
+);
+const draft = computed<string>({
+  get: () => shownDraft.value?.draft ?? "",
+  set: (value) => {
+    if (shownDraft.value) shownDraft.value.draft = value;
+  },
+});
+const saving = computed(() => Boolean(shownDraft.value?.saving));
+const savedAt = computed(() => shownDraft.value?.savedAt ?? null);
+const conflict = computed(() => shownDraft.value?.conflict ?? null);
+const dirty = computed(() =>
+  shownDraft.value ? observationDirty(shownDraft.value) : false,
+);
 
 /** The presenter's answer chosen in the panel, saved with the rest. */
 const positionAnswer = ref<{
@@ -188,100 +231,197 @@ const anySaving = computed(
   () => saving.value || Boolean(positionAnswer.value?.saving),
 );
 
-/** The one «Guardar»: the observations and the answer, whichever changed. */
-async function saveAll(): Promise<void> {
-  await Promise.all([
-    dirty.value ? saveObservations() : Promise.resolve(),
-    positionDirty.value ? positionAnswer.value?.save() : Promise.resolve(true),
+/**
+ * The one «Guardar»: the observations and the answer, whichever changed.
+ * Whether everything was saved (false: a conflict to choose from, or a
+ * failure, which keeps the text).
+ */
+async function saveAll(): Promise<boolean> {
+  const [observations, answer] = await Promise.all([
+    dirty.value || conflict.value ? saveObservations() : Promise.resolve(true),
+    positionDirty.value
+      ? (positionAnswer.value?.save() ?? Promise.resolve(true))
+      : Promise.resolve(true),
   ]);
+  return observations && answer;
 }
 
-/** Takes the row's text and token as the start of the draft. */
-function syncDraft(): void {
-  const row = sheetRow.value;
-  base.value = {
-    text: row?.observations ?? "",
-    token: row?.observationsUpdatedAt ?? null,
-  };
-  draft.value = base.value.text;
+/** The row's entry: the one kept for it, or a new one from its text. */
+function showDraft(id: string): void {
+  if (!drafts.has(id)) drafts.set(id, newObservationDraft(sheetRow.value));
+  rememberPlace(id);
 }
 
-// Another row opened: start over. The panel losing its row for a moment
-// (a refetch, the debate moving) keeps everything.
-watch(subjectId, (id, previous) => {
-  if (!id || id === previous) return;
-  syncDraft();
-  conflict.value = null;
-  savedAt.value = null;
+/** Where row `id` saves, while the panel shows it. */
+function rememberPlace(id: string): void {
+  if (!props.target || !url.value || subjectId.value !== id) return;
+  draftPlaces.set(id, {
+    kind: props.target.kind,
+    url: url.value,
+    target: props.target,
+  });
+}
+
+/** Row `id` has nothing left to keep: its entry and its notice go. */
+function forgetDraft(id: string): void {
+  releaseObservationDraft(drafts, id);
+  if (!drafts.has(id)) {
+    draftPlaces.delete(id);
+    toast.remove(unsavedNoticeId(id));
+  }
+}
+
+// Another row opened: its own entry, the one kept for it or a new one; the
+// row left keeps its entry only while it has something to keep (a save on
+// its way, a draft, a conflict), and says so in its notice unless a save is
+// on its way (its answer will). The panel losing its row for a moment (a
+// refetch, the debate moving) keeps everything.
+let shownSubject: string | null = subjectId.value;
+watch(subjectId, (id) => {
+  if (!id || id === shownSubject) return;
+  const left = shownSubject;
+  if (left) {
+    forgetDraft(left);
+    const kept = drafts.get(left);
+    if (kept && !kept.saving && observationUnsaved(kept)) noticeUnsaved(left);
+  }
+  shownSubject = id;
+  showDraft(id);
   history.value = null;
   historyOpen.value = false;
 });
+// The row brought up to date by a refetch: where it saves, and the row to
+// open again, are its fresh ones.
+watch(
+  () => props.target,
+  () => {
+    if (subjectId.value) rememberPlace(subjectId.value);
+  },
+);
 // A refetch brings someone else's text: take it unless the reader is typing.
 watch(
   () => [sheetRow.value?.observationsUpdatedAt, sheetRow.value?.observations],
   () => {
+    const current = shownDraft.value;
+    if (!current) return;
     const token = sheetRow.value?.observationsUpdatedAt ?? null;
-    if (dirty.value || saving.value || token === base.value.token) return;
-    syncDraft();
-    savedAt.value = null;
+    if (observationDirty(current) || current.saving) return;
+    if (token === current.base.token) return;
+    syncObservationDraft(current, sheetRow.value);
+    current.savedAt = null;
   },
 );
-syncDraft();
+if (subjectId.value) showDraft(subjectId.value);
 
-async function saveObservations(): Promise<void> {
+/** The panel is open on row `id`, where its problems show by themselves. */
+function shownHere(id: string): boolean {
+  return open.value && subjectId.value === id;
+}
+
+/** The page was left (after asking): no notice can open a row any more. */
+let gone = false;
+
+function unsavedNoticeId(id: string): string {
+  return `control-sheet-unsaved-${id}`;
+}
+
+/**
+ * One notice for a row whose observations are not saved and no longer on
+ * show (the panel closed, or on another row): it stays until they are
+ * saved or the reader opens the row again from it.
+ */
+function noticeUnsaved(id: string): void {
+  const place = draftPlaces.get(id);
+  // A save that answers after the page was left could open nothing.
+  if (!place || gone) return;
+  toast.add({
+    id: unsavedNoticeId(id),
+    title: t("controlSheet.panel.unsavedNotice", {
+      row: titleOf(place.target),
+    }),
+    color: "warning",
+    icon: "i-lucide-triangle-alert",
+    duration: Number.POSITIVE_INFINITY,
+    actions: [
+      {
+        label: t("controlSheet.panel.unsavedOpen"),
+        color: "warning",
+        variant: "outline",
+        onClick: () => {
+          toast.remove(unsavedNoticeId(id));
+          emit("reopen", place.target);
+        },
+      },
+    ],
+  });
+}
+
+/**
+ * Saves row `id`'s observations (the row on show by default), and says
+ * whether they are saved: false while two versions wait for the reader's
+ * choice, or when the save failed (the text stays). The answer lands on that
+ * row's entry, whichever row the panel shows by then; a save already on its
+ * way is waited for first.
+ */
+async function saveObservations(
+  id: string | null = subjectId.value,
+): Promise<boolean> {
+  const current = id ? drafts.get(id) : undefined;
+  const place = id ? draftPlaces.get(id) : undefined;
+  if (!id || !current || !place) return true;
   // While two versions are shown, only the reader's choice saves.
-  if (conflict.value) return;
-  if (!url.value || !props.target || !props.can.edit) return;
-  if (saving.value || !dirty.value) return;
-  const target = url.value;
-  const kind = props.target.kind;
-  const subject = subjectId.value;
-  const sent = draft.value;
-  const same = () => subjectId.value === subject;
-  saving.value = true;
-  try {
-    const row = await patch(target, {
-      observations: { value: sent, updatedAt: base.value.token },
-    });
-    applySaved(kind, row);
-    if (!same()) return;
-    base.value = { text: row.observations, token: row.observationsUpdatedAt };
-    // What was typed while it saved stays in the draft.
-    if (draft.value === sent) draft.value = row.observations;
-    savedAt.value = Date.now();
-    if (historyOpen.value) void loadHistory();
-  } catch (error) {
-    const row = staleSheetRow<SheetRow>(error);
-    if (row) {
-      applySaved(kind, row);
-      if (same()) {
-        conflict.value = {
-          name: row.observationsEdited?.by ?? null,
-          text: row.observations,
-          token: row.observationsUpdatedAt,
-        };
-      }
-    } else {
-      api.notifyError(error, "controlSheet.panel.saveFailed");
-    }
-  } finally {
-    saving.value = false;
+  if (current.conflict) return false;
+  if (!props.can.edit) return true;
+  const onTheWay = savesOnTheWay.get(id);
+  if (onTheWay) {
+    // What was typed while it saved goes next.
+    return (await onTheWay) && saveObservations(id);
   }
+  if (!observationDirty(current)) return true;
+  const sent = current.draft;
+  current.saving = true;
+  const run = (async (): Promise<boolean> => {
+    try {
+      const row = await patch(place.url, {
+        observations: { value: sent, updatedAt: current.base.token },
+      });
+      applySaved(place.kind, row);
+      observationSaved(current, sent, row, Date.now());
+      if (shownHere(id) && historyOpen.value) void loadHistory();
+      return true;
+    } catch (error) {
+      const row = staleSheetRow<SheetRow>(error);
+      if (row) {
+        applySaved(place.kind, row);
+        observationConflicted(current, row);
+      }
+      // On show, the conflict is in the panel and a failure says so; once
+      // the panel has left the row, one notice keeps it in sight.
+      if (!shownHere(id)) noticeUnsaved(id);
+      else if (!row) api.notifyError(error, "controlSheet.panel.saveFailed");
+      return false;
+    } finally {
+      current.saving = false;
+      savesOnTheWay.delete(id);
+      if (subjectId.value !== id) forgetDraft(id);
+      else if (!observationUnsaved(current)) {
+        toast.remove(unsavedNoticeId(id));
+      }
+    }
+  })();
+  savesOnTheWay.set(id, run);
+  return run;
 }
 
 function useTheirs(): void {
-  const theirs = conflict.value;
-  if (!theirs) return;
-  base.value = { text: theirs.text, token: theirs.token };
-  draft.value = theirs.text;
-  conflict.value = null;
+  if (!shownDraft.value) return;
+  takeTheirObservations(shownDraft.value);
+  if (subjectId.value) toast.remove(unsavedNoticeId(subjectId.value));
 }
 
 function keepMine(): void {
-  const theirs = conflict.value;
-  if (!theirs) return;
-  base.value = { text: theirs.text, token: theirs.token };
-  conflict.value = null;
+  if (!shownDraft.value) return;
+  keepMyObservations(shownDraft.value);
   void saveObservations();
 }
 
@@ -292,17 +432,54 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-// Leaving with unsaved changes saves them (closing the panel, going to
-// another page); closing the tab asks first.
+// Closing the panel saves what waits; what cannot be saved (two versions to
+// choose from, a failure) stays in its row, with its notice.
 watch(open, (value) => {
-  if (!value && anyDirty.value) void saveAll();
-});
-onBeforeRouteLeave(() => {
+  const id = subjectId.value;
+  if (value || !id) return;
+  if (conflict.value) noticeUnsaved(id);
   if (anyDirty.value) void saveAll();
+});
+// The panel open on a row shows its problems itself: no notice for it.
+watch([open, subjectId], ([value, id]) => {
+  if (value && id) toast.remove(unsavedNoticeId(id));
+});
+// Gone with the page (left after asking): its notices could open nothing.
+onBeforeUnmount(() => {
+  gone = true;
+  for (const id of new Set([...drafts.keys(), ...draftPlaces.keys()])) {
+    toast.remove(unsavedNoticeId(id));
+  }
+});
+/**
+ * Leaving the page saves every row's observations that wait, and asks
+ * before losing those that could not be saved; staying opens the first of
+ * them again. The saves are waited for LEAVE_SAVE_WAIT_MS at most: on a
+ * connection that hangs, what is still saving counts as unsaved and the
+ * question comes at once. Closing the tab asks first.
+ */
+onBeforeRouteLeave(async () => {
+  await settledWithin(
+    Promise.all([
+      ...unsavedObservationIds(drafts).map((id) => saveObservations(id)),
+      positionDirty.value
+        ? (positionAnswer.value?.save() ?? Promise.resolve(true))
+        : Promise.resolve(true),
+    ]),
+    LEAVE_SAVE_WAIT_MS,
+  );
+  const left = unsavedObservationIds(drafts);
+  if (left.length === 0) return true;
+  if (window.confirm(t("controlSheet.panel.leaveUnsaved"))) return true;
+  const place = draftPlaces.get(left[0]!);
+  if (place) emit("reopen", place.target);
+  return false;
 });
 if (import.meta.client) {
   useEventListener(window, "beforeunload", (event: BeforeUnloadEvent) => {
-    if (anyDirty.value) event.preventDefault();
+    if (anyDirty.value || unsavedObservationIds(drafts).length > 0) {
+      event.preventDefault();
+    }
   });
 }
 
@@ -461,7 +638,8 @@ const showUnlist = computed(
 );
 
 async function unlist(): Promise<void> {
-  if (dirty.value) await saveObservations();
+  // What could not be saved stays in sight, with the row still listed.
+  if (dirty.value && !(await saveObservations())) return;
   const done = await saveField("listed", {
     listed: {
       value: false,
@@ -614,7 +792,7 @@ function historyDetail(
           :api-base="apiBase"
           :context="voteContext"
           :code="target.code"
-          @changed="emit('resultChanged')"
+          @changed="(outcome) => emit('resultChanged', outcome)"
         />
 
         <!-- The presenter's answer to the amendment -->
@@ -643,7 +821,7 @@ function historyDetail(
           :documents="target.row.documents"
           :api-base="apiBase"
           :context="voteContext"
-          @changed="emit('resultChanged')"
+          @changed="emit('resultChanged', null)"
         />
 
         <!-- Result by hand (items) -->
@@ -764,7 +942,7 @@ function historyDetail(
             autoresize
             class="w-full"
             @keydown="onKeydown"
-            @blur="saveObservations"
+            @blur="() => saveObservations()"
           />
           <!-- Its height kept, so the button showing never moves the panel. -->
           <div

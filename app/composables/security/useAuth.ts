@@ -1,6 +1,11 @@
 import { createAuthClient } from "better-auth/vue";
 import type { ImpersonationDto } from "~~/shared/types/api";
 
+/**
+ * better-auth's client: sign-in and sign-out here, and the session
+ * keepalive (app/plugins/session-keepalive.client.ts), whose answer only
+ * renews the cookie and is never read as the identity.
+ */
 export const authClient = createAuthClient();
 
 /**

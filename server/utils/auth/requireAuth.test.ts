@@ -159,4 +159,92 @@ describe("getAuthUserWithRole", () => {
       expect.objectContaining({ statusCode: 401 }),
     );
   });
+
+  it("never refreshes the session: only the browser's get-session does", async () => {
+    getSession.mockResolvedValue({
+      user: { id: "u1" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue(row(user("u1", "Asociado")));
+    resolveImpersonation.mockResolvedValue(null);
+
+    const event = fakeEvent();
+    await getAuthUserWithRole(event);
+    expect(getSession).toHaveBeenCalledTimes(1);
+    expect(getSession.mock.calls[0]![0]).toMatchObject({
+      headers: event.headers,
+      query: { disableRefresh: true },
+    });
+  });
+});
+
+describe("getAuthUserWithRole: the member's kind", () => {
+  beforeEach(() => {
+    findFirst.mockReset();
+    getSession.mockReset();
+    resolveImpersonation.mockReset();
+  });
+
+  it("reads it with the user and keeps it on the context, out of the user", async () => {
+    const me = { ...user("u1", "CEA"), memberId: "m1" };
+    getSession.mockResolvedValue({
+      user: { id: "u1" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue({
+      ...me,
+      accessRevokedAt: null,
+      member: { kind: "executive" },
+    });
+    resolveImpersonation.mockResolvedValue(null);
+
+    const event = fakeEvent();
+    const loaded = await getAuthUserWithRole(event);
+    expect(loaded).toEqual(me);
+    expect(loaded).not.toHaveProperty("member");
+    expect(loaded).not.toHaveProperty("memberKind");
+    expect(event.context.memberKind).toBe("executive");
+    expect(findFirst.mock.calls[0]![0]).toMatchObject({
+      with: { member: { columns: { kind: true } } },
+    });
+  });
+
+  it("is null without a member", async () => {
+    getSession.mockResolvedValue({
+      user: { id: "u1" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue({
+      ...row(user("u1", "Otro")),
+      member: null,
+    });
+    resolveImpersonation.mockResolvedValue(null);
+
+    const event = fakeEvent();
+    await getAuthUserWithRole(event);
+    expect(event.context.memberKind).toBeNull();
+  });
+
+  it("is left unset while an Admin acts as another account", async () => {
+    const admin = { ...user("admin", "Admin"), memberId: "cea" };
+    const target = { ...user("target", "Asociado"), memberId: "m2" };
+    getSession.mockResolvedValue({
+      user: { id: "admin" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue({
+      ...admin,
+      accessRevokedAt: null,
+      member: { kind: "executive" },
+    });
+    resolveImpersonation.mockResolvedValue({
+      user: target,
+      impersonation: { id: "imp1", targetUserId: "target" },
+    });
+
+    const event = fakeEvent();
+    await getAuthUserWithRole(event);
+    // The Admin's own kind must never stand for the target's.
+    expect(event.context).not.toHaveProperty("memberKind");
+  });
 });

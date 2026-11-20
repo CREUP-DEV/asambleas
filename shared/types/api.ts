@@ -1446,6 +1446,17 @@ export interface BulkAssentDto {
 }
 
 /**
+ * POST .../amendments/lapse (whoever records results): several undecided
+ * amendments marked as lapsed in one request (the lapse offer after a
+ * decision), each with the `updatedAt` it was seen at. Same shape as
+ * BulkAssentBody.
+ */
+export type BulkLapseBody = BulkAssentBody;
+
+/** Response of POST .../amendments/lapse: as BulkAssentDto. */
+export type BulkLapseDto = BulkAssentDto;
+
+/**
  * POST .../amendments/[amendment]/correction (amendment:review): a submitted,
  * undecided amendment goes back to draft with a note for its authors. With
  * `correctable: false` (user's decision of 2026-11-19) it cannot be
@@ -1816,7 +1827,11 @@ export interface HeadcountDto {
 /**
  * GET /api/assemblies/[assembly]/headcounts (everyone who sees the
  * assembly). Headcounts newest first; `latest` is the one in force
- * (headcounts[0]). `members` are those a new count lists, in the order of
+ * (headcounts[0]), with its entries and guests. For everyone but the Mesa
+ * the items of `headcounts` carry their figures only (`entries` and
+ * `guests` empty, `attending` still counted): the room reads who was
+ * counted in `latest` alone, and earlier counts as a line of figures. The
+ * Mesa, which corrects any count, gets every one whole. `members` are those a new count lists, in the order of
  * the roll call (compareRollCall): the active asociados, who vote, then the
  * active sectorials, who only attend; `guests`, the accounts with the role
  * Invitado and access. Only the Mesa (session:moderate) gets either list,

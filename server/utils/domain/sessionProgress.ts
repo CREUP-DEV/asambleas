@@ -40,14 +40,22 @@ import { loadItemVoteRows } from "./votes";
  * row FOR UPDATE: the sheet's writes take it FOR SHARE first, so they wait.
  */
 
-/** Stamps the first time a document goes on screen in session. */
+/**
+ * Stamps the first time a document goes on screen in session. Its
+ * `updatedAt` stays: the stamp is in no DTO and only `live_changed` (no
+ * document event) goes with it, so a moved `updatedAt` would make the next
+ * edit of a form open on the document fail as stale (409).
+ */
 export async function stampProjected(
   tx: Executor,
   documentId: string,
 ): Promise<void> {
   await tx
     .update(documents)
-    .set({ firstProjectedAt: sql`now()` })
+    .set({
+      firstProjectedAt: sql`now()`,
+      updatedAt: sql`${documents.updatedAt}`,
+    })
     .where(
       and(eq(documents.id, documentId), isNull(documents.firstProjectedAt)),
     );

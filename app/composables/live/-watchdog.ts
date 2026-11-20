@@ -72,6 +72,29 @@ export function shouldReopenOnShow(input: {
 }
 
 /**
+ * Whether the network coming back (`online`) must reopen the stream. The
+ * old socket may be dead even if it looks open, so it does, unless the
+ * stream was opened after the browser last went offline and has delivered
+ * its `ready` since: a healthy stream another handler (`visibilitychange`
+ * on a phone unlocked with the network already up) opened a moment ago,
+ * which reopening would only close, at the cost of a second full refetch.
+ * One still connecting is reopened (it may have started while offline),
+ * and so is any stream when no `offline` was ever seen.
+ */
+export function shouldReopenOnOnline(input: {
+  /** The current stream delivered its `ready`. */
+  connected: boolean;
+  /** When the current stream was opened; null if none ever was. */
+  openedAt: number | null;
+  /** When the browser last said it went offline; null if it never did. */
+  lastOfflineAt: number | null;
+}): boolean {
+  if (!input.connected) return true;
+  if (input.openedAt === null || input.lastOfflineAt === null) return true;
+  return input.openedAt <= input.lastOfflineAt;
+}
+
+/**
  * Whether a `pageshow` must reopen the stream: only a page restored from the
  * browser's cache (`persisted`), whose stream missed everything in between,
  * and only when no stream was opened in the last LIVE_RESTORE_FRESH_MS (the

@@ -40,7 +40,12 @@ const props = defineProps<{
   context: ItemVoteContext;
   code: string;
 }>();
-const emit = defineEmits<{ changed: [] }>();
+/**
+ * Recorded: the amendment as it stands now, for the page to show at once
+ * (the buttons follow it); null when a write failed. Either way the page
+ * fetches again (a vote or a reopening may change other amendments too).
+ */
+const emit = defineEmits<{ changed: [outcome: AmendmentOutcomeDto | null] }>();
 
 const { t } = useI18n();
 const api = useApi();
@@ -104,7 +109,7 @@ async function run(action: OutcomeAction): Promise<boolean> {
       color: "success",
       icon: "i-lucide-check",
     });
-    emit("changed");
+    emit("changed", result);
     return true;
   } catch (error) {
     if (sessionErrorData(error)?.tie === true) {
@@ -116,7 +121,7 @@ async function run(action: OutcomeAction): Promise<boolean> {
       });
     } else {
       api.notifyError(error, "controlSheet.results.failed");
-      emit("changed");
+      emit("changed", null);
     }
     return false;
   } finally {

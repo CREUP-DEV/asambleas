@@ -261,24 +261,155 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
 }
 
 /**
+ * useState key of the assemblies (by id) whose shared agenda a page kept
+ * without following every event the agenda pages follow (Directo): the
+ * next useAssemblyAgenda refetches it in the background.
+ */
+const AGENDA_BEHIND_STATE_KEY = "assembly-agenda-behind";
+
+/**
+ * The one fetch of the current assembly's agenda, under one key per
+ * assembly. Every page that reads the agenda must go through it: the first
+ * caller's handler serves every later refresh of the key, so a second
+ * definition (another url, a handler that answers null) would leak into
+ * the other pages.
+ */
+function useAgendaFetch(immediate: boolean) {
+  const { assembly, apiBase } = useCurrentAssembly();
+  return useFetch<AgendaDto>(() => `${apiBase.value}/agenda`, {
+    key: computed(() => `assembly-agenda-${assembly.value?.id ?? "none"}`),
+    dedupe: "defer",
+    immediate,
+  });
+}
+
+/** What a page that keeps the shared agenda does with a live batch. */
+export type SharedAgendaAction = "refresh" | "behind" | "none";
+
+/**
+ * For a page that keeps the shared agenda (useSharedAgendaFetch) but
+ * refetches it only on its own, narrower filter (`follows`), and only while
+ * `active`: refetch when both hold; otherwise, when its filter or the agenda
+ * pages' (shouldRefetchAgenda) would have refetched, mark the agenda behind,
+ * so the next agenda page does it instead of showing stale counts.
+ */
+export function sharedAgendaAction(
+  events: readonly LiveEventDto[],
+  options: {
+    follows: (events: readonly LiveEventDto[]) => boolean;
+    active: boolean;
+  },
+): SharedAgendaAction {
+  const own = options.follows(events);
+  if (own && options.active) return "refresh";
+  return own || shouldRefetchAgenda(events) ? "behind" : "none";
+}
+
+/**
+ * Whether a mark of "behind" means anything for the shared agenda fetch in
+ * this state: only while it holds an agenda or has a request in flight,
+ * which the next agenda page would take over. With neither, that page
+ * fetches the agenda anew, so marking it would only add a second request.
+ */
+export function agendaCanFallBehind(status: string, held: boolean): boolean {
+  return held || status === "pending";
+}
+
+/** When useAssemblyAgenda refetches an agenda marked behind. */
+export type BehindAgendaRefresh = "now" | "after-pending" | "none";
+
+/**
+ * When useAssemblyAgenda refetches an agenda marked behind, by the status
+ * of the shared fetch it was handed: at once when it holds a good agenda;
+ * once the request in flight settles when there is one, since it may have
+ * left before the event that set the mark (fail open: that may be the
+ * page's own first request, and then the refetch is one too many);
+ * otherwise never.
+ */
+export function behindAgendaRefresh(status: string): BehindAgendaRefresh {
+  if (status === "success") return "now";
+  return status === "pending" ? "after-pending" : "none";
+}
+
+/**
+ * The raw fetch behind useAssemblyAgenda, for a page that keeps the agenda
+ * with its own live filter and its own stale state (Directo, which shows
+ * only the title of the item in debate and must not make every phone
+ * refetch the agenda when an amendment is published). Sharing the key lets
+ * Directo and the agenda and document pages hand each other the agenda
+ * already downloaded instead of fetching it again on every move between
+ * them; call it without awaiting, and without `lazy`, which would refetch
+ * an agenda just handed over.
+ *
+ * `immediate: false` fetches nothing until `result.refresh()` (unless
+ * another page already holds the agenda). `markBehind` records that the
+ * page let through an event the agenda pages follow (sharedAgendaAction),
+ * unless the fetch holds nothing to fall behind (agendaCanFallBehind).
+ */
+export function useSharedAgendaFetch(options: { immediate?: boolean } = {}) {
+  const { assembly } = useCurrentAssembly();
+  const behind = useState<Record<string, true>>(
+    AGENDA_BEHIND_STATE_KEY,
+    () => ({}),
+  );
+  const result = useAgendaFetch(options.immediate ?? true);
+  function markBehind(): void {
+    const id = assembly.value?.id;
+    if (!id || behind.value[id]) return;
+    const held = result.data.value !== undefined && result.data.value !== null;
+    if (!agendaCanFallBehind(result.status.value, held)) return;
+    behind.value = { ...behind.value, [id]: true };
+  }
+  return { result, markBehind };
+}
+
+/**
  * The agenda of the current assembly (flat items plus visible documents),
- * shared by the overview, agenda and convocatoria pages under one key and
- * refreshed on live events. Awaitable, like useFetch.
+ * shared under one key by the overview, agenda, follow-up, documents and
+ * convocatoria pages, the document's breadcrumb and reading bar, and
+ * Directo (useSharedAgendaFetch), and refreshed on live events
+ * (shouldRefetchAgenda). Awaitable, like useFetch: an agenda another page
+ * still holds is used at once, without a request.
  *
  * `data` keeps the last good agenda when a refresh fails (`stale` is then
  * true), so the tree and any dialog open on it stay. It stays writable for
  * optimistic updates and their rollbacks.
  */
 export function useAssemblyAgenda() {
-  const { assembly, apiBase, onLive } = useCurrentAssembly();
+  const { assembly, onLive } = useCurrentAssembly();
   const { t } = useI18n();
-  const result = useFetch<AgendaDto>(() => `${apiBase.value}/agenda`, {
-    key: computed(() => `assembly-agenda-${assembly.value?.id ?? "none"}`),
-    dedupe: "defer",
-  });
+  const result = useAgendaFetch(true);
   const { data: fetched, stale } = keepLastGoodData(result, {
     resetOn: () => assembly.value?.id,
   });
+  if (import.meta.client) {
+    // Directo kept this agenda without following some event this page
+    // follows (an amendment published or withdrawn changes the counts):
+    // show it at once and refetch it in the background. The awaitable
+    // above already resolved, so the page does not wait for it. Only after
+    // keepLastGoodData has seen the agenda handed over as good, so a
+    // refetch that fails keeps it on screen (stale) instead of wiping it.
+    const behind = useState<Record<string, true>>(
+      AGENDA_BEHIND_STATE_KEY,
+      () => ({}),
+    );
+    const id = assembly.value?.id;
+    if (id && behind.value[id]) {
+      behind.value = Object.fromEntries(
+        Object.entries(behind.value).filter(([key]) => key !== id),
+      ) as Record<string, true>;
+      const when = behindAgendaRefresh(result.status.value);
+      if (when === "now") {
+        void result.refresh();
+      } else if (when === "after-pending") {
+        const stop = watch(result.status, (status) => {
+          if (status === "pending") return;
+          stop();
+          void result.refresh();
+        });
+      }
+    }
+  }
   // An item sent without its title gets a neutral one (titleHidden).
   const data = agendaWithTitles(fetched, () => t("agenda.hiddenTitle"));
   useStaleDataNotice(stale);

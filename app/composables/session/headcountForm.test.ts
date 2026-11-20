@@ -9,7 +9,9 @@ import {
   headcountEntriesOf,
   headcountFormFrom,
   headcountFormMembers,
+  headcountMovedOn,
   delegationsReceived,
+  rebaseHeadcountForm,
   setHeadcountDelegate,
   setHeadcountPresent,
   type HeadcountForm,
@@ -205,5 +207,92 @@ describe("headcount form", () => {
     const form = guestFormFrom(guests, previous);
     expect(form).toEqual({ "u-zoe": false, "u-ana": true });
     expect(guestIdsOf(form)).toEqual(["u-ana"]);
+  });
+});
+
+describe("rebaseHeadcountForm", () => {
+  const row = (present: boolean, delegateId: string | null = null) => ({
+    present,
+    delegateId,
+  });
+  const base = {
+    form: { a: row(true), b: row(false, "a"), c: row(false) },
+    guests: { ana: false, luis: true },
+    note: "",
+  };
+
+  it("puts this device's changes over someone else's correction", () => {
+    // This device marked c in the room and wrote a note.
+    const mine = {
+      form: { ...base.form, c: row(true) },
+      guests: base.guests,
+      note: "Llega tarde",
+    };
+    // Someone else took b's delegation away and marked Ana in.
+    const theirs = {
+      form: { ...base.form, b: row(false) },
+      guests: { ana: true, luis: true },
+      note: "",
+    };
+    expect(rebaseHeadcountForm(base, mine, theirs)).toEqual({
+      form: { a: row(true), b: row(false), c: row(true) },
+      guests: { ana: true, luis: true },
+      note: "Llega tarde",
+      clashes: [],
+    });
+  });
+
+  it("keeps their correction where this device changed nothing", () => {
+    const theirs = {
+      form: { a: row(false), b: row(true), c: row(false) },
+      guests: { ana: false, luis: false },
+      note: "Corregido",
+    };
+    expect(rebaseHeadcountForm(base, base, theirs)).toEqual({
+      ...theirs,
+      clashes: [],
+    });
+  });
+
+  it("names the members both changed, each its own way, and keeps this device's", () => {
+    const mine = { ...base, form: { ...base.form, b: row(true) } };
+    const theirs = { ...base, form: { ...base.form, b: row(false, "c") } };
+    const merged = rebaseHeadcountForm(base, mine, theirs);
+    expect(merged.form.b).toEqual(row(true));
+    expect(merged.clashes).toEqual(["b"]);
+    // The same change on both sides is no clash.
+    expect(rebaseHeadcountForm(base, mine, mine).clashes).toEqual([]);
+  });
+
+  it("follows the members the newer copy lists", () => {
+    const mine = { ...base, form: { ...base.form, c: row(true) } };
+    const theirs = {
+      ...base,
+      form: { a: row(true), b: row(false), d: row(true) },
+    };
+    expect(rebaseHeadcountForm(base, mine, theirs).form).toEqual({
+      a: row(true),
+      b: row(false),
+      d: row(true),
+    });
+  });
+});
+
+describe("headcountMovedOn", () => {
+  const sent = { id: "h1", updatedAt: "2026-11-20T10:00:00.000Z" };
+  const copy = (updatedAt: string) =>
+    ({ id: "h1", updatedAt }) as unknown as HeadcountDto;
+
+  it("is true when the list holds a newer copy of the count", () => {
+    expect(headcountMovedOn([copy("2026-11-20T10:05:00.000Z")], sent)).toBe(
+      true,
+    );
+  });
+
+  it("is false for a 409 on a count nobody else saved since", () => {
+    // The session is not open: the copy read again is the same one.
+    expect(headcountMovedOn([copy(sent.updatedAt)], sent)).toBe(false);
+    expect(headcountMovedOn([], sent)).toBe(false);
+    expect(headcountMovedOn(undefined, sent)).toBe(false);
   });
 });

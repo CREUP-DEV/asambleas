@@ -11,6 +11,8 @@ import {
   affectsAgenda,
   affectsLiveVote,
   affectsSpeakers,
+  affectsSpokenTurns,
+  isNewerScroll,
   liveAssentKey,
   liveAmendmentCode,
   liveAmendmentCounts,
@@ -136,6 +138,30 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   ...over,
 });
 
+describe("isNewerScroll", () => {
+  const at = (time: string, documentId = "d1") => ({
+    documentId,
+    at: `2026-11-20T10:00:${time}Z`,
+  });
+
+  it("takes a read when the page has no position", () => {
+    expect(isNewerScroll(null, at("05"))).toBe(true);
+    expect(isNewerScroll(undefined, at("05"))).toBe(true);
+  });
+
+  it("drops a read that a newer position overtook", () => {
+    expect(isNewerScroll(at("10"), at("05"))).toBe(false);
+    expect(isNewerScroll(at("10"), at("10"))).toBe(false);
+    expect(isNewerScroll(at("05"), at("10"))).toBe(true);
+  });
+
+  it("judges by time whatever the document", () => {
+    // A late read of the previous document never replaces the new one's.
+    expect(isNewerScroll(at("10", "d2"), at("05", "d1"))).toBe(false);
+    expect(isNewerScroll(at("05", "d1"), at("10", "d2"))).toBe(true);
+  });
+});
+
 describe("live speakers", () => {
   it("stays hidden unless the Mesa shows the turns", () => {
     const dto = speakers([turn("a", { status: "speaking" })]);
@@ -169,7 +195,7 @@ describe("live speakers", () => {
     });
   });
 
-  it("refreshes on speaking-turn and live-state changes", () => {
+  it("refreshes on speaking-turn changes, not on the live state", () => {
     const event = (over: Partial<LiveEventDto>): LiveEventDto => ({
       type: "amendment_submitted",
       entityType: "amendment",
@@ -178,8 +204,16 @@ describe("live speakers", () => {
     });
     expect(affectsSpeakers([event({})])).toBe(false);
     expect(affectsSpeakers([event({ type: "poll" })])).toBe(true);
+    // The Mesa's most frequent event: whether the turns show changes with
+    // speakers_visibility_changed in the same batch.
     expect(
       affectsSpeakers([event({ type: "live_changed", entityType: "live" })]),
+    ).toBe(false);
+    expect(
+      affectsSpeakers([
+        event({ type: "live_changed", entityType: "live" }),
+        event({ type: "speakers_visibility_changed", entityType: "speakers" }),
+      ]),
     ).toBe(true);
     expect(
       affectsSpeakers([
@@ -191,6 +225,35 @@ describe("live speakers", () => {
         event({ type: "speakers_visibility_changed", entityType: "speakers" }),
       ]),
     ).toBe(true);
+  });
+
+  it("reads the turns that spoke again only when they may change", () => {
+    const event = (type: string, entityType = "speakers"): LiveEventDto => ({
+      type,
+      entityType,
+      entityId: "x",
+    });
+    for (const type of [
+      "speaking_turn_started",
+      "speaking_turn_finished",
+      "speaking_turn_cancelled",
+      "speaking_turn_restored",
+      "speaking_turn_updated",
+      "speaking_turn_noted",
+      "speaking_turn_unnoted",
+    ]) {
+      expect(affectsSpokenTurns([event(type)]), type).toBe(true);
+    }
+    expect(affectsSpokenTurns([event("poll", "assembly")])).toBe(true);
+    expect(
+      affectsSpokenTurns([
+        event("speaking_turn_added"),
+        event("speaking_turn_moved"),
+        event("speakers_visibility_changed"),
+        event("live_changed", "live"),
+        event("amendment_approved", "amendment"),
+      ]),
+    ).toBe(false);
   });
 
   it("leaves the agenda alone when only the turns or the live state change", () => {

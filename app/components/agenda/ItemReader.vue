@@ -6,7 +6,7 @@ import {
   type TextSpan,
   unreadAmendmentsPath,
 } from "~/composables/document/documentLinks";
-import { isDocumentLiveBatch } from "~/composables/document/useDocument";
+import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
 
 /**
  * The published documents of an agenda item, read in place: one on show at
@@ -112,12 +112,13 @@ onMounted(() => {
   );
 });
 
-// A document that changes: the one on show is read again in place, the
+// A document that changes (affectsDocumentDto: not a vote or an answer on
+// one of its amendments): the one on show is read again in place, the
 // others when they are next opened.
 onLive((events) => {
-  const stale = [...loaded.value.keys()].filter((id) =>
-    isDocumentLiveBatch(events, id),
-  );
+  const stale = [...loaded.value.entries()]
+    .filter(([id, dto]) => affectsDocumentDto(events, id, dto.finalVote?.id))
+    .map(([id]) => id);
   if (stale.length === 0) return;
   const shown = current.value?.id;
   const kept = new Map(loaded.value);

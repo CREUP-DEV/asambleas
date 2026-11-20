@@ -5,6 +5,7 @@ import {
   LIVE_SHOW_SILENCE_MS,
   LIVE_STALE_AFTER_MS,
   isLiveStreamStale,
+  shouldReopenOnOnline,
   shouldReopenOnRestore,
   shouldReopenOnShow,
 } from "./-watchdog";
@@ -100,5 +101,35 @@ describe("shouldReopenOnRestore", () => {
     expect(restore({ openedAt: NOW })).toBe(false);
     expect(restore({ openedAt: NOW - LIVE_RESTORE_FRESH_MS })).toBe(false);
     expect(restore({ openedAt: NOW - LIVE_RESTORE_FRESH_MS - 1 })).toBe(true);
+  });
+});
+
+describe("shouldReopenOnOnline", () => {
+  const online = (
+    overrides: Partial<Parameters<typeof shouldReopenOnOnline>[0]>,
+  ) =>
+    shouldReopenOnOnline({
+      connected: true,
+      openedAt: NOW - 1_000,
+      lastOfflineAt: NOW - 5_000,
+      ...overrides,
+    });
+
+  it("leaves a stream opened and ready since the network went", () => {
+    expect(online({})).toBe(false);
+  });
+
+  it("reopens a stream older than the network's drop", () => {
+    expect(online({ openedAt: NOW - 60_000 })).toBe(true);
+    expect(online({ openedAt: NOW - 5_000 })).toBe(true);
+  });
+
+  it("reopens a stream still connecting, which may have started offline", () => {
+    expect(online({ connected: false })).toBe(true);
+  });
+
+  it("reopens as before when the browser never said it went offline", () => {
+    expect(online({ lastOfflineAt: null })).toBe(true);
+    expect(online({ openedAt: null })).toBe(true);
   });
 });

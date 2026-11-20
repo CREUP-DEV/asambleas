@@ -43,7 +43,11 @@ export interface Actor {
   impersonation?: ImpersonationContext | null;
 }
 
-/** The kind of the member an account acts for (Actor.memberKind). */
+/**
+ * The kind of the member an account acts for (Actor.memberKind), for actors
+ * whose user was not loaded by getAuthUserWithRole with it: an impersonated
+ * account and the export worker's.
+ */
 export async function loadMemberKind(
   memberId: string | null,
 ): Promise<MemberKind | null> {
@@ -67,16 +71,24 @@ export async function requireActor(event: H3Event): Promise<Actor> {
   }
 
   const admin = isAdmin(user.role?.name);
-  const permissions = await getEffectivePermissions(user);
+  const context = event.context as AuthEventContext;
+  // getAuthUserWithRole read the kind with the user; while an Admin
+  // impersonates it is left unset, and the target's is read here.
+  const [permissions, memberKind] = await Promise.all([
+    getEffectivePermissions(user),
+    context.memberKind !== undefined
+      ? Promise.resolve(context.memberKind)
+      : loadMemberKind(user.memberId),
+  ]);
 
   const actor: Actor = {
     user,
     memberId: user.memberId,
-    memberKind: await loadMemberKind(user.memberId),
+    memberKind,
     isAdmin: admin,
     permissions,
     can: (key) => admin || permissions.includes(key),
-    impersonation: (event.context as AuthEventContext).impersonation ?? null,
+    impersonation: context.impersonation ?? null,
   };
   event.context.actor = actor;
   return actor;

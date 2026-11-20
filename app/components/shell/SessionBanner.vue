@@ -9,17 +9,41 @@ import { assemblyPath } from "./Navigation.vue";
  * never shrinks the dashboard panels, and it is hidden inside that
  * assembly, whose menu leads to the live view. Dismissing it hides it until
  * another assembly goes into session.
+ *
+ * Inside an assembly that is itself in session it would stay hidden, so it
+ * asks nothing there (NAV-12 of the performance report of 2026-11): on
+ * pages of an assembly the list is fetched on the client once the hub has
+ * said which assembly it shows and that it is not in session, and again on
+ * leaving it; elsewhere it comes with the page, as before.
  */
 const REFRESH_THROTTLE_MS = 30_000;
 
 const { t } = useI18n();
 const localePath = useLocalePath();
 const route = useRoute();
+const { assembly: current } = useCurrentAssembly();
+
+const routeAssembly = computed(() => {
+  const param = route.params.assembly;
+  return typeof param === "string" ? param : null;
+});
+
+/** On a page of the assembly in session the hub shows: hidden, no fetch. */
+const insideLive = computed(() => {
+  const shown = current.value;
+  return (
+    routeAssembly.value !== null &&
+    shown?.status === "in_session" &&
+    (routeAssembly.value === shown.slug || routeAssembly.value === shown.id)
+  );
+});
 
 const { data, refresh } = useFetch<AssemblyListDto>("/api/assemblies", {
   key: "shell-in-session",
   query: { status: "in_session" },
   dedupe: "defer",
+  // Inside an assembly, wait for the hub to say whether it is in session.
+  immediate: routeAssembly.value === null,
 });
 
 const dismissed = useState<string[]>("shell-session-dismissed", () => []);
@@ -28,11 +52,6 @@ const announcement = ref("");
 const inSession = computed<AssemblySummaryDto[]>(() =>
   (data.value?.items ?? []).filter((item) => item.status === "in_session"),
 );
-
-const routeAssembly = computed(() => {
-  const param = route.params.assembly;
-  return typeof param === "string" ? param : null;
-});
 
 const visibleAssemblies = computed(() =>
   inSession.value.filter((item) => !dismissed.value.includes(item.id)),
@@ -46,7 +65,8 @@ const insideOne = computed(() =>
 );
 
 const visible = computed(
-  () => visibleAssemblies.value.length > 0 && !insideOne.value,
+  () =>
+    visibleAssemblies.value.length > 0 && !insideOne.value && !insideLive.value,
 );
 
 const single = computed(() =>
@@ -77,11 +97,12 @@ function dismiss(): void {
   ];
 }
 
-// Announce sessions that start while the page is open, not on first load.
+// Announce sessions that start while the page is open, not on first load
+// (nor on the first list a page of an assembly fetches on the client).
 watch(
-  () => inSession.value.map((item) => item.id),
+  () => (data.value ? inSession.value.map((item) => item.id) : null),
   (ids, previous) => {
-    if (!import.meta.client || !previous) return;
+    if (!import.meta.client || !ids || !previous) return;
     const started = inSession.value.filter(
       (item) => !previous.includes(item.id),
     );
@@ -93,19 +114,45 @@ watch(
   },
 );
 
+/**
+ * On a page of an assembly whose hub has not loaded it yet: whether it is
+ * in session (insideLive) is not known.
+ */
+const awaitingHub = computed(() => {
+  if (routeAssembly.value === null) return false;
+  const shown = current.value;
+  return (
+    !shown ||
+    (routeAssembly.value !== shown.slug && routeAssembly.value !== shown.id)
+  );
+});
+
 let lastRefresh = 0;
+/**
+ * Refetches at most every REFRESH_THROTTLE_MS, at once when there is no
+ * list yet; never where the banner stays hidden (insideLive) or before
+ * the hub says whether it does (awaitingHub).
+ */
 function refreshThrottled(): void {
+  if (insideLive.value || awaitingHub.value) return;
   const now = Date.now();
-  if (now - lastRefresh < REFRESH_THROTTLE_MS) return;
+  if (data.value && now - lastRefresh < REFRESH_THROTTLE_MS) return;
   lastRefresh = now;
   void refresh();
 }
 
 onMounted(() => {
-  lastRefresh = Date.now();
+  // The list came with the page; otherwise (a page of an assembly) fetch
+  // it now if the banner may show.
+  if (data.value) lastRefresh = Date.now();
+  else refreshThrottled();
 });
 
 watch(() => route.path, refreshThrottled);
+// The hub loaded an assembly not in session, or the page left one.
+watch([insideLive, awaitingHub], ([inside, awaiting]) => {
+  if (import.meta.client && !inside && !awaiting) refreshThrottled();
+});
 
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {

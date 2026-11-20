@@ -34,7 +34,10 @@ export interface LiveAttendance {
   /** Guests (accounts with the role Invitado) in the room, by name. */
   guests: string[];
   delegations: LiveDelegation[];
-  /** The counts before the latest, newest first. */
+  /**
+   * The counts before the latest, newest first: their figures only, since
+   * the server sends who was counted of the latest alone (HeadcountsDto).
+   */
   earlier: HeadcountDto[];
 }
 

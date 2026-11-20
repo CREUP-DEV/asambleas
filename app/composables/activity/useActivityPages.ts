@@ -1,4 +1,6 @@
 import type { Ref } from "vue";
+import { trailingRefresh } from "../fetch/trailingRefresh";
+import { mergeActivityHead } from "./-pages";
 import { mergeUniqueBy } from "./-present";
 
 /** A page of an activity list (ActivityPageDto, AdminImpersonationPageDto...). */
@@ -24,7 +26,10 @@ export interface UseActivityPagesOptions<T> {
  * (server-rendered), "Cargar más" appends the next ones through the
  * cursor, and any change of filters starts over. A page that arrives after
  * the filters changed is dropped, and each "Cargar más" leaves a sentence
- * for a polite live region ("Se han cargado 20 más").
+ * for a polite live region ("Se han cargado 20 más"). `refreshHead` brings
+ * the top of the list up to date (a live change) keeping what was loaded
+ * below and any «Cargar más» on its way, without dimming the list; `refresh`
+ * starts over.
  *
  * Call it from setup and await it: every composable runs before the first
  * await, so the component context is never lost.
@@ -67,7 +72,19 @@ export async function useActivityPages<
     moreFailed.value = false;
   }
 
-  watch(first.data, (page) => reset(page), { immediate: true });
+  /** A first page refreshHead put in place itself: no starting over. */
+  let ownHead: unknown = null;
+  watch(
+    first.data,
+    (page) => {
+      if (page && toRaw(page) === ownHead) {
+        ownHead = null;
+        return;
+      }
+      reset(page);
+    },
+    { immediate: true },
+  );
   watch(signature, () => {
     resetToken += 1;
     loadingMore.value = false;
@@ -76,6 +93,27 @@ export async function useActivityPages<
   const items = computed<T[]>(() =>
     mergeUniqueBy(first.data.value?.items ?? [], extra.value, options.keyOf),
   );
+
+  /**
+   * The first page again, joined to what is on show (mergeActivityHead):
+   * the new rows on top, the rows loaded below kept with the cursor, unless
+   * the new page does not reach them (then the list starts over). Dropped
+   * when the filters changed meanwhile or a fetch of the first page is on
+   * its way; a failure keeps the list as it is.
+   */
+  async function fetchHead(): Promise<void> {
+    if (!enabled.value) return;
+    const asked = signature.value;
+    const page = await api.get<P>(options.url, { ...options.query.value });
+    if (asked !== signature.value || first.status.value === "pending") return;
+    const merge = mergeActivityHead(items.value, page, options.keyOf);
+    if (merge.kind === "merge") {
+      ownHead = toRaw(page);
+      extra.value = merge.tail;
+    }
+    first.data.value = page;
+  }
+  const refreshHead = trailingRefresh(fetchHead);
 
   async function loadMore(): Promise<void> {
     const from = cursor.value;
@@ -117,6 +155,8 @@ export async function useActivityPages<
     status: first.status,
     error: first.error,
     refresh: first.refresh,
+    /** The top of the list up to date, keeping what was loaded (live). */
+    refreshHead,
     /** Pending with nothing to show yet. */
     loading: computed(
       () => first.status.value === "pending" && items.value.length === 0,

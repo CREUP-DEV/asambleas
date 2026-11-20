@@ -5,6 +5,7 @@ import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentDto,
+  AmendmentOutcomeDto,
   ControlSheetAmendmentBody,
   ControlSheetAmendmentRowDto,
   ControlSheetDto,
@@ -63,12 +64,14 @@ import {
 import {
   affectsControlSheet,
   affectsLiveDebate,
+  affectsSheetAmendments,
   affectsSheetPreview,
   amendedDocuments,
   amendmentTreatedControl,
   buildAmendmentRows,
   buildGeneralRows,
   documentAgendaTrail,
+  followWaitsForPanel,
   itemTreatedControl,
   previewAmendmentRows,
   sheetTurnsFromNotes,
@@ -339,12 +342,21 @@ const debateDocument = computed(() => {
       ) ?? null)
     : null;
 });
+/**
+ * The document of the amendment whose panel is open (null with none open):
+ * following the debate leaves it shown until the panel closes
+ * (followWaitsForPanel), so the panel's row stays in the list.
+ */
+const amendmentPanelDocumentId = ref<string | null>(null);
 const selectedDocument = computed(() => {
   const wanted = route.query[DOCUMENT_QUERY];
+  const byId = (id: string | null) =>
+    id ? documentOptions.value.find((document) => document.id === id) : null;
   return (
     documentOptions.value.find(
       (document) => document.slug === wanted || document.id === wanted,
     ) ??
+    byId(amendmentPanelDocumentId.value) ??
     (follow.value ? debateDocument.value : null) ??
     documentOptions.value[0] ??
     null
@@ -1058,8 +1070,9 @@ const freshPanelTarget = computed<RowPanelTarget | null>(() => {
 });
 /**
  * The panel's row: the fresh one while the lists hold it, the last one seen
- * otherwise (following the debate to another document, a refetch on the
- * way), so the panel and what is being typed in it never vanish. An item
+ * otherwise (the reader choosing another document, a refetch on the way;
+ * following the debate waits for an amendment's panel to close), so the
+ * panel and what is being typed in it never vanish. An item
  * the sheet no longer holds closes its panel (below); the last row only
  * fills it while it closes.
  */
@@ -1116,6 +1129,7 @@ watch(
 function openItem(row: GeneralSheetRow): void {
   lastPanelTarget.value = { kind: "item", row };
   panelSubject.value = { kind: "item", id: row.id };
+  amendmentPanelDocumentId.value = null;
   panelOpen.value = true;
 }
 
@@ -1126,8 +1140,52 @@ function openAmendment(row: AmendmentSheetRow): void {
     code: row.amendment.code ?? t("amendment.unnumberedLabel"),
   };
   panelSubject.value = { kind: "amendment", id: row.amendment.id };
+  amendmentPanelDocumentId.value = row.amendment.documentId;
   panelOpen.value = true;
 }
+
+/**
+ * The panel's notice of observations that could not be saved opens their
+ * row again: the row as the lists hold it now, else as it was last seen;
+ * an amendment of another document shows that document's amendments, so
+ * its row is a live one. The document shown is read before the panel opens:
+ * opening it makes its own document the shown one (amendmentPanelDocumentId)
+ * while the query names none.
+ */
+function reopenPanel(target: RowPanelTarget): void {
+  if (target.kind === "item") {
+    openItem(target.row);
+    return;
+  }
+  const shownDocumentId = selectedDocument.value?.id;
+  openAmendment(target.row);
+  const documentId = target.row.amendment.documentId;
+  const document = documentOptions.value.find(
+    (entry) => entry.id === documentId,
+  );
+  if (document && shownDocumentId !== documentId) {
+    leaveDebateFor(documentId);
+    void router.replace({
+      query: {
+        ...route.query,
+        ...tabQuery("amendments"),
+        [TAB_QUERY]: "enmiendas",
+        [DOCUMENT_QUERY]: document.slug,
+      },
+    });
+  }
+}
+
+/** Following the debate waited for the amendment's panel to close. */
+let followWaiting = false;
+watch(panelOpen, (open) => {
+  if (open) return;
+  amendmentPanelDocumentId.value = null;
+  if (followWaiting) {
+    followWaiting = false;
+    void followDebate();
+  }
+});
 
 /**
  * Puts a saved row in place at once, then fetches the sheet again with any
@@ -1559,13 +1617,60 @@ const panelDocument = computed(() => {
 });
 
 /**
- * An answer given from the panel: the sheet and the amendments again, so
- * the row, its badge and the panel show it (the sheet's own answer first,
- * newerPosition), without waiting for the live event.
+ * An amendment as a write from the panel answered it, in its document's
+ * list at once (only that document's list holds it).
  */
-function onPositionSaved(): void {
+function putAmendment(updated: AmendmentDto): void {
+  const current = keptAmendments.value;
+  if (!current || current.documentId !== updated.documentId) return;
+  keptAmendments.value = {
+    ...current,
+    amendments: current.amendments.map((amendment) =>
+      amendment.id === updated.id ? updated : amendment,
+    ),
+  };
+}
+
+/** The sheet and the amendments again, with any fetch on its way cancelled. */
+function refetchAfterPanelWrite(): void {
   void sheetFetch.refresh({ dedupe: "cancel" });
   if (amendmentsUrl.value) void amendmentsFetch.refresh({ dedupe: "cancel" });
+}
+
+/**
+ * An answer given from the panel: in place at once, in the amendment and in
+ * the sheet's own answers (the row shows the sheet's first, newerPosition),
+ * so the row, its badge and the panel show it, and the panel's choice reads
+ * as saved; then the sheet and the amendments again, as onItemSaved. Never
+ * joined to a fetch on its way: it may have read before the write.
+ */
+function onPositionSaved(updated: AmendmentDto): void {
+  putAmendment(updated);
+  const current = sheet.value;
+  const position = updated.position;
+  if (current && position) {
+    sheet.value = {
+      ...current,
+      positions: [
+        ...current.positions.filter(
+          (entry) => entry.amendmentId !== updated.id,
+        ),
+        { amendmentId: updated.id, position },
+      ],
+    };
+  }
+  refetchAfterPanelWrite();
+}
+
+/**
+ * A result recorded or annulled from the panel: the amendment in place at
+ * once (its buttons follow it), then the sheet and the amendments again
+ * (a vote or a reopening may change others). Null (a final vote, a write
+ * that failed) only fetches them again.
+ */
+function onResultChanged(outcome: AmendmentOutcomeDto | null): void {
+  if (outcome) putAmendment(outcome.amendment);
+  refetchAfterPanelWrite();
 }
 
 /**
@@ -1591,13 +1696,20 @@ const refreshPreviewTrailing = trailingRefresh(() =>
 );
 /**
  * The sheet again, after `events` (none: a write of the page, or the
- * reader asking): an open preview reads its document again too (its text,
- * its amendments' answers), the same way, only while one is open and when
- * the events may change it (affectsSheetPreview).
+ * reader asking): the chosen document's amendments too, the same way, when
+ * the events may change them (affectsSheetAmendments: never the speakers,
+ * the seating, the sheet's notes nor another document); an open preview
+ * reads its document again too (its text, its amendments' answers), only
+ * while one is open and when the events may change it (affectsSheetPreview).
  */
 function refreshSheet(events?: readonly LiveEventDto[]): void {
   void refreshSheetTrailing();
-  if (amendmentsUrl.value) void refreshAmendmentsTrailing();
+  if (
+    amendmentsUrl.value &&
+    (!events || affectsSheetAmendments(events, selectedDocument.value?.id))
+  ) {
+    void refreshAmendmentsTrailing();
+  }
   if (previewFetchId.value && (!events || affectsSheetPreview(events))) {
     void refreshPreviewTrailing();
   }
@@ -1660,18 +1772,30 @@ function scrollToRow(id: string): void {
  * assembly and has no row to follow: the debate moving on would take its
  * reader out of it. Whether it went anywhere: false when there was nothing
  * to follow (nothing on screen, «Turnos de palabra», the document already
- * shown).
+ * shown) or it waits: while an amendment's panel is open, another document
+ * waits until it closes (followWaitsForPanel), so the panel never stays on
+ * a row the list no longer holds.
  */
 async function followDebate(): Promise<boolean> {
   const state = live.value;
   if (!follow.value || !state || tab.value === "turns") return false;
   // Coming back where the reader left it: the sheet stays there.
   if (holdFollow) return false;
+  const waitsForPanel = (documentId: string) => {
+    const waits = followWaitsForPanel(
+      { open: panelOpen.value, kind: panelSubject.value?.kind ?? null },
+      amendmentPanelDocumentId.value,
+      documentId,
+    );
+    if (waits) followWaiting = true;
+    return waits;
+  };
   if (state.amendmentId && state.documentId) {
     const document = documentOptions.value.find(
       (entry) => entry.id === state.documentId,
     );
     if (document) {
+      if (waitsForPanel(document.id)) return false;
       await router.replace({
         query: {
           ...route.query,
@@ -1687,6 +1811,7 @@ async function followDebate(): Promise<boolean> {
   const debated = debateDocument.value;
   if (tab.value === "amendments" && debated) {
     if (selectedDocument.value?.id === debated.id) return false;
+    if (waitsForPanel(debated.id)) return false;
     await router.replace({
       query: { ...route.query, [DOCUMENT_QUERY]: debated.slug },
     });
@@ -2458,7 +2583,8 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       @vote-changed="onVoteChanged"
       @position-saved="onPositionSaved"
       @speakers-updated="onSpeakersUpdated"
-      @result-changed="onPositionSaved"
+      @result-changed="onResultChanged"
+      @reopen="reopenPanel"
     />
 
     <LiveViewDocumentWindow

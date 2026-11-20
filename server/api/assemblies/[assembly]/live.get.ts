@@ -1,6 +1,7 @@
 import {
   createEventStream,
   defineEventHandler,
+  getQuery,
   getRouterParam,
   type EventStreamMessage,
 } from "h3";
@@ -8,6 +9,7 @@ import { requireActor } from "../../../utils/domain/actor";
 import { toLiveEventDto } from "../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import type { AuthEventContext } from "../../../utils/auth/requireAuth";
+import { liveMessageReaches } from "../../../utils/live/audienceFilter";
 import { subscribeToAssembly } from "../../../utils/live/hub";
 import {
   subscribeToLivePointer,
@@ -18,6 +20,8 @@ import { markSeen } from "../../../utils/live/online";
 import {
   LIVE_HEARTBEAT_INTERVAL_MS,
   liveHeartbeat,
+  livePushChannels,
+  serializeOnce,
 } from "../../../utils/live/sse";
 
 /** Reconnection delay suggested to EventSource clients. */
@@ -27,7 +31,10 @@ const RETRY_MS = 5_000;
  * Live updates of one assembly as server-sent events:
  * - `ready` once connected;
  * - `change` with a LiveEventDto for every recorded event (ids only: clients
- *   refetch through the permission-checked endpoints);
+ *   refetch through the permission-checked endpoints), but an amendment
+ *   event whose audience leaves this actor out (a draft or an unpublished
+ *   amendment it cannot see: liveMessageReaches; the actor is the one the
+ *   stream opened with, so a new role applies on reconnection);
  * - `scroll` with a LiveScrollDto whenever the Mesa scrolls the document in
  *   debate (server/utils/live/scroll.ts), never recorded;
  * - `pointer` with a LivePointerDto as the Mesa points or draws on it;
@@ -35,6 +42,9 @@ const RETRY_MS = 5_000;
  * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
  *   tell a live stream from one that died in silence, and which keeps the
  *   viewer online (server/utils/live/online.ts) while the page stays open.
+ * `?channels=` lists which of `scroll`, `pointer` and `tally` the page
+ * follows (livePushChannels); without it, all three. Each message is
+ * serialized once for every stream (serializeOnce).
  */
 export default defineEventHandler(async (event) => {
   // Resolve first, so a 401 or 404 still answers as plain JSON.
@@ -43,6 +53,7 @@ export default defineEventHandler(async (event) => {
     actor,
     getRouterParam(event, "assembly"),
   );
+  const channels = livePushChannels(getQuery(event).channels);
 
   const stream = createEventStream(event);
   // Never await a push before send(): nothing reads the stream until then.
@@ -51,18 +62,33 @@ export default defineEventHandler(async (event) => {
     stream.push(message).catch(() => undefined);
   };
 
-  const unsubscribe = subscribeToAssembly(assembly.id, (message) => {
-    push({ event: "change", data: JSON.stringify(toLiveEventDto(message)) });
-  });
-  const unsubscribeScroll = subscribeToLiveScroll(assembly.id, (scroll) => {
-    push({ event: "scroll", data: JSON.stringify(scroll) });
-  });
-  const unsubscribeTally = subscribeToLiveTally(assembly.id, (tally) => {
-    push({ event: "tally", data: JSON.stringify(tally) });
-  });
-  const unsubscribePointer = subscribeToLivePointer(assembly.id, (pointer) => {
-    push({ event: "pointer", data: JSON.stringify(pointer) });
-  });
+  const unsubscribes: (() => void)[] = [
+    subscribeToAssembly(assembly.id, (message) => {
+      if (!liveMessageReaches(actor, message)) return;
+      push({ event: "change", data: serializeOnce(message, toLiveEventDto) });
+    }),
+  ];
+  if (channels.has("scroll")) {
+    unsubscribes.push(
+      subscribeToLiveScroll(assembly.id, (scroll) => {
+        push({ event: "scroll", data: serializeOnce(scroll) });
+      }),
+    );
+  }
+  if (channels.has("tally")) {
+    unsubscribes.push(
+      subscribeToLiveTally(assembly.id, (tally) => {
+        push({ event: "tally", data: serializeOnce(tally) });
+      }),
+    );
+  }
+  if (channels.has("pointer")) {
+    unsubscribes.push(
+      subscribeToLivePointer(assembly.id, (pointer) => {
+        push({ event: "pointer", data: serializeOnce(pointer) });
+      }),
+    );
+  }
   // A page with the stream open keeps its person online while idle; the
   // real user, never the account an Admin acts as.
   const viewerId = (event.context as AuthEventContext).realUser?.id ?? null;
@@ -76,10 +102,7 @@ export default defineEventHandler(async (event) => {
     if (cleaned) return;
     cleaned = true;
     clearInterval(heartbeat);
-    unsubscribe();
-    unsubscribeScroll();
-    unsubscribePointer();
-    unsubscribeTally();
+    for (const unsubscribe of unsubscribes) unsubscribe();
     stream.close().catch(() => undefined);
   };
   stream.onClosed(cleanup);

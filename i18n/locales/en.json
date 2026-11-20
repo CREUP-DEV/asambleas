@@ -4589,6 +4589,8 @@
       "resume": "Continue the headcount",
       "resumeCorrection": "Continue the correction",
       "draftRestored": "The headcount you left unsaved on this device has been restored.",
+      "rebased": "Someone else in the Mesa corrected this headcount while you were changing it: your changes have been put over their correction. Check it before saving.",
+      "rebasedClashes": "You both changed {members}: what you marked stays.",
       "startOver": "Start over",
       "draftHint": "If you close it without saving, it stays as a draft on this device.",
       "later": "Finish later",
@@ -4668,12 +4670,14 @@
       "record": "Record the vote",
       "recorded": "Vote between alternatives recorded",
       "assentBlocked": "Alternatives are on screen: they are decided by voting between them, not by assent",
+      "splitUpdated": "The options on screen changed: the split is now the projected one. The votes entered are kept.",
       "reopenTitle": "Reopen {code}?",
       "reopenDescription": "It was decided in a vote between alternatives. Reopening it voids that vote and also reopens: {codes}.",
       "reopenConfirm": "Void the vote and reopen them",
       "errors": {
         "record": "The vote could not be recorded",
-        "onScreen": "It is on screen as an alternative of a vote: it is decided by voting between the options"
+        "onScreen": "It is on screen as an alternative of a vote: it is decided by voting between the options",
+        "splitChanged": "The split does not match the options on screen: the room votes on what it sees. Project this split or go back to the one on screen."
       }
     }
   },
@@ -5212,7 +5216,10 @@
       "resultMesaOnly": "Only the Mesa notes the result.",
       "leftSheet": "The item has left the sheet: someone changed it at the same time.",
       "positionFor": "You answer on behalf of {member}. Who changes it and when is recorded.",
-      "positionHint": "Who changes it and when is recorded."
+      "positionHint": "Who changes it and when is recorded.",
+      "unsavedNotice": "The observations on “{row}” were not saved",
+      "unsavedOpen": "View",
+      "leaveUnsaved": "Some control sheet observations are not saved. Leave anyway? They will be lost."
     },
     "add": {
       "button": "Add item",

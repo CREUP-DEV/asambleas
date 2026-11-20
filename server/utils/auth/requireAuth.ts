@@ -9,6 +9,7 @@ import { avatarUrl } from "./avatarFiles";
 import { resolveImpersonation } from "./impersonation";
 import type { ImpersonationContext } from "./impersonation";
 import type { PermissionKey } from "~~/shared/constants/permissions";
+import type { MemberKind } from "~~/shared/constants/domain";
 
 export type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>;
 
@@ -57,8 +58,28 @@ export interface AuthEventContext {
   role?: AuthUserWithRole["role"];
   /** The effective user's permissions (attachAuthContext). */
   permissions?: PermissionKey[];
+  /**
+   * The kind of the member the effective user acts for (null without one),
+   * read with the user in getAuthUserWithRole so requireActor needs no
+   * query of its own. Left unset while an Admin impersonates: requireActor
+   * then reads the target's. Never part of AuthUserWithRole, which reaches
+   * DTOs.
+   */
+  memberKind?: MemberKind | null;
 }
 
+/**
+ * The better-auth session of the request (cached on the context), or 401.
+ *
+ * `disableRefresh`: this call never extends the session. A refresh made
+ * here would move `sessions.expires_at` and send a `Set-Cookie` nobody
+ * forwards (and an SSR `$fetch` could not), which used up the daily
+ * refresh (`updateAge`) before the browser asked: the cookie then kept the
+ * 7 days of the sign-in. Only the browser's own GET /api/auth/get-session
+ * (app/plugins/session-keepalive.client.ts) refreshes, so the row and the
+ * cookie are extended together. Expired sessions are still refused and
+ * deleted here.
+ */
 export async function requireAuth(event: H3Event) {
   const context = event.context as AuthEventContext;
 
@@ -68,6 +89,7 @@ export async function requireAuth(event: H3Event) {
 
   const session = await auth.api.getSession({
     headers: event.headers,
+    query: { disableRefresh: true },
   });
 
   if (!session) {
@@ -82,13 +104,16 @@ export async function requireAuth(event: H3Event) {
 }
 
 /**
- * The signed-in account with its role, and whether it lost access
- * (users.access_revoked_at). The flag stays out of AuthUserWithRole, so it
- * never reaches a DTO. `image` is the stored photo's URL (user_avatars).
+ * The signed-in account with its role, whether it lost access
+ * (users.access_revoked_at) and the kind of the member it acts for, in one
+ * query. The flag and the kind stay out of AuthUserWithRole, so they never
+ * reach a DTO. `image` is the stored photo's URL (user_avatars).
  */
-async function loadUserWithRole(
-  userId: string,
-): Promise<{ user: AuthUserWithRole; accessRevoked: boolean } | null> {
+async function loadUserWithRole(userId: string): Promise<{
+  user: AuthUserWithRole;
+  accessRevoked: boolean;
+  memberKind: MemberKind | null;
+} | null> {
   const row = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: {
@@ -107,13 +132,15 @@ async function loadUserWithRole(
     with: {
       role: { columns: { id: true, name: true } },
       avatar: { columns: { file: true } },
+      member: { columns: { kind: true } },
     },
   });
   if (!row) return null;
-  const { accessRevokedAt, avatar, ...user } = row;
+  const { accessRevokedAt, avatar, member, ...user } = row;
   return {
     user: { ...user, image: avatarUrl(avatar?.file) },
     accessRevoked: accessRevokedAt !== null,
+    memberKind: user.memberId ? (member?.kind ?? null) : null,
   };
 }
 
@@ -168,6 +195,9 @@ export async function getAuthUserWithRole(
   context.impersonation = impersonated?.impersonation ?? null;
   context.user = user;
   context.role = user.role;
+  // The kind read above is the signed-in user's: only theirs when they act
+  // as themselves.
+  if (!impersonated) context.memberKind = loaded.memberKind;
 
   return user;
 }

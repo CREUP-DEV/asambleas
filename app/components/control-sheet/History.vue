@@ -8,12 +8,12 @@ import type {
 } from "~~/shared/types/api";
 import {
   CONTROL_SHEET_ACTIVITY_GROUP_KEYS,
-  CONTROL_SHEET_ACTIVITY_GROUPS,
   type ControlSheetActivityGroup,
 } from "~~/shared/constants/activity";
 import { activityDateRange } from "~/composables/activity/-filters";
 import { activityItemKey } from "~/composables/activity/-present";
 import { buildAgendaTree, flattenAgendaTree } from "~/utils/agendaTree";
+import { historyMayChange } from "./-history";
 
 /**
  * «Historial» of the control sheet (user's decision of 2026-11-17): what
@@ -22,7 +22,10 @@ import { buildAgendaTree, flattenAgendaTree } from "~/utils/agendaTree";
  * (CONTROL_SHEET_ACTIVITY_GROUPS; GET .../control-sheet/activity, each row
  * judged for the reader). Filters by kind of change, by agenda item or
  * document (and then one of its amendments), by person and by day; they
- * start over the list, «Cargar más» pages it. It follows the live stream.
+ * start over the list, «Cargar más» pages it. It follows the live stream:
+ * a change its filters may let in brings the top of the list up to date,
+ * keeping what was loaded below (-history.ts, useActivityPages'
+ * `refreshHead`).
  */
 const props = defineProps<{
   apiBase: string;
@@ -155,6 +158,7 @@ const {
   refreshing,
   error,
   refresh,
+  refreshHead,
   hasMore,
   loadingMore,
   announcement,
@@ -166,17 +170,25 @@ const {
   keyOf: activityItemKey,
 });
 
-/** What the history lists, so a live change of it refetches the first page. */
-const historyTypes: ReadonlySet<string> = new Set(
-  Object.values(CONTROL_SHEET_ACTIVITY_GROUPS).flat(),
-);
+/**
+ * A live change the filters may let in (historyMayChange) brings the top of
+ * the list up to date, keeping what was loaded below it, without dimming
+ * it; one they leave out touches nothing.
+ */
 onLive((events) => {
   if (
-    events.some(
-      (event) => event.type === "poll" || historyTypes.has(event.type),
+    historyMayChange(
+      events,
+      {
+        groups: groups.value,
+        subject: subject.value,
+        to: query.value.to,
+      },
+      props.documents,
+      Date.now(),
     )
   ) {
-    void refresh();
+    void refreshHead();
   }
 });
 </script>

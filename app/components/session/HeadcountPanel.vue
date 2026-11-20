@@ -12,6 +12,7 @@ import {
   headcountFormFrom,
   headcountFormGuests,
   headcountFormMembers,
+  rebaseHeadcountForm,
   setHeadcountDelegate,
   setHeadcountPresent,
   type FormGuest,
@@ -19,6 +20,7 @@ import {
   type GuestForm,
   type HeadcountDraft,
   type HeadcountForm,
+  type HeadcountFormState,
 } from "~/composables/session/headcountForm";
 import { useApi } from "~/composables/api/useApi";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -253,13 +255,78 @@ const filter = ref("");
 const restored = ref(false);
 /** The form as it starts, without a draft: no draft is kept while equal. */
 const baseline = ref<string | null>(null);
+/**
+ * The count as the form started from it (the one being corrected, or the
+ * latest for a new one): what this device changed is the difference, which
+ * goes over someone else's correction saved meanwhile (rebaseHeadcountForm).
+ */
+const opening = ref<HeadcountFormState | null>(null);
+/**
+ * Someone else corrected the count while this device had changes in it
+ * (on saving, a conflict; on restoring a draft, a newer copy): the form
+ * holds their correction with this device's changes over it, and the
+ * members and guests both changed, by name (empty when none).
+ */
+const rebased = ref<string[] | null>(null);
+
+/** The line that names who both changed, in the form's language. */
+const rebasedClashes = computed(() =>
+  rebased.value && rebased.value.length > 0
+    ? t("session.headcount.rebasedClashes", {
+        members: new Intl.ListFormat(locale.value, {
+          type: "conjunction",
+        }).format(rebased.value),
+      })
+    : undefined,
+);
 
 function snapshot(): string {
-  return JSON.stringify({
-    form: form.value,
-    guests: guestForm.value,
-    note: note.value,
-  });
+  return JSON.stringify(current());
+}
+
+function current(): HeadcountFormState {
+  return { form: form.value, guests: guestForm.value, note: note.value };
+}
+
+/** The form a count gives, before anyone changes it. */
+function formOf(target: HeadcountDto | null): HeadcountFormState {
+  const from = target ?? latest.value;
+  return {
+    form: headcountFormFrom(formMembers.value, from),
+    guests: guestFormFrom(formGuests.value, from),
+    note: target?.note ?? "",
+  };
+}
+
+/** Members (by acronym) and guests (by name) of the form, for one line. */
+function namesOf(ids: readonly string[]): string[] {
+  return ids.map(
+    (id) =>
+      acronym(id) ||
+      formGuests.value.find((guest) => guest.userId === id)?.name ||
+      id,
+  );
+}
+
+/**
+ * Puts this device's changes (`mine`, made over `base`) over `target` as
+ * it stands now, which becomes the count being corrected and the form's
+ * new start, and says so in the form.
+ */
+function rebaseOnto(
+  target: HeadcountDto,
+  base: HeadcountFormState,
+  mine: HeadcountFormState,
+): void {
+  editing.value = target;
+  const theirs = formOf(target);
+  const merged = rebaseHeadcountForm(base, mine, theirs);
+  form.value = merged.form;
+  guestForm.value = merged.guests;
+  note.value = merged.note;
+  opening.value = theirs;
+  baseline.value = JSON.stringify(theirs);
+  rebased.value = namesOf(merged.clashes);
 }
 
 const formMembers = computed<FormMember[]>(() =>
@@ -288,11 +355,13 @@ const formGuests = computed<FormGuest[]>(() =>
 );
 
 function freshForm(target: HeadcountDto | null): void {
-  const from = target ?? latest.value;
-  form.value = headcountFormFrom(formMembers.value, from);
-  guestForm.value = guestFormFrom(formGuests.value, from);
-  note.value = target?.note ?? "";
+  const start = formOf(target);
+  form.value = start.form;
+  guestForm.value = start.guests;
+  note.value = start.note;
+  opening.value = start;
   restored.value = false;
+  rebased.value = null;
   baseline.value = snapshot();
 }
 
@@ -330,6 +399,11 @@ function start(target: HeadcountDto | null): void {
     );
     note.value = saved.note ?? "";
     restored.value = true;
+    // Someone else corrected the count after this draft was made: the
+    // draft's changes go over their correction instead of overwriting it.
+    if (target && saved.base && saved.base.updatedAt !== target.updatedAt) {
+      rebaseOnto(target, saved.base, current());
+    }
   }
   open.value = true;
 }
@@ -354,6 +428,9 @@ watch(
       guests: guestForm.value,
       note: note.value,
       savedAt: new Date().toISOString(),
+      ...(editing.value && opening.value
+        ? { base: { ...opening.value, updatedAt: editing.value.updatedAt } }
+        : {}),
     });
   },
   { deep: true },
@@ -502,12 +579,29 @@ async function save(): Promise<void> {
     guests: guestIdsOf(guestForm.value),
     note: note.value.trim() || null,
   };
-  const ok = editing.value
-    ? await headcounts.correct(editing.value, body)
+  const target = editing.value;
+  const result = target
+    ? await headcounts.correct(target, body)
     : await headcounts.add(body);
-  if (ok) {
+  if (result === true) {
     open.value = false;
     writeDraft(null);
+    return;
+  }
+  // Someone else corrected it first: their correction, read again, is the
+  // new start and this device's changes go over it, so saving again
+  // neither repeats the conflict nor undoes what they did.
+  const fresh =
+    result === "conflict" && target
+      ? dto.value?.headcounts.find((count) => count.id === target.id)
+      : undefined;
+  if (
+    fresh &&
+    fresh.updatedAt !== target?.updatedAt &&
+    opening.value &&
+    editing.value?.id === fresh.id
+  ) {
+    rebaseOnto(fresh, opening.value, current());
   }
 }
 </script>
@@ -646,6 +740,14 @@ async function save(): Promise<void> {
                 onClick: startOver,
               },
             ]"
+          />
+          <UAlert
+            v-if="rebased"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-users-round"
+            :title="t('session.headcount.rebased')"
+            :description="rebasedClashes"
           />
 
           <div class="flex flex-wrap items-end gap-2">

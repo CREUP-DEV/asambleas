@@ -10,5 +10,6 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   // First: with `?view=room` the route resolves as the room viewer.
   await requireViewer(event);
   const { actor, assembly, document } = await resolveDocumentRoute(event);
-  return loadDocumentDto(assembly, document.id, actor);
+  // The row resolveDocument just read is not read again.
+  return loadDocumentDto(assembly, document.id, actor, undefined, document);
 });

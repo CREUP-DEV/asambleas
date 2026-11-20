@@ -7,7 +7,7 @@ import type {
 } from "~~/shared/types/api";
 import { useApi } from "../api/useApi";
 import { keepLastGoodData } from "../fetch/lastGoodData";
-import { isHeadcountEvent } from "./headcountForm";
+import { headcountMovedOn, isHeadcountEvent } from "./headcountForm";
 
 export interface HeadcountsOptions {
   /** The assembly's API base, e.g. `/api/assemblies/{id}`. */
@@ -80,11 +80,18 @@ export function useHeadcounts(options: HeadcountsOptions) {
     }
   }
 
-  /** Corrects a count; a conflict reloads the list and says so calmly. */
+  /**
+   * Corrects a count: true once saved. A conflict reloads the list; when
+   * someone else corrected the count first (headcountMovedOn), it says so
+   * calmly and answers `"conflict"` once the list is fresh, so the form can
+   * take the new copy as its start (HeadcountPanel puts its changes over
+   * it) instead of sending the old token again and again. Any other 409
+   * (the session is not open) is reported as an error and answers false.
+   */
   async function correct(
     headcount: HeadcountDto,
     body: HeadcountBody,
-  ): Promise<boolean> {
+  ): Promise<boolean | "conflict"> {
     try {
       data.value = await track(`headcount-${headcount.id}`, () =>
         api.send<HeadcountsDto>(
@@ -95,13 +102,19 @@ export function useHeadcounts(options: HeadcountsOptions) {
       return true;
     } catch (error) {
       if (api.isConflict(error)) {
-        void refresh();
-        toast.add({
-          id: "session-headcount-changed",
-          title: t("session.headcount.changedElsewhere"),
-          color: "info",
-          icon: "i-lucide-refresh-ccw",
-        });
+        await refresh();
+        // A 409 on a count nobody else has saved since (the session is not
+        // open, say) is reported as the error it is, not as a correction.
+        if (headcountMovedOn(data.value?.headcounts, headcount)) {
+          toast.add({
+            id: "session-headcount-changed",
+            title: t("session.headcount.changedElsewhere"),
+            color: "info",
+            icon: "i-lucide-refresh-ccw",
+          });
+          return "conflict";
+        }
+        api.notifyError(error, "session.headcount.errors.save");
       } else {
         api.notifyError(error, "session.headcount.errors.save");
       }

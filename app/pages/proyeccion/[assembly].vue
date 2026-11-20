@@ -36,10 +36,13 @@ import {
   type PointerState,
 } from "~/composables/session/pointerState";
 import { usePointerFade } from "~/composables/session/usePointerFade";
+import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
+import { isDocumentLiveBatch } from "~/composables/document/useDocument";
 import {
   affectsAgenda,
   affectsLiveVote,
   affectsSpeakers,
+  isNewerScroll,
   liveAmendmentRows,
   liveAmendmentStats,
   liveAssentKey,
@@ -311,12 +314,13 @@ function onLive(events: LiveEventDto[]): void {
   const current = documentId.value;
   const touches = (types: string[]) =>
     events.some((event) => types.includes(event.entityType));
-  const touchesDocument = events.some(
-    (event) =>
-      current !== null &&
-      (event.documentId === current ||
-        (event.entityType === "document" && event.entityId === current)),
-  );
+  // The amendments follow every event of the document; the document itself
+  // only what may change it, not each vote or answer (affectsDocumentDto).
+  const touchesDocument =
+    current !== null && isDocumentLiveBatch(events, current);
+  const changesDocument =
+    current !== null &&
+    affectsDocumentDto(events, current, document.value?.finalVote?.id);
 
   // Still unknown after the page opened (/api/me failed): every event or
   // poll tries again, and the sources follow once it loads (roomView).
@@ -338,9 +342,8 @@ function onLive(events: LiveEventDto[]): void {
   if (poll) void readTally();
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
   if (affectsAgenda(events)) refreshes.push(refreshAgenda());
-  if (poll || touchesDocument) {
-    refreshes.push(refreshDocument(), refreshAmendments());
-  }
+  if (poll || changesDocument) refreshes.push(refreshDocument());
+  if (poll || touchesDocument) refreshes.push(refreshAmendments());
   // asyncData refreshes resolve even when they fail: only stamp the time
   // when every source is up to date.
   void Promise.all(refreshes).then(() => {
@@ -443,7 +446,10 @@ async function readMesaScroll(): Promise<void> {
     const scroll = await read<LiveScrollDto | null>(
       `${assemblyUrl.value}/live-scroll`,
     );
-    if (scroll) onMesaScroll(scroll);
+    // A position that came on the stream meanwhile is newer: keep it.
+    if (scroll && isNewerScroll(mesaScroll.value, scroll)) {
+      onMesaScroll(scroll);
+    }
   } catch {
     // The next position the Mesa sends puts it right.
   }

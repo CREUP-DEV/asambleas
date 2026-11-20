@@ -36,11 +36,33 @@ const proposedMajority = computed(() =>
     : "simple",
 );
 const vote = ref<VoteInput>(sessionEmptyVote(proposedMajority.value));
+/** This form is recording the vote: the amendment it decides is its own. */
+const recording = ref(false);
 // "Present" opens empty: the latest headcount fills it, on screen and on
 // the server, also one another Mesa device takes while the form is open.
 watch(open, (isOpen) => {
-  if (isOpen) vote.value = sessionEmptyVote(proposedMajority.value);
+  if (isOpen) {
+    vote.value = sessionEmptyVote(proposedMajority.value);
+    recording.value = false;
+  }
 });
+/**
+ * Decided meanwhile from elsewhere (another console, the control sheet):
+ * the form goes, which ends its count on the projection
+ * (SessionVoteFields), and only the amendment's status is left.
+ */
+const decided = computed(
+  () =>
+    !recording.value &&
+    amendment.value !== null &&
+    amendment.value.status !== "submitted",
+);
+/** Its code and status, as the queue names them. */
+const decidedLine = computed(() =>
+  amendment.value
+    ? `${session.label(amendment.value.id)} · ${t(`common.status.amendment.${amendment.value.status}`)}`
+    : "",
+);
 
 // An empty "present" counts on the latest headcount, as on the server.
 const outcome = computed(() =>
@@ -66,12 +88,17 @@ const saving = computed(() =>
 );
 
 async function submit(): Promise<void> {
-  if (!amendment.value || blocked.value) return;
-  const result = await session.vote(
-    amendment.value,
-    sessionCleanVote(vote.value),
-  );
-  if (result) open.value = false;
+  if (!amendment.value || blocked.value || decided.value) return;
+  recording.value = true;
+  let recorded = false;
+  try {
+    recorded = Boolean(
+      await session.vote(amendment.value, sessionCleanVote(vote.value)),
+    );
+  } finally {
+    if (recorded) open.value = false;
+    else recording.value = false;
+  }
 }
 </script>
 
@@ -87,8 +114,16 @@ async function submit(): Promise<void> {
     :ui="{ content: 'sm:max-w-2xl' }"
   >
     <template #body>
+      <UAlert
+        v-if="amendment && decided"
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-gavel"
+        role="status"
+        :title="decidedLine"
+      />
       <form
-        v-if="amendment"
+        v-else-if="amendment"
         id="session-vote-form"
         class="space-y-4"
         @submit.prevent="submit"
@@ -126,7 +161,7 @@ async function submit(): Promise<void> {
           icon="i-lucide-gavel"
           :label="t('session.vote.submit')"
           :loading="saving"
-          :disabled="blocked || !amendment"
+          :disabled="blocked || !amendment || decided"
         />
       </div>
     </template>

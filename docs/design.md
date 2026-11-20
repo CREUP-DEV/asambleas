@@ -680,7 +680,9 @@ carries the same figures on one line during the session.
 - Live updates: mutations `pg_notify('assembly_events', ...)`. A Nitro plugin
   `LISTEN`s and fans out to SSE streams at `GET /api/assemblies/[id]/live`.
   Events carry ids only; clients refetch through the normal, permission-checked
-  endpoints. If the stream drops, clients fall back to polling. No Redis.
+  endpoints. If the stream drops, clients fall back to polling. No Redis. A
+  request that commits several changes in turn (a bloc approved by assent)
+  holds its notices back and sends them together at the end (`holdLiveNotices`).
 
 ## Validation by the Secretaría and documentation tracking
 
@@ -901,8 +903,10 @@ apply again on restore.
   count as the last Admin.
 - Intranet failures never block anyone with access, but a database error
   while checking refuses the sign-in (`sign_in_unavailable`).
-- Open sessions: sessions last 7 days and renew each day they are used, so
-  sign-in alone would never catch an account that keeps its session alive.
+- Open sessions: sessions last 7 days and renew at most once a day while
+  the app is used (the browser's keepalive asks better-auth's get-session,
+  `app/plugins/session-keepalive.client.ts`), so sign-in alone would never
+  catch an account that keeps its session alive.
   A daily re-check (05:30 Europe/Madrid, pg-boss queue
   `users-access-recheck`, `server/utils/auth/accessRecheck.ts`) looks up
   again, one every half second, every account with a live session, access,

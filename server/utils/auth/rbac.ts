@@ -22,13 +22,66 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const CACHE_TTL_MS = 60_000;
+/**
+ * How long a role's or a user's permissions are kept. Both writers
+ * (PUT /api/admin/roles/[id]/permissions and PUT
+ * /api/admin/users/[id]/permissions) invalidate their entry after commit,
+ * so the TTL only bounds changes made outside the app (`pnpm db:seed`, SQL).
+ */
+export const PERMISSION_CACHE_TTL_MS = 5 * 60_000;
 const CACHE_MAX_ENTRIES = 50;
 const USER_CACHE_MAX_ENTRIES = 500;
 /** Role id -> the role's permissions. */
 const permissionCache = new Map<string, CacheEntry>();
 /** User id -> permissions granted to that user on top of the role. */
 const userPermissionCache = new Map<string, CacheEntry>();
+/**
+ * Reads in flight, by the same keys: concurrent requests with a cold entry
+ * share one query. Invalidating drops the read in flight too, so a read
+ * that started before a write commits never fills the cache.
+ */
+const permissionLoads = new Map<string, Promise<PermissionKey[]>>();
+const userPermissionLoads = new Map<string, Promise<PermissionKey[]>>();
+
+/**
+ * The cached keys of `key`, or one shared read of them. A read stores its
+ * result only while it is still the one in flight for the key (nothing
+ * invalidated it meanwhile); a failed read stores nothing.
+ */
+function cachedPermissions(
+  cache: Map<string, CacheEntry>,
+  loads: Map<string, Promise<PermissionKey[]>>,
+  maxEntries: number,
+  key: string,
+  read: () => Promise<PermissionKey[]>,
+): Promise<PermissionKey[]> {
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.permissions);
+  }
+  const pending = loads.get(key);
+  if (pending) return pending;
+
+  const load = read().then(
+    (keys) => {
+      if (loads.get(key) === load) {
+        loads.delete(key);
+        cache.set(key, {
+          permissions: keys,
+          expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS,
+        });
+        pruneCache(cache, maxEntries);
+      }
+      return keys;
+    },
+    (error: unknown) => {
+      if (loads.get(key) === load) loads.delete(key);
+      throw error;
+    },
+  );
+  loads.set(key, load);
+  return load;
+}
 
 function pruneCache(cache: Map<string, CacheEntry>, maxEntries: number) {
   if (cache.size <= maxEntries) {
@@ -54,56 +107,47 @@ function pruneCache(cache: Map<string, CacheEntry>, maxEntries: number) {
 }
 
 /** Permissions of a role (role_permissions). See getEffectivePermissions for a user's. */
-export async function getUserPermissions(
-  roleId: string,
-): Promise<PermissionKey[]> {
-  const now = Date.now();
-  const cached = permissionCache.get(roleId);
-
-  if (cached && cached.expiresAt > now) {
-    return cached.permissions;
-  }
-
-  const rows = await db
-    .select({ key: permissions.key })
-    .from(rolePermissions)
-    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(rolePermissions.roleId, roleId));
-
-  const keys = rows.map((r) => r.key as PermissionKey);
-
-  permissionCache.set(roleId, {
-    permissions: keys,
-    expiresAt: now + CACHE_TTL_MS,
-  });
-
-  pruneCache(permissionCache, CACHE_MAX_ENTRIES);
-  return keys;
+export function getUserPermissions(roleId: string): Promise<PermissionKey[]> {
+  return cachedPermissions(
+    permissionCache,
+    permissionLoads,
+    CACHE_MAX_ENTRIES,
+    roleId,
+    async () => {
+      const rows = await db
+        .select({ key: permissions.key })
+        .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          eq(rolePermissions.permissionId, permissions.id),
+        )
+        .where(eq(rolePermissions.roleId, roleId));
+      return rows.map((r) => r.key as PermissionKey);
+    },
+  );
 }
 
 /** Permissions granted to one user on top of their role (user_permissions). */
-export async function getUserExtraPermissions(
+export function getUserExtraPermissions(
   userId: string,
 ): Promise<PermissionKey[]> {
-  const now = Date.now();
-  const cached = userPermissionCache.get(userId);
-  if (cached && cached.expiresAt > now) {
-    return cached.permissions;
-  }
-
-  const rows = await db
-    .select({ key: permissions.key })
-    .from(userPermissions)
-    .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
-    .where(eq(userPermissions.userId, userId));
-  const keys = rows.map((row) => row.key as PermissionKey);
-
-  userPermissionCache.set(userId, {
-    permissions: keys,
-    expiresAt: now + CACHE_TTL_MS,
-  });
-  pruneCache(userPermissionCache, USER_CACHE_MAX_ENTRIES);
-  return keys;
+  return cachedPermissions(
+    userPermissionCache,
+    userPermissionLoads,
+    USER_CACHE_MAX_ENTRIES,
+    userId,
+    async () => {
+      const rows = await db
+        .select({ key: permissions.key })
+        .from(userPermissions)
+        .innerJoin(
+          permissions,
+          eq(userPermissions.permissionId, permissions.id),
+        )
+        .where(eq(userPermissions.userId, userId));
+      return rows.map((row) => row.key as PermissionKey);
+    },
+  );
 }
 
 /**
@@ -136,17 +180,23 @@ export function mergePermissions(
   return ALL_PERMISSION_KEYS.filter((key) => keys.has(key));
 }
 
+/** Call after the transaction that changed a role's permissions commits. */
 export function invalidatePermissionCache(roleId: string) {
   permissionCache.delete(roleId);
+  permissionLoads.delete(roleId);
 }
 
+/** Call after the transaction that changed a user's own grants commits. */
 export function invalidateUserPermissionCache(userId: string) {
   userPermissionCache.delete(userId);
+  userPermissionLoads.delete(userId);
 }
 
 export function clearPermissionCache() {
   permissionCache.clear();
   userPermissionCache.clear();
+  permissionLoads.clear();
+  userPermissionLoads.clear();
 }
 
 export function isAdmin(roleName: string | null | undefined): boolean {

@@ -14,3 +14,47 @@ export const LIVE_HEARTBEAT_INTERVAL_MS = 25_000;
 export function liveHeartbeat(now = Date.now()): EventStreamMessage {
   return { event: "ping", data: String(now) };
 }
+
+const serialized = new WeakMap<object, string>();
+
+/**
+ * `JSON.stringify(serialize(value))`, worked out once per value: a live
+ * message, scroll, pointer or tally reaches every open stream of the
+ * assembly as the same object (one EventEmitter emit), so a room of a
+ * hundred streams serializes it once instead of once per stream.
+ * `serialize` must depend on `value` alone.
+ */
+export function serializeOnce<T extends object>(
+  value: T,
+  serialize: (value: T) => unknown = (item) => item,
+): string {
+  let data = serialized.get(value);
+  if (data === undefined) {
+    data = JSON.stringify(serialize(value));
+    serialized.set(value, data);
+  }
+  return data;
+}
+
+/** The pushes a live stream may leave out (LIVE_PUSH_CHANNELS). */
+export type LivePushChannel = "scroll" | "pointer" | "tally";
+
+export const LIVE_PUSH_CHANNELS: readonly LivePushChannel[] = [
+  "scroll",
+  "pointer",
+  "tally",
+];
+
+/**
+ * The pushes a stream asked for (`?channels=scroll,pointer`): only the
+ * projection follows the Mesa's pointer and the count of a secret vote,
+ * and the live view its scroll, so every other page leaves them out
+ * (useAssemblyLive asks for those it has a handler for). Without the
+ * parameter (a page still on code from before it existed), all of them.
+ * Unknown names are ignored; `change`, `ready` and `ping` always come.
+ */
+export function livePushChannels(query: unknown): ReadonlySet<LivePushChannel> {
+  if (typeof query !== "string") return new Set(LIVE_PUSH_CHANNELS);
+  const asked = new Set(query.split(",").map((name) => name.trim()));
+  return new Set(LIVE_PUSH_CHANNELS.filter((name) => asked.has(name)));
+}

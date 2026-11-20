@@ -7,6 +7,11 @@ import {
   computeAlternativesOutcome,
   type AlternativesTieResolution,
 } from "~~/shared/utils/alternativesVote";
+import {
+  alternativesSplitConflict,
+  followsProjectedSplit,
+  sameAlternatives,
+} from "~~/shared/utils/alternativesSplit";
 import { amendmentsMeet } from "~~/shared/utils/content/passages";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
@@ -22,6 +27,7 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
+const toast = useToast();
 const alternativesText = useAlternativesVoteText();
 
 const open = computed({
@@ -45,20 +51,61 @@ const note = ref("");
 const serverUndecided = ref<"tie" | "short" | null>(null);
 const busy = ref(false);
 
-watch(open, (value) => {
-  if (!value) return;
-  const ids = session.alternativesDialog.ids;
-  const options = session.alternativesDialog.options;
-  choice.value = Object.fromEntries(
+/** Each amendment's option in `options`, or null without them. */
+function seedChoice(
+  ids: string[],
+  options: string[][] | null,
+): Record<string, number | null> {
+  return Object.fromEntries(
     ids.map((id) => [
       id,
       options ? options.findIndex((option) => option.includes(id)) : null,
     ]),
   );
+}
+
+watch(open, (value) => {
+  if (!value) return;
+  choice.value = seedChoice(
+    session.alternativesDialog.ids,
+    session.alternativesDialog.options,
+  );
   method.value = "show_of_hands";
   resetCounts();
   note.value = "";
 });
+
+// The room votes on the options on screen, and the server refuses another
+// split of them: when the console in control moves these same amendments to
+// another split while this dialog is open, the dialog takes it, keeping the
+// counts, and says so once (followsProjectedSplit). A projection of other
+// amendments, or of more or fewer, leaves the dialog alone.
+watch(
+  () => session.roomAlternatives.value,
+  (next, previous) => {
+    if (!open.value || !next) return;
+    if (
+      !followsProjectedSplit(
+        next,
+        previous,
+        options.value,
+        session.alternativesDialog.ids,
+      )
+    ) {
+      return;
+    }
+    session.alternativesDialog.ids = next.flat();
+    session.alternativesDialog.options = next.map((option) => [...option]);
+    choice.value = seedChoice(next.flat(), next);
+    serverUndecided.value = null;
+    toast.add({
+      id: "session-alternatives-split",
+      title: t("session.alternatives.splitUpdated"),
+      color: "info",
+      icon: "i-lucide-monitor",
+    });
+  },
+);
 
 function resetCounts(): void {
   counts.value = Array.from({ length: ALTERNATIVES_OPTION_COUNT }, () => 0);
@@ -107,15 +154,15 @@ const collisions = computed(() =>
   }),
 );
 
-const onScreen = computed(() => {
-  const live = session.roomAlternatives.value;
-  if (!live || live.length !== options.value.length) return false;
-  return live.every(
-    (ids, index) =>
-      ids.length === options.value[index]!.length &&
-      ids.every((id) => options.value[index]!.includes(id)),
-  );
-});
+const onScreen = computed(
+  () =>
+    session.roomAlternatives.value !== null &&
+    sameAlternatives(session.roomAlternatives.value, options.value),
+);
+/** Options on screen split otherwise: the server would refuse the vote. */
+const splitDiffers = computed(() =>
+  alternativesSplitConflict(session.roomAlternatives.value, options.value),
+);
 
 const majority = computed(() =>
   session.document.value
@@ -287,6 +334,26 @@ function amendmentLine(id: string): string {
               @click="project"
             />
           </div>
+          <!-- Without the control, only what the room sees. -->
+          <UBadge
+            v-else-if="onScreen"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-monitor"
+            :label="t('session.alternatives.onScreen')"
+          />
+          <p
+            v-if="splitDiffers"
+            class="text-warning flex items-start gap-1.5 text-sm"
+            role="status"
+          >
+            <UIcon
+              name="i-lucide-monitor-x"
+              class="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            {{ t("session.alternatives.errors.splitChanged") }}
+          </p>
         </section>
 
         <!-- 2. The votes -->

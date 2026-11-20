@@ -4589,6 +4589,8 @@
       "resume": "Continuar el recuento",
       "resumeCorrection": "Continuar la corrección",
       "draftRestored": "Se ha recuperado el recuento que dejaste sin guardar en este dispositivo.",
+      "rebased": "Otra persona de la Mesa ha corregido este recuento mientras lo cambiabas: tus cambios se han puesto sobre su corrección. Revísalo antes de guardar.",
+      "rebasedClashes": "Los dos cambiasteis {members}: se queda lo que marcaste tú.",
       "startOver": "Empezar de nuevo",
       "draftHint": "Si lo cierras sin guardar, se queda como borrador en este dispositivo.",
       "later": "Seguir luego",
@@ -4668,12 +4670,14 @@
       "record": "Registrar la votación",
       "recorded": "Votación entre alternativas registrada",
       "assentBlocked": "Hay alternativas en pantalla: se deciden votando entre ellas, no por asentimiento",
+      "splitUpdated": "Han cambiado las opciones en pantalla: el reparto es ahora el proyectado. Los votos anotados se mantienen.",
       "reopenTitle": "¿Reabrir {code}?",
       "reopenDescription": "Se decidió en una votación entre alternativas. Reabrirla anula esa votación y reabre también: {codes}.",
       "reopenConfirm": "Anular la votación y reabrirlas",
       "errors": {
         "record": "No se ha podido registrar la votación",
-        "onScreen": "Está en pantalla como alternativa de una votación: se decide votando entre las opciones"
+        "onScreen": "Está en pantalla como alternativa de una votación: se decide votando entre las opciones",
+        "splitChanged": "El reparto no coincide con las opciones en pantalla: la sala vota lo que ve. Proyecta este reparto o vuelve al de la pantalla."
       }
     }
   },
@@ -5212,7 +5216,10 @@
       "resultMesaOnly": "Solo la Mesa anota el resultado.",
       "leftSheet": "El punto ha salido de la hoja: alguien lo ha cambiado a la vez.",
       "positionFor": "Respondes en nombre de {member}. Queda registrado quién la cambia y cuándo.",
-      "positionHint": "Queda registrado quién la cambia y cuándo."
+      "positionHint": "Queda registrado quién la cambia y cuándo.",
+      "unsavedNotice": "Las observaciones de «{row}» no se han guardado",
+      "unsavedOpen": "Ver",
+      "leaveUnsaved": "Hay observaciones de la hoja sin guardar. ¿Salir de todos modos? Se perderán."
     },
     "add": {
       "button": "Añadir punto",

@@ -36,6 +36,17 @@ const props = defineProps<{
   showPosition?: boolean;
   /** Localized path of the document workspace. */
   documentPath: string | null;
+  /**
+   * The agenda that names the item is still on its way: a placeholder
+   * stands for its line.
+   */
+  itemLoading?: boolean;
+  /**
+   * The document or the amendment in debate is still on its way:
+   * placeholders stand for them, rather than saying that only the item, or
+   * the whole document, is debated.
+   */
+  loading?: boolean;
 }>();
 
 /** «Ver el documento»: the page opens it in its floating window. */
@@ -79,6 +90,11 @@ const amendmentLink = computed(() =>
           }}
           <span class="text-default">{{ row.item.title }}</span>
         </p>
+        <USkeleton
+          v-else-if="itemLoading"
+          aria-hidden="true"
+          class="h-5 w-2/3"
+        />
         <p
           v-if="document"
           class="text-highlighted font-semibold break-words"
@@ -89,6 +105,7 @@ const amendmentLink = computed(() =>
           </span>
           {{ document.title }}
         </p>
+        <USkeleton v-else-if="loading" aria-hidden="true" class="h-8 w-full" />
         <div
           v-if="document?.proponent && !amendment"
           class="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-sm"
@@ -108,6 +125,10 @@ const amendmentLink = computed(() =>
         :show-position="showPosition"
         fold-justification
       />
+      <div v-else-if="loading" aria-hidden="true" class="flex flex-col gap-2">
+        <USkeleton class="h-5 w-full" />
+        <USkeleton class="h-5 w-5/6" />
+      </div>
       <p v-else-if="amendmentHidden" class="text-muted">
         {{ t("projection.amendmentHidden") }}
       </p>

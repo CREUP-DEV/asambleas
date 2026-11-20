@@ -84,18 +84,68 @@ export function liveSpeakers(
 
 /**
  * Whether a batch of live events may have changed the speaking turns or
- * whether they are shown: a poll (anything may have changed), a change of
- * the live state (where `speakersVisible` lives) or a speaking-turn event
- * (entityType "speakers": `speaking_turn_*` and
- * `speakers_visibility_changed`).
+ * whether they are shown: a poll (anything may have changed) or a
+ * speaking-turn event (entityType "speakers": `speaking_turn_*` and
+ * `speakers_visibility_changed`). Not a change of the live state
+ * (`live_changed`), the Mesa's most frequent event: every change of
+ * `speakersVisible` also records `speakers_visibility_changed`, and the
+ * room only shows the turns speaking and waiting, whatever is in debate.
  */
 export function affectsSpeakers(events: readonly LiveEventDto[]): boolean {
   return events.some(
+    (event) => event.type === "poll" || event.entityType === "speakers",
+  );
+}
+
+/**
+ * The speaking-turn events that may change the turns that spoke (speaking,
+ * done or noted by hand), as GET .../speakers/notes lists them: a turn
+ * takes the floor, ends, is cancelled or put back, is edited, or is noted
+ * by hand or unnoted. Not a turn added to the queue or moved in it (it is
+ * waiting), nor the queue shown or hidden.
+ */
+export const SPOKEN_TURN_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "speaking_turn_started",
+  "speaking_turn_finished",
+  "speaking_turn_cancelled",
+  "speaking_turn_restored",
+  "speaking_turn_updated",
+  "speaking_turn_noted",
+  "speaking_turn_unnoted",
+]);
+
+/**
+ * Whether a batch of live events may have changed the turns that spoke
+ * (whoever notes the speakers in the live view): a poll, or a
+ * SPOKEN_TURN_EVENT_TYPES event.
+ */
+export function affectsSpokenTurns(events: readonly LiveEventDto[]): boolean {
+  return events.some(
     (event) =>
       event.type === "poll" ||
-      event.entityType === "live" ||
-      event.entityType === "speakers",
+      (event.entityType === "speakers" &&
+        SPOKEN_TURN_EVENT_TYPES.has(event.type)),
   );
+}
+
+// Where the Mesa has the document scrolled ---------------------------------------
+
+/**
+ * Whether a position of the Mesa read from GET .../live-scroll may replace
+ * the one the page has: a read that left before a newer position arrived
+ * on the stream must not put the view back where the Mesa was. Every
+ * position is stamped by the one server process that keeps them (`at`), so
+ * the newer one wins, whatever its document.
+ */
+export function isNewerScroll(
+  current: { at: string } | null | undefined,
+  next: { at: string },
+): boolean {
+  if (!current) return true;
+  const was = Date.parse(current.at);
+  const is = Date.parse(next.at);
+  if (Number.isNaN(was) || Number.isNaN(is)) return true;
+  return is > was;
 }
 
 /** Entity types whose changes can alter the agenda (items and documents). */

@@ -1198,6 +1198,11 @@ export async function updateLiveState(
     ];
     if (recessChanged) changed.push("recess");
     if (limitChanged) changed.push("speakingLimitSeconds");
+    // A PUT that changes nothing (the document already on screen, the same
+    // message, a retry) writes nothing and tells nobody: every live_changed
+    // makes the whole room refetch. Without a row it still creates one,
+    // since pointLiveVote only projects onto an existing row.
+    if (current && changed.length === 0) return;
     const values = {
       ...next,
       recessStartedAt,

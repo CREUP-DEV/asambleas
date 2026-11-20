@@ -9,6 +9,8 @@ import type {
   AmendmentOutcomeDto,
   BulkAssentBody,
   BulkAssentDto,
+  BulkLapseBody,
+  BulkLapseDto,
   ApprovalWarnings,
   AssemblyDto,
   DocumentAmendmentsDto,
@@ -62,10 +64,12 @@ import {
   useStaleDataNotice,
 } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
+import { affectsDocumentDto } from "../assembly/-liveFilters";
 import SessionConfirmDialog from "~/components/session/ConfirmDialog.vue";
 import {
   buildSessionAgendaRows,
   buildSessionQueue,
+  affectsSessionProgress,
   isSessionAwaitingValidation,
   isSessionBlocCandidate,
   isSessionIncorporated,
@@ -73,6 +77,7 @@ import {
   isSessionPendingAdmission,
   isSessionPublishable,
   isSessionTransactable,
+  openRoomAlternatives,
   sessionAmendmentStage,
   sessionAssentPlan,
   sessionBlocToggle,
@@ -86,6 +91,7 @@ import {
   sessionFinalVoteReasons,
   sessionLapseOffer,
   sessionLeavesPendingVote,
+  sessionLiveMoved,
   sessionNextAgendaTarget,
   sessionNextAmendmentId,
   sessionPendingTransactionalIds,
@@ -96,6 +102,7 @@ import {
   type SessionAdmissionDecision,
   type SessionAgendaTarget,
   type SessionAmendmentStage,
+  type SessionLivePointer,
   type SessionSettleAction,
 } from "./sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
@@ -892,6 +899,28 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return progressFetch.refresh();
   }
 
+  // The Mesa's speaking turns follow the agenda item in debate, and the
+  // progress marks a document projected the first time it goes on screen
+  // (without an event of its own): both are read again only when the live
+  // state moves to another item or document, not on every move of the
+  // debate (sessionLiveMoved). Watching the live state itself catches a
+  // move this console stored from its own request as well as one read on
+  // a live event.
+  watch(
+    (): SessionLivePointer | undefined =>
+      liveState.value
+        ? {
+            documentId: liveState.value.documentId,
+            agendaItemId: liveState.value.agendaItemId,
+          }
+        : undefined,
+    (next, previous) => {
+      const moved = sessionLiveMoved(previous, next);
+      if (moved.speakers) void speakers.refresh();
+      if (moved.progress) void refreshProgress();
+    },
+  );
+
   /** Where an agenda item stands in the session, or null while unknown. */
   function itemTreatment(itemId: string) {
     return itemTreatments.value.get(itemId) ?? null;
@@ -1008,10 +1037,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       return;
     }
     const current = documentId.value;
+    const finalVoteId = document.value?.finalVote?.id ?? null;
     let live = false;
     let assemblyChanged = false;
     let agendaChanged = false;
-    let documentChanged = false;
     let amendmentsChanged = false;
     let itemVotesChanged = false;
     let progressChanged = false;
@@ -1020,20 +1049,17 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (events.some((event) => event.entityType === "projection")) {
       void control.refresh();
     }
+    // Not on every vote or answer of one of its amendments: only what may
+    // change the DocumentDto (affectsDocumentDto), its final vote's
+    // unanimity included.
+    const documentChanged = affectsDocumentDto(events, current, finalVoteId);
     for (const event of events) {
       if (event.entityType === "live") live = true;
-      // A document goes on screen or the debate moves on (live), the Mesa
-      // ticks an item in the sheet (control_sheet), or a vote, a document
-      // or the agenda changes how an item stands by the sheet's rule.
-      if (
-        event.entityType === "live" ||
-        event.entityType === "control_sheet" ||
-        event.entityType === "vote" ||
-        event.entityType === "document" ||
-        event.entityType === "agenda_item"
-      ) {
-        progressChanged = true;
-      }
+      // The Mesa ticks an item in the sheet, or a document, the agenda or
+      // a vote the sheet's rule reads changes how an item stands
+      // (affectsSessionProgress); the live state moving to another
+      // document or item is watched apart (sessionLiveMoved).
+      if (affectsSessionProgress(event, finalVoteId)) progressChanged = true;
       if (event.entityType === "vote") {
         // A vote with no document is an agenda item's (recorded, voided or
         // made unanimous, here or from the control sheet).
@@ -1056,12 +1082,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         current !== null &&
         (event.documentId === current ||
           (event.entityType === "document" && event.entityId === current));
-      if (touchesCurrent) {
-        amendmentsChanged = true;
-        if (event.entityType === "document" || event.entityType === "vote") {
-          documentChanged = true;
-        }
-      }
+      if (touchesCurrent) amendmentsChanged = true;
     }
     if (live) void refreshLive();
     if (assemblyChanged && !hub) void refreshAssembly();
@@ -1097,6 +1118,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const connection = computed(() =>
     sessionConnectionState(connected.value, polling.value, everConnected.value),
   );
+
+  /**
+   * Reads again what this console's own change touched besides what its
+   * answer brought, unless the live stream is connected: the change's own
+   * event then makes onLive read it some 300 ms later (and replaces a read
+   * that started before the change), so reading it now as well only made
+   * the server build it twice. Without the stream, where the next poll
+   * may be 15 s away, it reads it at once.
+   */
+  function refreshUnlessLive(...refreshes: (() => Promise<unknown>)[]): void {
+    if (connected.value) return;
+    for (const refresh of refreshes) void refresh();
+  }
 
   // Local updates ---------------------------------------------------------------
 
@@ -1538,12 +1572,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
   /**
    * The bloc on screen as alternatives to vote between, while it is this
-   * document's: each option's amendments (user's decision of 2026-11-20).
+   * document's and any of them is still open (openRoomAlternatives): each
+   * option's amendments (user's decision of 2026-11-20).
    */
   const roomAlternatives = computed<string[][] | null>(() => {
     const state = liveState.value;
     if (!state || state.documentId !== documentId.value) return null;
-    return state.amendmentBlocOptions ?? null;
+    return openRoomAlternatives(state.amendmentBlocOptions, byId.value);
   });
   /** The dialog of a vote between alternatives, on the amendments chosen. */
   const alternativesDialog = reactive({
@@ -1630,7 +1665,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         }),
       );
       for (const amendment of result.amendments) upsertAmendment(amendment);
-      void refreshAmendments();
+      refreshUnlessLive(refreshAmendments);
       const vote = result.decision.vote!;
       toast.add({
         id: `session-alternatives-${result.decision.id}`,
@@ -1715,8 +1750,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   watch(documentId, () => {
     finalVoteDialog.open = false;
     finalVoteAnnulDialog.open = false;
-    // Its amendments are the previous document's.
+    // Its amendments are the previous document's (a vote's count on the
+    // projection ends with its form).
     assentDialog.open = false;
+    voteDialog.open = false;
+    alternativesDialog.open = false;
   });
   // Likewise the item vote: once the debate moves to another item (from
   // any Mesa device), it must not record a vote on the one the room left.
@@ -1911,12 +1949,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         ),
       );
       upsertAmendment(result.amendment);
-      // Approving a transactional changes its sources; reopening may give them back.
+      // Approving a transactional changes its sources; reopening may give
+      // them back. The change's own live event reads them again.
       if (
         result.amendment.kind === "transactional" ||
         action.action === "reopen"
       ) {
-        void refreshAmendments();
+        refreshUnlessLive(refreshAmendments);
       }
 
       if (options.toast !== false) {
@@ -2183,25 +2222,58 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return runOutcome(amendment, { action: "reopen" }, { offer: false });
   }
 
-  /** Marks several undecided amendments as lapsed, one after another. */
+  /**
+   * Marks several undecided amendments as lapsed in one request (POST
+   * .../amendments/lapse): one after another, every lapse made the whole
+   * room refetch, and under load each one waited for the others.
+   */
   async function lapseMany(ids: string[]): Promise<number> {
-    let done = 0;
-    await track("lapse-many", async () => {
-      for (const id of ids) {
-        const amendment = byId.value.get(id);
-        if (!amendment || !isSessionOpen(amendment)) continue;
-        const result = await runOutcome(
-          amendment,
-          { action: "lapse" },
-          { offer: false, toast: false },
-        );
-        if (result) done += 1;
+    if (!requireInSession()) return 0;
+    const items: BulkLapseBody["items"] = [];
+    let documentOf: string | null = null;
+    for (const id of ids) {
+      const amendment = byId.value.get(id);
+      if (!amendment || !isSessionOpen(amendment)) continue;
+      documentOf ??= amendment.documentId;
+      if (amendment.documentId !== documentOf) continue;
+      items.push({ id: amendment.id, updatedAt: amendment.updatedAt });
+    }
+    if (items.length === 0) return 0;
+    let done: number;
+    try {
+      const response = await track("lapse-many", () =>
+        api.send<BulkLapseDto>(documentApi("/amendments/lapse"), {
+          body: { items } satisfies BulkLapseBody,
+        }),
+      );
+      for (const result of response.results) upsertAmendment(result.amendment);
+      done = response.results.length;
+      // Lapsing closes the transactionals over it: the change's own live
+      // event reads the rest of the list again.
+      refreshUnlessLive(refreshAmendments);
+      // Each one that could not lapse (decided or changed meanwhile), with
+      // the reason the server gave, as the single lapse said it.
+      if (response.failed.length > 0) {
+        toast.add({
+          title: t("session.errors.outcome"),
+          description: response.failed
+            .map((entry) => `${label(entry.id)}: ${entry.message}`)
+            .join(" · "),
+          color: "warning",
+          icon: "i-lucide-triangle-alert",
+        });
       }
-    });
+    } catch (error) {
+      api.notifyError(error, "session.errors.outcome");
+      onConflict(error);
+      // Part of it may have lapsed before the error.
+      void refreshAmendments();
+      return 0;
+    }
     if (done > 0) {
       toast.add({
         title: t("session.toasts.lapsedMany", { count: done }, done),
-        color: "success",
+        color: done === items.length ? "success" : "warning",
         icon: "i-lucide-check",
       });
     }
@@ -2239,8 +2311,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         results = response.results;
         for (const result of results) upsertAmendment(result.amendment);
       } catch (error) {
+        // Stopped by an error, part of the bloc may be approved already:
+        // the list is read again, and no count is given (it would say
+        // none were approved).
         api.notifyError(error, "session.errors.outcome");
         onConflict(error);
+        void refreshAmendments();
+        return 0;
       }
     }
     const done = results.length;
@@ -2266,7 +2343,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       lapseDialog.lapse = [...lapseIds];
       lapseDialog.open = true;
     }
-    void refreshAmendments();
+    // What the approvals closed (transactionals over them): the bloc's own
+    // live events read the list again.
+    refreshUnlessLive(refreshAmendments);
     return done;
   }
 
@@ -2348,7 +2427,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           body,
         }),
       );
-      void refreshAmendments();
+      refreshUnlessLive(refreshAmendments);
       const count = result.amendmentIds.length;
       const reversed = result.admission !== body.decision;
       const opposite: SessionAdmissionDecision =
@@ -2580,8 +2659,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       );
       upsertAmendment(updated);
       // The last acceptance replaces the sources (they become transacted)
-      // and a rejection closes it: the rest of the list changes too.
-      void refreshAmendments();
+      // and a rejection closes it: the rest of the list changes too, which
+      // the change's own live event reads again.
+      refreshUnlessLive(refreshAmendments);
       return updated;
     } catch (error) {
       api.notifyError(error, "session.errors.acceptance");
@@ -2609,8 +2689,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         api.send<DocumentDto>(documentApi("/final-vote"), { body }),
       );
       storeDocument(updated);
-      void refreshAgenda();
-      void refreshAmendments();
+      refreshUnlessLive(refreshAgenda, refreshAmendments);
       toast.add({
         title:
           updated.finalVote?.result === "approved"
@@ -2673,8 +2752,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         }),
       );
       storeDocument(updated);
-      void refreshAgenda();
-      void refreshAmendments();
+      refreshUnlessLive(refreshAgenda, refreshAmendments);
       toast.add({
         title: t("session.toasts.finalAnnulled"),
         color: "success",
@@ -2847,7 +2925,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       } else {
         storeItemVote(updated);
       }
-      refreshHolder();
+      // Its own live event reads the holder again (an item's vote has no
+      // document; a final vote is the shown document's, affectsDocumentDto):
+      // only without the stream is it read now.
+      refreshUnlessLive(isDocument ? refreshDocument : refreshItemVotes);
       if (liveState.value?.vote?.id === updated.id) void refreshLive();
       toast.add({
         id: `session-vote-unanimity-${updated.id}`,

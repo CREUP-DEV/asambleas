@@ -11,7 +11,9 @@ import type {
 import {
   affectsControlSheet,
   affectsLiveDebate,
+  affectsSheetAmendments,
   affectsSheetPreview,
+  followWaitsForPanel,
   amendedDocuments,
   amendmentSheetKind,
   amendmentTreatedControl,
@@ -865,6 +867,112 @@ describe("live filters", () => {
   it("follows the debate on screen moves", () => {
     expect(affectsLiveDebate([{ type: "live_changed" }])).toBe(true);
     expect(affectsLiveDebate([{ type: "vote_recorded" }])).toBe(false);
+  });
+
+  describe("the chosen document's amendments", () => {
+    const doc = "doc-1";
+    const event = (
+      type: string,
+      entityType: string,
+      extra: { entityId?: string; documentId?: string } = {},
+    ) => ({ type, entityType, entityId: extra.entityId ?? "x", ...extra });
+
+    it("are not fetched again for what cannot change them", () => {
+      for (const batch of [
+        [event("speaking_turn_added", "speakers")],
+        [event("speaking_turn_started", "speakers")],
+        [event("speaking_turn_finished", "speakers")],
+        [event("speaking_turn_noted", "speakers")],
+        [event("speakers_visibility_changed", "speakers")],
+        [event("seating_assignments_changed", "seating")],
+        [event("seating_person_updated", "seating")],
+        [event("control_sheet_observations_updated", "control_sheet")],
+        [event("control_sheet_treated_changed", "control_sheet")],
+        [event("projection_control_changed", "projection")],
+        [event("headcount_recorded", "headcount")],
+        // A vote on an item carries no document.
+        [event("vote_recorded", "vote")],
+        [event("vote_voided", "vote")],
+        // What the Mesa has on screen, even on this document.
+        [event("live_changed", "live", { documentId: doc })],
+        // Another document's amendment, vote or the document itself.
+        [event("amendment_approved", "amendment", { documentId: "doc-2" })],
+        [event("vote_recorded", "vote", { documentId: "doc-2" })],
+        [
+          event("document_voted", "document", {
+            entityId: "doc-2",
+            documentId: "doc-2",
+          }),
+        ],
+      ]) {
+        expect(affectsSheetAmendments(batch, doc)).toBe(false);
+      }
+    });
+
+    it("are fetched again for what may change them", () => {
+      for (const batch of [
+        [event("poll", "assembly")],
+        [event("assembly_status_changed", "assembly")],
+        [event("calendar_updated", "assembly")],
+        [event("agenda_item_updated", "agenda_item")],
+        [event("amendment_approved", "amendment", { documentId: doc })],
+        [event("amendment_reopened", "amendment", { documentId: doc })],
+        [event("position_changed", "amendment", { documentId: doc })],
+        [event("vote_recorded", "vote", { documentId: doc })],
+        [event("decision_recorded", "decision", { documentId: doc })],
+        [
+          event("document_voted", "document", {
+            entityId: doc,
+            documentId: doc,
+          }),
+        ],
+        [event("document_status_changed", "document", { entityId: doc })],
+        // One that matters among others that do not.
+        [
+          event("speaking_turn_added", "speakers"),
+          event("amendment_updated", "amendment", { documentId: doc }),
+        ],
+      ]) {
+        expect(affectsSheetAmendments(batch, doc)).toBe(true);
+      }
+    });
+
+    it("are fetched again on a poll even without a document", () => {
+      expect(affectsSheetAmendments([event("poll", "live")], null)).toBe(true);
+      expect(
+        affectsSheetAmendments(
+          [event("amendment_updated", "amendment", { documentId: doc })],
+          null,
+        ),
+      ).toBe(false);
+    });
+  });
+});
+
+describe("followWaitsForPanel", () => {
+  it("waits while an amendment's panel is open and the debate moves to another document", () => {
+    expect(
+      followWaitsForPanel({ open: true, kind: "amendment" }, "doc-1", "doc-2"),
+    ).toBe(true);
+  });
+
+  it("follows at once otherwise", () => {
+    // The same document: the panel's row stays in the list.
+    expect(
+      followWaitsForPanel({ open: true, kind: "amendment" }, "doc-1", "doc-1"),
+    ).toBe(false);
+    // An item's panel: its row does not depend on the document shown.
+    expect(
+      followWaitsForPanel({ open: true, kind: "item" }, "doc-1", "doc-2"),
+    ).toBe(false);
+    // The panel closed.
+    expect(
+      followWaitsForPanel({ open: false, kind: "amendment" }, "doc-1", "doc-2"),
+    ).toBe(false);
+    // Nowhere to go.
+    expect(
+      followWaitsForPanel({ open: true, kind: "amendment" }, "doc-1", null),
+    ).toBe(false);
   });
 });
 

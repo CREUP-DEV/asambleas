@@ -76,6 +76,8 @@ import type {
   ApprovalWarnings,
   BulkAssentBody,
   BulkAssentDto,
+  BulkLapseBody,
+  BulkLapseDto,
   CorrectionBody,
   UndoValidationBody,
   DocumentAmendmentsDto,
@@ -122,6 +124,7 @@ import {
   type VoteOutcome,
 } from "../../../shared/utils/votes";
 import { computeAlternativesOutcome } from "../../../shared/utils/alternativesVote";
+import { alternativesSplitConflict } from "../../../shared/utils/alternativesSplit";
 import { isUniqueConstraintViolation } from "../errors";
 import {
   buildOptimisticLockCondition,
@@ -143,7 +146,13 @@ import {
   pointLiveVote,
   shareLockAssembly,
 } from "./documents";
-import { recordEvent } from "./events";
+import {
+  holdLiveNotices,
+  recordEvent,
+  sendLiveNotices,
+  type LiveMessage,
+} from "./events";
+import { logError } from "../core/logger";
 import { loadPassageWordings, toPassageWordingDto } from "./wordings";
 import { amendmentsMeet } from "../../../shared/utils/content/passages";
 import { assertSessionOpen } from "./sessionOpen";
@@ -2056,6 +2065,35 @@ export async function amendmentDto(
   ]);
   const [dto] = await buildAmendmentDtos(ctx, [row], visibleIds);
   return dto!;
+}
+
+/**
+ * amendmentDto for several amendments in one pass (a bulk outcome), by id:
+ * each names only the related amendments the actor can see. One no longer
+ * found is left out.
+ */
+async function amendmentDtos(
+  ctx: DocumentAmendmentContext,
+  ids: string[],
+): Promise<Map<string, AmendmentDto>> {
+  if (ids.length === 0) return new Map();
+  const rows = await findAmendments(db, inArray(amendments.id, ids));
+  const relatedIds = unique(
+    rows.flatMap((row) => [
+      ...row.sources.map((source) => source.sourceId),
+      ...row.derived.map((derived) => derived.transactionalId),
+    ]),
+  );
+  const related =
+    relatedIds.length > 0
+      ? await findAmendments(db, inArray(amendments.id, relatedIds))
+      : [];
+  const visibleIds = new Set([
+    ...rows.map((row) => row.id),
+    ...related.filter((item) => isVisible(ctx, item)).map((item) => item.id),
+  ]);
+  const dtos = await buildAmendmentDtos(ctx, rows, visibleIds);
+  return new Map(dtos.map((dto) => [dto.id, dto]));
 }
 
 // List ---------------------------------------------------------------------
@@ -5268,12 +5306,13 @@ async function approvalWarnings(
  * A bloc approved by assent in one request (POST .../amendments/assent;
  * user's decision of 2026-11-20): each amendment goes through the single
  * approval (applyAmendmentOutcome, its own transaction, checks and events)
- * in the order given, one after another, so the room's clients refetch
- * once for the whole bloc instead of once per amendment, as the console's
- * request after request made them do. One that cannot be approved (decided
- * meanwhile, changed since it was seen, hidden or of another document) is
- * left with the reason and the rest go on; anything but a client error
- * stops it.
+ * in the order given, one after another, and the live notices of the whole
+ * bloc go out together at the end (applyBulkOutcome), so the room's clients
+ * refetch once for the whole bloc instead of once per amendment, as the
+ * console's request after request made them do. One that cannot be
+ * approved (decided meanwhile, changed since it was seen, hidden or of
+ * another document) is left with the reason and the rest go on; anything
+ * but a client error stops it.
  */
 export async function applyBulkAssent(
   ctx: DocumentAmendmentContext,
@@ -5289,35 +5328,107 @@ export async function applyBulkAssent(
     ctx.assembly.id,
     body.items.map((item) => item.id),
   );
-  const results: AmendmentOutcomeDto[] = [];
+  return applyBulkOutcome(ctx, body, (item) => ({
+    action: "approve",
+    method: "assent",
+    updatedAt: item.updatedAt,
+  }));
+}
+
+/**
+ * Several amendments marked as lapsed in one request (POST
+ * .../amendments/lapse, BulkLapseBody): the lapse offer after a decision,
+ * with the amendments the Mesa ticked. Each goes through the single lapse
+ * (applyAmendmentOutcome: its own transaction, optimistic lock, checks,
+ * event and the transactionals it closes), and the live notices go out
+ * together at the end, as in a bloc approved by assent. One that cannot
+ * lapse is left with the reason and the rest go on.
+ */
+export async function applyBulkLapse(
+  ctx: DocumentAmendmentContext,
+  body: BulkLapseBody,
+): Promise<BulkLapseDto> {
+  if (!canRecordResults(ctx.actor)) {
+    fail(403, "No tienes permiso para realizar esta acción");
+  }
+  assertSessionOpen(ctx.assembly.status);
+  return applyBulkOutcome(ctx, body, (item) => ({
+    action: "lapse",
+    updatedAt: item.updatedAt,
+  }));
+}
+
+/**
+ * The loop of a bulk outcome (applyBulkAssent, applyBulkLapse): each
+ * amendment in the order given, in its own transaction, with the live
+ * notices held back (holdLiveNotices) and sent in one go once the loop
+ * ends, also when an error stops it, so what committed is never left
+ * unannounced. The notices of an amendment whose outcome failed are
+ * dropped: nothing of it committed (recordAmendmentOutcome does no work
+ * after its transaction). The amendments come back mapped in one pass
+ * once all are decided, each with what its own outcome returned.
+ */
+async function applyBulkOutcome(
+  ctx: DocumentAmendmentContext,
+  body: BulkAssentBody,
+  outcomeOf: (item: BulkAssentBody["items"][number]) => OutcomeBody,
+): Promise<BulkAssentDto> {
+  const decided: ({ id: string } & Omit<AmendmentOutcomeDto, "amendment">)[] =
+    [];
   const failed: BulkAssentDto["failed"] = [];
-  for (const item of body.items) {
-    const amendment = await loadAmendment(db, item.id);
-    if (
-      !amendment ||
-      amendment.documentId !== ctx.document.id ||
-      !isVisible(ctx, amendment)
-    ) {
-      failed.push({ id: item.id, message: "Enmienda no encontrada" });
-      continue;
+  const notices: LiveMessage[] = [];
+  try {
+    for (const item of body.items) {
+      const amendment = await loadAmendment(db, item.id);
+      if (
+        !amendment ||
+        amendment.documentId !== ctx.document.id ||
+        !isVisible(ctx, amendment)
+      ) {
+        failed.push({ id: item.id, message: "Enmienda no encontrada" });
+        continue;
+      }
+      const held: LiveMessage[] = [];
+      try {
+        const recorded = await holdLiveNotices(held, () =>
+          recordAmendmentOutcome(
+            {
+              ...ctx,
+              amendment,
+              isAuthor: isAmendmentAuthor(ctx.actor, amendment),
+            },
+            outcomeOf(item),
+          ),
+        );
+        notices.push(...held);
+        decided.push({ id: amendment.id, ...recorded });
+      } catch (error) {
+        if (!isError(error) || error.statusCode >= 500) throw error;
+        failed.push({ id: item.id, message: error.message });
+      }
     }
+  } finally {
     try {
-      results.push(
-        await applyAmendmentOutcome(
-          {
-            ...ctx,
-            amendment,
-            isAuthor: isAmendmentAuthor(ctx.actor, amendment),
-          },
-          { action: "approve", method: "assent", updatedAt: item.updatedAt },
-        ),
-      );
+      await sendLiveNotices(db, notices);
     } catch (error) {
-      if (!isError(error) || error.statusCode >= 500) throw error;
-      failed.push({ id: item.id, message: error.message });
+      // The changes are committed: the clients see them with the next
+      // live event, or their poll while the stream is down.
+      logError("amendments.bulkOutcome.notify", error);
     }
   }
-  return { results, failed };
+  const dtos = await amendmentDtos(
+    ctx,
+    decided.map((entry) => entry.id),
+  );
+  return {
+    results: decided.flatMap((entry) => {
+      const amendment = dtos.get(entry.id);
+      return amendment
+        ? [{ amendment, vote: entry.vote, warnings: entry.warnings }]
+        : [];
+    }),
+    failed,
+  };
 }
 
 export async function applyAmendmentOutcome(
@@ -5329,13 +5440,32 @@ export async function applyAmendmentOutcome(
    */
   options: { controlsProjection?: boolean } = {},
 ): Promise<AmendmentOutcomeResult> {
+  const recorded = await recordAmendmentOutcome(ctx, body, options);
+  return {
+    amendment: await amendmentDto(ctx, ctx.amendment.id),
+    ...recorded,
+  };
+}
+
+/**
+ * The outcome itself (applyAmendmentOutcome without the amendment's DTO):
+ * its checks and its transaction, and nothing after the commit, so a
+ * failure means nothing of it committed (applyBulkOutcome relies on it).
+ */
+async function recordAmendmentOutcome(
+  ctx: AmendmentContext,
+  body: OutcomeBody,
+  options: { controlsProjection?: boolean } = {},
+): Promise<Omit<AmendmentOutcomeResult, "amendment">> {
   const { actor, amendment, document, now } = ctx;
   if (!canRecordResults(actor)) {
     fail(403, "No tienes permiso para realizar esta acción");
   }
   assertNotFinal(ctx);
   // The Mesa decides in the room: only while the session is open. Reopening
-  // a decision recorded by mistake corrects the record and may wait.
+  // a decision recorded by mistake corrects the record and may wait. This
+  // is the quick answer; each transaction checks again under the
+  // assembly's lock (lockOpenSession), which a suspension waits for.
   if (body.action !== "reopen") assertSessionOpen(ctx.assembly.status);
   // A vote goes on screen only from the console that controls the
   // projection, unless it says otherwise: one recorded from the control
@@ -5394,8 +5524,9 @@ export async function applyAmendmentOutcome(
       body.action === "approve" || evaluated?.outcome.result === "approved";
 
     const result = await db.transaction(async (tx) => {
-      // A vote is projected: assembly before document ("Row locks").
-      if (body.action === "vote") await shareLockAssembly(tx, ctx.assembly.id);
+      // The session is still open under the assembly's lock (a vote is
+      // also projected): assembly before document ("Row locks").
+      await lockOpenSession(tx, ctx.assembly.id);
       // The projection takes the agenda item from the locked row: the share
       // lock holds off a move, but one may have committed since the resolve.
       const { agendaItemId } = await lockDocument(tx, document.id, "share");
@@ -5556,7 +5687,6 @@ export async function applyAmendmentOutcome(
     });
 
     return {
-      amendment: await amendmentDto(ctx, amendment.id),
       vote: result.voteRow ? toVoteDto(result.voteRow) : null,
       warnings: result.warnings,
     };
@@ -5578,6 +5708,8 @@ export async function applyAmendmentOutcome(
     }
     const status = body.action === "withdraw" ? "withdrawn" : "lapsed";
     await db.transaction(async (tx) => {
+      // The session is still open: assembly before document ("Row locks").
+      await lockOpenSession(tx, ctx.assembly.id);
       await lockDocument(tx, document.id, "share");
       // The amendment and the transactionals over it, in one ordered pass:
       // settling it closes them.
@@ -5615,11 +5747,7 @@ export async function applyAmendmentOutcome(
         { id: amendment.id, code: amendment.code, status },
       ]);
     });
-    return {
-      amendment: await amendmentDto(ctx, amendment.id),
-      vote: null,
-      warnings: null,
-    };
+    return { vote: null, warnings: null };
   }
 
   // reopen
@@ -5810,19 +5938,60 @@ export async function applyAmendmentOutcome(
       actor,
     });
   });
-  return {
-    amendment: await amendmentDto(ctx, amendment.id),
-    vote: null,
-    warnings: null,
-  };
+  return { vote: null, warnings: null };
+}
+
+/**
+ * Share-locks the assembly and refuses unless its session is open. The
+ * status read under this lock holds until the transaction ends: a status
+ * change (suspending or closing the session) waits for it, so no decision
+ * lands after a suspension. Assembly before document ("Row locks").
+ */
+export async function lockOpenSession(
+  tx: Executor,
+  assemblyId: string,
+): Promise<void> {
+  const locked = await shareLockAssembly(tx, assemblyId);
+  assertSessionOpen(locked?.status);
 }
 
 // Votes between alternatives ------------------------------------------------
 
 /**
- * The amendments a vote between alternatives decided, when `voteId` is one
- * (it has options): every amendment of the document still pointing at it.
- * Null for any other vote, or none.
+ * What a vote between alternatives checks under the assembly's share lock,
+ * which it takes (assembly before document, "Row locks"): the session is
+ * still open, and the split recorded is the one on screen
+ * (alternativesSplitConflict). live_state is read without its own lock: the
+ * assembly's already holds off PUT .../live-state, and pointLiveVote locks
+ * it later in the same order as every other path.
+ */
+export async function assertAlternativesUnderLock(
+  tx: Executor,
+  input: { assemblyId: string; documentId: string; options: string[][] },
+): Promise<void> {
+  await lockOpenSession(tx, input.assemblyId);
+  const [live] = await tx
+    .select({
+      documentId: liveState.documentId,
+      options: liveState.amendmentBlocOptions,
+    })
+    .from(liveState)
+    .where(eq(liveState.assemblyId, input.assemblyId));
+  if (
+    live?.documentId === input.documentId &&
+    alternativesSplitConflict(live.options, input.options)
+  ) {
+    fail(
+      409,
+      "El reparto no coincide con las opciones en pantalla: la sala vota lo que ve",
+      { messageKey: "session.alternatives.errors.splitChanged" },
+    );
+  }
+}
+
+/**
+ * 409 when any of these amendments is on screen as an alternative of a
+ * vote between alternatives: those are decided by that vote, never alone.
  */
 async function assertNotOnScreenAsAlternatives(
   assemblyId: string,
@@ -5842,6 +6011,11 @@ async function assertNotOnScreenAsAlternatives(
   }
 }
 
+/**
+ * The amendments a vote between alternatives decided, when `voteId` is one
+ * (it has options): every amendment of the document still pointing at it.
+ * Null for any other vote, or none.
+ */
 async function alternativesVoteSiblings(
   documentId: string,
   voteId: string | null,
@@ -5866,6 +6040,38 @@ async function alternativesVoteSiblings(
 }
 
 /**
+ * An amendment a vote between alternatives left undecided (no winner, the
+ * Mesa chose "no_effect"): still open and admitted, unchanged since the
+ * console saw it (`seenAt`), and its updated_at moved on, else 409 like a
+ * decision. Without it the same vote sent twice recorded twice.
+ */
+export async function touchVotedWithoutEffect(
+  tx: Executor,
+  id: string,
+  seenAt: string,
+  amendment: { code: string | null },
+): Promise<void> {
+  const touched = await tx
+    .update(amendments)
+    .set({ updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(amendments.id, id),
+        eq(amendments.status, "submitted"),
+        eq(amendments.admission, "admitted"),
+        buildOptimisticLockCondition(amendments.updatedAt, seenAt),
+      ),
+    )
+    .returning({ id: amendments.id });
+  if (touched.length === 0) {
+    fail(
+      409,
+      `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
+    );
+  }
+}
+
+/**
  * A vote between alternatives (POST .../amendments/alternatives; user's
  * decisions of 2026-11-20): the room chooses between sets of amendments of
  * the document or abstains, in one vote recorded once (subject "decision",
@@ -5877,7 +6083,9 @@ async function alternativesVoteSiblings(
  * none changed. Everything happens in one transaction: one amendment that
  * cannot be decided (decided meanwhile, changed since it was seen, not
  * admitted or public, a transactional still waiting for its parties)
- * refuses the whole vote. Each decided amendment closes the transactionals
+ * refuses the whole vote, and so does a split of the options other than
+ * the one on screen (assertAlternativesUnderLock), or a session no longer
+ * open. Each decided amendment closes the transactionals
  * over it, and an approved transactional replaces its sources, as a single
  * vote does.
  */
@@ -5986,8 +6194,14 @@ export async function decideAlternatives(
   };
 
   const result = await db.transaction(async (tx) => {
-    // The vote goes on screen: assembly before document ("Row locks").
-    await shareLockAssembly(tx, ctx.assembly.id);
+    // The session is still open and the split is the one on screen, under
+    // the assembly's lock (the vote also goes on screen): assembly before
+    // document ("Row locks").
+    await assertAlternativesUnderLock(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: document.id,
+      options: optionIds,
+    });
     const { agendaItemId } = await lockDocument(tx, document.id, "share");
     // The amendments, what their transactionals replace and the other
     // transactionals over any of them (which deciding them closes), in one
@@ -6136,7 +6350,11 @@ export async function decideAlternatives(
         };
         if (!status) {
           // Nobody won and the Mesa left them undecided: the amendment's
-          // history still says it was voted.
+          // history still says it was voted. Its token moves on, so the
+          // same request sent twice (two consoles, a retry) records one
+          // vote and the second gets 409; a new vote on the same options
+          // after a tie, with the fresh token, still goes.
+          await touchVotedWithoutEffect(tx, id, seenAt.get(id)!, amendment);
           await recordEvent(tx, {
             ...base,
             entityId: id,

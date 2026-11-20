@@ -27,9 +27,11 @@ import { applyIntranetNotFound, type IntranetNotFoundResult } from "./roleSync";
 /**
  * The daily access re-check: an account deleted in the Intranet loses access
  * even if it never signs in again. Sign-in already asks the Intranet
- * (checkSignInAccess), but a session lasts 7 days and is renewed every day
- * it is used, so an account that keeps its session alive would never be
- * asked. Once a day (server/utils/members/schedule.ts) every account that
+ * (checkSignInAccess), but a session lasts 7 days and the browser renews it
+ * (row and cookie) at most once a day while the app is used
+ * (app/plugins/session-keepalive.client.ts asks better-auth's get-session;
+ * requireAuth never refreshes), so an account that keeps its session alive
+ * would never be asked. Once a day (server/utils/members/schedule.ts) every account that
  * has a live session, still has access, was known to the Intranet and holds
  * no protected role is looked up again, one at a time; an authenticated
  * `notFound` revokes it (applyIntranetNotFound). Nothing else changes: role

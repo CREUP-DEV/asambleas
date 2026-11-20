@@ -768,6 +768,58 @@ export function affectsSheetPreview(
   );
 }
 
+/**
+ * Whether a batch of live events may change the chosen document's
+ * amendments as the sheet reads them (DocumentAmendmentsDto), so they are
+ * fetched again: "poll" (the stream was down); anything about the assembly
+ * (its status and calendar decide `can`) or its agenda (rare, and it can
+ * hide documents); and what is about that document (`documentId`, or the
+ * document itself): every change of one of its amendments, their votes,
+ * decisions and answers carries it. Never the speakers, the seating, the
+ * sheet's own notes, the headcounts, the projection, a vote on an item nor
+ * what happens to another document. What the Mesa moves on screen
+ * (`live_changed`) never changes them either, as for the sheet.
+ */
+export function affectsSheetAmendments(
+  events: readonly Pick<
+    LiveEventDto,
+    "type" | "entityType" | "entityId" | "documentId"
+  >[],
+  documentId: string | null | undefined,
+): boolean {
+  return events.some(
+    (event) =>
+      event.type === "poll" ||
+      (event.type !== "live_changed" &&
+        (event.entityType === "assembly" ||
+          event.entityType === "agenda_item" ||
+          (Boolean(documentId) &&
+            (event.documentId === documentId ||
+              (event.entityType === "document" &&
+                event.entityId === documentId))))),
+  );
+}
+
+/**
+ * Whether following the debate waits to change the document shown: while
+ * an amendment's panel is open, the debate moving to another document
+ * would take its row out of the list and leave the panel on a frozen copy
+ * of it. It moves once the panel closes. Same document, or no amendment
+ * panel open: it follows at once.
+ */
+export function followWaitsForPanel(
+  panel: { open: boolean; kind: "item" | "amendment" | null },
+  shownDocumentId: string | null | undefined,
+  targetDocumentId: string | null | undefined,
+): boolean {
+  return (
+    panel.open &&
+    panel.kind === "amendment" &&
+    Boolean(targetDocumentId) &&
+    targetDocumentId !== shownDocumentId
+  );
+}
+
 /** Whether a batch of live events moved what the Mesa has on screen. */
 export function affectsLiveDebate(
   events: readonly Pick<LiveEventDto, "type">[],

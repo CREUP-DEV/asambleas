@@ -1,5 +1,6 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
 import type { DocumentDto, LiveEventDto } from "~~/shared/types/api";
+import { affectsDocumentDto } from "../assembly/-liveFilters";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
@@ -28,11 +29,19 @@ export interface UseDocumentReturn {
   /** True while the last refresh failed and the last good document shows. */
   stale: Readonly<Ref<boolean>>;
   refresh: () => Promise<void>;
-  /** Refetches when a batch touches this document, or asks to poll. */
+  /**
+   * Refetches when a batch may change this DocumentDto (affectsDocumentDto),
+   * or asks to poll.
+   */
   handleLiveEvents: (events: LiveEventDto[]) => void;
 }
 
-/** Whether a live batch concerns the document with this id. */
+/**
+ * Whether a live batch concerns the document with this id: any event of
+ * the document or of one of its amendments. What its amendments list
+ * follows; the DocumentDto itself changes far less often
+ * (affectsDocumentDto).
+ */
 export function isDocumentLiveBatch(
   events: LiveEventDto[],
   documentId: string | undefined,
@@ -86,7 +95,9 @@ export function useDocument(
   }
 
   function handleLiveEvents(events: LiveEventDto[]): void {
-    if (isDocumentLiveBatch(events, data.value?.id)) void refresh();
+    if (affectsDocumentDto(events, data.value?.id, data.value?.finalVote?.id)) {
+      void refresh();
+    }
   }
 
   if (options.live !== false) {

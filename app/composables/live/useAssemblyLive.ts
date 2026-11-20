@@ -9,9 +9,11 @@ import {
   LIVE_ONLINE_JITTER_MS,
   LIVE_WATCHDOG_TICK_MS,
   isLiveStreamStale,
+  shouldReopenOnOnline,
   shouldReopenOnRestore,
   shouldReopenOnShow,
 } from "./-watchdog";
+import { liveChannels } from "./-channels";
 import { checkForNewVersion } from "~/composables/shell/newVersion";
 import { sessionFailureAction } from "~/middleware/-session";
 
@@ -84,7 +86,8 @@ function dedupe(events: LiveEventDto[]): LiveEventDto[] {
  *   sends a `ping` every 25 s, and a visible page that heard nothing for a
  *   minute counts it as a failure and reconnects. A page shown again after
  *   a long hide whose stream missed a heartbeat, a page restored from the
- *   browser's cache and a network that comes back reopen it at once. So
+ *   browser's cache and a network that comes back reopen it at once (but
+ *   not a stream opened and ready since it went: shouldReopenOnOnline). So
  *   `connected` stays true only while messages keep arriving.
  * - Client-only. Closes the stream when the id changes and when the calling
  *   scope (component) is disposed. An undefined id means "not connected".
@@ -103,7 +106,10 @@ export function useAssemblyLive(
     onScroll?: (scroll: LiveScrollDto) => void;
     /** What the Mesa's pointer does on that document (`pointer` events). */
     onPointer?: (pointer: LivePointerDto) => void;
-    /** A secret vote's running count (`tally` events). */
+    /**
+     * A secret vote's running count (`tally` events). The stream carries
+     * only the pushes whose handler is given here (liveChannels).
+     */
     onTally?: (tally: LiveTallyDto) => void;
     /**
      * Up to how long this client waits before handing a batch to
@@ -134,6 +140,12 @@ export function useAssemblyLive(
   };
   if (import.meta.server) return result;
   const nuxtApp = useNuxtApp();
+  /**
+   * The pushes this page follows (`?channels=`): the server sends the
+   * others to nobody that has no handler for them, so a phone never
+   * receives the Mesa's pointer, which only the projection draws.
+   */
+  const channels = liveChannels(options);
 
   let source: EventSource | null = null;
   let activeId: string | undefined;
@@ -295,7 +307,7 @@ export function useAssemblyLive(
     let stream: EventSource;
     try {
       stream = new EventSource(
-        `/api/assemblies/${encodeURIComponent(id)}/live`,
+        `/api/assemblies/${encodeURIComponent(id)}/live?channels=${channels}`,
         { withCredentials: true },
       );
     } catch {
@@ -418,9 +430,24 @@ export function useAssemblyLive(
     watchdogTimer = setInterval(watchdogTick, LIVE_WATCHDOG_TICK_MS);
   }
 
+  /** When the browser last went offline (shouldReopenOnOnline). */
+  let lastOfflineAt: number | null = null;
+  function onOffline(): void {
+    lastOfflineAt = Date.now();
+  }
+
   // Back online: the old socket may be dead even if it looks open, so
-  // always reopen, a little apart from everyone else in the room.
+  // reopen, a little apart from everyone else in the room; but not a
+  // stream opened and ready since the network went (shouldReopenOnOnline).
   function onOnline(): void {
+    if (
+      !shouldReopenOnOnline({
+        connected: connected.value,
+        openedAt,
+        lastOfflineAt,
+      })
+    )
+      return;
     reopen(Math.random() * LIVE_ONLINE_JITTER_MS);
   }
 
@@ -460,6 +487,7 @@ export function useAssemblyLive(
   }
 
   window.addEventListener("online", onOnline);
+  window.addEventListener("offline", onOffline);
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("pageshow", onPageShow);
 
@@ -477,6 +505,7 @@ export function useAssemblyLive(
     onScopeDispose(() => {
       stopWatch();
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pageshow", onPageShow);
       teardown();
