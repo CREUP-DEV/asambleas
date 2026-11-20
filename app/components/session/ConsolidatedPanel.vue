@@ -35,6 +35,7 @@ const canWord = computed(
 const PASSAGE_COLORS = {
   pending: "warning",
   automatic: "neutral",
+  merged: "info",
   worded: "success",
 } as const;
 const blockers = computed(() => session.finalVoteBlockers.value);

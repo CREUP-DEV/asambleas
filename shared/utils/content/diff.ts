@@ -136,6 +136,78 @@ export function diffText(base: Block, edited: string): ReplaceOp[] {
 }
 
 /**
+ * A replacement of plain text split into the words it really changes
+ * (user's decision of 2026-11-20, for merging approved amendments): every
+ * word it leaves as it was stays out of the parts, however small, which
+ * diffWords' semantic cleanup would fold into the change. Changes only
+ * separated by whitespace stay one part. The parts are relative to the same
+ * block as `op`, each anchored to its own base text.
+ */
+export function wordEdits(op: ReplaceOp): ReplaceOp[] {
+  if (op.baseText === op.text) return [];
+  const dictionary = new Map<string, string>();
+  const tokens: string[] = [];
+  const encode = (words: string[]) =>
+    words
+      .map((token) => {
+        let code = dictionary.get(token);
+        if (code === undefined) {
+          code = String.fromCharCode(tokens.length + 0x100);
+          dictionary.set(token, code);
+          tokens.push(token);
+        }
+        return code;
+      })
+      .join("");
+  const decode = (encoded: string) =>
+    Array.from(encoded)
+      .map((char) => tokens[char.charCodeAt(0) - 0x100])
+      .join("");
+  const diffs = dmp.diff_main(
+    encode(tokenize(op.baseText)),
+    encode(tokenize(op.text)),
+    false,
+  );
+  const parts: ReplaceOp[] = [];
+  let position = 0;
+  let open: { from: number; removed: string; inserted: string } | null = null;
+  const close = () => {
+    if (!open) return;
+    parts.push({
+      op: "replace",
+      blockId: op.blockId,
+      from: op.from + open.from,
+      to: op.from + open.from + open.removed.length,
+      text: open.inserted,
+      baseText: open.removed,
+    });
+    open = null;
+  };
+  diffs.forEach(([kind, encoded], i) => {
+    const text = decode(encoded);
+    if (kind === DiffMatchPatch.DIFF_EQUAL) {
+      if (open && /^\s+$/.test(text) && i < diffs.length - 1) {
+        open.removed += text;
+        open.inserted += text;
+      } else {
+        close();
+      }
+      position += text.length;
+      return;
+    }
+    if (!open) open = { from: position, removed: "", inserted: "" };
+    if (kind === DiffMatchPatch.DIFF_DELETE) {
+      open.removed += text;
+      position += text.length;
+    } else {
+      open.inserted += text;
+    }
+  });
+  close();
+  return parts.filter((part) => part.text !== part.baseText);
+}
+
+/**
  * The passage as the editor gives it back when nobody touches it. Out of
  * its document a passage can read differently (a nested list item alone
  * comes back at the first level, a line break carries no marks): what an

@@ -2629,7 +2629,7 @@
         "late": "Late",
         "notApplied": "Not incorporated: clashes with {codes}",
         "notAppliedInvalid": "Not incorporated: no longer fits the text",
-        "supersededBy": "No effect on the final text: {codes} deleted it",
+        "supersededBy": "No effect on the final text: {codes} deleted or rewrote it",
         "worded": "Wording set by the Mesa together with {codes}",
         "wordingPending": "Wording pending from the Mesa, together with {codes}"
       },
@@ -4135,7 +4135,8 @@
       "status": {
         "pending": "To word",
         "automatic": "The deletion wins",
-        "worded": "Worded by the Mesa"
+        "worded": "Worded by the Mesa",
+        "merged": "Merged automatically"
       },
       "setFor": "Set the wording of {codes}",
       "clashesTitle": "Where they clash",
@@ -4154,12 +4155,14 @@
         "all": "all",
         "part": "part",
         "none": "nothing"
-      }
+      },
+      "merged": "These approved amendments change the same paragraph, but their changes do not step on each other word by word: the passage takes all of them. Review it and correct it if it is not what was approved.",
+      "mergedOverruled": "All their changes are taken except a touch-up by {codes} inside text {by} rewrites, which has no effect. Review it and correct it if it is not what was approved. | All their changes are taken except the touch-ups by {codes} inside text {by} rewrites, which have no effect. Review it and correct it if it is not what was approved."
     },
     "collision": {
       "meets": "It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads. | It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads.",
-      "deletes": "It deletes text that {codes}, already approved, changed: if approved, that change has no effect. | It deletes text that {codes}, already approved, changed: if approved, those changes have no effect.",
-      "deleted": "It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it. | It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it.",
+      "deletes": "It deletes or rewrites text that {codes}, already approved, changed: if approved, that change has no effect. | It deletes or rewrites text that {codes}, already approved, changed: if approved, those changes have no effect.",
+      "deleted": "It changes text {codes} (approved) already deleted or rewrote: if approved, this change has no effect unless the Mesa corrects it. | It changes text {codes} (approved) already deleted or rewrote: if approved, this change has no effect unless the Mesa corrects it.",
       "howItReads": "How it reads",
       "now": "Now",
       "after": "If approved"

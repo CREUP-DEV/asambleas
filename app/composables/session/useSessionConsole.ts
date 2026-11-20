@@ -2037,7 +2037,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   /** Opens the wording dialog on a passage of the consolidated text. */
   function openWording(passage: Passage, editing = false): void {
     wordingDialog.passageKey = passage.key;
-    wordingDialog.editing = editing || passage.status !== "automatic";
+    // What the engine settled on its own (a deletion that wins, a merge)
+    // opens to be read first; a passage to word opens in the editor.
+    wordingDialog.editing =
+      editing ||
+      (passage.status !== "automatic" && passage.status !== "merged");
     wordingDialog.open = true;
   }
 

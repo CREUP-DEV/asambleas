@@ -204,6 +204,21 @@ const coverage = computed(() => {
 const description = computed(() => {
   if (!passage.value) return t("session.wording.changed");
   if (passage.value.status === "worded") return t("session.wording.worded");
+  if (passage.value.status === "merged") {
+    const left = [...new Set(superseded.value.map((item) => item.amendmentId))];
+    return left.length === 0
+      ? t("session.wording.merged")
+      : t(
+          "session.wording.mergedOverruled",
+          {
+            by: [...new Set(superseded.value.map((item) => item.by))]
+              .map(session.label)
+              .join(", "),
+            codes: left.map(session.label).join(", "),
+          },
+          left.length,
+        );
+  }
   if (passage.value.status === "automatic") {
     const changed = [
       ...new Set(superseded.value.map((item) => item.amendmentId)),

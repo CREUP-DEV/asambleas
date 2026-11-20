@@ -2629,7 +2629,7 @@
         "late": "Fuera de plazo",
         "notApplied": "Sin incorporar: choca con {codes}",
         "notAppliedInvalid": "Sin incorporar: ya no encaja en el texto",
-        "supersededBy": "Sin efecto en el texto final: lo suprimió {codes}",
+        "supersededBy": "Sin efecto en el texto final: lo suprimió o reescribió {codes}",
         "worded": "Redacción fijada por la Mesa junto con {codes}",
         "wordingPending": "Redacción pendiente de la Mesa, junto con {codes}"
       },
@@ -4135,7 +4135,8 @@
       "status": {
         "pending": "Por redactar",
         "automatic": "Gana la supresión",
-        "worded": "Redactado por la Mesa"
+        "worded": "Redactado por la Mesa",
+        "merged": "Fusionado automáticamente"
       },
       "setFor": "Fijar la redacción de {codes}",
       "clashesTitle": "Dónde chocan",
@@ -4154,12 +4155,14 @@
         "all": "todo",
         "part": "en parte",
         "none": "nada"
-      }
+      },
+      "merged": "Estas enmiendas aprobadas cambian el mismo párrafo, pero sus cambios no se pisan palabra a palabra: el pasaje las recoge todas. Revísalo y corrígelo si no es lo que se aprobó.",
+      "mergedOverruled": "Sus cambios se recogen todos salvo un retoque de {codes} dentro de texto que {by} reescribe, que queda sin efecto. Revísalo y corrígelo si no es lo que se aprobó. | Sus cambios se recogen todos salvo los retoques de {codes} dentro de texto que {by} reescribe, que quedan sin efecto. Revísalo y corrígelo si no es lo que se aprobó."
     },
     "collision": {
       "meets": "Actúa sobre texto que ya cambió {codes} (aprobada). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje. | Actúa sobre texto que ya cambiaron {codes} (aprobadas). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje.",
-      "deletes": "Suprime texto que cambió {codes}, ya aprobada: si se aprueba, ese cambio queda sin efecto. | Suprime texto que cambiaron {codes}, ya aprobadas: si se aprueba, esos cambios quedan sin efecto.",
-      "deleted": "Cambia texto que ya suprimió {codes} (aprobada): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija. | Cambia texto que ya suprimieron {codes} (aprobadas): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija.",
+      "deletes": "Suprime o reescribe texto que cambió {codes}, ya aprobada: si se aprueba, ese cambio queda sin efecto. | Suprime o reescribe texto que cambiaron {codes}, ya aprobadas: si se aprueba, esos cambios quedan sin efecto.",
+      "deleted": "Cambia texto que ya suprimió o reescribió {codes} (aprobada): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija. | Cambia texto que ya suprimieron o reescribieron {codes} (aprobadas): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija.",
       "howItReads": "Cómo queda",
       "now": "Ahora",
       "after": "Si se aprueba"

@@ -850,6 +850,22 @@ automatic proposal applies again). They record `passage_worded` and
 `passage_wording_removed`, and `GET .../amendments` returns them as
 `wordings` (only those over amendments the reader sees).
 
+**Passages that merge on their own** (user's decision of 2026-11-20).
+`consolidateApproved` first tries to merge the changes of a paragraph word by
+word, and only what does not merge is `pending` (and holds the final vote
+back). A `merged` passage needs no wording: the same change made twice counts
+once; a change that rewrites a stretch is split into the words it really
+changes (`wordEdits`, a word diff without semantic cleanup), so another
+change of a real word (three letters or digits) it leaves as it was applies
+too (an acronym expanded inside a rewritten sentence); two changes that meet
+at one point both apply only when one of them keeps its own words (a wrap
+such as "SIGC" -> "Sistema … (SIGC)"); a touch-up (punctuation, or up to
+three words the rewrite does not bring back) inside text another change
+rewrites, six words or more and three times longer, has no effect, reported
+as `superseded` like a deletion's; and a space or sign a rewrite next to it
+already adds counts once. The Mesa may still word a merged passage, which then
+reads `worded`.
+
 **Annulling the final vote.** `DELETE .../final-vote` with
 `FinalVoteAnnulBody` (`updatedAt` of the document for the optimistic lock,
 optional `note`) corrects a wrongly recorded final vote.

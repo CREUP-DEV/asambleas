@@ -9,6 +9,7 @@ import type {
   ReplaceOp,
 } from "../../types/content";
 import { annotatedFragment, consolidate } from "./consolidate";
+import { diffText, wordEdits } from "./diff";
 import { validateOps } from "./ops";
 import { rangesCollide } from "./overlaps";
 
@@ -22,6 +23,15 @@ import { rangesCollide } from "./overlaps";
  *   whatever the order they were approved in: those amendments stay
  *   approved but those changes have no effect on the final text
  *   (`superseded`).
+ * - Changes of the same paragraph that do not step on each other word by
+ *   word merge on their own (user's decision of 2026-11-20; `merged`):
+ *   the same change made twice counts once, and a change that rewrites a
+ *   stretch is split into the words it really changes (wordEdits), so the
+ *   word another amendment changes inside it, which it leaves as it was,
+ *   takes that change ("en el marco del SIGC" and "SIGC" -> "Sistema
+ *   Interno de Garantía de Calidad (SIGC)"). Only over a real word (three
+ *   letters or digits at least): a rewrite that happens to keep a "la" or a
+ *   "y" never anchors another change.
  * - Any other collision (the same text, or changes that touch each other)
  *   is a passage the Mesa words (`passages`). Until it does, the text
  *   carries an automatic proposal: where they change the same text, the
@@ -50,9 +60,11 @@ export interface PassageWordingInput {
  *   until the Mesa words it.
  * - `automatic`: a deletion wins over changes inside the blocks it deletes,
  *   with no need to word anything (the Mesa may still correct it).
+ * - `merged`: their changes merge word by word, all of them apply, with no
+ *   need to word anything (the Mesa may still correct it).
  * - `worded`: the Mesa's wording applies.
  */
-export type PassageStatus = "pending" | "automatic" | "worded";
+export type PassageStatus = "pending" | "automatic" | "merged" | "worded";
 
 export interface Passage {
   /** amendmentIds and blockIds, sorted: what a wording is set for. */
@@ -76,7 +88,10 @@ export interface Passage {
   dropped: string[];
 }
 
-/** An approved amendment whose changes in `blockIds` `by` deletes. */
+/**
+ * An approved amendment whose changes in `blockIds` `by` deletes, or whose
+ * changes of punctuation sit in a sentence `by` rewrites.
+ */
 export interface SupersededChange {
   amendmentId: string;
   by: string;
@@ -210,11 +225,15 @@ function wordingFits(
   });
 }
 
-/** The ops of `ops` left once the dropped ones are taken out. */
+/**
+ * The ops of `ops` left once the dropped ones are taken out, each split
+ * into its parts where a merge split it.
+ */
 function keepOps(
   ops: AmendmentOp[],
   dropped: Set<ReplaceOp | InsertOp>,
   dropDelete: Set<string>,
+  split: Map<ReplaceOp, ReplaceOp[]>,
 ): AmendmentOp[] {
   const kept: AmendmentOp[] = [];
   for (const op of ops) {
@@ -222,10 +241,238 @@ function keepOps(
       const blockIds = op.blockIds.filter((id) => !dropDelete.has(id));
       if (blockIds.length > 0) kept.push({ ...op, blockIds });
     } else if (!dropped.has(op)) {
-      kept.push(op);
+      kept.push(...((op.op === "replace" && split.get(op)) || [op]));
     }
   }
   return kept;
+}
+
+/** A real word: what a merged change may hang on. */
+const ANCHOR_WORD = /[\p{L}\p{N}]{3,}/u;
+
+function sameChange(a: ReplaceOp, b: ReplaceOp): boolean {
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    a.text === b.text &&
+    JSON.stringify(a.marks ?? []) === JSON.stringify(b.marks ?? [])
+  );
+}
+
+/**
+ * A change that keeps its own base text inside what it puts there ("SIGC"
+ * -> "Sistema Interno de Garantía de Calidad (SIGC)"): what sits right
+ * beside it still reads beside the same words.
+ */
+function wrapsItsText(op: ReplaceOp): boolean {
+  return (
+    op.from < op.to &&
+    ANCHOR_WORD.test(op.baseText) &&
+    op.text.includes(op.baseText.trim())
+  );
+}
+
+/**
+ * Whether two changes of different amendments cannot both apply: they
+ * change the same text, or they meet at one point and neither keeps its own
+ * words there (UEX6 deletes "y la falta de contratación " and UM2 adds
+ * "de PDI " right after it: "de PDI" was about the deleted words).
+ */
+function stepOn(a: ReplaceOp, b: ReplaceOp): boolean {
+  if (rangesCollide(a, b)) return true;
+  const meet = a.to === b.from || b.to === a.from;
+  return meet && !wrapsItsText(a) && !wrapsItsText(b);
+}
+
+interface MergeUnit {
+  owner: number;
+  /** The amendment's own operation this one is, or is a part of. */
+  source: ReplaceOp;
+  op: ReplaceOp;
+}
+
+/**
+ * Whether the changes of several approved amendments to one block merge
+ * word by word, and how: the operations split into their parts and the
+ * repeated ones. Null when they step on each other (or one changes the
+ * block's format), and the block is left to the Mesa.
+ */
+/**
+ * The stretches a replacement really rewrites, as diffText reads them (with
+ * semantic cleanup, so a small word that happens to stay is part of the
+ * rewrite), relative to its block.
+ */
+function rewrittenParts(op: ReplaceOp): ReplaceOp[] {
+  if (op.marks?.length) return [op];
+  return diffText(
+    { id: op.blockId, type: "paragraph", text: op.baseText, marks: [] },
+    op.text,
+  ).map((part) => ({
+    ...part,
+    blockId: op.blockId,
+    from: op.from + part.from,
+    to: op.from + part.to,
+  }));
+}
+
+/** A change of punctuation alone: no word goes or comes. */
+function punctuationOnly(op: ReplaceOp): boolean {
+  return !/[\p{L}\p{N}]/u.test(op.baseText + op.text);
+}
+
+const WORDS = /[\p{L}\p{N}]+/gu;
+
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().match(WORDS) ?? [];
+}
+
+/** Whether `text` has these words one after another. */
+function hasWords(text: string, words: readonly string[]): boolean {
+  if (words.length === 0) return false;
+  const all = wordsOf(text);
+  return all.some((_, i) => words.every((word, j) => all[i + j] === word));
+}
+
+/** Longest touch-up, in words, that a rewrite around it overrules. */
+const TOUCH_UP_WORDS = 3;
+/**
+ * A rewrite overrules a touch-up only when it rewrites much more: at least
+ * this many words, and this many times the touch-up's. Otherwise the two
+ * may mean different things for the same words ("muchas" -> "bastantes"
+ * against "en muchas asignaturas" -> "en asignaturas troncales"), and the
+ * Mesa words them.
+ */
+const REWRITE_MIN_WORDS = 6;
+const REWRITE_RATIO = 3;
+
+/**
+ * Whether `small` is a touch-up (punctuation, or a few words) that `wide`
+ * leaves nowhere to go: a whole operation of its own amendment, smaller
+ * than the rewrite, whose words the rewrite does not bring back.
+ */
+function touchUp(small: MergeUnit, wide: MergeUnit): boolean {
+  if (small.op !== small.source) return false;
+  if (small.op.to - small.op.from >= wide.op.to - wide.op.from) return false;
+  if (punctuationOnly(wide.op)) return false;
+  if (punctuationOnly(small.op)) return true;
+  const before = wordsOf(small.op.baseText);
+  const after = wordsOf(small.op.text);
+  const rewritten = wordsOf(wide.op.baseText).length;
+  return (
+    rewritten >= REWRITE_MIN_WORDS &&
+    rewritten >= REWRITE_RATIO * Math.max(before.length, 1) &&
+    before.length <= TOUCH_UP_WORDS &&
+    after.length <= TOUCH_UP_WORDS &&
+    !hasWords(wide.op.text, before) &&
+    !hasWords(wide.op.text, after)
+  );
+}
+
+/**
+ * - `split`: the operations split into the words they really change;
+ * - `repeated`: the same change again, by a later amendment;
+ * - `overruled`: changes of punctuation inside text another amendment
+ *   rewrites, which have nothing left to apply to (`by` rewrites it).
+ */
+interface BlockMerge {
+  split: Map<ReplaceOp, ReplaceOp[]>;
+  repeated: ReplaceOp[];
+  overruled: { op: ReplaceOp; owner: number; by: number }[];
+}
+
+function mergeBlock(
+  members: { owner: number; replaces: ReplaceOp[] }[],
+): BlockMerge | null {
+  const units: MergeUnit[] = [];
+  const repeated: ReplaceOp[] = [];
+  const overruled: BlockMerge["overruled"] = [];
+  for (const { owner, replaces } of members) {
+    for (const op of replaces) {
+      if (isFormat(op)) return null;
+      if (units.some((unit) => sameChange(unit.op, op))) repeated.push(op);
+      else units.push({ owner, source: op, op });
+    }
+  }
+  const refined = new Set<ReplaceOp>();
+  // Splits `x` so that none of its parts touches what `y` changes, when
+  // `y` changes a real word that `x` leaves as it was.
+  const resolve = (x: MergeUnit, y: MergeUnit): boolean => {
+    if (refined.has(x.source) || x.op.marks?.length) return false;
+    if (!ANCHOR_WORD.test(y.op.baseText)) return false;
+    const parts = wordEdits(x.op);
+    if (parts.some((part) => stepOn(part, y.op))) return false;
+    refined.add(x.source);
+    units.splice(
+      units.indexOf(x),
+      1,
+      ...parts.map((op) => ({ owner: x.owner, source: x.source, op })),
+    );
+    return true;
+  };
+  for (let guard = 0; guard < 200; guard += 1) {
+    let x: MergeUnit | undefined;
+    let y: MergeUnit | undefined;
+    for (const a of units) {
+      y = units.find(
+        (b) => b.owner !== a.owner && b !== a && stepOn(a.op, b.op),
+      );
+      if (y) {
+        x = a;
+        break;
+      }
+    }
+    if (!x || !y) {
+      const split = new Map<ReplaceOp, ReplaceOp[]>();
+      for (const source of refined) {
+        split.set(
+          source,
+          units.filter((unit) => unit.source === source).map((unit) => unit.op),
+        );
+      }
+      return { split, repeated, overruled };
+    }
+    // The longer change is the one that rewrites around the other.
+    const [wide, narrow] =
+      x.op.to - x.op.from >= y.op.to - y.op.from ? [x, y] : [y, x];
+    if (resolve(wide, narrow) || resolve(narrow, wide)) continue;
+    // A space or a sign added right where another change ends or starts,
+    // that the other change already puts there (US3 adds the space missing
+    // after "49 %." and UM2's rewrite, ending there, ends with it): the
+    // same change again.
+    const echo = [x, y].find((unit) => {
+      const other = unit === x ? y : x;
+      const { op } = unit;
+      if (op !== unit.source || op.from !== op.to || !punctuationOnly(op)) {
+        return false;
+      }
+      return (
+        (op.from === other.op.to && other.op.text.endsWith(op.text)) ||
+        (op.from === other.op.from && other.op.text.startsWith(op.text))
+      );
+    });
+    if (echo) {
+      repeated.push(echo.source);
+      units.splice(units.indexOf(echo), 1);
+      continue;
+    }
+    // A small touch-up inside a sentence another amendment rewrites: the
+    // rewrite takes that text away, so the touch-up has nowhere to go (UM3
+    // rewrites a sentence where US1 adds two commas; T3 rewrites the
+    // phrase where US5 turns "a la" into "al"). What the rewrite takes away
+    // is read from its diff with semantic cleanup (diffText), so a "que" it
+    // happens to keep does not count as the touch-up's place.
+    const small = touchUp(x, y) ? x : touchUp(y, x) ? y : null;
+    const rewrite = small === x ? y : x;
+    if (
+      !small ||
+      !rewrittenParts(rewrite.op).some((part) => rangesCollide(part, small.op))
+    ) {
+      return null;
+    }
+    overruled.push({ op: small.source, owner: small.owner, by: rewrite.owner });
+    units.splice(units.indexOf(small), 1);
+  }
+  return null;
 }
 
 export function consolidateApproved(
@@ -312,6 +559,7 @@ export function consolidateApproved(
   }
 
   const dropped = new Set<ReplaceOp | InsertOp>();
+  const split = new Map<ReplaceOp, ReplaceOp[]>();
   const dropDelete = valid.map(() => new Set<string>());
   const passages: Passage[] = [];
   const superseded: SupersededChange[] = [];
@@ -358,6 +606,7 @@ export function consolidateApproved(
     // The automatic proposal.
     const left = new Set<number>();
     let collides = false;
+    let merges = false;
     for (const blockId of blockIds) {
       if (!contested.has(blockId)) continue;
       const here = members.filter((i) => touches[i]!.has(blockId));
@@ -385,6 +634,36 @@ export function consolidateApproved(
         }
         continue;
       }
+      const merge = mergeBlock(
+        here.map((i) => ({
+          owner: i,
+          replaces: touches[i]!.get(blockId)!.replaces,
+        })),
+      );
+      if (merge) {
+        merges = true;
+        merge.split.forEach((parts, op) => split.set(op, parts));
+        merge.repeated.forEach((op) => dropped.add(op));
+        for (const { op, owner, by } of merge.overruled) {
+          dropped.add(op);
+          left.add(owner);
+          const entry = superseded.find(
+            (item) =>
+              item.amendmentId === valid[owner]!.id &&
+              item.by === valid[by]!.id,
+          );
+          if (entry) {
+            if (!entry.blockIds.includes(blockId)) entry.blockIds.push(blockId);
+          } else {
+            superseded.push({
+              amendmentId: valid[owner]!.id,
+              by: valid[by]!.id,
+              blockIds: [blockId],
+            });
+          }
+        }
+        continue;
+      }
       collides = true;
       // The last approved wins over the same text; touching changes stay.
       const kept: ReplaceOp[] = [];
@@ -406,7 +685,7 @@ export function consolidateApproved(
       key,
       amendmentIds,
       blockIds,
-      status: collides ? "pending" : "automatic",
+      status: collides ? "pending" : merges ? "merged" : "automatic",
       wordingId: null,
       dropped: [...left].sort((a, b) => a - b).map((i) => valid[i]!.id),
     });
@@ -414,7 +693,7 @@ export function consolidateApproved(
 
   const inputs: AmendmentInput[] = [];
   valid.forEach((amendment, i) => {
-    const ops = keepOps(amendment.ops, dropped, dropDelete[i]!);
+    const ops = keepOps(amendment.ops, dropped, dropDelete[i]!, split);
     if (ops.length > 0) inputs.push({ id: amendment.id, ops });
   });
   const result = consolidate(base, [...inputs, ...wordingInputs]);

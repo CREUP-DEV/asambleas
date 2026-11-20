@@ -281,6 +281,7 @@ export function buildAnnexRows(input: {
       const passage = input.passages?.find(
         (item) =>
           item.status !== "automatic" &&
+          item.status !== "merged" &&
           item.amendmentIds.includes(amendment.id),
       );
       return {
