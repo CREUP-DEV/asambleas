@@ -1,4 +1,5 @@
 import type { AssemblyPackageStatusDto } from "~~/shared/types/api";
+import type { PackageSelection } from "~~/shared/utils/schemas/export";
 
 /**
  * The documentation package being prepared ("Descargar documentación"),
@@ -7,8 +8,10 @@ import type { AssemblyPackageStatusDto } from "~~/shared/types/api";
  * and the user can go on browsing. When the package is ready (or fails)
  * and no dialog is following it, a toast says so, with the download.
  *
- * One entry per package (assembly, language, Word versions or not), kept
- * for the browser tab's life. Only the browser asks and polls.
+ * One entry per package (assembly, language, Word versions or not, and
+ * the part chosen with the dialog's filters), kept for the browser tab's
+ * life. Only the browser asks and polls. A part is named afterwards by the
+ * key the server answers (`status.part.key`, `?filter=`).
  */
 
 export interface PackageJob {
@@ -26,6 +29,8 @@ export interface PackageTarget {
   apiBase: string;
   locale: "es" | "en";
   editable: boolean;
+  /** A part of the package; null for the whole of it. */
+  selection: PackageSelection | null;
 }
 
 const POLL_FIRST_MS = 2_000;
@@ -36,16 +41,44 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Bumped on every request, so a reply to an older one is dropped. */
 const generations = new Map<string, number>();
 
+/** A selection with its lists sorted, so the same choice reads the same. */
+export function canonicalSelection(
+  selection: PackageSelection,
+): PackageSelection {
+  const sorted = (values: string[] | null | undefined) =>
+    values ? [...new Set(values)].sort() : values;
+  return {
+    documentIds: sorted(selection.documentIds) ?? null,
+    texts: selection.texts ?? true,
+    amendments: selection.amendments ?? "all",
+    memberIds: sorted(selection.memberIds) ?? [],
+    amendmentIds: sorted(selection.amendmentIds) ?? [],
+  };
+}
+
 function keyOf(target: PackageTarget): string {
-  return `${target.apiBase}|${target.locale}|${target.editable ? 1 : 0}`;
+  const part = target.selection
+    ? JSON.stringify(canonicalSelection(target.selection))
+    : "";
+  return `${target.apiBase}|${target.locale}|${target.editable ? 1 : 0}|${part}`;
 }
 
-function query(target: PackageTarget): string {
-  return `locale=${target.locale}&editable=${target.editable ? "1" : "0"}`;
+function query(target: PackageTarget, filter: string | null): string {
+  const base = `locale=${target.locale}&editable=${target.editable ? "1" : "0"}`;
+  return filter ? `${base}&filter=${encodeURIComponent(filter)}` : base;
 }
 
-export function packageDownloadUrl(target: PackageTarget): string {
-  return `${target.apiBase}/package/download?${query(target)}`;
+/** The download of a package, or of a part by the key the server gave it. */
+export function packageDownloadUrl(
+  target: PackageTarget,
+  filter: string | null = null,
+): string {
+  return `${target.apiBase}/package/download?${query(target, filter)}`;
+}
+
+/** The key a part's status and download take, once the server answered. */
+function filterOf(entry: PackageJob): string | null {
+  return entry.status?.part?.key ?? null;
 }
 
 function newJob(): PackageJob {
@@ -91,7 +124,9 @@ export function usePackageDownload() {
             label: t("assembly.package.downloadShort"),
             icon: "i-lucide-download",
             onClick: () => {
-              window.location.assign(packageDownloadUrl(target));
+              window.location.assign(
+                packageDownloadUrl(target, filterOf(entry)),
+              );
             },
           },
         ],
@@ -129,7 +164,7 @@ export function usePackageDownload() {
     const entry = job(target);
     try {
       const next = await api.get<AssemblyPackageStatusDto>(
-        `${target.apiBase}/package/status?${query(target)}`,
+        `${target.apiBase}/package/status?${query(target, filterOf(entry))}`,
       );
       if (generations.get(key) !== generation) return;
       entry.status = next;
@@ -172,7 +207,15 @@ export function usePackageDownload() {
     try {
       const next = await api.send<AssemblyPackageStatusDto>(
         `${target.apiBase}/package`,
-        { body: { locale: target.locale, editable: target.editable } },
+        {
+          body: {
+            locale: target.locale,
+            editable: target.editable,
+            selection: target.selection
+              ? canonicalSelection(target.selection)
+              : null,
+          },
+        },
       );
       if (generations.get(key) !== generation) return;
       entry.status = next;

@@ -309,6 +309,8 @@ const changed = computed(
         <span v-if="count" class="text-muted text-sm tabular-nums">
           {{ count }}
         </span>
+        <!-- What acts on the list as shown (the download). -->
+        <slot name="actions" />
       </div>
     </div>
 

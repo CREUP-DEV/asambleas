@@ -126,6 +126,30 @@ const documents = computed<DocumentSummaryDto[]>(() =>
   ),
 );
 
+/**
+ * The published documents of the item and of everything under it: what
+ * «Descargar» offers, the documentation package of this item alone
+ * (ExportPackageDialog; user's decision of 2026-11-20).
+ */
+const packageDocumentIds = computed<string[]>(() => {
+  const subtree = new Set<string>();
+  const visit = (current: NonNullable<typeof node.value>) => {
+    subtree.add(current.item.id);
+    current.children.forEach(visit);
+  };
+  if (node.value) visit(node.value);
+  return (agenda.value?.documents ?? [])
+    .filter(
+      (document) =>
+        document.status === "published" && subtree.has(document.agendaItemId),
+    )
+    .map((document) => document.id);
+});
+const packageOpen = ref(false);
+const packagePreset = computed(() => ({
+  documentIds: packageDocumentIds.value,
+}));
+
 const canCreateDocument = computed(() =>
   me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
 );
@@ -434,6 +458,27 @@ async function onDeleted() {
           >
             {{ t("agenda.item.documents") }}
           </h3>
+          <UButton
+            v-if="packageDocumentIds.length > 0"
+            icon="i-lucide-folder-down"
+            color="neutral"
+            variant="ghost"
+            :label="t('agenda.item.download')"
+            :aria-label="
+              t('agenda.item.downloadAria', {
+                item: numbered(node.number, item.title),
+              })
+            "
+            class="ms-auto"
+            data-testid="agenda-item-download"
+            @click="packageOpen = true"
+          />
+          <ExportPackageDialog
+            v-if="packageDocumentIds.length > 0"
+            v-model:open="packageOpen"
+            :api-base="apiBase"
+            :preset="packagePreset"
+          />
           <UButton
             v-if="showMemberSubmit"
             icon="i-lucide-file-up"

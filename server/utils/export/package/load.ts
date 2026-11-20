@@ -7,13 +7,19 @@ import { agendaChildGroups } from "../../../../shared/utils/agendaNumbering";
 import { loadVisibleAmendmentIds, storedPdfName } from "../../domain/documents";
 import { convocationStoredName } from "../../domain/convocation";
 import type { StoredAmendmentMeta } from "../../domain/amendments";
+import type { MemberKind } from "../../../../shared/constants/domain";
 import { loadCoProponents } from "../../domain/presenters";
-import { canSeeAssembly, visibleAcronym } from "../../domain/visibility";
+import {
+  canSeeAssembly,
+  redactMember,
+  visibleAcronym,
+} from "../../domain/visibility";
 import { publicExportActor } from "../actor";
 import { documentMeta, loadPublishedAgenda, loadVotes } from "../buildData";
 import { amendmentCode } from "../mapping";
 import type {
   PackageAmendment,
+  PackageAuthor,
   PackageDocument,
   PackageItem,
   PackageSource,
@@ -70,6 +76,7 @@ export async function loadPackageSource(
         numbering,
         title: "titleHidden" in row && row.titleHidden ? null : row.title,
         depth,
+        automaticFor: row.generatedForDocumentId ?? null,
         documents: listed.get(row.id) ?? [],
       });
       walk(row.id, depth + 1);
@@ -85,9 +92,8 @@ export async function loadPackageSource(
     loadCoProponents(documentRows.map((document) => document.id)),
     loadVisibleAmendmentIds(reader, structuredIds),
   ]);
-  const amendmentsByDocument = await loadPackageAmendments([
-    ...visibleAmendments,
-  ]);
+  const { byDocument: amendmentsByDocument, authors } =
+    await loadPackageAmendments([...visibleAmendments]);
 
   const byId = new Map(documentRows.map((document) => [document.id, document]));
   const documents: PackageDocument[] = agenda.documentOrder.map((id) => {
@@ -143,15 +149,18 @@ export async function loadPackageSource(
     },
     items,
     documents,
+    authors,
   };
 }
 
 /** The published amendments by document, by number, as the public names them. */
-async function loadPackageAmendments(
-  ids: string[],
-): Promise<Map<string, PackageAmendment[]>> {
+async function loadPackageAmendments(ids: string[]): Promise<{
+  byDocument: Map<string, PackageAmendment[]>;
+  authors: PackageAuthor[];
+}> {
   const byDocument = new Map<string, PackageAmendment[]>();
-  if (ids.length === 0) return byDocument;
+  const authors = new Map<string, PackageAuthor>();
+  if (ids.length === 0) return { byDocument, authors: [] };
   const reader = publicExportActor();
   const rows = await db.query.amendments.findMany({
     where: inArray(amendments.id, ids),
@@ -168,7 +177,17 @@ async function loadPackageAmendments(
     },
     with: {
       authors: {
-        with: { member: { columns: { id: true, acronym: true, kind: true } } },
+        with: {
+          member: {
+            columns: {
+              id: true,
+              acronym: true,
+              name: true,
+              kind: true,
+              university: true,
+            },
+          },
+        },
       },
       sources: { columns: { sourceId: true } },
       derived: { columns: { transactionalId: true } },
@@ -179,6 +198,23 @@ async function loadPackageAmendments(
   const codes = new Map(rows.map((row) => [row.id, amendmentCode(row)]));
   const codeOf = (id: string) => (visible.has(id) ? codes.get(id) : undefined);
   const status = new Map(rows.map((row) => [row.id, row.status]));
+  /** A member as the public reads it: an office as the generic "CEA". */
+  const publicAuthor = (member: {
+    id: string;
+    acronym: string;
+    name: string;
+    kind: MemberKind;
+    university: string | null;
+  }): PackageAuthor => {
+    const shown = redactMember(reader, member);
+    return {
+      id: shown.id,
+      acronym: visibleAcronym(reader, shown),
+      name: shown.name,
+      kind: shown.kind,
+      university: shown.id === member.id ? member.university : null,
+    };
+  };
 
   for (const row of rows) {
     const main = (row.meta as StoredAmendmentMeta).presentingMemberId;
@@ -187,8 +223,17 @@ async function loadPackageAmendments(
     const mainAuthor = row.authors.find((author) => author.member.id === main);
     const others = row.authors
       .filter((author) => author !== mainAuthor)
-      .map((author) => visibleAcronym(reader, author.member))
-      .sort((a, b) => a.localeCompare(b));
+      .map((author) => publicAuthor(author.member))
+      .sort((a, b) => a.acronym.localeCompare(b.acronym));
+    // Several offices read as one "CEA".
+    const signers = new Map(
+      [...(mainAuthor ? [publicAuthor(mainAuthor.member)] : []), ...others].map(
+        (author) => [author.id, author],
+      ),
+    );
+    for (const author of signers.values()) {
+      if (!authors.has(author.id)) authors.set(author.id, author);
+    }
     const derived = row.derived
       .map((link) => link.transactionalId)
       .filter((id) => visible.has(id));
@@ -202,13 +247,8 @@ async function loadPackageAmendments(
       status: row.status,
       approvalMethod: row.approvalMethod,
       updatedAt: row.updatedAt,
-      // Several offices read as one "CEA".
-      authors: [
-        ...new Set([
-          ...(mainAuthor ? [visibleAcronym(reader, mainAuthor.member)] : []),
-          ...others,
-        ]),
-      ],
+      authors: [...signers.values()].map((author) => author.acronym),
+      authorIds: [...signers.keys()],
       sourceCodes: row.sources
         .map((link) => codeOf(link.sourceId))
         .filter((code): code is string => Boolean(code)),
@@ -218,5 +258,5 @@ async function loadPackageAmendments(
     });
     byDocument.set(row.documentId, list);
   }
-  return byDocument;
+  return { byDocument, authors: [...authors.values()] };
 }

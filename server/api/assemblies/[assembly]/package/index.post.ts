@@ -4,10 +4,15 @@ import type { AssemblyPackageStatusDto } from "~~/shared/types/api";
 import { db } from "../../../../db";
 import { recordAudit } from "../../../../utils/domain/audit";
 import {
+  packageFilterAudit,
   packageNotPublic,
   resolvePackageRequest,
 } from "../../../../utils/export/package/http";
-import { requestPackage } from "../../../../utils/export/package/service";
+import {
+  rememberPackageFilter,
+  requestPackage,
+  requestPackagePart,
+} from "../../../../utils/export/package/service";
 
 /**
  * Asks for the assembly's documentation package: a ZIP with the
@@ -17,7 +22,10 @@ import { requestPackage } from "../../../../utils/export/package/service";
  * assembly may ask: the package is the same for everyone, built from what
  * is public. It is built once per state of the assembly, in the background
  * (package/build.ts); asking while it is current or being built only
- * answers the status. Recorded as `export.request`.
+ * answers the status. With `selection`, a part of it (some documents, some
+ * amendments), zipped from the same pieces as it is downloaded: the answer
+ * carries the key its status and download take (`part.key`). Recorded as
+ * `export.request`.
  */
 export default defineEventHandler(
   async (event): Promise<AssemblyPackageStatusDto> => {
@@ -36,15 +44,26 @@ export default defineEventHandler(
         package: true,
         locale: request.locale,
         editable: request.editable,
+        part: packageFilterAudit(request.filter),
       },
     });
     let status: AssemblyPackageStatusDto | null;
     try {
-      status = await requestPackage(
-        request.assemblyId,
-        request.locale,
-        request.editable,
-      );
+      if (request.filter) {
+        rememberPackageFilter(request.assemblyId, request.filter);
+        status = await requestPackagePart(
+          request.assemblyId,
+          request.locale,
+          request.editable,
+          request.filter,
+        );
+      } else {
+        status = await requestPackage(
+          request.assemblyId,
+          request.locale,
+          request.editable,
+        );
+      }
     } catch {
       throw createError({
         statusCode: 503,

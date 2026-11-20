@@ -2206,12 +2206,15 @@ account that sees the assembly (not a draft: 404
 `assembly.package.notPublic`). `locale` (`es`, `en`) and `editable` (the
 Word version of every text) choose the package, in the body of the POST and
 the query of the GETs (`AssemblyPackageStatusDto`, `assemblyPackageSchema`).
+The POST's `selection` (`packageSelectionSchema`) asks for a part of it
+instead, see "Parts" below; the GETs then name it by `filter`.
 
 | Method | Path                                          | Who     | Notes                                                                                                                      |
 | ------ | --------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/assemblies/[assembly]/package`          | visible | Queues a build unless the current one is there or one waits. Records `export.request` `{ package, locale, editable }`.     |
 | GET    | `/api/assemblies/[assembly]/package/status`   | visible | `ready`, `building` (with `progress`), `failed` or `idle`, and `file`, the ZIP that can be downloaded now.                 |
 | GET    | `/api/assemblies/[assembly]/package/download` | visible | Streams `file` (`application/zip`). 409 `assembly.package.notReady` without one. Records `export.download` (same payload). |
+| GET    | `/api/assemblies/[assembly]/package/options`  | visible | `PackageOptionsDto`: what the filters of a part offer, as the public reads it.                                             |
 
 **What it holds.** One package for everyone, built as a reader who sees only
 what is public (`publicExportActor`, `server/utils/export/package/load.ts`):
@@ -2256,6 +2259,34 @@ last one built, only if everything in it is still public as it was: the same
 documents with the same texts and PDFs, the same amendments, the same
 signed convocatoria (`packageStillPublic`). Otherwise nothing is offered
 until the build ends.
+
+**Parts** (user's decision of 2026-11-20). The dialog's filters take a part
+of the package: some documents (`documentIds`, all of them when null),
+with or without their texts (`texts`), and all, none or some of their
+amendments (`amendments`: `all`, `none`, `authors` with `memberIds`, the
+public ids of who signs them, an office as the generic "CEA", or `selected`
+with `amendmentIds`, the control sheet's list). A selection that takes
+everything is the whole package. A part is never planned nor built on its
+own: `filterPackagePlan` (`server/utils/export/package/filter.ts`) keeps
+the whole plan's entries it takes, with the same paths and keys, so it
+renders nothing of its own and unzips into the whole package's folders. It
+holds no convocatoria nor agenda. It is not kept either: the download zips
+its pieces as it streams (`packageZipStream`, no `Content-Length`), named
+after what it takes (`packageDownloadName`: "… - Punto 4", "… - Enmiendas
+de UGR, UCO", plain hyphens). Its status is `ready` once every rendered
+piece is on disk (`file.bytes` is then about its size), `empty` when it
+takes nothing, and otherwise follows the whole package's build, which the
+POST queues. The POST keeps the normalised filter in memory for 12 hours
+under a 16-character key (`part.key`, with how many documents and
+amendments it holds and how many of the `amendmentIds` are not public,
+`dropped`); a key forgotten (a restart) answers 404
+`assembly.package.selectionExpired`, and the client asks again. The audit
+rows say how much was chosen (`part`), never the ids. The options
+(`packageOptions`) come from the package's own source, kept in memory with
+its plan: the documents under the agenda item that gathers them (an
+automatic sub-item counts as its parent, `packageDocumentGroups`), their
+amendments with who signs them, and those who sign, with a council's
+university.
 
 ## Activity and impersonation
 

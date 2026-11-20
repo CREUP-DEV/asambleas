@@ -3216,9 +3216,14 @@ export interface EmailTestResultDto {
  * - `building`: it is being built; `file` may still offer an earlier one.
  * - `failed`: the last build failed; asking again retries it.
  * - `idle`: not built yet, or out of date and nobody asked for it.
+ * - `empty`: a part (`selection` in the request) that takes nothing.
+ *
+ * A part is zipped as it is downloaded, from the pieces the whole package's
+ * build rendered: `ready` once they are all there (`file.bytes` is then
+ * about its size), otherwise it follows that build.
  */
 export interface AssemblyPackageStatusDto {
-  status: "ready" | "building" | "failed" | "idle";
+  status: "ready" | "building" | "failed" | "idle" | "empty";
   /**
    * The ZIP that can be downloaded now: the current one, or an earlier one
    * (`current` false) whose content is all still public.
@@ -3226,4 +3231,52 @@ export interface AssemblyPackageStatusDto {
   file: { builtAt: IsoDate; bytes: number; current: boolean } | null;
   /** Pieces rendered so far while building, when known. */
   progress: { done: number; total: number } | null;
+  /**
+   * A part: the key its status and download take (`?filter=`), how many
+   * documents and amendments it holds, and how many of the amendments asked
+   * for by id it leaves out because they are not public.
+   */
+  part?: {
+    key: string;
+    documents: number;
+    amendments: number;
+    dropped: number;
+  } | null;
+}
+
+/**
+ * GET .../package/options: what the download's filters offer, as anyone
+ * who sees only what is public reads it (every office as the generic
+ * "CEA"). The documents come under the agenda items that gather them (an
+ * automatic sub-item counts as its parent), in agenda order.
+ */
+export interface PackageOptionsDto {
+  groups: {
+    id: string;
+    numbering: string;
+    /** Null when the item carries the title of a document that is not public. */
+    title: string | null;
+    documentIds: string[];
+  }[];
+  documents: {
+    id: string;
+    title: string;
+    reference: string | null;
+    /**
+     * The number of its own automatic sub-item ("17.1"), as the agenda
+     * names it; null when it hangs from an ordinary item.
+     */
+    numbering: string | null;
+    /** It has a text to download (a structured text or an uploaded PDF). */
+    hasText: boolean;
+    amendments: { id: string; code: string | null; authorIds: string[] }[];
+  }[];
+  /** Who signs the amendments. */
+  authors: {
+    id: string;
+    acronym: string;
+    name: string;
+    kind: MemberKind;
+    university: string | null;
+  }[];
 }

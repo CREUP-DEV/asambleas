@@ -374,6 +374,29 @@ const cleanExport = useTemplateRef<{ start: () => Promise<void> }>(
   "cleanExport",
 );
 
+/**
+ * A published text goes out with its amendments too (user's decision of
+ * 2026-11-20): the documentation package with this document alone
+ * (ExportPackageDialog, every published amendment, its filters at hand),
+ * and the annotated PDF, the text with the approved amendments marked and
+ * an annex of all of them.
+ */
+const canDownloadWithAmendments = computed(
+  () => isStructured.value && document.value?.status === "published",
+);
+const annotatedExport = useTemplateRef<{ start: () => Promise<void> }>(
+  "annotatedExport",
+);
+const packageOpen = ref(false);
+const packageApiBase = computed(() =>
+  assembly.value
+    ? `/api/assemblies/${encodeURIComponent(assembly.value.id)}`
+    : "",
+);
+const packagePreset = computed(() =>
+  document.value ? { documentIds: [document.value.id] } : null,
+);
+
 interface MoreItem {
   type?: "label";
   label: string;
@@ -478,6 +501,24 @@ const moreItems = computed<MoreItem[][]>(() => {
       icon: "i-lucide-file-text",
       onSelect: () => void cleanExport.value?.start(),
     });
+  }
+  if (canDownloadWithAmendments.value) {
+    text.push(
+      {
+        label: t("workspace.more.withAmendments"),
+        description: t("workspace.more.withAmendmentsHint"),
+        icon: "i-lucide-folder-down",
+        onSelect: () => {
+          packageOpen.value = true;
+        },
+      },
+      {
+        label: t("workspace.export.annotated"),
+        description: t("workspace.more.annotatedHint"),
+        icon: "i-lucide-file-pen-line",
+        onSelect: () => void annotatedExport.value?.start(),
+      },
+    );
   }
   if (canEditRecord.value) {
     text.push({
@@ -1786,6 +1827,21 @@ const filteredBlockLabel = computed(() =>
               variant="clean"
               button-variant="outline"
               hide-idle
+            />
+            <ExportButton
+              v-if="canDownloadWithAmendments"
+              ref="annotatedExport"
+              :assembly="assembly.id"
+              :document="document.id"
+              variant="annotated"
+              button-variant="outline"
+              hide-idle
+            />
+            <ExportPackageDialog
+              v-if="canDownloadWithAmendments"
+              v-model:open="packageOpen"
+              :api-base="packageApiBase"
+              :preset="packagePreset"
             />
             <UDropdownMenu
               v-if="moreItems.length > 0"

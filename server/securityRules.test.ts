@@ -165,6 +165,7 @@ const ROOM_PATHS = [
   "/api/assemblies/80-ago/seating",
   "/api/assemblies/80-ago/seating/assignments",
   "/api/assemblies/80-ago/package/status",
+  "/api/assemblies/80-ago/package/options",
   "/api/exports/0b9e/status",
   "/api/exports/0b9e/download",
   "/api/me",

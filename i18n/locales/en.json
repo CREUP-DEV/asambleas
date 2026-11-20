@@ -630,7 +630,7 @@
     "package": {
       "button": "Download documentation",
       "title": "Download the documentation",
-      "description": "A ZIP with the convocation, the agenda and a folder per item with its published documents and, as PDF, their amendments.",
+      "description": "A ZIP with the published documents and their amendments, as PDF. Downloading everything also brings the convocation and the agenda.",
       "editable": "Also include an editable (Word) version of the texts",
       "editableHelp": "Documents uploaded as PDF come as PDF only.",
       "preparing": "Preparing the documentation…",
@@ -648,7 +648,34 @@
       "notReady": "The documentation is still being prepared.",
       "background": "You can close this window and keep browsing: we will let you know when it is ready.",
       "readyToast": "The assembly's documentation can now be downloaded.",
-      "downloadShort": "Download"
+      "documents": "Documents",
+      "documentsAll": "All documents",
+      "documentsChosen": "{count} document | {count} documents",
+      "documentsSearch": "Search by number or title",
+      "itemHidden": "Item without a public title",
+      "wholeItem": "The whole item ({count} document) | The whole item ({count} documents)",
+      "texts": "Texts of the documents",
+      "textsHelp": "The text as presented and, once voted, the consolidated one.",
+      "amendments": "Amendments",
+      "amendmentsAll": "All",
+      "amendmentsAuthors": "By some members",
+      "amendmentsNone": "None",
+      "amendmentsSelected": "The control sheet's ({count}) | The control sheet's ({count})",
+      "authors": "Amendment authors",
+      "authorsPlaceholder": "Choose who presents them",
+      "authorsSearch": "Search by university, acronym or name",
+      "amendmentCount": "no amendments | {count} amendment | {count} amendments",
+      "summary": "It holds {documents} and {amendments}.",
+      "summaryAll": "All the documentation: the convocation, the agenda, {documents} and {amendments}.",
+      "summaryDocuments": "no documents | {count} document | {count} documents",
+      "summaryAmendments": "no amendments | {count} amendment | {count} amendments",
+      "dropped": "{count} amendment from the control sheet is not published and is left out. | {count} amendments from the control sheet are not published and are left out.",
+      "empty": "These filters leave nothing to download.",
+      "optionsError": "The filters could not be loaded.",
+      "downloadAbout": "Download ZIP (about {size})",
+      "selectionExpired": "The selection is no longer available: ask for it again.",
+      "downloadShort": "Download",
+      "authorsNeeded": "Choose at least one amendment author."
     }
   },
   "document": {
@@ -2671,6 +2698,12 @@
         "session": "Session",
         "consolidated": "consolidated text",
         "amendments": "Amendments",
+        "item": "Item {number}",
+        "documentCount": "{count} documents",
+        "amendmentsBy": "Amendments by {authors}",
+        "amendmentsByCount": "Amendments by {count} members",
+        "selection": "Selection",
+        "withoutAmendments": "Without amendments",
         "amendment": {
           "title": "Amendment request",
           "titleWithCode": "Amendment request {code}",
@@ -3246,7 +3279,9 @@
       "neighbours": "Previous and next item",
       "unpublished": "Not published",
       "previousItem": "Previous item",
-      "nextItem": "Next item"
+      "nextItem": "Next item",
+      "download": "Download",
+      "downloadAria": "Download the documentation of {item}"
     },
     "move": {
       "group": "Move the item",
@@ -3702,7 +3737,10 @@
     "more": {
       "label": "More",
       "consolidated": "Consolidated text and PDF",
-      "transactional": "Propose a transactional amendment"
+      "transactional": "Propose a transactional amendment",
+      "withAmendments": "Download with amendments",
+      "withAmendmentsHint": "A ZIP with the text and its published amendments, one PDF each. You can choose which.",
+      "annotatedHint": "A PDF with the approved amendments marked in the text and an annex of all of them."
     },
     "corrections": {
       "title": "The Secretariat asks you to fix one amendment | The Secretariat asks you to fix {count} amendments",
@@ -5308,6 +5346,11 @@
       "annulTitle": "Annul the final vote",
       "annulHint": "The vote stays in the history, but the document is pending its final vote again and loses its consolidated text.",
       "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote."
+    },
+    "download": {
+      "button": "Download",
+      "general": "Download the documentation of the items the list shows",
+      "amendments": "Download the amendments the list shows"
     }
   },
   "seating": {

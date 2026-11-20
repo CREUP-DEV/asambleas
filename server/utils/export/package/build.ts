@@ -206,12 +206,14 @@ function renderGroups(missing: PackageEntry[]): PackageEntry[][] {
   return groups;
 }
 
-/** Writes the ZIP: stored, not compressed (PDFs and DOCX already are), streamed. */
-async function writeZip(
+/**
+ * A ZIP of `entries` as a stream: stored, not compressed (PDFs and DOCX
+ * already are), each file read as it is written.
+ */
+export function packageZipStream(
   assemblyId: string,
   entries: PackageEntry[],
-  path: string,
-): Promise<number> {
+): NodeJS.ReadableStream {
   const zip = new JSZip();
   const date = new Date();
   for (const entry of entries) {
@@ -220,14 +222,55 @@ async function writeZip(
       date,
     });
   }
+  return zip.generateNodeStream({
+    type: "nodebuffer",
+    streamFiles: true,
+    compression: "STORE",
+  });
+}
+
+/**
+ * The entries of a part whose files are all there, or null while a
+ * rendered piece is missing (the whole package's build renders it). An
+ * uploaded PDF missing on disk is left out, as the build leaves it out.
+ */
+export async function availablePackageEntries(
+  assemblyId: string,
+  entries: PackageEntry[],
+): Promise<{ entries: PackageEntry[]; bytes: number } | null> {
+  const available: PackageEntry[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    const size = await fileSize(sourcePath(assemblyId, entry));
+    if (size === null) {
+      if (entry.piece.kind === "file") continue;
+      return null;
+    }
+    available.push(entry);
+    bytes += size;
+  }
+  return { entries: available, bytes };
+}
+
+async function fileSize(path: string): Promise<number | null> {
+  try {
+    const info = await stat(path);
+    return info.isFile() ? info.size : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the ZIP through a temporary file. */
+async function writeZip(
+  assemblyId: string,
+  entries: PackageEntry[],
+  path: string,
+): Promise<number> {
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     await pipeline(
-      zip.generateNodeStream({
-        type: "nodebuffer",
-        streamFiles: true,
-        compression: "STORE",
-      }),
+      packageZipStream(assemblyId, entries),
       createWriteStream(temporary),
     );
     await rename(temporary, path);

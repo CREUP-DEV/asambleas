@@ -85,6 +85,7 @@ import {
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 import type { SheetFilterGroup } from "~/components/control-sheet/Toolbar.vue";
+import type { PackagePreset } from "~/components/export/-packageFilters";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
@@ -842,6 +843,42 @@ const generalFlat = computed(
 const generalTotal = computed(
   () => generalRows.value.filter((row) => row.kind === "item").length,
 );
+
+// The download of what a list shows -------------------------------------------------
+
+/**
+ * «Descargar» beside each list's filters (user's decision of 2026-11-20):
+ * the documentation package of what the list shows as it stands, filters,
+ * search and kept rows included. «General» gives the published documents
+ * of its rows, with their texts and amendments; «Enmiendas» the amendments
+ * it shows, without the text (ExportPackageDialog says how many of them are
+ * not published, which never go). The dialog's own filters are at hand.
+ */
+const packageOpen = ref(false);
+const packagePreset = ref<PackagePreset | null>(null);
+const generalPackageDocuments = computed(() =>
+  shownGeneral.value.flatMap((row) =>
+    row.kind === "item"
+      ? row.documents
+          .filter((document) => document.status === "published")
+          .map((document) => document.id)
+      : [],
+  ),
+);
+function openGeneralPackage(): void {
+  packagePreset.value = { documentIds: generalPackageDocuments.value };
+  packageOpen.value = true;
+}
+function openAmendmentsPackage(): void {
+  const document = selectedDocument.value;
+  if (!document) return;
+  packagePreset.value = {
+    documentIds: [document.id],
+    texts: false,
+    amendmentIds: shownAmendments.value.map((row) => row.amendment.id),
+  };
+  packageOpen.value = true;
+}
 const generalShownCount = computed(
   () => shownGeneral.value.filter((row) => row.kind === "item").length,
 );
@@ -2107,7 +2144,21 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :status="listStatus"
             @filter="onGeneralFilter"
             @reset="resetGeneral"
-          />
+          >
+            <template #actions>
+              <UButton
+                v-if="generalPackageDocuments.length > 0"
+                icon="i-lucide-folder-down"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :label="t('controlSheet.download.button')"
+                :aria-label="t('controlSheet.download.general')"
+                data-testid="sheet-download-general"
+                @click="openGeneralPackage"
+              />
+            </template>
+          </ControlSheetToolbar>
           <!-- A heading in debate is shown even when no item row is. -->
           <CommonEmptyState
             v-if="shownGeneral.length === 0"
@@ -2300,7 +2351,24 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               :status="listStatus"
               @filter="onAmendmentFilter"
               @reset="resetAmendments"
-            />
+            >
+              <template #actions>
+                <UButton
+                  v-if="
+                    selectedDocument?.status === 'published' &&
+                    shownAmendments.length > 0
+                  "
+                  icon="i-lucide-folder-down"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :label="t('controlSheet.download.button')"
+                  :aria-label="t('controlSheet.download.amendments')"
+                  data-testid="sheet-download-amendments"
+                  @click="openAmendmentsPackage"
+                />
+              </template>
+            </ControlSheetToolbar>
             <CommonEmptyState
               v-if="shownAmendments.length === 0"
               icon="i-lucide-search-x"
@@ -2362,6 +2430,12 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         </template>
       </Suspense>
     </template>
+
+    <ExportPackageDialog
+      v-model:open="packageOpen"
+      :api-base="apiBase"
+      :preset="packagePreset"
+    />
 
     <ControlSheetRowPanel
       v-model:open="panelOpen"

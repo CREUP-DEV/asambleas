@@ -630,7 +630,7 @@
     "package": {
       "button": "Descargar documentación",
       "title": "Descargar la documentación",
-      "description": "Un ZIP con la convocatoria, el orden del día y una carpeta por punto con sus documentos publicados y, en PDF, sus enmiendas.",
+      "description": "Un ZIP con los documentos publicados y sus enmiendas, en PDF. Si lo descargas todo, lleva también la convocatoria y el orden del día.",
       "editable": "Incluir también una versión editable (Word) de los textos",
       "editableHelp": "Los documentos que se subieron en PDF van solo en PDF.",
       "preparing": "Preparando la documentación…",
@@ -648,7 +648,34 @@
       "notReady": "La documentación todavía se está preparando.",
       "background": "Puedes cerrar esta ventana y seguir navegando: te avisaremos cuando esté lista.",
       "readyToast": "Ya puedes descargar la documentación de la asamblea.",
-      "downloadShort": "Descargar"
+      "documents": "Documentos",
+      "documentsAll": "Todos los documentos",
+      "documentsChosen": "{count} documento | {count} documentos",
+      "documentsSearch": "Busca por número o título",
+      "itemHidden": "Punto sin título público",
+      "wholeItem": "Todo el punto ({count} documento) | Todo el punto ({count} documentos)",
+      "texts": "Textos de los documentos",
+      "textsHelp": "El texto presentado y, si ya se ha votado, el consolidado.",
+      "amendments": "Enmiendas",
+      "amendmentsAll": "Todas",
+      "amendmentsAuthors": "De ciertos enmendantes",
+      "amendmentsNone": "Ninguna",
+      "amendmentsSelected": "Las de la hoja de control ({count}) | Las de la hoja de control ({count})",
+      "authors": "Enmendantes",
+      "authorsPlaceholder": "Elige quién las presenta",
+      "authorsSearch": "Busca por universidad, siglas o nombre",
+      "amendmentCount": "ninguna enmienda | {count} enmienda | {count} enmiendas",
+      "summary": "Incluye {documents} y {amendments}.",
+      "summaryAll": "Toda la documentación: la convocatoria, el orden del día, {documents} y {amendments}.",
+      "summaryDocuments": "ningún documento | {count} documento | {count} documentos",
+      "summaryAmendments": "ninguna enmienda | {count} enmienda | {count} enmiendas",
+      "dropped": "{count} enmienda de la hoja de control no está publicada y no va en la descarga. | {count} enmiendas de la hoja de control no están publicadas y no van en la descarga.",
+      "empty": "Con estos filtros no hay nada que descargar.",
+      "optionsError": "No se han podido cargar los filtros.",
+      "downloadAbout": "Descargar ZIP (unos {size})",
+      "selectionExpired": "La selección ya no está disponible: vuelve a pedirla.",
+      "downloadShort": "Descargar",
+      "authorsNeeded": "Elige al menos un enmendante."
     }
   },
   "document": {
@@ -2671,6 +2698,12 @@
         "session": "Sesión",
         "consolidated": "texto consolidado",
         "amendments": "Enmiendas",
+        "item": "Punto {number}",
+        "documentCount": "{count} documentos",
+        "amendmentsBy": "Enmiendas de {authors}",
+        "amendmentsByCount": "Enmiendas de {count} enmendantes",
+        "selection": "Selección",
+        "withoutAmendments": "Sin enmiendas",
         "amendment": {
           "title": "Solicitud de enmienda",
           "titleWithCode": "Solicitud de enmienda {code}",
@@ -3246,7 +3279,9 @@
       "neighbours": "Punto anterior y siguiente",
       "unpublished": "Sin publicar",
       "previousItem": "Punto anterior",
-      "nextItem": "Punto siguiente"
+      "nextItem": "Punto siguiente",
+      "download": "Descargar",
+      "downloadAria": "Descargar la documentación de {item}"
     },
     "move": {
       "group": "Mover el punto",
@@ -3702,7 +3737,10 @@
     "more": {
       "label": "Más",
       "consolidated": "Texto consolidado y PDF",
-      "transactional": "Proponer una transaccional"
+      "transactional": "Proponer una transaccional",
+      "withAmendments": "Descargar con enmiendas",
+      "withAmendmentsHint": "Un ZIP con el texto y sus enmiendas publicadas, una por PDF. Puedes elegir cuáles.",
+      "annotatedHint": "Un PDF con las enmiendas aprobadas marcadas en el texto y un anexo con todas."
     },
     "corrections": {
       "title": "Secretaría te pide que corrijas una enmienda | Secretaría te pide que corrijas {count} enmiendas",
@@ -5308,6 +5346,11 @@
       "annulTitle": "Anular la votación final",
       "annulHint": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y pierde su texto consolidado.",
       "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final."
+    },
+    "download": {
+      "button": "Descargar",
+      "general": "Descargar la documentación de los puntos que muestra la lista",
+      "amendments": "Descargar las enmiendas que muestra la lista"
     }
   },
   "seating": {

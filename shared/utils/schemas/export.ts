@@ -39,4 +39,35 @@ export const assemblyPackageSchema = z.object({
     .transform((value) => value === true || value === "true" || value === "1"),
 });
 
-export type AssemblyPackageBody = z.input<typeof assemblyPackageSchema>;
+/** Query of the package's status and download: a part names its filter. */
+export const assemblyPackageQuerySchema = assemblyPackageSchema.extend({
+  filter: z
+    .string()
+    .regex(/^[a-f0-9]{16}$/)
+    .optional(),
+});
+
+const packageIdsSchema = (max: number) =>
+  z.array(z.string().min(1).max(64)).max(max);
+
+/**
+ * A part of the package: some documents (all of them when null), whether
+ * their texts go, and which amendments: all, none, those any of
+ * `memberIds` signs, or `amendmentIds` (the control sheet's).
+ */
+export const packageSelectionSchema = z.object({
+  documentIds: packageIdsSchema(2_000).nullable().default(null),
+  texts: z.boolean().default(true),
+  amendments: z.enum(["all", "none", "authors", "selected"]).default("all"),
+  memberIds: packageIdsSchema(2_000).default([]),
+  amendmentIds: packageIdsSchema(10_000).default([]),
+});
+
+export type PackageSelection = z.input<typeof packageSelectionSchema>;
+
+/** Body of POST /api/assemblies/[assembly]/package. */
+export const assemblyPackageRequestSchema = assemblyPackageSchema.extend({
+  selection: packageSelectionSchema.nullable().default(null),
+});
+
+export type AssemblyPackageBody = z.input<typeof assemblyPackageRequestSchema>;

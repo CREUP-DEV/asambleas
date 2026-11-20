@@ -6,6 +6,7 @@ import type {
   ApprovalMethod,
   DocumentFormat,
   DocumentKind,
+  MemberKind,
 } from "../../../../shared/constants/domain";
 import type { ExportLocale, Translate } from "../labels";
 import type { ExportVote } from "../pdfBuilder";
@@ -43,6 +44,12 @@ export interface PackageAmendment {
   updatedAt: Date;
   /** Acronyms as the public reads them, the main author first. */
   authors: string[];
+  /**
+   * The same authors by the id the public reads (every office as the
+   * generic "CEA"): what a download filters by. Never part of a piece's
+   * key, since the PDF does not show it.
+   */
+  authorIds: string[];
   sourceCodes: string[];
   transactedInto: string[];
 }
@@ -73,6 +80,11 @@ export interface PackageItem {
   /** Null when the item carries the title of a document that is not public. */
   title: string | null;
   depth: number;
+  /**
+   * The document whose automatic sub-item it is: such an item is the
+   * document's own place, so a download groups it under its parent.
+   */
+  automaticFor: string | null;
   /** Public documents under it (published and postponed), for the convocatoria. */
   documents: { title: string; reference: string | null }[];
 }
@@ -93,12 +105,24 @@ export interface PackageAssembly {
   milestones: { key: string; at: Date; note: string | null }[];
 }
 
+/** A member who signs some of the package's amendments, as the public reads it. */
+export interface PackageAuthor {
+  id: string;
+  acronym: string;
+  name: string;
+  kind: MemberKind;
+  /** A council's university. */
+  university: string | null;
+}
+
 export interface PackageSource {
   assembly: PackageAssembly;
   /** The numbered items, depth first. */
   items: PackageItem[];
   /** Published documents, in agenda order. */
   documents: PackageDocument[];
+  /** Who signs their amendments (for the download's filters). */
+  authors?: PackageAuthor[];
 }
 
 export type PieceSpec =
@@ -120,6 +144,13 @@ export interface PackageEntry {
   piece: PieceSpec;
   /** The piece's key: file pieces by their name on disk, the others by a hash. */
   key: string;
+  /**
+   * What a download filters it by: the document it shows (its text or one
+   * of its amendments) and the amendment; neither for the convocatoria and
+   * the agenda.
+   */
+  documentId?: string;
+  amendmentId?: string;
 }
 
 /**
@@ -194,8 +225,12 @@ export function planPackage(
   const { locale } = options;
   const root = safeName(t("package.root", { assembly: assembly.label }), 80);
   const entries: PackageEntry[] = [];
-  const add = (path: string, piece: PieceSpec, key: string) =>
-    entries.push({ path, piece, key });
+  const add = (
+    path: string,
+    piece: PieceSpec,
+    key: string,
+    scope: { documentId?: string; amendmentId?: string } = {},
+  ) => entries.push({ path, piece, key, ...scope });
 
   const rootNames = new NameRegistry();
   const rows = source.items.map((item) => ({
@@ -294,6 +329,7 @@ export function planPackage(
           `${folder}/${names.claim(name, ".pdf")}`,
           { kind: "file", stored: document.storedFile },
           `file:${document.storedFile}`,
+          { documentId: document.id },
         );
         includes.documents.push({
           id: document.id,
@@ -352,6 +388,7 @@ export function planPackage(
               versionId: entry.versionId,
               vote: voteInputs(entry.vote),
             }),
+            { documentId: document.id },
           );
         }
       }
@@ -369,7 +406,7 @@ export function planPackage(
           : t("package.amendments"),
       )}`;
       const amendmentNames = registry(amendmentsFolder);
-      for (const amendment of document.amendments) {
+      for (const { authorIds: _, ...amendment } of document.amendments) {
         const label =
           amendment.code ??
           (amendment.number !== null ? String(amendment.number) : amendment.id);
@@ -386,6 +423,7 @@ export function planPackage(
             document: meta,
             baseVersionId: document.baseVersionId,
           }),
+          { documentId: document.id, amendmentId: amendment.id },
         );
         includes.amendmentIds.push(amendment.id);
       }

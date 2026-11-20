@@ -24,6 +24,15 @@ import {
   type RalewayFile,
 } from "../pdfmake";
 import { serializePdfDefinition } from "../pdfSerial";
+import {
+  FULL_PACKAGE_FILTER,
+  filterPackagePlan,
+  normalizePackageFilter,
+  packageDocumentGroups,
+  packageDownloadName,
+  packageFilterKey,
+  type PackageFilter,
+} from "./filter";
 import { NameRegistry, safeName, sortableNumbering } from "./names";
 import {
   packageStillPublic,
@@ -108,6 +117,7 @@ function amendment(
     approvalMethod: null,
     updatedAt: new Date("2026-11-10T10:00:00Z"),
     authors: ["UGR"],
+    authorIds: ["m-ugr"],
     sourceCodes: [],
     transactedInto: [],
     ...overrides,
@@ -156,6 +166,7 @@ function source(overrides: Partial<PackageSource> = {}): PackageSource {
         numbering: "1",
         title: "Aprobación de Resoluciones",
         depth: 0,
+        automaticFor: null,
         documents: [],
       },
       {
@@ -164,6 +175,7 @@ function source(overrides: Partial<PackageSource> = {}): PackageSource {
         numbering: "1.1",
         title: "Resolución sobre becas",
         depth: 1,
+        automaticFor: "doc1",
         documents: [{ title: "Resolución sobre becas", reference: "RES 4" }],
       },
       {
@@ -172,6 +184,7 @@ function source(overrides: Partial<PackageSource> = {}): PackageSource {
         numbering: "2",
         title: "Ruegos y preguntas",
         depth: 0,
+        automaticFor: null,
         documents: [],
       },
     ],
@@ -337,6 +350,157 @@ describe("planPackage", () => {
       new Set([es.fingerprint, en.fingerprint, editable.fingerprint]).size,
     ).toBe(3);
     expect(en.root).toBe("Documentation 80.ª AGO");
+  });
+});
+
+describe("filterPackagePlan", () => {
+  const GENERIC = "generic-cea";
+  const two = source({
+    documents: [
+      document({
+        amendments: [
+          amendment(),
+          amendment({
+            id: "am2",
+            number: 2,
+            code: "CEA1",
+            authors: ["CEA", "UCO"],
+            authorIds: [GENERIC, "m-uco"],
+          }),
+        ],
+      }),
+      document({
+        id: "doc2",
+        agendaItemId: "item-1",
+        title: "Resolución sobre vivienda",
+        reference: "RES 5",
+        amendments: [
+          amendment({
+            id: "am3",
+            code: "UCO1",
+            authors: ["UCO"],
+            authorIds: ["m-uco"],
+          }),
+        ],
+      }),
+    ],
+  });
+  const whole = planPackage(two, { locale: "es", editable: false }, t);
+  const part = (filter: Partial<PackageFilter>) =>
+    filterPackagePlan(whole, two, { ...FULL_PACKAGE_FILTER, ...filter });
+
+  it("takes the whole package's entries as they are, without the convocatoria", () => {
+    const { plan } = part({ documentIds: ["doc2"] });
+    expect(plan.root).toBe(whole.root);
+    expect(plan.entries.length).toBeGreaterThan(0);
+    for (const entry of plan.entries) {
+      expect(whole.entries).toContainEqual(entry);
+      expect(entry.documentId).toBe("doc2");
+    }
+    expect(plan.includes.documents.map((d) => d.id)).toEqual(["doc2"]);
+    expect(plan.includes.amendmentIds).toEqual(["am3"]);
+    expect(plan.fingerprint).not.toBe(whole.fingerprint);
+    // No filter is the whole package itself.
+    const all = filterPackagePlan(whole, two, FULL_PACKAGE_FILTER).plan;
+    expect(all.entries).toEqual(whole.entries);
+    expect(all.fingerprint).toBe(whole.fingerprint);
+  });
+
+  it("takes the amendments any chosen member signs, offices as one CEA", () => {
+    const cea = part({
+      texts: false,
+      amendments: { mode: "authors", memberIds: [GENERIC] },
+    });
+    expect(cea.plan.entries.map((entry) => entry.amendmentId)).toEqual(["am2"]);
+    expect(cea.amendmentCount).toBe(1);
+    expect(cea.documentCount).toBe(1);
+    const uco = part({
+      texts: false,
+      amendments: { mode: "authors", memberIds: ["m-uco"] },
+    });
+    expect(uco.plan.entries.map((entry) => entry.amendmentId).sort()).toEqual([
+      "am2",
+      "am3",
+    ]);
+  });
+
+  it("takes the amendments chosen by id, leaving out those not public", () => {
+    const chosen = part({
+      documentIds: ["doc1"],
+      texts: false,
+      amendments: { mode: "selected", amendmentIds: ["am1", "unpublished"] },
+    });
+    expect(chosen.plan.entries.map((entry) => entry.amendmentId)).toEqual([
+      "am1",
+    ]);
+    expect(chosen.dropped).toBe(1);
+  });
+
+  it("takes the texts alone, or nothing", () => {
+    const texts = part({ amendments: { mode: "none" } });
+    expect(texts.plan.entries.every((entry) => !entry.amendmentId)).toBe(true);
+    expect(texts.documentCount).toBe(2);
+    const nothing = part({ texts: false, amendments: { mode: "none" } });
+    expect(nothing.plan.entries).toEqual([]);
+  });
+
+  it("reads the same choice the same way", () => {
+    const a: PackageFilter = {
+      documentIds: ["doc2", "doc1", "doc2"],
+      texts: true,
+      amendments: { mode: "authors", memberIds: ["m-uco", "m-ugr"] },
+    };
+    const b: PackageFilter = {
+      documentIds: ["doc1", "doc2"],
+      texts: true,
+      amendments: { mode: "authors", memberIds: ["m-ugr", "m-uco"] },
+    };
+    expect(packageFilterKey(a)).toBe(packageFilterKey(b));
+    expect(packageFilterKey(a)).toMatch(/^[a-f0-9]{16}$/);
+    expect(
+      normalizePackageFilter({
+        ...FULL_PACKAGE_FILTER,
+        amendments: { mode: "authors", memberIds: [] },
+      }).amendments,
+    ).toEqual({ mode: "none" });
+  });
+
+  it("groups a document's automatic sub-item under its parent", () => {
+    expect(
+      packageDocumentGroups(two).map(({ item, documentIds }) => [
+        item.numbering,
+        documentIds,
+      ]),
+    ).toEqual([["1", ["doc1", "doc2"]]]);
+  });
+
+  it("names the download after what it takes", () => {
+    const name = (filter: Partial<PackageFilter>) =>
+      packageDownloadName(
+        whole.root,
+        two,
+        { ...FULL_PACKAGE_FILTER, ...filter },
+        t,
+      );
+    expect(name({})).toBe("Documentación 80.ª AGO");
+    expect(name({ documentIds: ["doc1"] })).toBe(
+      "Documentación 80.ª AGO - Resolución sobre becas",
+    );
+    expect(name({ documentIds: ["doc1", "doc2"] })).toBe(
+      "Documentación 80.ª AGO - Punto 1",
+    );
+    expect(
+      name({
+        texts: false,
+        amendments: { mode: "authors", memberIds: ["m-ugr", GENERIC] },
+      }),
+    ).toBe("Documentación 80.ª AGO - Enmiendas de CEA, UGR");
+    expect(
+      name({ amendments: { mode: "selected", amendmentIds: ["am1"] } }),
+    ).toBe("Documentación 80.ª AGO - Selección");
+    expect(name({ amendments: { mode: "none" } })).toBe(
+      "Documentación 80.ª AGO - Sin enmiendas",
+    );
   });
 });
 
