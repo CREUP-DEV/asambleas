@@ -1,5 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { affectsReviewQueue } from "./-live";
+import { affectsReviewQueue, refetchesAfterWrite } from "./-live";
+
+describe("refetchesAfterWrite", () => {
+  it("replaces a read on its way, which may have left before the write", () => {
+    expect(refetchesAfterWrite({ status: "pending", connected: true })).toBe(
+      true,
+    );
+    expect(refetchesAfterWrite({ status: "pending", connected: false })).toBe(
+      true,
+    );
+  });
+
+  it("leaves the refetch to the write's live event otherwise", () => {
+    expect(refetchesAfterWrite({ status: "success", connected: true })).toBe(
+      false,
+    );
+    expect(refetchesAfterWrite({ status: "error", connected: true })).toBe(
+      false,
+    );
+    expect(refetchesAfterWrite({ status: "idle", connected: true })).toBe(
+      false,
+    );
+  });
+
+  it("refetches at once without the live stream, which may bring no event", () => {
+    expect(refetchesAfterWrite({ status: "success", connected: false })).toBe(
+      true,
+    );
+    expect(refetchesAfterWrite({ status: "error", connected: false })).toBe(
+      true,
+    );
+  });
+});
 
 describe("affectsReviewQueue", () => {
   it("reacts to documents and amendments entering or leaving the inbox", () => {

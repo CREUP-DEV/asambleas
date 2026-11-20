@@ -5,11 +5,15 @@ import type {
   DocumentAmendmentsDto,
   LiveEventDto,
   MemberRef,
+  PartialDocumentAmendmentsDto,
 } from "~~/shared/types/api";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import { isDocumentLiveBatch } from "../document/useDocument";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
+import { trailingRefresh } from "../fetch/trailingRefresh";
 import { useAssemblyLive } from "../live/useAssemblyLive";
+import { seedOrRead, settledForHandover } from "./documentHandover";
+import { partialAmendmentsRefetch } from "./partialAmendments";
 import {
   amendmentBlockMarkers,
   amendmentDisplayLabel,
@@ -46,6 +50,20 @@ export interface UseDocumentAmendmentsOptions {
    * `mine`.
    */
   byAnswer?: MaybeRefOrGetter<boolean>;
+  /**
+   * The room's reading of the list (the document page): a live event of a
+   * few amendments reads only those (partialAmendmentsRefetch). Off, every
+   * event of the document reads the whole list again, as the validation
+   * inbox needs, since it acts on it.
+   */
+  partialLive?: boolean;
+  /**
+   * This document's list as a page still mounted holds it
+   * (documentHandover): shown at once instead of read again. Only on a
+   * client navigation, only with fixed params, and only the list of this
+   * document (findDocumentHandover matched it).
+   */
+  seed?: DocumentAmendmentsDto | null;
 }
 
 /**
@@ -74,18 +92,27 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     return `/api/assemblies/${encodeURIComponent(assembly)}/documents/${encodeURIComponent(document)}/amendments`;
   });
 
+  const fetchKey = computed(() => `document-amendments:${url.value ?? "none"}`);
+  const seed = url.value ? (options.seed ?? null) : null;
   const amendmentsFetch = useAsyncData<DocumentAmendmentsDto | null>(
-    computed(() => `document-amendments:${url.value ?? "none"}`),
+    fetchKey,
     () =>
       url.value
         ? api.get<DocumentAmendmentsDto>(url.value)
         : Promise.resolve(null),
-    { default: () => null },
+    { default: () => null, immediate: !seed },
   );
+  // Before keepLastGoodData, which then counts it as good; a key another
+  // component of the page already holds is left alone, one never read is
+  // read now (seedOrRead). Not read again until a live event, a write or a
+  // refresh asks for it.
+  if (seed) seedOrRead(amendmentsFetch, seed);
   const { status, error, refresh } = amendmentsFetch;
   // A failed poll keeps the list (and the composer or detail open on it);
   // switching documents forgets it.
-  const { data, stale } = keepLastGoodData(amendmentsFetch, { resetOn: url });
+  const { data, stale, failed } = keepLastGoodData(amendmentsFetch, {
+    resetOn: url,
+  });
   useStaleDataNotice(stale);
 
   const pending = computed(() => status.value === "pending");
@@ -255,6 +282,27 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     return amendmentRelationsOf(id, relations.value);
   }
 
+  // One stream per tab: reuse the hub's when this runs inside it.
+  const hub = inject(CURRENT_ASSEMBLY_KEY, null);
+  const nuxtApp = useNuxtApp();
+
+  /**
+   * A mutation's answer was just written (CON-10): a read of the list that
+   * left before it would land after it and bring back what it replaced, so
+   * that read is replaced by one that leaves now (cancel). With nothing on
+   * its way it reads nothing; the write's live event follows. A partial
+   * read on its way reads its amendments again instead of landing.
+   */
+  function afterWrite(): void {
+    partial?.wrote();
+    if (status.value !== "pending") return;
+    if (nuxtApp.isHydrating) {
+      onNuxtReady(() => void refresh({ dedupe: "cancel" }));
+    } else {
+      void refresh({ dedupe: "cancel" });
+    }
+  }
+
   /** Puts a mutation's answer in place right away; a refresh follows. */
   function upsert(amendment: AmendmentDto): void {
     const current = data.value;
@@ -262,6 +310,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     const list = current.amendments.filter((item) => item.id !== amendment.id);
     list.push(amendment);
     data.value = { ...current, amendments: list };
+    afterWrite();
   }
 
   /**
@@ -273,6 +322,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     const current = data.value;
     if (current && current.baseVersionId !== dto.baseVersionId) return;
     data.value = dto;
+    afterWrite();
   }
 
   function remove(id: string): void {
@@ -285,22 +335,88 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
         (relation) => relation.fromId !== id && relation.toId !== id,
       ),
     };
+    afterWrite();
+  }
+
+  /**
+   * Reads the whole list again after a live batch, never joining a read
+   * that may have left before it: one run per batch for every reader of
+   * the key inside the hub (liveRefresh), a trailing one of its own
+   * outside it.
+   */
+  const ownRefresh = trailingRefresh(() => refresh({ dedupe: "cancel" }));
+  /**
+   * Live reads asked for and not settled yet: one starts a microtask later
+   * (trailingRefresh), and the list must not be handed over meanwhile.
+   */
+  let liveReads = 0;
+  function refreshAll(): Promise<unknown> {
+    liveReads += 1;
+    const read = hub
+      ? hub.liveRefresh(fetchKey.value, () => refresh({ dedupe: "cancel" }))
+      : ownRefresh();
+    return read.finally(() => {
+      liveReads -= 1;
+    });
+  }
+
+  // The room's reading: only what a batch changed when it can (REC-4).
+  const partial = options.partialLive
+    ? partialAmendmentsRefetch({
+        documentId: () => toValue(options.documentId),
+        current: () => (failed.value ? null : data.value),
+        write: (dto) => {
+          data.value = dto;
+        },
+        refreshAll,
+        readSome: (ids) =>
+          url.value
+            ? api.get<PartialDocumentAmendmentsDto>(url.value, {
+                ids: ids.join(","),
+              })
+            : Promise.reject(new Error("No document")),
+        readingAll: () => status.value === "pending",
+      })
+    : null;
+  if (partial) {
+    watch(
+      status,
+      (value) => {
+        if (value === "pending") partial.readAllStarted();
+      },
+      { flush: "sync" },
+    );
   }
 
   function handleLiveEvents(events: LiveEventDto[]): void {
-    if (isDocumentLiveBatch(events, toValue(options.documentId))) {
-      void refresh();
+    if (partial) {
+      void partial.handle(events);
+    } else if (isDocumentLiveBatch(events, toValue(options.documentId))) {
+      void refreshAll();
     }
   }
 
-  // One stream per tab: reuse the hub's when this runs inside it.
-  const hub = inject(CURRENT_ASSEMBLY_KEY, null);
   const live = hub
     ? (hub.onLive(handleLiveEvents), hub.live)
     : useAssemblyLive(
         () => (options.assemblyId ? toValue(options.assemblyId) : undefined),
         handleLiveEvents,
       );
+
+  /**
+   * The list when the next page can take it over (documentHandover): read,
+   * its last read not failed, no read of it (a partial one included) on its
+   * way; null otherwise.
+   */
+  function handoverData(): DocumentAmendmentsDto | null {
+    return settledForHandover({
+      status: status.value,
+      failed: failed.value,
+      busy: liveReads > 0 || (partial?.busy() ?? false),
+    })
+      ? (data.value ?? null)
+      : null;
+  }
 
   return {
     data,
@@ -332,6 +448,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     replace,
     remove,
     live,
+    handoverData,
   };
 }
 

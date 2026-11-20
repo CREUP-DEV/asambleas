@@ -12,16 +12,19 @@ import type {
   LiveStateDto,
   LiveTally,
   LiveTallyDto,
+  PartialDocumentAmendmentsDto,
   SpeakersDto,
   VoteDto,
 } from "~~/shared/types/api";
 import { errorStatus, useApi } from "~/composables/api/useApi";
+import { partialAmendmentsRefetch } from "~/composables/amendment/partialAmendments";
 import {
   keepLastGoodData,
   onlyForKey,
   useRetryFailed,
 } from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
+import { followLiveState } from "~/composables/live/-liveState";
 import { useAppNow } from "~/composables/time/useAppNow";
 import {
   buildSessionAgendaRows,
@@ -37,7 +40,6 @@ import {
 } from "~/composables/session/pointerState";
 import { usePointerFade } from "~/composables/session/usePointerFade";
 import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
-import { isDocumentLiveBatch } from "~/composables/document/useDocument";
 import {
   affectsAgenda,
   affectsLiveVote,
@@ -172,9 +174,23 @@ const {
 } = keepLastGoodData(assemblyFetch, { isGone });
 const refreshAssembly = assemblyFetch.refresh;
 
+/**
+ * The live state in order (`updatedAt`): pushed on the stream after each
+ * move of the Mesa (`onState`), read on a poll, a reconnection, a change of
+ * the vote on screen or when no push covered a batch.
+ */
+const liveFollower = followLiveState({
+  apply: (state) => {
+    live.value = state;
+  },
+});
+onScopeDispose(liveFollower.dispose);
 const liveFetch = await useAsyncData(
   () => `projection-live-${param.value}`,
-  () => read<LiveStateDto>(`${assemblyUrl.value}/live-state`),
+  () =>
+    read<LiveStateDto>(`${assemblyUrl.value}/live-state`).then(
+      (state) => liveFollower.fetched(state) ?? state,
+    ),
 );
 const {
   data: live,
@@ -183,6 +199,7 @@ const {
 } = keepLastGoodData(liveFetch, {
   isGone,
 });
+liveFollower.fetched(live.value ?? null);
 const refreshLive = liveFetch.refresh;
 
 const agendaFetch = await useAsyncData(
@@ -276,6 +293,42 @@ const {
 } = keepLastGoodData(amendmentsFetch, { isGone, resetOn: documentId });
 const refreshAmendments = amendmentsFetch.refresh;
 
+/**
+ * A live batch of the document reads only the amendments it changed when
+ * it can, the whole list otherwise (partialAmendmentsRefetch), as the same
+ * viewer as the list (`viewQuery`).
+ */
+const amendmentsLive = partialAmendmentsRefetch({
+  documentId: () => documentId.value,
+  current: () => {
+    const dto = amendmentsDto.value;
+    return dto &&
+      !amendmentsFailed.value &&
+      dto.amendments.every((item) => item.documentId === documentId.value)
+      ? dto
+      : null;
+  },
+  write: (dto) => {
+    amendmentsDto.value = dto;
+  },
+  refreshAll: () => amendmentsFetch.refresh({ dedupe: "cancel" }),
+  readSome: (ids) =>
+    documentUrl.value
+      ? api.get<PartialDocumentAmendmentsDto>(
+          `${documentUrl.value}/amendments`,
+          { ...viewQuery.value, ids: ids.join(",") },
+        )
+      : Promise.reject(new Error("No document on screen")),
+  readingAll: () => amendmentsFetch.status.value === "pending",
+});
+watch(
+  amendmentsFetch.status,
+  (status) => {
+    if (status === "pending") amendmentsLive.readAllStarted();
+  },
+  { flush: "sync" },
+);
+
 /** Some source failed its last refresh and shows its last good data. */
 const stale = computed(
   () =>
@@ -314,10 +367,9 @@ function onLive(events: LiveEventDto[]): void {
   const current = documentId.value;
   const touches = (types: string[]) =>
     events.some((event) => types.includes(event.entityType));
-  // The amendments follow every event of the document; the document itself
+  // The amendments follow every event of the document, some of them read
+  // alone when only those changed (amendmentsLive); the document itself
   // only what may change it, not each vote or answer (affectsDocumentDto).
-  const touchesDocument =
-    current !== null && isDocumentLiveBatch(events, current);
   const changesDocument =
     current !== null &&
     affectsDocumentDto(events, current, document.value?.finalVote?.id);
@@ -326,10 +378,11 @@ function onLive(events: LiveEventDto[]): void {
   // poll tries again, and the sources follow once it loads (roomView).
   if (!me.loaded.value) void me.refresh();
   // The vote on screen may change without the live state moving (its
-  // unanimity): its own event reads the live state again.
+  // unanimity): its own event reads the live state again. A move of the
+  // Mesa came pushed (`onState`) unless no push covered it.
   if (
     poll ||
-    touches(["live"]) ||
+    (touches(["live"]) && !statePushed()) ||
     affectsLiveVote(events, live.value?.vote?.id)
   ) {
     refreshes.push(refreshLive());
@@ -343,7 +396,8 @@ function onLive(events: LiveEventDto[]): void {
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
   if (affectsAgenda(events)) refreshes.push(refreshAgenda());
   if (poll || changesDocument) refreshes.push(refreshDocument());
-  if (poll || touchesDocument) refreshes.push(refreshAmendments());
+  const amendmentsRead = amendmentsLive.handle(events);
+  if (amendmentsRead) refreshes.push(amendmentsRead);
   // asyncData refreshes resolve even when they fail: only stamp the time
   // when every source is up to date.
   void Promise.all(refreshes).then(() => {
@@ -457,13 +511,14 @@ async function readMesaScroll(): Promise<void> {
 watch(documentId, () => void readMesaScroll(), { immediate: true });
 watch(documentBox, () => followMesaScroll(), { flush: "post" });
 
-const { connected, polling, expired } = useAssemblyLive(
+const { connected, polling, expired, statePushed } = useAssemblyLive(
   () => assemblyId,
   onLive,
   {
     onScroll: onMesaScroll,
     onPointer: onMesaPointer,
     onTally,
+    onState: liveFollower.pushed,
   },
 );
 

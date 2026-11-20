@@ -83,6 +83,58 @@ export function sessionPendingTallyVote<T extends SecretBallots>(vote: T): T {
 }
 
 /**
+ * The console's POSTs of the count (POST .../live-tally), latest wins: one
+ * at a time, in order, and a push made while one is in flight replaces any
+ * other still waiting, so a slow network sends the newest count next
+ * instead of every count it fell behind on. The null that ends a count
+ * still goes after the POST in flight, never before it: a count sent after
+ * it would put it back on screen. A failed POST is dropped; the next push
+ * sends again.
+ */
+export function latestTallySender(
+  send: (tally: LiveTally | null) => Promise<unknown>,
+): (tally: LiveTally | null) => void {
+  let latest: LiveTally | null = null;
+  /** A push not sent yet (the latest one). */
+  let waiting = false;
+  /** A POST is in flight, or about to be. */
+  let running = false;
+
+  async function drain(): Promise<void> {
+    running = true;
+    while (waiting) {
+      waiting = false;
+      try {
+        await send(latest);
+      } catch {
+        // Dropped: the next push (or the form's repeat) sends it again.
+      }
+    }
+    running = false;
+  }
+
+  return (tally) => {
+    latest = tally;
+    waiting = true;
+    if (!running) void drain();
+  };
+}
+
+/**
+ * Whether the form's 15 s repeat of the count goes now (VoteFields): not
+ * while the console is saving something, most likely this very vote, whose
+ * result a repeat landing after it would cover again until the form's null
+ * arrives; but never two repeats in a row, so a request that hangs does not
+ * let the server forget the count (LIVE_TALLY_TTL_MS).
+ */
+export function sessionTallyRepeatDue(options: {
+  busy: boolean;
+  skippedLast: boolean;
+}): boolean {
+  return !options.busy || options.skippedLast;
+}
+
+/**
  * Whether the Mesa may switch how the room follows the count: never from
  * «Al final, con el resultado» to «En directo» once ballots are entered,
  * which would put them on screen before the result. From live to the end

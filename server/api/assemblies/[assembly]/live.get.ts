@@ -17,6 +17,7 @@ import {
   subscribeToLiveTally,
 } from "../../../utils/live/scroll";
 import { markSeen } from "../../../utils/live/online";
+import { subscribeToLiveState } from "../../../utils/live/statePush";
 import {
   LIVE_HEARTBEAT_INTERVAL_MS,
   liveHeartbeat,
@@ -39,12 +40,17 @@ const RETRY_MS = 5_000;
  *   debate (server/utils/live/scroll.ts), never recorded;
  * - `pointer` with a LivePointerDto as the Mesa points or draws on it;
  * - `tally` with a LiveTallyDto as the Mesa counts a secret vote;
+ * - `state` with a LiveStatePushDto after each `live_changed`: the live
+ *   state itself, the same for every reader, loaded once for every stream
+ *   (server/utils/live/statePush.ts), with a point vote's question taken
+ *   out unless its item's title is public (`voteQuestionRedacted`). It
+ *   always follows the `change` it answers;
  * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
  *   tell a live stream from one that died in silence, and which keeps the
  *   viewer online (server/utils/live/online.ts) while the page stays open.
- * `?channels=` lists which of `scroll`, `pointer` and `tally` the page
- * follows (livePushChannels); without it, all three. Each message is
- * serialized once for every stream (serializeOnce).
+ * `?channels=` lists which of `scroll`, `pointer`, `tally` and `state` the
+ * page follows (livePushChannels); without it, the first three. Each
+ * message is serialized once for every stream (serializeOnce).
  */
 export default defineEventHandler(async (event) => {
   // Resolve first, so a 401 or 404 still answers as plain JSON.
@@ -68,6 +74,13 @@ export default defineEventHandler(async (event) => {
       push({ event: "change", data: serializeOnce(message, toLiveEventDto) });
     }),
   ];
+  if (channels.has("state")) {
+    unsubscribes.push(
+      subscribeToLiveState(assembly.id, (state) => {
+        push({ event: "state", data: serializeOnce(state) });
+      }),
+    );
+  }
   if (channels.has("scroll")) {
     unsubscribes.push(
       subscribeToLiveScroll(assembly.id, (scroll) => {

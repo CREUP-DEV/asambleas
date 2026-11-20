@@ -84,6 +84,7 @@ import type {
   EventDto,
   MemberRef,
   OutcomeBody,
+  PartialDocumentAmendmentsDto,
   PositionBody,
   PublishAmendmentsBody,
   ReclassifyBody,
@@ -154,6 +155,7 @@ import {
 } from "./events";
 import { logError } from "../core/logger";
 import { loadPassageWordings, toPassageWordingDto } from "./wordings";
+import { goneAmendmentIds, linkedAmendmentIds } from "./amendmentDependencies";
 import { amendmentsMeet } from "../../../shared/utils/content/passages";
 import { assertSessionOpen } from "./sessionOpen";
 import { toVoteDto, type VoteRow } from "./votes";
@@ -2135,6 +2137,98 @@ export async function listDocumentAmendments(
     wordings: wordingRows
       .filter((row) => row.amendmentIds.every((id) => visibleIds.has(id)))
       .map(toPassageWordingDto),
+    baseVersionId: ctx.document.baseVersionId,
+  };
+}
+
+/** findAmendments' order (text order), for rows read in more than one pass. */
+function byTextOrder(a: LoadedAmendment, b: LoadedAmendment): number {
+  if (a.positionKey !== b.positionKey) return a.positionKey - b.positionKey;
+  if (a.number !== b.number) {
+    // PostgreSQL puts nulls last in ascending order.
+    if (a.number === null) return 1;
+    if (b.number === null) return -1;
+    return a.number - b.number;
+  }
+  return a.createdAt.getTime() - b.createdAt.getTime();
+}
+
+/**
+ * Some amendments of the document (GET .../amendments?ids=), each DTO the
+ * one listDocumentAmendments would send, for a reader that already holds the
+ * list and only needs what a live event changed (docs/api.md). Besides the
+ * asked ones it sends those whose DTO reads them (linkedAmendmentIds: the
+ * amendments a transactional groups, the transactionals over one), and it
+ * keeps a linked id in a DTO only when the reader sees it, as the list does:
+ * what the DTOs name (their sources and transactionals, the amendments an
+ * open inclusion would add) is read for that. Only from the asked ones the
+ * reader sees: one hidden from it names nothing it is linked to. `gone` are
+ * the asked ones it does not get. Relations and wordings are left out.
+ */
+export async function listDocumentAmendmentsByIds(
+  ctx: DocumentAmendmentContext,
+  ids: string[],
+): Promise<PartialDocumentAmendmentsDto> {
+  const inDocument = (list: string[]) =>
+    list.length > 0
+      ? findAmendments(
+          db,
+          and(
+            eq(amendments.documentId, ctx.document.id),
+            inArray(amendments.id, list),
+          ),
+        )
+      : Promise.resolve([] as LoadedAmendment[]);
+
+  // Only from what the reader sees: an amendment hidden from it tells it
+  // nothing, not even what it is linked to.
+  const asked = (await inDocument(ids)).filter((row) => isVisible(ctx, row));
+  const added = (await inDocument(linkedAmendmentIds(asked))).filter((row) =>
+    isVisible(ctx, row),
+  );
+  const visible = [...asked, ...added].sort(byTextOrder);
+
+  // What the DTOs name, kept only when the reader sees it (`keep` in
+  // buildAmendmentDtos): their links and an open inclusion's additions.
+  const openTransactionalIds = visible
+    .filter((row) => row.kind === "transactional" && row.status === "submitted")
+    .map((row) => row.id);
+  const revisions =
+    openTransactionalIds.length > 0
+      ? await db
+          .select({ addedSourceIds: transactionalRevisions.addedSourceIds })
+          .from(transactionalRevisions)
+          .where(
+            and(
+              inArray(
+                transactionalRevisions.transactionalId,
+                openTransactionalIds,
+              ),
+              inArray(transactionalRevisions.status, [
+                ...OPEN_REVISION_STATUSES,
+              ]),
+            ),
+          )
+      : [];
+  const named = await inDocument(
+    linkedAmendmentIds(
+      visible,
+      revisions.flatMap((revision) => revision.addedSourceIds),
+    ),
+  );
+
+  const visibleIds = new Set(
+    [...visible, ...named.filter((row) => isVisible(ctx, row))].map(
+      (row) => row.id,
+    ),
+  );
+  const dtos = await buildAmendmentDtos(ctx, visible, visibleIds);
+  return {
+    amendments: dtos,
+    gone: goneAmendmentIds(
+      ids,
+      dtos.map((dto) => dto.id),
+    ),
     baseVersionId: ctx.document.baseVersionId,
   };
 }

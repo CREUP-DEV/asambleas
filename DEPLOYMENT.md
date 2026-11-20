@@ -108,7 +108,7 @@ NUXT_SMTP_FROM_EMAIL=asambleas@<dominio de correo>
 Notas:
 
 - `NODE_ENV`, `TZ`, `EXPORT_STORAGE_DIR` y `UPLOAD_STORAGE_DIR` los fija el compose; no hace falta repetirlos.
-- `DATABASE_URL` usa el host `postgresql`, el servicio compartido. El clúster admite 100 conexiones para todos los proyectos. La app abre como mucho unas 18: `DATABASE_MAX_CONNECTIONS`, 3 de la cola de exportaciones, 2 de los trabajos diarios de la Intranet, 2 del resumen diario de avisos y 1 de las actualizaciones en directo. Durante un despliegue, las migraciones abren otra más.
+- `DATABASE_URL` usa el host `postgresql`, el servicio compartido. El clúster admite 100 conexiones para todos los proyectos. La app abre como mucho unas 18: `DATABASE_MAX_CONNECTIONS`, 3 de la cola de exportaciones, 2 de los trabajos diarios de la Intranet, 2 del resumen diario de avisos y 1 de las actualizaciones en directo. Durante un despliegue, las migraciones abren otra más. Las del pool principal se cierran tras 5 minutos sin uso, así que entre dos votaciones siguen abiertas.
 - No pongas `SEED_DEMO`: el seed de producción cargaría los datos de demostración.
 - `NUXT_SITE_URL` debe coincidir con el dominio real usado por OAuth.
 - `NUXT_INTRANET_API_TOKEN` es el token en claro; la Intranet solo guarda su hash. Sin token, la plataforma no puede saber si una cuenta se ha borrado en la Intranet y no retira el acceso a nadie.
@@ -161,6 +161,7 @@ Lo que hace el vhost:
 - Bloquea `/api/health` desde fuera.
 - Mientras no llega a la app (un despliegue, un rollback, la app caída) responde 503 con una página propia, «Estamos actualizando la plataforma», que se recarga sola cuando la app vuelve. No responde 502 porque Cloudflare cambia todo 502 del origen por su página «Bad gateway» y deja pasar los 503. Solo cubre los errores de nginx: los 502 y 503 de la propia app ("Sincronizar") llegan tal cual.
 - No guarda en búfer las actualizaciones en directo (`/api/assemblies/<asamblea>/live`, eventos SSE con latido cada 25 s, por debajo de los 100 s de Cloudflare).
+- Comprime con gzip el JSON de la API y el HTML hacia Cloudflare, que vuelve a comprimir hacia los navegadores; nunca el directo, que retendría los eventos. Su `gzip_types` sustituye, solo en este sitio, la lista del `nginx.conf` compartido. Los ficheros de `/_nuxt/` ya llegan comprimidos de Nitro y no se tocan.
 - Deja pasar cuerpos de hasta 25 MB, por encima del límite de la propia app (21 MB para un PDF y 16 MB para importar un DOCX), que es la que responde con un error claro.
 - No toca la IP del visitante: la recupera el `nginx.conf` compartido (`snippets/cloudflare-realip.conf`, en el bloque `http`), así que `X-Forwarded-For` ya lleva la del visitante y no la de Cloudflare. Por eso toda una sede tras un mismo NAT comparte IP, y el límite por IP de nuxt-security está apagado en `/api/assemblies/**`, `/api/exports/**` y `/api/me/**`. Lo que sigue limitado tiene un cupo por IP y regla: subidas (importar, PDF, imágenes, convocatoria) 300 cada 5 min; peticiones de exportación 1.000 cada 5 min; páginas, `/api/auth`, `/api/members` y ficheros subidos 12.000 cada 5 min entre todos.
 

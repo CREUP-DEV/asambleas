@@ -194,6 +194,82 @@ export function shouldRefetchAgenda(events: readonly LiveEventLike[]): boolean {
 }
 
 /**
+ * The amendment events whose change stays within that amendment and the
+ * ones whose DTO reads it (the amendments a transactional groups, the
+ * transactionals over one), each of the others it changes coming with its
+ * own event in the same batch: a decision (the vote's `vote_recorded`
+ * comes with it), what an approved transactional replaces
+ * (`amendment_transacted`) and what it lapses (`amendment_lapsed`), an
+ * answer and a party's acceptance. None of them changes who sees what. A
+ * transactional the decision closes comes as `amendment_withdrawn`, a
+ * listing type. An allow-list: a type not checked here reads the whole
+ * list.
+ */
+export const PARTIAL_AMENDMENT_TYPES: ReadonlySet<string> = new Set([
+  "amendment_approved",
+  "amendment_rejected",
+  "amendment_lapsed",
+  "amendment_transacted",
+  "position_changed",
+  "acceptance_recorded",
+]);
+
+/** A decision whose `vote_recorded` the amendment's own event covers. */
+const VOTED_AMENDMENT_TYPES: ReadonlySet<string> = new Set([
+  "amendment_approved",
+  "amendment_rejected",
+]);
+
+/**
+ * How a reader holding a document's amendments list (the room's: the
+ * document page, Directo, the projection) follows a live batch: nothing,
+ * the whole list, or only some amendments (GET .../amendments?ids=,
+ * listDocumentAmendmentsByIds). Only the events of this document count
+ * (isDocumentLiveBatch). The whole list on a poll, on any event of the
+ * document itself (its rule, its final vote, a passage wording), on a
+ * relation, on an amendment event not in PARTIAL_AMENDMENT_TYPES (those
+ * that change which amendments are seen, an inclusion, a reclassification,
+ * a vote between alternatives, which records a `decision_recorded`), on a
+ * `vote_recorded` with no decision of an amendment beside it, and over
+ * `max` ids.
+ */
+export function amendmentsRefetchPlan(
+  events: readonly ScopedLiveEvent[],
+  documentId: string | null | undefined,
+  max: number,
+): { full: true } | { full: false; ids: string[] } | null {
+  if (events.some((event) => event.type === "poll")) return { full: true };
+  if (!documentId) return null;
+  const own = events.filter(
+    (event) =>
+      event.documentId === documentId ||
+      (event.entityType === "document" && event.entityId === documentId),
+  );
+  if (own.length === 0) return null;
+  const voted = own.some(
+    (event) =>
+      event.entityType === "amendment" && VOTED_AMENDMENT_TYPES.has(event.type),
+  );
+  const ids = new Set<string>();
+  for (const event of own) {
+    if (
+      event.entityType === "amendment" &&
+      PARTIAL_AMENDMENT_TYPES.has(event.type)
+    ) {
+      ids.add(event.entityId);
+    } else if (!(
+      event.entityType === "vote" &&
+      event.type === "vote_recorded" &&
+      voted
+    )) {
+      return { full: true };
+    }
+  }
+  if (ids.size === 0 || ids.size > max) return { full: true };
+  return { full: false, ids: [...ids] };
+}
+
+/**
  * Whether a batch of live events may change the DocumentDto of this
  * document (loadDocumentDto), so the room refetches it only then, not on
  * every vote, answer or acceptance of one of its amendments:

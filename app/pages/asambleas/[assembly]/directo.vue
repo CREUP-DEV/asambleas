@@ -6,18 +6,29 @@ import type {
   HeadcountsDto,
   LiveScrollDto,
   LiveStateDto,
+  PartialDocumentAmendmentsDto,
   SpeakerNotesDto,
   SpeakersDto,
   SpeakingTurnDto,
 } from "~~/shared/types/api";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
+import {
+  seedOrRead,
+  settledForHandover,
+  useDocumentHandover,
+} from "~/composables/amendment/documentHandover";
+import { partialAmendmentsRefetch } from "~/composables/amendment/partialAmendments";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "~/composables/api/useApi";
 import { agendaWithTitles } from "~/utils/agendaTitles";
-import { isDocumentLiveBatch } from "~/composables/document/useDocument";
 import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
+import { holdEarlyLive } from "~/composables/assembly/-liveWiring";
+import {
+  followLiveState,
+  liveStateDocumentDelay,
+} from "~/composables/live/-liveState";
 import {
   sharedAgendaAction,
   useSharedAgendaFetch,
@@ -63,9 +74,11 @@ import {
  * Open to everyone who can see the assembly, at any time: before the
  * session and after it, it says so and points to what can be read
  * meanwhile. It follows the hub's live stream (useCurrentAssembly().onLive),
- * refreshing only what each event touches, and keeps the last good data
- * when a refresh fails, like the projection; when the live state never
- * loaded, it says so rather than "nothing is being debated".
+ * refreshing only what each event touches, takes the live state as the
+ * stream pushes it (onLiveState) instead of reading it after every move of
+ * the Mesa, and keeps the last good data when a refresh fails, like the
+ * projection; when the live state never loaded, it says so rather than
+ * "nothing is being debated".
  * Only published amendments are listed, so the Mesa sees what the room sees.
  * A bloc the Mesa proposes to approve together shows as a notice with its
  * codes, approved ones marked (user's decision of 2026-11-19).
@@ -84,6 +97,7 @@ const {
   sectionPath,
   onLive,
   onLiveScroll,
+  onLiveState,
   live: stream,
 } = useCurrentAssembly();
 
@@ -133,6 +147,16 @@ function nullIfGone(error: unknown): null {
 // lets through that the agenda pages follow marks the agenda behind, and
 // the next of them refetches it (sharedAgendaAction).
 
+// The live handler reads what the await below returns, so it is registered
+// after it; a batch that arrives meanwhile is held and handed to it then
+// (holdEarlyLive), or what it changed would wait for the next event.
+const registerLive = holdEarlyLive(onLive);
+// The document pages hand over the document and its amendments they hold,
+// and take them from here, instead of downloading them again
+// (documentHandover), while the stream is connected. Before the await: it
+// reads the app's context.
+const documentHandover = useDocumentHandover(stream);
+
 const { result: agendaFetch, markBehind: markAgendaBehind } =
   useSharedAgendaFetch({ immediate: inSession.value });
 const headcountsFetch = useAsyncData(
@@ -143,12 +167,33 @@ const headcountsFetch = useAsyncData(
       : Promise.resolve(null),
   { lazy: true },
 );
+/**
+ * The live state in order (`updatedAt`): pushed on the stream after each
+ * move of the Mesa (onLiveState), read on a poll, a reconnection, a change
+ * of the vote on screen or when no push covered a batch. A push that moves
+ * to another document waits this phone's share of a second, so the room
+ * does not download that document and its amendments in the same instant.
+ */
+const liveShare = Math.random();
+const liveFollower = followLiveState({
+  apply: (state) => {
+    liveState.value = state;
+  },
+  delayMs: (state) =>
+    liveStateDocumentDelay(state, liveState.value, {
+      spread: !assembly.value?.can.moderate,
+      share: liveShare,
+    }),
+});
+onScopeDispose(liveFollower.dispose);
 const [liveFetch, speakersFetch] = await Promise.all([
   useAsyncData(
     () => `live-view-state-${assemblyKey.value}`,
     () =>
       inSession.value
-        ? api.get<LiveStateDto>(`${apiBase.value}/live-state`)
+        ? api
+            .get<LiveStateDto>(`${apiBase.value}/live-state`)
+            .then((state) => liveFollower.fetched(state) ?? state)
         : Promise.resolve(null),
   ),
   useAsyncData(
@@ -164,6 +209,11 @@ const {
   stale: liveStale,
   failed: liveFailed,
 } = keepLastGoodData(liveFetch, { isGone });
+// What the page holds (server-rendered, or read above) is the state to
+// beat; a push that came while the page loaded is handed over now, and
+// kept only if newer than that read (`replay`).
+liveFollower.fetched(liveState.value ?? null);
+onLiveState(liveFollower.pushed);
 const {
   data: speakersDto,
   stale: speakersStale,
@@ -192,13 +242,20 @@ const documentUrl = computed(() =>
     : null,
 );
 
+// Coming from the page of the document in debate (still mounted while this
+// one loads): what it holds up to date is shown at once instead of read
+// again (documentHandover). Never on the server or while hydrating. The
+// live handler registered below gets every batch since the await began
+// (registerLive), so nothing that changed them meanwhile is missed.
+const handed = documentHandover.find(assembly.value?.id, documentId.value);
 const documentFetch = useAsyncData(
   () => `live-view-document-${documentId.value ?? "none"}`,
   () =>
     documentUrl.value
       ? api.get<DocumentDto>(documentUrl.value).catch(nullIfGone)
       : Promise.resolve(null),
-  { lazy: true },
+  // `lazy` would read it before mount even when seeded.
+  { lazy: true, immediate: !handed },
 );
 const amendmentsFetch = useAsyncData(
   () => `live-view-amendments-${documentId.value ?? "none"}`,
@@ -208,8 +265,21 @@ const amendmentsFetch = useAsyncData(
           .get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
           .catch(nullIfGone)
       : Promise.resolve(null),
-  { lazy: true },
+  { lazy: true, immediate: !handed?.amendments },
 );
+if (handed) {
+  // Before keepLastGoodData, which then counts them as good.
+  seedOrRead(documentFetch, handed.document);
+  if (handed.amendments) seedOrRead(amendmentsFetch, handed.amendments);
+  // Not `immediate`: Nuxt reads a new key only when the previous one had
+  // data. When the Mesa moves on, a key left unread is read here.
+  watch(documentId, () => {
+    if (documentFetch.status.value === "idle") void documentFetch.refresh();
+    if (amendmentsFetch.status.value === "idle") {
+      void amendmentsFetch.refresh();
+    }
+  });
+}
 // Reset when the Mesa moves to another document: the previous one must not
 // stand in for it.
 const {
@@ -222,6 +292,69 @@ const {
   stale: amendmentsStale,
   failed: amendmentsFailed,
 } = keepLastGoodData(amendmentsFetch, { isGone, resetOn: documentId });
+
+/**
+ * A live batch of the document reads only the amendments it changed when
+ * it can, the whole list otherwise (partialAmendmentsRefetch): every phone
+ * of the room keeps this page open, and the list weighs hundreds of KB.
+ */
+const amendmentsLive = partialAmendmentsRefetch({
+  documentId: () => documentId.value,
+  current: () => {
+    const dto = amendmentsData.value;
+    return dto &&
+      !amendmentsFailed.value &&
+      dto.amendments.every((item) => item.documentId === documentId.value)
+      ? dto
+      : null;
+  },
+  write: (dto) => {
+    amendmentsData.value = dto;
+  },
+  refreshAll: () => amendmentsFetch.refresh({ dedupe: "cancel" }),
+  readSome: (ids) =>
+    documentUrl.value
+      ? api.get<PartialDocumentAmendmentsDto>(
+          `${documentUrl.value}/amendments`,
+          { ids: ids.join(",") },
+        )
+      : Promise.reject(new Error("No document in debate")),
+  readingAll: () => amendmentsFetch.status.value === "pending",
+});
+watch(
+  amendmentsFetch.status,
+  (status) => {
+    if (status === "pending") amendmentsLive.readAllStarted();
+  },
+  { flush: "sync" },
+);
+
+// What this page offers the document page ("Abrir enmienda"): the
+// document in debate and its list, each only while read, its last read
+// not failed and no read of it on its way. Nothing when this page was left
+// while the await above was pending (addSource).
+documentHandover.register({
+  assemblyId: () => assembly.value?.id,
+  document: () => {
+    const dto = documentData.value;
+    return dto &&
+      dto.id === documentId.value &&
+      settledForHandover({
+        status: documentFetch.status.value,
+        failed: documentFailed.value,
+      })
+      ? dto
+      : null;
+  },
+  amendments: () =>
+    settledForHandover({
+      status: amendmentsFetch.status.value,
+      failed: amendmentsFailed.value,
+      busy: amendmentsLive.busy(),
+    })
+      ? (amendmentsData.value ?? null)
+      : null,
+});
 
 /** Some source failed its last refresh and shows its last good data. */
 const stale = computed(
@@ -331,14 +464,17 @@ const amendmentsReady = computed(
 /** When the view last heard from the server. */
 const lastUpdate = ref<Date | null>(null);
 
-onLive((events) => {
+// With any batch that came while the page loaded (registerLive).
+registerLive((events) => {
   const refreshes: Promise<unknown>[] = [];
   const poll = events.some((event) => event.type === "poll");
   // The vote on screen may change without the live state moving (its
-  // unanimity): its own event reads the live state again.
+  // unanimity): its own event reads the live state again. A move of the
+  // Mesa came pushed (onLiveState) unless no push covered it.
   if (
     poll ||
-    events.some((event) => event.entityType === "live") ||
+    (events.some((event) => event.entityType === "live") &&
+      !stream.statePushed()) ||
     affectsLiveVote(events, live.value?.vote?.id)
   ) {
     refreshes.push(liveFetch.refresh());
@@ -356,11 +492,11 @@ onLive((events) => {
     markAgendaBehind();
   }
   if (affectsHeadcounts(events)) refreshes.push(headcountsFetch.refresh());
-  // The amendments follow every event of the document; the document itself
+  // The amendments follow every event of the document, some of them read
+  // alone when only those changed (amendmentsLive); the document itself
   // only what may change it, not each vote or answer (affectsDocumentDto).
-  if (documentId.value && isDocumentLiveBatch(events, documentId.value)) {
-    refreshes.push(amendmentsFetch.refresh());
-  }
+  const amendmentsRead = amendmentsLive.handle(events);
+  if (amendmentsRead) refreshes.push(amendmentsRead);
   if (
     documentId.value &&
     affectsDocumentDto(events, documentId.value, document.value?.finalVote?.id)

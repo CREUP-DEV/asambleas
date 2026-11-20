@@ -2,6 +2,7 @@ import type { Block } from "~~/shared/types/content";
 import { errorStatus } from "../api/useApi";
 import { useCurrentAssembly } from "../assembly/useCurrentAssembly";
 import { useDocument } from "../document/useDocument";
+import { useDocumentHandover } from "./documentHandover";
 import { useDocumentAmendments } from "./useDocumentAmendments";
 
 /**
@@ -22,13 +23,24 @@ export function useDocumentWorkspace() {
   const assemblyParam = computed(() => String(route.params.assembly ?? ""));
   const documentParam = computed(() => String(route.params.document ?? ""));
 
+  // Coming from Directo (or another page holding this document, still
+  // mounted while this one loads): its document and amendments are shown
+  // at once instead of downloaded again (documentHandover), while the live
+  // stream is connected. The live handlers below subscribe in this same
+  // run, so every event after it is theirs to follow.
+  const handover = useDocumentHandover(hub.live);
+  const handed = handover.find(hub.assembly.value?.id, documentParam.value);
+
+  const documentFetch = useDocument(assemblyParam, documentParam, {
+    seed: handed?.document,
+  });
   const {
     document,
     pending: documentPending,
     error: documentError,
     stale: documentStale,
     refresh: refreshDocument,
-  } = useDocument(assemblyParam, documentParam);
+  } = documentFetch;
 
   // Names the document in the breadcrumb row, from the DTO loaded above.
   useDocumentBreadcrumb(document);
@@ -46,6 +58,16 @@ export function useDocumentWorkspace() {
     documentId: () => document.value?.id,
     // Grouped by the main presenter's answers as the reader gets them.
     byAnswer: () => true,
+    // The room reads it: a vote or an answer reads only what it changed.
+    partialLive: true,
+    seed: handed?.amendments,
+  });
+
+  // And offers them to the next page the same way (Directo).
+  handover.register({
+    assemblyId: () => hub.assembly.value?.id,
+    document: documentFetch.handoverData,
+    amendments: amendments.handoverData,
   });
 
   /** Base url of the amendment API, by ids once the DTOs are loaded. */

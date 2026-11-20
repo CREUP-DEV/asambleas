@@ -64,6 +64,7 @@ import {
   useStaleDataNotice,
 } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
+import { followLiveState } from "../live/-liveState";
 import { affectsDocumentDto } from "../assembly/-liveFilters";
 import SessionConfirmDialog from "~/components/session/ConfirmDialog.vue";
 import {
@@ -114,6 +115,7 @@ import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
 import { useProjectionControl } from "./useProjectionControl";
+import { latestTallySender } from "./liveTally";
 
 /**
  * Busy key of the "who sees the speaking turns" switch. It must not start
@@ -311,14 +313,30 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // An item sent without its title gets a neutral one (titleHidden).
   const agenda = agendaWithTitles(fetchedAgenda, () => t("agenda.hiddenTitle"));
 
+  /**
+   * The live state in order (`updatedAt`): pushed on the stream after each
+   * move of the Mesa (onLiveState), read on a poll, a reconnection, a
+   * change of the vote on screen or when no push covered a batch, and
+   * answered by this console's own changes (setLive).
+   */
+  const liveFollower = followLiveState({
+    apply: (state) => {
+      liveState.value = state;
+    },
+  });
+  if (getCurrentScope()) onScopeDispose(liveFollower.dispose);
   const liveFetch = useAsyncData(
     () => `session-live-${param.value}`,
-    () => api.get<LiveStateDto>(`${assemblyUrl.value}/live-state`),
+    () =>
+      api
+        .get<LiveStateDto>(`${assemblyUrl.value}/live-state`)
+        .then((state) => liveFollower.fetched(state) ?? state),
   );
   const { status: liveStatus, refresh: refreshLive } = liveFetch;
   const { data: liveState, stale: liveStale } = keepLastGoodData(liveFetch, {
     resetOn: param,
   });
+  liveFollower.fetched(liveState.value ?? null);
 
   // Control of the projection (user's decision of 2026-11-19) -------------------
 
@@ -1024,6 +1042,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     speakers.onLive(events);
     headcounts.onLive(events);
     if (events.some((event) => event.type === "poll")) {
+      // Changes were missed, maybe a restart: ask who holds control now,
+      // and put the open form's count back on screen.
+      void control.refresh().then(resendFormTally);
       // The hub refreshes the assembly itself on poll events.
       void (hub
         ? Promise.all([
@@ -1054,8 +1075,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     // change the DocumentDto (affectsDocumentDto), its final vote's
     // unanimity included.
     const documentChanged = affectsDocumentDto(events, current, finalVoteId);
+    // A move of the Mesa came pushed (onLiveState) unless no push covered
+    // it; the speakers and the progress follow it either way (the watch on
+    // the live state, sessionLiveMoved).
+    const livePushed = statePushed();
     for (const event of events) {
-      if (event.entityType === "live") live = true;
+      if (event.entityType === "live" && !livePushed) live = true;
       // The Mesa ticks an item in the sheet, or a document, the agenda or
       // a vote the sheet's rule reads changes how an item stands
       // (affectsSessionProgress); the live state moving to another
@@ -1096,13 +1121,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   let connected: Readonly<Ref<boolean>>;
   let polling: Readonly<Ref<boolean>>;
+  let statePushed: () => boolean;
   if (hub) {
     hub.onLive(onLive);
-    ({ connected, polling } = hub.live);
+    hub.onLiveState(liveFollower.pushed);
+    ({ connected, polling, statePushed } = hub.live);
   } else {
-    ({ connected, polling } = useAssemblyLive(
+    ({ connected, polling, statePushed } = useAssemblyLive(
       () => assembly.value?.id,
       onLive,
+      { onState: liveFollower.pushed },
     ));
   }
 
@@ -1182,12 +1210,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   ): Promise<boolean> {
     if (!liveStateClearsOnly(body) && !requireInSession()) return false;
     try {
-      liveState.value = await track(options.key ?? "live", () =>
+      const answer = await track(options.key ?? "live", () =>
         api.send<LiveStateDto>(`${assemblyUrl.value}/live-state`, {
           method: "PUT",
           body,
         }),
       );
+      // A push of a later change may have come first: it stays.
+      liveState.value = liveFollower.fetched(answer) ?? answer;
       return true;
     } catch (error) {
       if (!options.silent) api.notifyError(error, "session.errors.live");
@@ -1457,18 +1487,25 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const TALLY_SEND_MS = 120;
   let tallyTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingTally: LiveTally | null = null;
-  // One POST at a time, in the order they were made: a count sent after the
-  // null that ended it would put it back on screen.
-  let tallyQueue: Promise<unknown> = Promise.resolve();
+  /**
+   * What the open vote form announces, whoever controls the projection:
+   * sent again once this console may show it (resendFormTally).
+   */
+  let formTally: LiveTally | null = null;
+  // One POST at a time, in order, the latest waiting one only: a count sent
+  // after the null that ended it would put it back on screen.
+  const postTally = latestTallySender((tally) =>
+    api.send(`${assemblyUrl.value}/live-tally`, {
+      method: "POST",
+      body: { tally },
+    }),
+  );
   function sendTally(): void {
     tallyTimer = undefined;
-    const body = { tally: pendingTally };
-    const url = `${assemblyUrl.value}/live-tally`;
-    tallyQueue = tallyQueue.then(() =>
-      api.send(url, { method: "POST", body }).catch(() => undefined),
-    );
+    postTally(pendingTally);
   }
   function pushTally(tally: LiveTally | null): void {
+    formTally = tally;
     // Only the console in control shows the count (the server ignores the
     // rest), so another console's form never clears it either.
     if (!inControl.value) return;
@@ -1480,6 +1517,38 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
     if (!tallyTimer) tallyTimer = setTimeout(sendTally, TALLY_SEND_MS);
   }
+  /**
+   * The server keeps the count in memory only, and lets only the console
+   * in control show it: once this console gets control, or after the
+   * stream missed changes (a restart forgets both the count and who holds
+   * control) and its beat says it holds it again, the open form's count
+   * goes back on screen at once instead of at the form's next repeat.
+   */
+  function resendFormTally(): void {
+    // Not while saving (most likely this vote): its result would be
+    // covered again; the form's repeat sends it later.
+    if (Object.values(busy.value).some(Boolean)) return;
+    if (formTally && inControl.value) pushTally(formTally);
+  }
+  watch(inControl, (now) => {
+    if (now) resendFormTally();
+  });
+  // A tab closed or reloaded mid-count ends it on screen at once (the form
+  // never unmounts then), instead of after LIVE_TALLY_TTL_MS; a tab back
+  // from the browser's page cache puts it back.
+  useEventListener("pagehide", () => {
+    if (!formTally || !inControl.value) return;
+    api
+      .send(`${assemblyUrl.value}/live-tally`, {
+        method: "POST",
+        body: { tally: null },
+        keepalive: true,
+      })
+      .catch(() => undefined);
+  });
+  useEventListener("pageshow", (event: PageTransitionEvent) => {
+    if (event.persisted) resendFormTally();
+  });
 
   /** The default limit of a speaking turn, in seconds. */
   function setSpeakingLimit(seconds: number): Promise<boolean> {

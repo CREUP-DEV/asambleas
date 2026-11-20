@@ -62,3 +62,21 @@ export function affectsReviewQueue(
 ): boolean {
   return events.some((event) => REVIEW_LIVE_TYPES.has(event.type));
 }
+
+/**
+ * Whether a write of the inbox, already patched into the queue, refetches
+ * it at once. A read on its way (`status` "pending") may have left before
+ * the write and would bring the old queue back when it lands (a card just
+ * validated pending again, whose «Validar» answers 409): it is replaced.
+ * Otherwise the write's own live event refetches the queue, in the run the
+ * hub's badge shares (liveRefresh), so the write sends no request of its
+ * own: refetching here too would be aborted by that run, one read wasted
+ * per action. Without the live stream (`connected` false) no event may
+ * come, and it refetches now.
+ */
+export function refetchesAfterWrite(state: {
+  status: string;
+  connected: boolean;
+}): boolean {
+  return state.status === "pending" || !state.connected;
+}

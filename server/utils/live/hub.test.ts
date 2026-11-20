@@ -34,7 +34,8 @@ vi.mock("../core/logger", () => ({
   logWarn: vi.fn(),
 }));
 
-const { startLiveHub, stopLiveHub } = await import("./hub");
+const { startLiveHub, stopLiveHub, subscribeToAll, subscribeToAssembly } =
+  await import("./hub");
 
 describe("live hub reconnection", () => {
   beforeEach(() => {
@@ -80,5 +81,95 @@ describe("live hub reconnection", () => {
   it("tolerates a late error on a client it already dropped", async () => {
     await startLiveHub();
     expect(() => created[0]!.emit("error", new Error("late"))).not.toThrow();
+  });
+});
+
+describe("live hub resync after a lost connection", () => {
+  const unsubscribes: (() => void)[] = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    created.length = 0;
+    databaseUp = true;
+    process.env.DATABASE_URL = "postgres://test@localhost:5432/test";
+  });
+
+  afterEach(async () => {
+    for (const unsubscribe of unsubscribes.splice(0)) unsubscribe();
+    await stopLiveHub();
+    vi.useRealTimers();
+  });
+
+  function listen(assemblyId: string) {
+    const listener = vi.fn();
+    unsubscribes.push(subscribeToAssembly(assemblyId, listener));
+    return listener;
+  }
+
+  it("tells nobody to refetch on a clean first start", async () => {
+    const listener = listen("assembly-a");
+    await startLiveHub();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("sends one poll per assembly with open streams once it listens again", async () => {
+    const a1 = listen("assembly-a");
+    const a2 = listen("assembly-a");
+    const b = listen("assembly-b");
+    const any = vi.fn();
+    unsubscribes.push(subscribeToAll(any));
+    await startLiveHub();
+
+    created[0]!.emit("end");
+    expect(a1).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(created).toHaveLength(2);
+    const poll = {
+      assemblyId: "assembly-a",
+      entityType: "assembly",
+      entityId: "assembly-a",
+      type: "poll",
+    };
+    expect(a1).toHaveBeenCalledExactlyOnceWith(poll);
+    expect(a2).toHaveBeenCalledExactlyOnceWith(poll);
+    // Every stream of an assembly gets the same object (serialized once).
+    expect(a2.mock.calls[0]![0]).toBe(a1.mock.calls[0]![0]);
+    expect(b).toHaveBeenCalledExactlyOnceWith({
+      ...poll,
+      assemblyId: "assembly-b",
+      entityId: "assembly-b",
+    });
+    expect(any).not.toHaveBeenCalled();
+  });
+
+  it("resyncs once per recovery, not on every later reconnect without failure", async () => {
+    const listener = listen("assembly-a");
+    await startLiveHub();
+    created[0]!.emit("end");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listener).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("also resyncs once it listens after a failed start", async () => {
+    databaseUp = false;
+    const listener = listen("assembly-a");
+    await startLiveHub();
+    databaseUp = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]![0]).toMatchObject({ type: "poll" });
+  });
+
+  it("forgets a failure when stopped", async () => {
+    databaseUp = false;
+    const listener = listen("assembly-a");
+    await startLiveHub();
+    await stopLiveHub();
+    databaseUp = true;
+    await startLiveHub();
+    expect(listener).not.toHaveBeenCalled();
   });
 });

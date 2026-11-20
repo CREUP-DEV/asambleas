@@ -37,9 +37,21 @@ export function serializeOnce<T extends object>(
 }
 
 /** The pushes a live stream may leave out (LIVE_PUSH_CHANNELS). */
-export type LivePushChannel = "scroll" | "pointer" | "tally";
+export type LivePushChannel = "scroll" | "pointer" | "tally" | "state";
 
 export const LIVE_PUSH_CHANNELS: readonly LivePushChannel[] = [
+  "scroll",
+  "pointer",
+  "tally",
+  "state",
+];
+
+/**
+ * What a page that names no channel gets: the pushes there were before
+ * `?channels=` existed. Never `state`, which such a page has no handler
+ * for: each one would only make the server load the live state for it.
+ */
+export const LEGACY_PUSH_CHANNELS: readonly LivePushChannel[] = [
   "scroll",
   "pointer",
   "tally",
@@ -49,12 +61,14 @@ export const LIVE_PUSH_CHANNELS: readonly LivePushChannel[] = [
  * The pushes a stream asked for (`?channels=scroll,pointer`): only the
  * projection follows the Mesa's pointer and the count of a secret vote,
  * and the live view its scroll, so every other page leaves them out
- * (useAssemblyLive asks for those it has a handler for). Without the
- * parameter (a page still on code from before it existed), all of them.
- * Unknown names are ignored; `change`, `ready` and `ping` always come.
+ * (useAssemblyLive asks for those it has a handler for); `state` is the
+ * live state itself after each change (./statePush.ts). Without the
+ * parameter (a page still on code from before it existed), scroll, pointer
+ * and tally. Unknown names are ignored; `change`, `ready` and `ping`
+ * always come.
  */
 export function livePushChannels(query: unknown): ReadonlySet<LivePushChannel> {
-  if (typeof query !== "string") return new Set(LIVE_PUSH_CHANNELS);
+  if (typeof query !== "string") return new Set(LEGACY_PUSH_CHANNELS);
   const asked = new Set(query.split(",").map((name) => name.trim()));
   return new Set(LIVE_PUSH_CHANNELS.filter((name) => asked.has(name)));
 }

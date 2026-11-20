@@ -108,6 +108,8 @@ import {
   type SheetReturnTab,
 } from "~/components/control-sheet/-return";
 import { scrollParentOf } from "~/utils/scrollAnchor";
+import { holdEarlyLive } from "~/composables/assembly/-liveWiring";
+import { followLiveState } from "~/composables/live/-liveState";
 
 /**
  * The control sheet of the assembly (hoja de control), for the Mesa, the
@@ -140,7 +142,14 @@ const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const { can } = useMe();
-const { assembly, apiBase, sectionPath, onLive } = useCurrentAssembly();
+const {
+  assembly,
+  apiBase,
+  sectionPath,
+  onLive,
+  onLiveState,
+  live: liveStream,
+} = useCurrentAssembly();
 
 useHead({
   title: () =>
@@ -184,13 +193,36 @@ const { data: sheet, stale } = keepLastGoodData(sheetFetch, {
 });
 useStaleDataNotice(stale);
 
+/**
+ * The live state in order (`updatedAt`): pushed on the stream after each
+ * move of the Mesa (onLiveState), read on a poll, a reconnection or when
+ * no push covered a batch.
+ */
+const liveFollower = followLiveState({
+  apply: (state) => {
+    liveFetch.data.value = state;
+  },
+});
+onScopeDispose(liveFollower.dispose);
 const liveFetch = useFetch<LiveStateDto>(() => `${apiBase.value}/live-state`, {
   key: computed(() => `control-sheet-live-${assembly.value?.id ?? "none"}`),
   dedupe: "defer",
+  // A push that overtook the read stays.
+  transform: (state: LiveStateDto) => liveFollower.fetched(state) ?? state,
 });
 
 const agenda = useAssemblyAgenda();
+// The page's live handler is registered far below, after this await; a
+// batch that arrives meanwhile is held and handed to it then
+// (holdEarlyLive), or the sheet would miss it until the next event. The
+// agenda follows the stream on its own (useAssemblyAgenda).
+const registerLive = holdEarlyLive(onLive);
 await Promise.all([sheetFetch, liveFetch, agenda]);
+// What the page holds is the state to beat; a push that came while the
+// page loaded is handed over now, and kept only if newer than that read
+// (`replay`).
+liveFollower.fetched(liveFetch.data.value ?? null);
+onLiveState(liveFollower.pushed);
 
 /**
  * Every member, inactive ones too, for the card a presenter's tag opens
@@ -1735,11 +1767,21 @@ function onSpeakersUpdated(turns: SpeakingTurnDto[]): void {
   void sheetFetch.refresh({ dedupe: "cancel" });
 }
 
-onLive((events) => {
+/** The live state again, the same way as the sheet (never joined). */
+const refreshLiveTrailing = trailingRefresh(() =>
+  liveFetch.refresh({ dedupe: "cancel" }),
+);
+
+// With any batch that came while the page loaded (registerLive).
+registerLive((events) => {
   headcounts.onLive(events);
   if (affectsControlSheet(events)) refreshSheet(events);
-  if (affectsLiveDebate(events)) {
-    void liveFetch.refresh({ dedupe: "defer" });
+  // A move of the Mesa came pushed (onLiveState) unless no push covered it.
+  if (
+    affectsLiveDebate(events) &&
+    (events.some((event) => event.type === "poll") || !liveStream.statePushed())
+  ) {
+    void refreshLiveTrailing();
   }
 });
 

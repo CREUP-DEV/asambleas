@@ -66,7 +66,11 @@ const pool = new Pool({
   connectionString,
   options: `-c statement_timeout=30000 -c timezone=${databaseTimeZone}`,
   max: configuredMaxConnections,
-  idleTimeoutMillis: 10_000,
+  // Five minutes, so the connections a burst opens (a vote, a change of item)
+  // are still there for the next one instead of being reopened 7-9 at a time;
+  // an idle app still drains to none. `max` bounds them all the same, so the
+  // connection budget in DEPLOYMENT.md does not change.
+  idleTimeoutMillis: 300_000,
   connectionTimeoutMillis: 30_000,
 });
 

@@ -10,6 +10,7 @@ import {
 } from "../../../utils/domain/assemblies";
 import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { liveStateFor } from "../../../utils/live/liveState";
 
 /**
  * The Mesa points the session at an agenda item, document, amendment or
@@ -25,11 +26,14 @@ export default defineEventHandler(async (event): Promise<LiveStateDto> => {
   );
   const body = await readAssemblyBody(event, liveStateBodySchema);
 
+  let state: LiveStateDto;
   try {
-    return await updateLiveState(actor, assembly.id, body, {
+    state = await updateLiveState(actor, assembly.id, body, {
       controlsProjection: controlsProjection(event, assembly.id, actor),
     });
   } catch (error) {
     throwAssemblyMutationError("assemblies.liveState", error, event);
   }
+  // Answered as its GET answers this account (a point vote's question).
+  return liveStateFor(actor, assembly.id, state);
 });

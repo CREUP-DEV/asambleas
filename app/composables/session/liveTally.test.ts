@@ -1,11 +1,110 @@
 import { describe, expect, it } from "vitest";
-import type { VoteInput } from "~~/shared/types/api";
+import type { LiveTally, VoteInput } from "~~/shared/types/api";
 import { VOTE_QUESTION_MAX_LENGTH } from "~~/shared/utils/schemas/vote";
 import {
+  latestTallySender,
   sessionLiveTally,
   sessionPendingTallyVote,
   sessionRevealAllowed,
+  sessionTallyRepeatDue,
 } from "./liveTally";
+
+/** A count told apart by its votes in favour. */
+const count = (inFavor: number) =>
+  ({ counts: { inFavor } }) as unknown as LiveTally;
+
+/** A fake POST that stays in flight until `finish` is called. */
+function fakePost() {
+  const sent: (number | null)[] = [];
+  const pending: (() => void)[] = [];
+  const send = (tally: LiveTally | null) => {
+    sent.push(tally ? (tally.counts?.inFavor ?? -1) : null);
+    return new Promise<void>((resolve) => pending.push(resolve));
+  };
+  const finish = async () => {
+    pending.shift()?.();
+    // Let the sender's loop pick up what waits.
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  };
+  return { sent, send, finish };
+}
+
+describe("latestTallySender", () => {
+  it("sends at once when nothing is in flight", () => {
+    const post = fakePost();
+    const push = latestTallySender(post.send);
+    push(count(1));
+    expect(post.sent).toEqual([1]);
+  });
+
+  it("drops the counts superseded while a POST was in flight", async () => {
+    const post = fakePost();
+    const push = latestTallySender(post.send);
+    push(count(1));
+    push(count(2));
+    push(count(3));
+    push(count(4));
+    expect(post.sent).toEqual([1]);
+    await post.finish();
+    expect(post.sent).toEqual([1, 4]);
+    await post.finish();
+    expect(post.sent).toEqual([1, 4]);
+  });
+
+  it("sends the null behind the POST in flight, never before it", async () => {
+    const post = fakePost();
+    const push = latestTallySender(post.send);
+    push(count(1));
+    push(null);
+    expect(post.sent).toEqual([1]);
+    await post.finish();
+    expect(post.sent).toEqual([1, null]);
+  });
+
+  it("lets a null replace a count still waiting", async () => {
+    const post = fakePost();
+    const push = latestTallySender(post.send);
+    push(count(1));
+    push(count(2));
+    push(null);
+    await post.finish();
+    expect(post.sent).toEqual([1, null]);
+  });
+
+  it("sends a new count after a null, and goes on after a failure", async () => {
+    const sent: (LiveTally | null)[] = [];
+    let fail = true;
+    const push = latestTallySender(async (tally) => {
+      sent.push(tally);
+      if (fail) throw new Error("offline");
+    });
+    push(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    fail = false;
+    push(count(5));
+    await Promise.resolve();
+    expect(sent).toEqual([null, count(5)]);
+  });
+});
+
+describe("sessionTallyRepeatDue", () => {
+  it("repeats while nothing is being saved", () => {
+    expect(sessionTallyRepeatDue({ busy: false, skippedLast: false })).toBe(
+      true,
+    );
+  });
+
+  it("skips one repeat while the console saves", () => {
+    expect(sessionTallyRepeatDue({ busy: true, skippedLast: false })).toBe(
+      false,
+    );
+  });
+
+  it("never skips two in a row", () => {
+    expect(sessionTallyRepeatDue({ busy: true, skippedLast: true })).toBe(true);
+  });
+});
 
 const vote = (over: Partial<VoteInput> = {}): VoteInput => ({
   method: "secret",

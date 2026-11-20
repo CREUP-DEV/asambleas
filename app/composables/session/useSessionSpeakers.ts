@@ -120,7 +120,8 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
 
   /**
    * Sends one change of a turn. A conflict means another Mesa device changed
-   * the list first (two people pressed "Siguiente" at once): nothing went
+   * the list first (two people pressed "Siguiente" at once, or «Siguiente»
+   * on a head or a speaker that changed elsewhere: next): nothing went
    * wrong, so the list is reloaded and a calm notice says so.
    */
   async function update(
@@ -294,11 +295,21 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
 
   /**
    * The next step of the floor: the first waiting turn speaks (which ends
-   * the current one), or, with nobody waiting, the current turn ends.
+   * the current one), or, with nobody waiting, the current turn ends. The
+   * server checks that the head and the speaker are still the ones on this
+   * screen: a list another console changed meanwhile (a priority turn, the
+   * floor given there) answers 409, reloads and says so, instead of giving
+   * the floor to the wrong person or ending whoever speaks now.
    */
   function next(): Promise<boolean> {
     const first = view.value.waiting[0];
-    if (first) return giveFloor(first);
+    if (first) {
+      return update(first, {
+        status: "speaking",
+        expectHead: true,
+        expectedSpeakingId: view.value.speaking?.id ?? null,
+      });
+    }
     const current = view.value.speaking;
     return current ? finish(current) : Promise.resolve(false);
   }

@@ -120,6 +120,34 @@ export function planTurnUpdate(input: {
   };
 }
 
+/**
+ * Whether the list is still what the console saw when it sent the change
+ * (SpeakingTurnUpdateBody `expectHead` and `expectedSpeakingId`, which
+ * «Siguiente» sends). The turn's own `updatedAt` cannot tell: moving the
+ * others never touches it (renumberQueue), so a console that missed a
+ * priority turn, or a floor given from another console, would give the
+ * floor to whoever it still had at the head and end whoever spoke.
+ * - `expectHead`: the turn is still the first one waiting (`queue`).
+ * - `expectedSpeakingId`: that turn still speaks (null: nobody other than
+ *   this one does). Undefined checks nothing.
+ * Without either it always holds, so giving the floor to a chosen turn
+ * keeps working as before.
+ */
+export function turnUpdateExpectationsHold(input: {
+  turnId: string;
+  queue: readonly string[];
+  speakingIds: readonly string[];
+  expectHead?: boolean;
+  expectedSpeakingId?: string | null;
+}): boolean {
+  if (input.expectHead && input.queue[0] !== input.turnId) return false;
+  if (input.expectedSpeakingId === undefined) return true;
+  const others = input.speakingIds.filter((id) => id !== input.turnId);
+  return input.expectedSpeakingId === null
+    ? others.length === 0
+    : others.includes(input.expectedSpeakingId);
+}
+
 export interface ListedTurn extends QueueTurn {
   agendaItemId: string | null;
   startedAt: Date | null;

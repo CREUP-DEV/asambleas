@@ -20,7 +20,8 @@ import { useCurrentAssembly } from "../assembly/useCurrentAssembly";
  * The writes of «Colocar» (docs/seating-plan.md, sections 7 and 8): who
  * sits where, through the assignments batch, and the people and groups of
  * the tray. Every write lands in the fetched plan as soon as the server
- * answers; the live event that follows refetches it anyway.
+ * answers (which replaces a read on its way: useSeatingPlan's `plan`); the
+ * live event that follows refetches it anyway.
  *
  * - `apply(next)` sends the batch that turns the room as the page has it
  *   into `next` (assignmentOps: each seat with the occupant the page saw).

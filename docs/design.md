@@ -680,7 +680,22 @@ carries the same figures on one line during the session.
 - Live updates: mutations `pg_notify('assembly_events', ...)`. A Nitro plugin
   `LISTEN`s and fans out to SSE streams at `GET /api/assemblies/[id]/live`.
   Events carry ids only; clients refetch through the normal, permission-checked
-  endpoints. If the stream drops, clients fall back to polling. No Redis. A
+  endpoints. The one exception is the live state (what the Mesa has in
+  debate), the same for every reader and the most frequent change of a
+  session: the notification stays ids only, and the process that holds the
+  streams loads it once per `live_changed` (one load in flight per assembly,
+  only the newest delivered) and pushes that one copy to the streams that ask
+  for it (`?channels=state`), as someone who sees only what is public reads
+  it. When that took out the question of a point vote (its item's title is
+  not public) the push says so, and clients read `GET .../live-state`, which
+  answers each reader as it may see it. Clients keep a read only if it is not
+  older (`updatedAt`) than anything they hold, and a push, which comes in
+  commit order, only if it is not older than their last read; the last push
+  handed to a page that registers after it, only if newer than that read,
+  since the vote it carries can change with no push. If the stream
+  drops, clients fall back to polling; if the hub's own `LISTEN` connection
+  drops, it sends every open stream one `poll` once it listens again, so
+  pages refetch what they missed. No Redis. A
   request that commits several changes in turn (a bloc approved by assent)
   holds its notices back and sends them together at the end (`holdLiveNotices`).
 

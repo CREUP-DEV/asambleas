@@ -52,15 +52,19 @@ const EMPTY_PROGRESS = readProgress(null);
  * component does not inject what it provides itself).
  */
 export function provideReadMarks(
-  current: Pick<CurrentAssemblyContext, "assembly" | "apiBase" | "onLive">,
+  current: Pick<
+    CurrentAssemblyContext,
+    "assembly" | "apiBase" | "onLive" | "liveRefresh"
+  >,
 ): ReadMarksContext {
-  const { assembly, apiBase, onLive } = current;
+  const { assembly, apiBase, onLive, liveRefresh } = current;
   const api = useApi();
   const nuxtApp = useNuxtApp();
 
   const url = computed(() => `${apiBase.value}/read-marks`);
+  const key = computed(() => `read-marks-${assembly.value?.id ?? "none"}`);
   const result = useFetch<ReadMarksDto>(url, {
-    key: computed(() => `read-marks-${assembly.value?.id ?? "none"}`),
+    key,
     server: false,
     lazy: true,
     immediate: Boolean(assembly.value),
@@ -79,10 +83,11 @@ export function provideReadMarks(
 
   // What can be marked, and whether it changed, follows the documents and
   // the amendments that change what is seen or its text, never their
-  // decisions (shouldRefetchReadMarks).
+  // decisions (shouldRefetchReadMarks). Never joining a read that may have
+  // left before the batch (liveRefresh).
   onLive((events) => {
     if (shouldRefetchReadMarks(events)) {
-      void result.refresh({ dedupe: "defer" });
+      void liveRefresh(key.value, () => result.refresh({ dedupe: "cancel" }));
     }
   });
 

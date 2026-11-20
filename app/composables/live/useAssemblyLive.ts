@@ -3,6 +3,7 @@ import type {
   LiveEventDto,
   LivePointerDto,
   LiveScrollDto,
+  LiveStateDto,
   LiveTallyDto,
 } from "~~/shared/types/api";
 import {
@@ -14,6 +15,7 @@ import {
   shouldReopenOnShow,
 } from "./-watchdog";
 import { liveChannels } from "./-channels";
+import { liveStatePushTracker } from "./-liveState";
 import { checkForNewVersion } from "~/composables/shell/newVersion";
 import { sessionFailureAction } from "~/middleware/-session";
 
@@ -92,7 +94,10 @@ function dedupe(events: LiveEventDto[]): LiveEventDto[] {
  * - Client-only. Closes the stream when the id changes and when the calling
  *   scope (component) is disposed. An undefined id means "not connected".
  *
- * Events carry ids only; refetch through the normal endpoints.
+ * Events carry ids only; refetch through the normal endpoints. The one
+ * exception is the live state, the same for every reader: a page with
+ * `onState` gets it pushed after each `live_changed` and reads it only
+ * when `statePushed()` says a push did not cover the batch.
  */
 export function useAssemblyLive(
   assemblyId: MaybeRefOrGetter<string | undefined>,
@@ -112,6 +117,13 @@ export function useAssemblyLive(
      */
     onTally?: (tally: LiveTallyDto) => void;
     /**
+     * The live state after each `live_changed` (`state` events), as it
+     * comes, never batched nor spread. A push with a point vote's question
+     * taken out (`voteQuestionRedacted`) is not handed over: the page reads
+     * the state for its reader, as before (`statePushed`).
+     */
+    onState?: (state: LiveStateDto) => void;
+    /**
      * Up to how long this client waits before handing a batch to
      * `onChange` (user's decision of 2026-11-20): a delay drawn once per
      * page, the same for every batch so they keep their order. Every
@@ -125,6 +137,14 @@ export function useAssemblyLive(
   connected: Readonly<Ref<boolean>>;
   polling: Readonly<Ref<boolean>>;
   expired: Readonly<Ref<boolean>>;
+  /**
+   * Whether the page may skip reading the live state for the `live`
+   * changes of a batch: the stream is connected, follows `state`
+   * (`onState`), and every `live` change it delivered was followed by a
+   * state handed to `onState` (liveStatePushTracker). Never for a `poll`,
+   * which the page reads for in any case.
+   */
+  statePushed: () => boolean;
 } {
   const connected = ref(false);
   const polling = ref(false);
@@ -133,10 +153,13 @@ export function useAssemblyLive(
    * reconnecting and polling, which only got 401s, until the page reloads.
    */
   const expired = ref(false);
+  const statePushes = liveStatePushTracker();
   const result = {
     connected: readonly(connected),
     polling: readonly(polling),
     expired: readonly(expired),
+    statePushed: () =>
+      Boolean(options.onState) && connected.value && statePushes.covered(),
   };
   if (import.meta.server) return result;
   const nuxtApp = useNuxtApp();
@@ -317,6 +340,9 @@ export function useAssemblyLive(
       return;
     }
     source = stream;
+    // Nothing this stream pushed yet: a page reads the live state until it
+    // does.
+    statePushes.reset();
 
     stream.addEventListener("ready", () => {
       if (gen !== generation || source !== stream) return;
@@ -338,7 +364,25 @@ export function useAssemblyLive(
       if (gen !== generation || source !== stream) return;
       lastMessageAt = Date.now();
       const change = parseChange((event as MessageEvent).data);
-      if (change) enqueue(change);
+      if (change) {
+        statePushes.change(change);
+        enqueue(change);
+      }
+    });
+
+    // The live state after a `live_changed` (server/utils/live/statePush.ts),
+    // which always follows that change on the stream.
+    stream.addEventListener("state", (event) => {
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
+      if (!options.onState) return;
+      const state = statePushes.push((event as MessageEvent).data);
+      if (!state) return;
+      try {
+        options.onState(state);
+      } catch (error) {
+        console.error("[live] state handler failed", error);
+      }
     });
 
     stream.addEventListener("scroll", (event) => {

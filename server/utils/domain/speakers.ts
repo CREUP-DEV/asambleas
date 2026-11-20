@@ -36,6 +36,7 @@ import {
   speakerHistory,
   turnEventType,
   turnsForActor,
+  turnUpdateExpectationsHold,
   waitingQueue,
 } from "./speakersRules";
 
@@ -421,7 +422,9 @@ export async function addSpeakingTurn(
  * PUT .../speakers/[turn] (session:moderate): gives or ends the floor,
  * cancels or restores a turn, moves it in the queue or fixes the name
  * (planTurnUpdate). Giving the floor ends the turn that was speaking.
- * Optimistic lock on the turn's `updatedAt` (409 when stale). `turnId` is
+ * Optimistic lock on the turn's `updatedAt` (409 when stale), and on the
+ * head of the queue and the turn speaking when the body names them
+ * (`expectHead`, `expectedSpeakingId`: turnUpdateExpectationsHold). `turnId` is
  * the route param, already validated by the handler (validateCuid). The
  * answer includes the changed turn even when the Mesa's list would leave it
  * out (cancelled on an item other than the one in debate).
@@ -457,12 +460,28 @@ export async function updateSpeakingTurn(
 
     const open = await loadOpenTurns(tx, assembly.id);
     const queue = waitingQueue(open);
+    const queueIds = queue.map((item) => item.id);
+    const speakingIds = open
+      .filter((item) => item.status === "speaking")
+      .map((item) => item.id);
+    // «Siguiente» from a console that missed a change of the list (a
+    // priority turn, the floor given elsewhere): the turn's own token is
+    // still good, so the head and the speaker it saw are checked too.
+    if (
+      !turnUpdateExpectationsHold({
+        turnId: turn.id,
+        queue: queueIds,
+        speakingIds,
+        expectHead: body.expectHead,
+        expectedSpeakingId: body.expectedSpeakingId,
+      })
+    ) {
+      fail(409, "La lista de palabras ha cambiado. Recarga la página");
+    }
     const plan = planTurnUpdate({
       turn,
-      queue: queue.map((item) => item.id),
-      speakingIds: open
-        .filter((item) => item.status === "speaking")
-        .map((item) => item.id),
+      queue: queueIds,
+      speakingIds,
       status: body.status,
       position: body.position,
     });

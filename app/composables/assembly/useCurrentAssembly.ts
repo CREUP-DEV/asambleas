@@ -4,12 +4,14 @@ import type {
   AssemblyDto,
   LiveEventDto,
   LiveScrollDto,
+  LiveStateDto,
 } from "~~/shared/types/api";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { APP_TIME_ZONE, intlLocale, toDate } from "~/utils/format";
 import type { DateInput } from "~/utils/format";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { shouldRefetchAgenda, shouldRefetchAssembly } from "./-liveFilters";
+import { keyedTrailingRefresh, type LiveRefresh } from "./-liveWiring";
 
 /**
  * Up to how long a reader's page waits before refetching after a live
@@ -33,6 +35,14 @@ const LIVE_SPREAD_MS = 1_200;
 
 export type AssemblyLiveHandler = (events: LiveEventDto[]) => void;
 export type AssemblyScrollHandler = (scroll: LiveScrollDto) => void;
+/**
+ * A pushed live state; `replay` when it is the last push handed to a
+ * handler registered after it (onLiveState).
+ */
+export type AssemblyStateHandler = (
+  state: LiveStateDto,
+  meta?: { replay?: boolean },
+) => void;
 
 export interface CurrentAssemblyContext {
   /**
@@ -66,12 +76,33 @@ export interface CurrentAssemblyContext {
    * stream's `scroll` events), as onLive: the live view follows it.
    */
   onLiveScroll: (handler: AssemblyScrollHandler) => () => void;
+  /**
+   * Subscribes to the live state the stream pushes after each change
+   * (`state`), as onLive. A handler registered late is handed the last
+   * one at once, marked `replay` (a push that came while its page loaded);
+   * the page keeps it only if it is newer than its own read
+   * (followLiveState), since the vote in it may have changed since with
+   * no push.
+   */
+  onLiveState: (handler: AssemblyStateHandler) => () => void;
+  /**
+   * Refetches a fetch key after a live event, never joining a read that
+   * may have left before it, with one run per key for every subscriber of
+   * the same batch (keyedTrailingRefresh in ./-liveWiring). `run` replaces
+   * any read of the key in flight: `refresh({ dedupe: "cancel" })`.
+   */
+  liveRefresh: LiveRefresh;
   /** State of the live stream. */
   live: {
     connected: Readonly<Ref<boolean>>;
     polling: Readonly<Ref<boolean>>;
     /** The session is gone: the stream stopped (useAssemblyLive). */
     expired: Readonly<Ref<boolean>>;
+    /**
+     * A batch's `live` changes need no read of the live state: a push
+     * covered them (useAssemblyLive's statePushed).
+     */
+    statePushed: () => boolean;
   };
 }
 
@@ -149,6 +180,9 @@ export function provideCurrentAssembly(
 
   const handlers = new Set<AssemblyLiveHandler>();
   const scrollHandlers = new Set<AssemblyScrollHandler>();
+  const stateHandlers = new Set<AssemblyStateHandler>();
+  /** The last live state pushed, for a handler registered after it. */
+  let lastState: LiveStateDto | null = null;
 
   // Keyed on the kept assembly, so a failed refresh never closes the stream.
   const live = useAssemblyLive(
@@ -171,6 +205,18 @@ export function provideCurrentAssembly(
     {
       onScroll: (scroll) => {
         for (const handler of scrollHandlers) handler(scroll);
+      },
+      // The live state after each move of the Mesa, instead of every page
+      // of the room reading it again (Directo, the console, the sheet).
+      onState: (state) => {
+        lastState = state;
+        for (const handler of stateHandlers) {
+          try {
+            handler(state);
+          } catch (error) {
+            console.error("[assembly] live state handler failed", error);
+          }
+        }
       },
       // The room spreads its refetches over a second; the Mesa, whose
       // console must follow at once, never waits.
@@ -196,6 +242,16 @@ export function provideCurrentAssembly(
     return off;
   }
 
+  function onLiveState(handler: AssemblyStateHandler): () => void {
+    stateHandlers.add(handler);
+    const off = () => {
+      stateHandlers.delete(handler);
+    };
+    if (getCurrentScope()) onScopeDispose(off);
+    if (lastState) handler(lastState, { replay: true });
+    return off;
+  }
+
   const context: CurrentAssemblyContext = {
     assembly,
     stale: lastGood.stale,
@@ -210,6 +266,9 @@ export function provideCurrentAssembly(
     },
     onLive,
     onLiveScroll,
+    onLiveState,
+    // One per hub, never per module: nothing outlives the page it serves.
+    liveRefresh: keyedTrailingRefresh(),
     live,
   };
   provide(CURRENT_ASSEMBLY_KEY, context);
@@ -252,10 +311,18 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
     },
     onLive: () => () => {},
     onLiveScroll: () => () => {},
+    onLiveState: () => () => {},
+    // No live events here; a call still refetches.
+    liveRefresh: (_key, run) =>
+      run().then(
+        () => undefined,
+        () => undefined,
+      ),
     live: {
       connected: readonly(ref(false)),
       polling: readonly(ref(false)),
       expired: readonly(ref(false)),
+      statePushed: () => false,
     },
   };
 }
@@ -267,6 +334,11 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
  */
 const AGENDA_BEHIND_STATE_KEY = "assembly-agenda-behind";
 
+/** The fetch key of an assembly's agenda (useAgendaFetch). */
+function agendaFetchKey(assemblyId: string | undefined): string {
+  return `assembly-agenda-${assemblyId ?? "none"}`;
+}
+
 /**
  * The one fetch of the current assembly's agenda, under one key per
  * assembly. Every page that reads the agenda must go through it: the first
@@ -277,7 +349,7 @@ const AGENDA_BEHIND_STATE_KEY = "assembly-agenda-behind";
 function useAgendaFetch(immediate: boolean) {
   const { assembly, apiBase } = useCurrentAssembly();
   return useFetch<AgendaDto>(() => `${apiBase.value}/agenda`, {
-    key: computed(() => `assembly-agenda-${assembly.value?.id ?? "none"}`),
+    key: computed(() => agendaFetchKey(assembly.value?.id)),
     dedupe: "defer",
     immediate,
   });
@@ -376,7 +448,7 @@ export function useSharedAgendaFetch(options: { immediate?: boolean } = {}) {
  * optimistic updates and their rollbacks.
  */
 export function useAssemblyAgenda() {
-  const { assembly, onLive } = useCurrentAssembly();
+  const { assembly, onLive, liveRefresh } = useCurrentAssembly();
   const { t } = useI18n();
   const result = useAgendaFetch(true);
   const { data: fetched, stale } = keepLastGoodData(result, {
@@ -413,8 +485,14 @@ export function useAssemblyAgenda() {
   // An item sent without its title gets a neutral one (titleHidden).
   const data = agendaWithTitles(fetched, () => t("agenda.hiddenTitle"));
   useStaleDataNotice(stale);
+  // Never joins a read that may have left before the batch (a page's
+  // first load, an earlier batch's); every caller on the page (the page,
+  // its breadcrumb, its reading bar) shares one run per batch.
   onLive((events) => {
-    if (shouldRefetchAgenda(events)) void result.refresh();
+    if (!shouldRefetchAgenda(events)) return;
+    void liveRefresh(agendaFetchKey(assembly.value?.id), () =>
+      result.refresh({ dedupe: "cancel" }),
+    );
   });
   const agenda = {
     data,

@@ -1260,6 +1260,21 @@ export interface DocumentAmendmentsDto {
   baseVersionId: string | null;
 }
 
+/**
+ * GET .../documents/[document]/amendments?ids=a,b: some amendments of the
+ * list, for a reader that already holds it (listDocumentAmendmentsByIds).
+ * `amendments` are the asked ones and those whose DTO reads them (the
+ * amendments a transactional groups, the transactionals over one), built
+ * as the full list builds them, in its order. `gone` are the asked ones
+ * the reader does not get (deleted or hidden, never told apart).
+ * Relations and wordings are not sent: the reader keeps its own.
+ */
+export interface PartialDocumentAmendmentsDto {
+  amendments: AmendmentDto[];
+  gone: string[];
+  baseVersionId: string | null;
+}
+
 export interface AmendmentDraftBody {
   kind: Exclude<AmendmentKind, "transactional">;
   ops: AmendmentOp[];
@@ -1741,7 +1756,26 @@ export interface LiveStateDto {
   recess: LiveRecessDto | null;
   /** The time a speaking turn with a limit gets unless the Mesa changes it. */
   speakingLimitSeconds: number;
+  /**
+   * When the Mesa last changed it (the change's transaction start): clients
+   * keep a read state only if it is not older than what they hold, and a
+   * pushed one only if it is not older than their last read (equal is fine;
+   * followLiveState).
+   */
   updatedAt: IsoDate | null;
+}
+
+/**
+ * The `state` event of GET .../live (`?channels=state`): the live state
+ * after each `live_changed`, one copy for every stream of the assembly, as
+ * someone who sees only what is public gets it. `voteQuestionRedacted`: the
+ * question of the point vote on screen was taken out (its item's title is
+ * not public), so a client reads GET .../live-state, which answers each
+ * reader as it may see it, instead of applying this one.
+ */
+export interface LiveStatePushDto {
+  state: LiveStateDto;
+  voteQuestionRedacted: boolean;
 }
 
 export interface LiveStateBody {
@@ -2006,6 +2040,16 @@ export interface SpeakingTurnUpdateBody {
   speaker?: string | null;
   /** The turn's limit in seconds; null takes it away. */
   limitSeconds?: number | null;
+  /**
+   * «Siguiente»: the turn must still be the first one waiting (409
+   * otherwise), as the console saw it.
+   */
+  expectHead?: boolean;
+  /**
+   * The turn the console saw speaking (null: nobody), which giving the
+   * floor ends; 409 when another one speaks now.
+   */
+  expectedSpeakingId?: string | null;
   updatedAt: IsoDate;
 }
 

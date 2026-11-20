@@ -22,7 +22,10 @@ import {
   reviewQueueKey,
   splitReviewParts,
 } from "~/components/review/-queue";
-import { affectsReviewQueue } from "~/components/review/-live";
+import {
+  affectsReviewQueue,
+  refetchesAfterWrite,
+} from "~/components/review/-live";
 import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
 
 /**
@@ -45,7 +48,9 @@ import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
  *
  * The queue shares its fetch key with the hub, which keeps the "Validación"
  * badge and starts the fetch if the permission arrives after setup; every
- * action patches it at once and refetches in the background.
+ * action patches it at once and replaces any read already on its way, which
+ * may have left before the action; the action's own live event refetches
+ * it (refetchesAfterWrite).
  */
 
 const { t } = useI18n();
@@ -76,13 +81,40 @@ useStaleDataNotice(stale);
 const { pending, error } = result;
 await result;
 
+/**
+ * The queue again, at once (a conflict, «Reintentar», a validation taken
+ * back from the validated list, whose card the queue does not hold yet): a
+ * read on its way may have left before what changed it and is replaced,
+ * never joined.
+ */
 function refresh(): Promise<void> {
   if (!allowed.value) return Promise.resolve();
-  return result.refresh({ dedupe: "defer" });
+  return result.refresh({ dedupe: "cancel" });
 }
 
+/**
+ * After a write of this page, already patched in: only a read on its way
+ * is replaced, which would bring the old queue back when it lands; the
+ * write's live event refetches the queue otherwise (refetchesAfterWrite).
+ */
+function refreshAfterWrite(): void {
+  if (
+    refetchesAfterWrite({
+      status: result.status.value,
+      connected: current.live.connected.value,
+    })
+  ) {
+    void refresh();
+  }
+}
+
+// A live batch never joins a read that may have left before it either; the
+// hub's subscriber to the same queue shares the run (liveRefresh).
 onLive((events) => {
-  if (affectsReviewQueue(events)) void refresh();
+  if (!allowed.value || !affectsReviewQueue(events)) return;
+  void current.liveRefresh(reviewQueueKey(assembly.value?.id ?? "none"), () =>
+    result.refresh({ dedupe: "cancel" }),
+  );
 });
 
 const allDocuments = computed<DocumentSummaryDto[]>(() =>
@@ -305,12 +337,12 @@ function patch(update: (value: ReviewQueueDto) => ReviewQueueDto) {
 
 function onAmendmentsUpdated(amendments: AmendmentDto[]) {
   patch((value) => applyAmendmentResults(value, amendments));
-  void refresh();
+  refreshAfterWrite();
 }
 
 function onAmendmentsRemoved(ids: string[]) {
   patch((value) => removeReviewAmendments(value, ids));
-  void refresh();
+  refreshAfterWrite();
 }
 
 // Documents -------------------------------------------------------------------
@@ -364,7 +396,7 @@ async function confirmPublish() {
       : undefined;
     announce(description ? `${title}. ${description}` : title);
     toast.add({ title, description, color: "success", icon: "i-lucide-check" });
-    void refresh();
+    refreshAfterWrite();
   } catch (failure) {
     documentBusy.value = null;
     api.notifyError(failure, "review.documents.publishError");
@@ -399,7 +431,7 @@ async function sendDocumentCorrection(note: string) {
       color: "success",
       icon: "i-lucide-undo-2",
     });
-    void refresh();
+    refreshAfterWrite();
   } catch (failure) {
     documentBusy.value = null;
     api.notifyError(failure, "review.documents.correctionError");
@@ -499,6 +531,9 @@ async function confirmBulkPublish() {
         body: { updatedAt: document.updatedAt },
       });
       published++;
+      // The publications' live events refetch the queue one run after
+      // another meanwhile (liveRefresh); the end replaces a read still on
+      // its way, which may have left before the last ones.
       patch((value) => removeReviewDocument(value, document.id));
     } catch {
       failed.push(document.title);
@@ -527,7 +562,10 @@ async function confirmBulkPublish() {
       icon: "i-lucide-circle-alert",
     });
   }
-  void refresh();
+  // A failure (someone changed the document meanwhile) shows the queue as
+  // it stands now, as a single conflict does.
+  if (failed.length > 0) void refresh();
+  else refreshAfterWrite();
 }
 </script>
 

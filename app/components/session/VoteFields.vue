@@ -19,6 +19,7 @@ import {
   sessionLiveTally,
   sessionPendingTallyVote,
   sessionRevealAllowed,
+  sessionTallyRepeatDue,
   type LiveTallyAnnounce,
 } from "~/composables/session/liveTally";
 import {
@@ -335,10 +336,20 @@ watch(
   { deep: true },
 );
 // Memory only on the server (a restart forgets it, a projected result
-// ends it): sent again while the form is open.
+// ends it): sent again while the form is open, but not while the console
+// saves (the vote being recorded: sessionTallyRepeatDue), at most one
+// repeat skipped in a row.
 const TALLY_REPEAT_MS = 15_000;
+let repeatSkipped = false;
 useIntervalFn(() => {
-  if (session && announcement.value) session.pushTally(announcement.value);
+  if (!session || !announcement.value) return;
+  const busy = Object.values(session.busy.value).some(Boolean);
+  if (!sessionTallyRepeatDue({ busy, skippedLast: repeatSkipped })) {
+    repeatSkipped = true;
+    return;
+  }
+  repeatSkipped = false;
+  session.pushTally(announcement.value);
 }, TALLY_REPEAT_MS);
 onBeforeUnmount(() => {
   if (tallyShown) session?.pushTally(null);

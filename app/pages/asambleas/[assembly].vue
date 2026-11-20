@@ -212,9 +212,14 @@ const reviewCount = computed(() =>
     : 0,
 );
 
+// Never joining a read that may have left before the batch (an amendment
+// just validated would come back as pending); with the inbox page open,
+// its own subscriber and this one share one run (liveRefresh).
 current.onLive((events) => {
   if (canReview.value && affectsReviewQueue(events)) {
-    void reviewFetch.refresh({ dedupe: "defer" });
+    void current.liveRefresh(reviewQueueKey(assembly.value?.id ?? "none"), () =>
+      reviewFetch.refresh({ dedupe: "cancel" }),
+    );
   }
 });
 

@@ -14,7 +14,7 @@ import { useCurrentAssembly } from "../assembly/useCurrentAssembly";
  * of the Intranet's attendees («Sincronizar», and once on opening when the
  * last read is over ten minutes old, for editors only), the source of
  * those attendees, and a debounced refetch on the room's live events (the
- * hub ignores them: IGNORED_LIVE_ENTITIES).
+ * hub ignores them: IGNORED_LIVE_ENTITIES) that never joins an older read.
  */
 
 /** Live events come in bursts (a batch of seats, images arriving). */
@@ -34,24 +34,55 @@ export function useSeatingPlan(options: {
   allowed: Readonly<Ref<boolean>>;
 }) {
   const api = useApi();
-  const { assembly, apiBase, onLive } = useCurrentAssembly();
+  const { assembly, apiBase, onLive, liveRefresh } = useCurrentAssembly();
+  const nuxtApp = useNuxtApp();
 
+  const planKey = computed(() => `seating-${assembly.value?.id ?? "none"}`);
   const planFetch = useFetch<SeatingPlanDto>(() => `${apiBase.value}/seating`, {
-    key: computed(() => `seating-${assembly.value?.id ?? "none"}`),
+    key: planKey,
     immediate: options.allowed.value,
     dedupe: "defer",
   });
-  const { data: plan, stale } = keepLastGoodData(planFetch, {
+  const { data: kept, stale } = keepLastGoodData(planFetch, {
     resetOn: () => assembly.value?.id,
   });
   useStaleDataNotice(stale);
 
-  function refresh(): void {
-    if (!options.allowed.value) return;
-    void planFetch.refresh({ dedupe: "defer" });
+  function reload(): Promise<void> {
+    return planFetch.refresh({ dedupe: "cancel" });
   }
 
-  const refreshSoon = useDebounceFn(refresh, LIVE_REFETCH_DEBOUNCE_MS);
+  /**
+   * The plan on show. A write of the page (a seat, a person, a group, the
+   * layout, a sync) puts here what the server answered; a read on its way
+   * left before that write and would bring the old room back when it
+   * lands, so it is replaced by a fresh one (`dedupe: "cancel"`). With
+   * nothing on its way nothing is fetched: the write's live event does it.
+   */
+  const plan = computed<SeatingPlanDto | undefined>({
+    get: () => kept.value,
+    set: (value) => {
+      kept.value = value;
+      if (planFetch.status.value !== "pending") return;
+      // While the page hydrates a refresh hands back the copy it loaded
+      // with, from before the write: it waits (as useReadMarks does).
+      if (nuxtApp.isHydrating) onNuxtReady(() => void reload());
+      else void reload();
+    },
+  });
+
+  /** The plan again (a stale write, «Reintentar»): never an older read. */
+  function refresh(): void {
+    if (!options.allowed.value) return;
+    void reload();
+  }
+
+  // A live batch never joins a read that may have left before it
+  // (liveRefresh); the debounce gathers a burst (a batch of seats).
+  const refreshSoon = useDebounceFn(() => {
+    if (!options.allowed.value) return;
+    void liveRefresh(planKey.value, reload);
+  }, LIVE_REFETCH_DEBOUNCE_MS);
   onLive((events) => {
     if (affectsSeating(events)) void refreshSoon();
   });

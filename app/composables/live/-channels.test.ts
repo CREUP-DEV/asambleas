@@ -10,5 +10,8 @@ describe("liveChannels", () => {
     expect(
       liveChannels({ onScroll: handler, onPointer: handler, onTally: handler }),
     ).toBe("scroll,pointer,tally");
+    expect(liveChannels({ onScroll: handler, onState: handler })).toBe(
+      "scroll,state",
+    );
   });
 });

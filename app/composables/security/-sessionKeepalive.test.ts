@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  randomWait,
   readSessionKeepaliveAt,
+  SESSION_COOKIE_CACHE_MS,
+  SESSION_KEEPALIVE_CHECK_MS,
   SESSION_KEEPALIVE_INTERVAL_MS,
+  SESSION_KEEPALIVE_JITTER_MS,
+  SESSION_KEEPALIVE_READY_JITTER_MS,
   SESSION_KEEPALIVE_STORAGE_KEY,
   sessionKeepaliveDue,
   writeSessionKeepaliveAt,
 } from "./-sessionKeepalive";
+
+describe("randomWait", () => {
+  it("stays in [0, max)", () => {
+    expect(randomWait(1_000, () => 0)).toBe(0);
+    expect(randomWait(1_000, () => 0.999_999)).toBe(999);
+  });
+});
 
 const now = Date.UTC(2026, 10, 20, 10, 0, 0);
 
@@ -24,9 +36,31 @@ describe("sessionKeepaliveDue", () => {
     );
   });
 
-  it("asks at most once an hour and at least once a day", () => {
-    expect(SESSION_KEEPALIVE_INTERVAL_MS).toBeGreaterThanOrEqual(60 * 60_000);
-    expect(SESSION_KEEPALIVE_INTERVAL_MS).toBeLessThan(24 * 60 * 60_000);
+  it("adds this device's jitter to the interval", () => {
+    const last = now - SESSION_KEEPALIVE_INTERVAL_MS;
+    expect(sessionKeepaliveDue(last, now, 10_000)).toBe(false);
+    expect(sessionKeepaliveDue(last - 10_000, now, 10_000)).toBe(true);
+  });
+
+  it("asks again before the session cookie cache expires", () => {
+    // Worst case: the longest jitter, and the due moment just missed by a check.
+    const longestGap =
+      SESSION_KEEPALIVE_INTERVAL_MS +
+      SESSION_KEEPALIVE_JITTER_MS +
+      SESSION_KEEPALIVE_CHECK_MS;
+    expect(longestGap).toBeLessThan(SESSION_COOKIE_CACHE_MS);
+  });
+
+  it("keeps a room behind one IP under better-auth's rate limit", () => {
+    // 100 asks per 10 s per IP and path. A room of 100 devices that opens
+    // the app together spreads its first asks over the ready jitter, and
+    // then asks about once per interval each.
+    const devices = 100;
+    const firstAsksPer10s =
+      devices * Math.min(1, 10_000 / SESSION_KEEPALIVE_READY_JITTER_MS);
+    expect(firstAsksPer10s).toBeLessThan(100);
+    const steadyAsksPer10s = (devices * 10_000) / SESSION_KEEPALIVE_INTERVAL_MS;
+    expect(steadyAsksPer10s).toBeLessThan(10);
   });
 
   it("asks when the stored time is in the future (the clock went back)", () => {

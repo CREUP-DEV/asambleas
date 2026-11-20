@@ -22,12 +22,24 @@ let stopped = false;
 let retryDelay = INITIAL_RETRY_MS;
 /** The one pending reconnect; there is never more than one. */
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * A connection failed since the last LISTEN: whatever was committed
+ * meanwhile never reached the streams, so the next LISTEN tells them to
+ * refetch (resyncStreams).
+ */
+let missedNotices = false;
 
 async function connect(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString || stopped) return;
 
-  const next = new pg.Client({ connectionString });
+  // TCP keepalive finds a connection that died without closing (a
+  // half-open socket), which would otherwise wait for nothing in silence.
+  const next = new pg.Client({
+    connectionString,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+  });
 
   // A failed connection can report itself up to three times ("error", "end"
   // and the rejected connect). Only the first counts: answering each one
@@ -37,6 +49,7 @@ async function connect(): Promise<void> {
   const fail = (error?: unknown) => {
     if (failed) return;
     failed = true;
+    missedNotices = true;
     if (error !== undefined) logError("live.hub", error);
     retire(next);
     scheduleReconnect();
@@ -65,9 +78,44 @@ async function connect(): Promise<void> {
     client = next;
     retryDelay = INITIAL_RETRY_MS;
     logInfo("live.hub", { message: "listening" });
+    if (missedNotices) {
+      missedNotices = false;
+      resyncStreams();
+    }
   } catch (error) {
     fail(error);
   }
+}
+
+/**
+ * Back to LISTEN after a failed connection: the notifications sent while
+ * it was down are gone, so every assembly with open streams gets one
+ * `poll`, the synthetic change clients already take as "refetch everything
+ * once" (useAssemblyLive; pages other than the Mesa's spread it over
+ * LIVE_SPREAD_MS). The streams stay open, so nobody reconnects: one
+ * refetch per page, only after a real failure. subscribeToAll's listeners
+ * (the email sender, the documentation packages) are not told.
+ */
+function resyncStreams(): void {
+  const assemblyIds = emitter
+    .eventNames()
+    .filter(
+      (name): name is string =>
+        typeof name === "string" && name !== ANY_ASSEMBLY,
+    );
+  for (const assemblyId of assemblyIds) {
+    const message: LiveMessage = {
+      assemblyId,
+      entityType: "assembly",
+      entityId: assemblyId,
+      type: "poll",
+    };
+    emitter.emit(assemblyId, message);
+  }
+  logWarn("live.hub", {
+    reason: "listening again; open streams told to refetch",
+    assemblies: assemblyIds.length,
+  });
 }
 
 /**
@@ -101,6 +149,7 @@ export async function stopLiveHub(): Promise<void> {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
   retryDelay = INITIAL_RETRY_MS;
+  missedNotices = false;
   const current = client;
   client = null;
   if (current) {

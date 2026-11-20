@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  LEGACY_PUSH_CHANNELS,
   LIVE_PUSH_CHANNELS,
   liveHeartbeat,
   livePushChannels,
@@ -29,8 +30,14 @@ describe("serializeOnce", () => {
 });
 
 describe("livePushChannels", () => {
-  it("sends every push to a page that names none (older code)", () => {
-    expect([...livePushChannels(undefined)]).toEqual([...LIVE_PUSH_CHANNELS]);
+  it("sends the older pushes to a page that names none (older code), never the state", () => {
+    expect([...livePushChannels(undefined)]).toEqual([...LEGACY_PUSH_CHANNELS]);
+    expect(livePushChannels(undefined).has("state")).toBe(false);
+    expect(LIVE_PUSH_CHANNELS).toContain("state");
+  });
+
+  it("sends the state only to a page that asks for it", () => {
+    expect([...livePushChannels("scroll,state")]).toEqual(["scroll", "state"]);
   });
 
   it("sends only what the page asked for", () => {

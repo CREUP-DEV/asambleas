@@ -56,6 +56,8 @@ export const speakingTurnUpdateBodySchema = z.object({
     .max(SPEAKING_LIMIT_MAX_SECONDS)
     .nullable()
     .optional(),
+  expectHead: z.boolean().optional(),
+  expectedSpeakingId: entityId.nullable().optional(),
   updatedAt: z.iso.datetime({ offset: true }),
 });
 

@@ -9,9 +9,97 @@ import {
   SPEAKER_SUGGESTIONS_MAX,
   turnEventType,
   turnsForActor,
+  turnUpdateExpectationsHold,
   waitingQueue,
   type ListedTurn,
 } from "./speakersRules";
+
+describe("turnUpdateExpectationsHold", () => {
+  it("accepts «Siguiente» on the list the console saw", () => {
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["x", "z"],
+        speakingIds: ["w"],
+        expectHead: true,
+        expectedSpeakingId: "w",
+      }),
+    ).toBe(true);
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["x"],
+        speakingIds: [],
+        expectHead: true,
+        expectedSpeakingId: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("refuses the old head once a priority turn went ahead of it", () => {
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["priority", "x"],
+        speakingIds: ["w"],
+        expectHead: true,
+        expectedSpeakingId: "w",
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses to end someone the console did not see speaking", () => {
+    // Another console gave the floor to y: x is still the head here.
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["x"],
+        speakingIds: ["y"],
+        expectHead: true,
+        expectedSpeakingId: "w",
+      }),
+    ).toBe(false);
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["x"],
+        speakingIds: ["y"],
+        expectedSpeakingId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses a head that already has the floor", () => {
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["z"],
+        speakingIds: ["x"],
+        expectHead: true,
+        expectedSpeakingId: "w",
+      }),
+    ).toBe(false);
+  });
+
+  it("checks nothing for a change that names neither", () => {
+    // Giving the floor to a chosen turn, or moving it, as before.
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["priority", "x"],
+        speakingIds: ["y"],
+      }),
+    ).toBe(true);
+    expect(
+      turnUpdateExpectationsHold({
+        turnId: "x",
+        queue: ["priority", "x"],
+        speakingIds: ["y"],
+        expectHead: false,
+      }),
+    ).toBe(true);
+  });
+});
 
 const minute = (n: number) => new Date(Date.UTC(2026, 10, 5, 10, n));
 
