@@ -165,8 +165,69 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
     return update(turn, { status: "speaking" });
   }
 
-  function finish(turn: SpeakingTurnDto): Promise<boolean> {
-    return update(turn, { status: "done" });
+  /**
+   * Ends a turn. A mistake is undone from the notice (user's decision of
+   * 2026-11-21): the turn takes the floor back with its clock where it
+   * stopped, while nobody else has it and only shortly after
+   * (TURN_RESUME_WINDOW_MS on the server, which says so otherwise).
+   */
+  async function finish(turn: SpeakingTurnDto): Promise<boolean> {
+    const before = byId.value.get(turn.id) ?? turn;
+    const ok = await update(turn, { status: "done" });
+    if (!ok) return false;
+    const who = sessionTurnWho(before) ?? t("session.speakers.unnamed");
+    toast.add({
+      id: `session-speaker-finished-${turn.id}`,
+      title: t("session.speakers.finished", { who }),
+      color: "neutral",
+      icon: "i-lucide-mic-off",
+      actions: [
+        {
+          label: t("session.actions.undo"),
+          color: "neutral",
+          variant: "outline",
+          onClick: () => {
+            void resume(before);
+          },
+        },
+      ],
+    });
+    return true;
+  }
+
+  /**
+   * Undoes the end of a turn: it has the floor again. When it no longer
+   * can (someone else took the floor, or too long went by), the server's
+   * reason is what the Mesa reads, and the list is read again.
+   */
+  async function resume(turn: SpeakingTurnDto): Promise<boolean> {
+    const fresh = byId.value.get(turn.id) ?? turn;
+    const body: SpeakingTurnUpdateBody = {
+      status: "speaking",
+      updatedAt: fresh.updatedAt,
+    };
+    try {
+      const result = await options.track(`speaker-${turn.id}`, () =>
+        api.send<SpeakersDto>(`${url.value}/${encodeURIComponent(turn.id)}`, {
+          method: "PUT",
+          body,
+        }),
+      );
+      store(result);
+    } catch (error) {
+      void refresh();
+      api.notifyError(error, "session.speakers.errors.update");
+      return false;
+    }
+    toast.add({
+      id: `session-speaker-finished-${turn.id}`,
+      title: t("session.speakers.resumed", {
+        who: sessionTurnWho(turn) ?? t("session.speakers.unnamed"),
+      }),
+      color: "success",
+      icon: "i-lucide-mic",
+    });
+    return true;
   }
 
   /** Fixes the person's name of a turn; blank clears it. */

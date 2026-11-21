@@ -943,6 +943,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   speaking_turn_added: ["position", "limitSeconds", "priority"],
   speaking_turn_started: ["from", "to", "position", "renamed"],
   speaking_turn_finished: ["from", "to", "reason"],
+  speaking_turn_resumed: ["from", "to"],
   speaking_turn_cancelled: ["from", "to", "reason"],
   speaking_turn_restored: ["from", "to", "position"],
   speaking_turn_moved: ["from", "to", "position"],

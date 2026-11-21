@@ -4,7 +4,9 @@ import {
   canChangeTurnStatus,
   moveInQueue,
   planTurnUpdate,
+  resumableTurn,
   sortTurns,
+  TURN_RESUME_WINDOW_MS,
   speakerHistory,
   SPEAKER_SUGGESTIONS_MAX,
   turnEventType,
@@ -159,6 +161,69 @@ describe("waitingQueue and moveInQueue", () => {
   });
 });
 
+describe("undoing the end of a turn", () => {
+  const ended = new Date("2026-11-21T17:00:00.000Z");
+  const turn = {
+    id: "t",
+    status: "done" as const,
+    noted: false,
+    endedAt: ended,
+  };
+  const at = (ms: number) => new Date(ended.getTime() + ms);
+
+  it("is possible shortly after, while nobody else has the floor", () => {
+    expect(resumableTurn({ turn, speakingIds: [], now: at(5_000) })).toBe(true);
+    expect(resumableTurn({ turn, speakingIds: ["x"], now: at(5_000) })).toBe(
+      false,
+    );
+    expect(
+      resumableTurn({
+        turn,
+        speakingIds: [],
+        now: at(TURN_RESUME_WINDOW_MS + 1),
+      }),
+    ).toBe(false);
+    expect(
+      resumableTurn({
+        turn: { ...turn, noted: true },
+        speakingIds: [],
+        now: at(5_000),
+      }),
+    ).toBe(false);
+  });
+
+  it("gives the floor back without a new start, and only when allowed", () => {
+    expect(
+      planTurnUpdate({
+        turn: { id: "t", status: "done" },
+        queue: ["a"],
+        speakingIds: [],
+        status: "speaking",
+        resumable: true,
+      }),
+    ).toEqual({
+      status: "speaking",
+      resume: true,
+      start: false,
+      end: false,
+      reset: false,
+      finishIds: [],
+      queue: ["a"],
+    });
+    expect(
+      planTurnUpdate({
+        turn: { id: "t", status: "done" },
+        queue: [],
+        speakingIds: [],
+        status: "speaking",
+      }),
+    ).toBe("transition");
+    expect(turnEventType({ from: "done", to: "speaking", moved: false })).toBe(
+      "speaking_turn_resumed",
+    );
+  });
+});
+
 describe("planTurnUpdate", () => {
   const queue = ["a", "b", "c"];
 
@@ -171,6 +236,7 @@ describe("planTurnUpdate", () => {
     });
     expect(plan).toEqual({
       status: "speaking",
+      resume: false,
       start: true,
       end: false,
       reset: false,

@@ -2247,6 +2247,15 @@ max-age=31536000, immutable`, `nosniff` and `Content-Disposition: inline`.
 The Mesa writes down who asks to speak, gives and ends the floor and orders
 the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
 
+- **Undoing the end of a turn.** A PUT with `status: "speaking"` on a
+  `done` turn takes the floor back (user's decision of 2026-11-21; the
+  console's «Deshacer» in the notice that says it ended): only for a turn
+  given from the queue (never a note), within 10 minutes of its end
+  (`TURN_RESUME_WINDOW_MS`) and while nobody else has the floor
+  (`resumableTurn`), else 409 with the reason. Its clock goes on from where
+  it stopped (`startedAt` moved on by the time off the floor, `endedAt`
+  cleared); event `speaking_turn_resumed`.
+
 - **Who spoke.** Giving the floor stamps the turn with the item and the
   amendment in debate then (`amendmentId`). Whoever notes the speakers
   (`canNoteSpeakers`) notes who spoke on an item or an amendment of it, from

@@ -88,6 +88,7 @@ import {
   awaitsPresenterAnswer,
   indexOwnNotes,
 } from "~/components/control-sheet/-readers";
+import { useControlSheetExport } from "~/components/control-sheet/-export";
 import {
   LIVE_AMENDMENT_STATES,
   type LiveAmendmentState,
@@ -522,6 +523,73 @@ const amendmentRows = computed(() => {
     awaitsAnswer: awaitsPresenterAnswer(row, true),
   }));
 });
+
+// Excel export -------------------------------------------------------------------
+
+const sheetExport = useControlSheetExport();
+const exporting = ref(false);
+
+/**
+ * Downloads the sheet as an Excel workbook (user's decision of 2026-11-21):
+ * «General» as it reads now and a sheet per document with amendments, read
+ * one after another with the same rows «Enmiendas» shows, without who
+ * spoke nor the history.
+ */
+async function exportExcel(): Promise<void> {
+  if (exporting.value || !assembly.value) return;
+  exporting.value = true;
+  try {
+    const numbers = new Map(
+      generalRows.value.map((row) => [row.id, row.number]),
+    );
+    const documents = [];
+    for (const document of documentOptions.value) {
+      const dto = await api.get<DocumentAmendmentsDto>(
+        `${apiBase.value}/documents/${encodeURIComponent(document.id)}/amendments`,
+      );
+      let rows = buildAmendmentRows(
+        dto.amendments,
+        sheet.value?.sessionStartedAt ?? null,
+        live.value?.amendmentId ?? null,
+        sheet.value?.amendmentRows ?? [],
+        sheet.value?.positions ?? [],
+        sheet.value?.turns ?? [],
+        { byAnswer: true },
+        new Set(sheet.value?.treated?.amendmentIds ?? []),
+      );
+      if (document.presenting) {
+        rows = rows.map((row) => ({
+          ...row,
+          awaitsAnswer: awaitsPresenterAnswer(row, true),
+        }));
+      }
+      documents.push({
+        title: document.title,
+        number: numbers.get(document.agendaItemId) ?? null,
+        rows,
+        showPositions:
+          internal.value ||
+          positionsArePublic(document) ||
+          rows.some((row) => row.position !== null),
+      });
+    }
+    const input = {
+      assemblyLabel: assembly.value.label,
+      exportedAt: new Date(),
+      internal: internal.value,
+      general: generalRows.value,
+      documents,
+    };
+    await downloadXlsx(
+      sheetExport.workbook(input),
+      sheetExport.fileName(input),
+    );
+  } catch (error) {
+    api.notifyError(error, "controlSheet.export.failed");
+  } finally {
+    exporting.value = false;
+  }
+}
 
 // Sorting and filtering, kept in the query ------------------------------------
 
@@ -2254,6 +2322,17 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           {{ t(internal ? "controlSheet.intro" : "controlSheet.introPublic") }}
         </p>
       </div>
+      <!-- The whole sheet as an Excel workbook, whichever tab is open. -->
+      <UButton
+        v-if="!loading && !failed"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-file-spreadsheet"
+        :label="t('controlSheet.export.button')"
+        :loading="exporting"
+        data-testid="sheet-export-excel"
+        @click="exportExcel"
+      />
     </div>
 
     <div v-if="loading" class="space-y-3" role="status">

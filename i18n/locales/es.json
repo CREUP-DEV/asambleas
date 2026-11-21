@@ -4611,7 +4611,7 @@
       "loadError": "No se han podido cargar los turnos de palabra",
       "stale": "No se han podido actualizar los turnos: se muestran los últimos recibidos.",
       "floor": "Uso de la palabra",
-      "speaking": "Tiene la palabra",
+      "speaking": "Hablando",
       "nobodySpeaking": "Nadie tiene la palabra ahora.",
       "empty": "Nadie ha pedido la palabra. Apunta aquí debajo a quien la pida.",
       "nextTo": "Siguiente: {who}",
@@ -4620,6 +4620,8 @@
       "giveNow": "Dar la palabra ahora",
       "remove": "Quitar de la lista",
       "removed": "{who} ya no está en la lista",
+      "finished": "Ha terminado el turno de {who}",
+      "resumed": "Vuelve a tener la palabra {who}",
       "addTitle": "Apuntar un turno",
       "addOpen": "Apuntar a quien pide la palabra",
       "addHint": "Pulsa quién pide la palabra, en el orden en que la piden: puedes elegir a varios. Si no es un miembro, escribe solo el nombre de la persona.",
@@ -5290,7 +5292,7 @@
       "emptyDescription": "Los turnos aparecen aquí en cuanto la Mesa da la palabra.",
       "noMatchesTitle": "Ningún turno coincide con los filtros",
       "noItem": "Sin punto en debate",
-      "speaking": "Tiene la palabra",
+      "speaking": "Hablando",
       "ongoing": "un turno sigue en curso",
       "summary": "{count} turno · {time} en total | {count} turnos · {time} en total",
       "views": {
@@ -5631,6 +5633,18 @@
       "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final.",
       "finalBlocked": "Todavía no se puede anotar la votación final",
       "finalFromConsole": "La Mesa lo resuelve desde la consola de la sesión."
+    },
+    "export": {
+      "button": "Descargar en Excel",
+      "failed": "No se ha podido preparar el Excel de la hoja de control",
+      "title": "Hoja de control de la {assembly}",
+      "exportedAt": "Exportada el {date} a las {time}",
+      "documents": "Documentos",
+      "treatedItem": "Tratado",
+      "treatedAmendment": "Tratada",
+      "untreated": "Sin tratar",
+      "item": "Punto {number}",
+      "filePrefix": "hoja-de-control"
     },
     "download": {
       "button": "Descargar",
@@ -6215,7 +6229,7 @@
     },
     "speakers": {
       "title": "Turno de palabra",
-      "current": "Tiene la palabra",
+      "current": "Hablando",
       "next": "Después",
       "nextInline": "Después:",
       "more": "y 1 más | y {count} más",
@@ -6298,7 +6312,7 @@
     "announce": {
       "amendment": "Ahora se debate la enmienda {code}",
       "document": "Ahora se debate: {title}",
-      "speaker": "Tiene la palabra: {name}"
+      "speaker": "Hablando: {name}"
     },
     "loadFailed": "No podemos mostrar qué se está debatiendo ahora mismo. Lo volvemos a intentar enseguida; no hace falta recargar la página.",
     "attendance": {
@@ -7030,6 +7044,7 @@
       "speaking_turn_added": "Turno de palabra añadido",
       "speaking_turn_started": "Turno de palabra iniciado",
       "speaking_turn_finished": "Turno de palabra terminado",
+      "speaking_turn_resumed": "Turno de palabra reanudado",
       "speaking_turn_cancelled": "Turno de palabra cancelado",
       "speaking_turn_restored": "Turno de palabra recuperado",
       "speaking_turn_moved": "Turno de palabra movido en la lista",

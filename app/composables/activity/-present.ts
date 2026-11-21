@@ -108,6 +108,7 @@ export const ACTIVITY_ACTION_ICONS = {
   speaking_turn_added: "i-lucide-mic",
   speaking_turn_started: "i-lucide-mic",
   speaking_turn_finished: "i-lucide-mic-off",
+  speaking_turn_resumed: "i-lucide-undo-2",
   speaking_turn_cancelled: "i-lucide-mic-off",
   speaking_turn_restored: "i-lucide-rotate-ccw",
   speaking_turn_moved: "i-lucide-arrow-up-down",

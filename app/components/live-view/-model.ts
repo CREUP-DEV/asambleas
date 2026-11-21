@@ -151,6 +151,7 @@ export function affectsSpeakers(events: readonly LiveEventDto[]): boolean {
 export const SPOKEN_TURN_EVENT_TYPES: ReadonlySet<string> = new Set([
   "speaking_turn_started",
   "speaking_turn_finished",
+  "speaking_turn_resumed",
   "speaking_turn_cancelled",
   "speaking_turn_restored",
   "speaking_turn_updated",

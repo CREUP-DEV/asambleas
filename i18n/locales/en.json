@@ -4611,7 +4611,7 @@
       "loadError": "The speaking turns could not be loaded",
       "stale": "The turns could not be updated: showing the last ones received.",
       "floor": "The floor",
-      "speaking": "Has the floor",
+      "speaking": "Speaking",
       "nobodySpeaking": "Nobody has the floor now.",
       "empty": "Nobody has asked for the floor. Write down below whoever asks.",
       "nextTo": "Next: {who}",
@@ -4620,6 +4620,8 @@
       "giveNow": "Give the floor now",
       "remove": "Remove from the list",
       "removed": "{who} is no longer on the list",
+      "finished": "{who}'s turn has ended",
+      "resumed": "{who} has the floor again",
       "addTitle": "Write down a turn",
       "addOpen": "Write down who asks for the floor",
       "addHint": "Click who asks for the floor, in the order they ask: you can pick several. If it is not a member, just type the person’s name.",
@@ -5290,7 +5292,7 @@
       "emptyDescription": "Turns show here as soon as the Mesa gives the floor.",
       "noMatchesTitle": "No turn matches the filters",
       "noItem": "No item under debate",
-      "speaking": "Has the floor",
+      "speaking": "Speaking",
       "ongoing": "one turn is still running",
       "summary": "{count} turn · {time} in total | {count} turns · {time} in total",
       "views": {
@@ -5631,6 +5633,18 @@
       "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote.",
       "finalBlocked": "The final vote cannot be recorded yet",
       "finalFromConsole": "The Mesa sorts it out from the session console."
+    },
+    "export": {
+      "button": "Download as Excel",
+      "failed": "The control sheet's Excel file could not be prepared",
+      "title": "Control sheet of the {assembly}",
+      "exportedAt": "Exported on {date} at {time}",
+      "documents": "Documents",
+      "treatedItem": "Dealt with",
+      "treatedAmendment": "Dealt with",
+      "untreated": "Not dealt with",
+      "item": "Item {number}",
+      "filePrefix": "control-sheet"
     },
     "download": {
       "button": "Download",
@@ -6215,7 +6229,7 @@
     },
     "speakers": {
       "title": "Speaking turns",
-      "current": "Has the floor",
+      "current": "Speaking",
       "next": "Next",
       "nextInline": "Next:",
       "more": "and 1 more | and {count} more",
@@ -7030,6 +7044,7 @@
       "speaking_turn_added": "Speaking turn added",
       "speaking_turn_started": "Speaking turn started",
       "speaking_turn_finished": "Speaking turn finished",
+      "speaking_turn_resumed": "Speaking turn resumed",
       "speaking_turn_cancelled": "Speaking turn cancelled",
       "speaking_turn_restored": "Speaking turn restored",
       "speaking_turn_moved": "Speaking turn moved in the list",

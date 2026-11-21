@@ -23,7 +23,6 @@ import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, canNoteSpeakers, type Actor } from "./actor";
 import { loadVisibleAmendmentIds } from "./documents";
-import { canSeeExecutiveMembers, redactMember } from "./visibility";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
 import type { Executor } from "./events";
@@ -32,6 +31,7 @@ import { assertSessionOpen } from "./sessionOpen";
 import { speakerUpdateClearsOnly } from "~~/shared/utils/sessionGate";
 import {
   planTurnUpdate,
+  resumableTurn,
   sortTurns,
   speakerHistory,
   turnEventType,
@@ -63,9 +63,11 @@ function iso(value: Date | null): string | null {
 }
 
 /**
- * A turn as the actor may read it. For those who may not see the executive
- * areas, an area's turn reads as "CEA" and the person's name goes too,
- * since it would name the area. The Mesa always sees both.
+ * A turn as the actor may read it: who spoke, by the member's own acronym
+ * and the person's name, for everyone, an executive office's included
+ * (user's decision of 2026-11-21: whoever speaks in the room is no secret,
+ * so a turn never reads "CEA"). Elsewhere the offices stay redacted
+ * (redactMember).
  */
 function toTurnDto(
   actor: Actor,
@@ -77,12 +79,10 @@ function toTurnDto(
   withAmendment = false,
 ): SpeakingTurnDto {
   const { turn } = row;
-  const hidden =
-    row.member?.kind === "executive" && !canSeeExecutiveMembers(actor);
   return {
     id: turn.id,
-    member: row.member ? redactMember(actor, toMemberRef(row.member)) : null,
-    speaker: hidden ? null : turn.speaker,
+    member: row.member ? toMemberRef(row.member) : null,
+    speaker: turn.speaker,
     agendaItemId: turn.agendaItemId,
     amendmentId: withAmendment ? turn.amendmentId : null,
     noted: turn.noted,
@@ -478,13 +478,22 @@ export async function updateSpeakingTurn(
     ) {
       fail(409, "La lista de palabras ha cambiado. Recarga la página");
     }
+    const now = new Date();
+    const undoing = turn.status === "done" && body.status === "speaking";
     const plan = planTurnUpdate({
       turn,
       queue: queueIds,
       speakingIds,
       status: body.status,
       position: body.position,
+      resumable: undoing && resumableTurn({ turn, speakingIds, now }),
     });
+    if (plan === "transition" && undoing) {
+      fail(
+        409,
+        "El final del turno ya no se puede deshacer: otra persona tiene la palabra o ha pasado demasiado tiempo",
+      );
+    }
     if (plan === "transition") {
       fail(409, "Ese cambio no es posible para este turno");
     }
@@ -497,7 +506,6 @@ export async function updateSpeakingTurn(
       fail(422, "Indica el miembro o el nombre de quien pide la palabra");
     }
 
-    const now = new Date();
     // Taking the floor stamps what is in debate then: the sheet names the
     // speaker under that item or amendment, whenever it asked.
     const stamp = plan.start ? await readLiveSpeakers(tx, assembly.id) : null;
@@ -534,6 +542,19 @@ export async function updateSpeakingTurn(
           : {}),
         ...(plan.end ? { endedAt: now } : {}),
         ...(plan.reset ? { startedAt: null, endedAt: null } : {}),
+        // Undone: the clock goes on from where it stopped.
+        ...(plan.resume
+          ? {
+              startedAt:
+                turn.startedAt && turn.endedAt
+                  ? new Date(
+                      turn.startedAt.getTime() +
+                        (now.getTime() - turn.endedAt.getTime()),
+                    )
+                  : turn.startedAt,
+              endedAt: null,
+            }
+          : {}),
       })
       .where(eq(speakingTurns.id, turn.id));
     await renumberQueue(tx, queue, plan.queue, turn.id);

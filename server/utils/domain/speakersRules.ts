@@ -12,6 +12,8 @@ import type { SpeakingTurnStatus } from "~~/shared/constants/domain";
  * - a speaking turn ends (done) or is cancelled (given by mistake);
  * - a cancelled turn goes back to the end of the queue (undo).
  * A finished turn stays finished: a person who asks again gets a new turn.
+ * The one exception is undoing the end of a turn (resumableTurn): it takes
+ * the floor back while nobody else has it and only shortly after.
  */
 export const SPEAKING_TURN_TRANSITIONS: Record<
   SpeakingTurnStatus,
@@ -61,8 +63,44 @@ export function moveInQueue(
   return [...rest.slice(0, index), movedId, ...rest.slice(index)];
 }
 
+/**
+ * How long after a turn ends the Mesa may still undo it (user's decision
+ * of 2026-11-21: «Deshacer» in the notice that says it ended).
+ */
+export const TURN_RESUME_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Whether ending a turn may still be undone: it ended (done, given the
+ * floor rather than noted by hand), not long ago, and nobody has the floor
+ * since. Undoing gives it the floor back with its clock where it stopped.
+ */
+export function resumableTurn(input: {
+  turn: {
+    id: string;
+    status: SpeakingTurnStatus;
+    noted: boolean;
+    endedAt: Date | null;
+  };
+  speakingIds: readonly string[];
+  now: Date;
+}): boolean {
+  const { turn } = input;
+  return (
+    turn.status === "done" &&
+    !turn.noted &&
+    turn.endedAt !== null &&
+    input.now.getTime() - turn.endedAt.getTime() <= TURN_RESUME_WINDOW_MS &&
+    input.speakingIds.every((id) => id === turn.id)
+  );
+}
+
 export interface TurnUpdatePlan {
   status: SpeakingTurnStatus;
+  /**
+   * Ending the turn is undone (resumableTurn): it speaks again, its clock
+   * moved on by the time it was off the floor, `endedAt` cleared.
+   */
+  resume: boolean;
   /** The turn gets the floor now: set `startedAt`. */
   start: boolean;
   /** The turn leaves the floor or the queue now: set `endedAt`. */
@@ -93,9 +131,24 @@ export function planTurnUpdate(input: {
   speakingIds: string[];
   status?: SpeakingTurnStatus;
   position?: number;
+  /** The turn ended and may still take the floor back (resumableTurn). */
+  resumable?: boolean;
 }): TurnUpdatePlan | TurnUpdateError {
   const { turn } = input;
   const status = input.status ?? turn.status;
+  if (turn.status === "done" && status === "speaking") {
+    if (!input.resumable) return "transition";
+    if (input.position !== undefined) return "not_waiting";
+    return {
+      status,
+      resume: true,
+      start: false,
+      end: false,
+      reset: false,
+      finishIds: [],
+      queue: input.queue.filter((id) => id !== turn.id),
+    };
+  }
   if (!canChangeTurnStatus(turn.status, status)) return "transition";
   const changes = status !== turn.status;
 
@@ -112,6 +165,7 @@ export function planTurnUpdate(input: {
   const start = changes && status === "speaking";
   return {
     status,
+    resume: false,
     start,
     end: changes && (status === "done" || status === "cancelled"),
     reset: changes && status === "waiting",
@@ -278,7 +332,9 @@ export function turnEventType(input: {
   if (input.from !== input.to) {
     switch (input.to) {
       case "speaking":
-        return "speaking_turn_started";
+        return input.from === "done"
+          ? "speaking_turn_resumed"
+          : "speaking_turn_started";
       case "done":
         return "speaking_turn_finished";
       case "cancelled":
