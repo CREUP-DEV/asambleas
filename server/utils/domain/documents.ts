@@ -2928,6 +2928,7 @@ export async function recordFinalVote(
         notCast: vote.notCast ?? 0,
         present: vote.present ?? null,
         headcountId: based.headcountId,
+        ballots: based.ballots ?? null,
         majority,
         result,
         note: vote.note ?? null,

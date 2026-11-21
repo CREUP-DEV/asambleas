@@ -4705,6 +4705,18 @@
         "onScreen": "It is on screen as an alternative of a vote: it is decided by voting between the options",
         "splitChanged": "The split does not match the options on screen: the room votes on what it sees. Project this split or go back to the one on screen."
       }
+    },
+    "rollCall": {
+      "title": "How each delegation voted",
+      "all": "All:",
+      "notVoting": "Does not vote",
+      "votedBy": "voted by {code}",
+      "nameVotedBy": "{code} (voted by {by})",
+      "unmarked": "None unmarked | Unmarked: 1 (does not vote) | Unmarked: {count} (do not vote)",
+      "show": "See how each delegation voted",
+      "errors": {
+        "headcountChanged": "The headcount changed: call the roll again with the new one"
+      }
     }
   },
   "projection": {

@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { MAJORITIES, VOTE_METHODS } from "../../constants/domain";
 import { foreignBallotKeys } from "../votes";
+import { ROLL_CALL_CHOICES } from "../rollCall";
 import {
   ALTERNATIVES_OPTION_COUNT,
   ALTERNATIVES_TIE_RESOLUTIONS,
@@ -28,6 +29,20 @@ export const MAX_VOTE_COUNT = 100_000;
 
 const count = z.number().int().min(0).max(MAX_VOTE_COUNT);
 
+/** The most delegations a registered vote lists. */
+export const MAX_VOTE_BALLOTS = 500;
+
+/** Each delegation's ballot of a registered vote (VoteBallotInput). */
+const ballotsSchema = z
+  .array(
+    z.object({
+      memberId: z.string().min(1).max(64),
+      choice: z.enum(ROLL_CALL_CHOICES),
+      option: z.number().int().min(0).max(50).nullable().optional(),
+    }),
+  )
+  .max(MAX_VOTE_BALLOTS);
+
 const noteSchema = z
   .string()
   .max(VOTE_NOTE_MAX_LENGTH)
@@ -50,11 +65,20 @@ export const voteInputSchema = z
     invalid: count.optional(),
     notCast: count.optional(),
     present: count.nullable().optional(),
+    ballots: ballotsSchema.optional(),
+    rollCallHeadcountId: z.string().min(1).max(64).optional(),
     majority: z.enum(MAJORITIES).optional(),
     note: noteSchema,
     unanimous: z.boolean().optional(),
   })
   .superRefine((vote, ctx) => {
+    if ((vote.ballots?.length ?? 0) > 0 && vote.method !== "roll_call") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ballots"],
+        message: "Only a registered vote records each delegation's ballot",
+      });
+    }
     for (const key of foreignBallotKeys(vote.method)) {
       if ((vote[key] ?? 0) > 0) {
         ctx.addIssue({
@@ -98,6 +122,8 @@ export const alternativesVoteBodySchema = z
     note: noteSchema,
     tieResolution: z.enum(ALTERNATIVES_TIE_RESOLUTIONS).optional(),
     winnerOutcome: z.enum(ALTERNATIVES_WINNER_OUTCOMES).optional(),
+    ballots: ballotsSchema.optional(),
+    rollCallHeadcountId: z.string().min(1).max(64).optional(),
     project: z.boolean().optional(),
   })
   .superRefine((body, ctx) => {
@@ -106,6 +132,13 @@ export const alternativesVoteBodySchema = z
     );
     if (problem) {
       ctx.addIssue({ code: "custom", path: ["options"], message: problem });
+    }
+    if ((body.ballots?.length ?? 0) > 0 && body.method !== "roll_call") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ballots"],
+        message: "Only a registered vote records each delegation's ballot",
+      });
     }
     const secret = body.method === "secret";
     for (const key of secret

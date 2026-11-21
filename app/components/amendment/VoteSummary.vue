@@ -135,6 +135,13 @@ const summary = computed(() =>
         </dd>
       </div>
     </dl>
+    <!-- A registered vote: what each delegation voted. -->
+    <section v-if="vote.ballots && vote.ballots.length > 0" class="space-y-1">
+      <h4 class="text-muted text-xs font-medium">
+        {{ t("session.rollCall.title") }}
+      </h4>
+      <VoteBallots :vote="vote" />
+    </section>
     <p v-if="vote.note" class="text-muted text-sm whitespace-pre-line">
       {{ vote.note }}
     </p>

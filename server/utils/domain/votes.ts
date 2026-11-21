@@ -52,6 +52,7 @@ export function toVoteDto(vote: VoteRow): VoteDto {
     options: vote.options ?? null,
     winningOption: vote.winningOption ?? null,
     tieResolution: vote.tieResolution ?? null,
+    ballots: vote.ballots ?? null,
     winnerOutcome:
       vote.options && vote.winningOption !== null
         ? (vote.winnerOutcome ?? "approve")

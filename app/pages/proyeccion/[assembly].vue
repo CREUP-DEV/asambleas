@@ -1491,6 +1491,13 @@ useHead(() => ({
             </dd>
           </div>
         </dl>
+        <!-- A registered vote: what each delegation voted (RFAG art. 32). -->
+        <VoteBallots
+          v-if="vote.ballots && vote.ballots.length > 0"
+          :vote="vote"
+          size="lg"
+          class="mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1rem,1.4vw,1.5rem)]"
+        />
       </section>
 
       <section

@@ -133,6 +133,7 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   winningOption: null,
   tieResolution: null,
   winnerOutcome: null,
+  ballots: null,
   recordedAt: "2026-11-14T10:30:00Z",
   updatedAt: "2026-11-14T10:30:00Z",
   voidedAt: null,

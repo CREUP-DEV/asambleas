@@ -165,7 +165,7 @@ import {
   loadExecutiveMemberIds,
   requireAmendmentBodyMembers,
 } from "./executiveMembers";
-import { withHeadcount } from "./headcounts";
+import { resolveRollCallBallots, withHeadcount } from "./headcounts";
 import { assertOpImagesBelong } from "./documentImages";
 import {
   impersonatedByFor,
@@ -3528,6 +3528,7 @@ export async function decideAmendmentAdmission(
           method: based.vote.method,
           ...voteCounts(based.vote),
           headcountId: based.headcountId,
+          ballots: based.ballots ?? null,
           majority: evaluated.majority,
           result: evaluated.outcome.result,
           note: based.vote.note ?? null,
@@ -5775,6 +5776,7 @@ async function recordAmendmentOutcome(
             method: based.vote.method,
             ...voteCounts(based.vote),
             headcountId: based.headcountId,
+            ballots: based.ballots ?? null,
             majority: evaluated.majority,
             result: evaluated.outcome.result,
             note: based.vote.note ?? null,
@@ -6331,6 +6333,33 @@ export async function decideAlternatives(
       : [];
   };
 
+  // A registered vote takes each option's votes, the abstentions and those
+  // who did not vote from each delegation's ballot (user's decision of
+  // 2026-11-21), whatever the body counted.
+  const rollCall =
+    body.method === "roll_call" && (body.ballots?.length ?? 0) > 0
+      ? await resolveRollCallBallots(
+          ctx.assembly.id,
+          body.ballots!,
+          body.options.length,
+          db,
+          body.rollCallHeadcountId,
+        )
+      : null;
+  if (rollCall) {
+    body = {
+      ...body,
+      options: body.options.map((option, index) => ({
+        ...option,
+        count: rollCall.counts.options[index] ?? 0,
+      })),
+      abstentions: rollCall.counts.abstentions,
+      blank: 0,
+      invalid: 0,
+      notCast: rollCall.counts.notCast,
+      present: rollCall.counts.present,
+    };
+  }
   // The members present come from the Mesa's latest headcount unless typed.
   const based = await withHeadcount(
     ctx.assembly.id,
@@ -6498,6 +6527,7 @@ export async function decideAlternatives(
         winningOption: winner,
         tieResolution,
         winnerOutcome: winnerOutcome === "keep" ? "keep" : null,
+        ballots: rollCall?.ballots ?? null,
         recordedByUserId: actor.user.id,
       })
       .returning();

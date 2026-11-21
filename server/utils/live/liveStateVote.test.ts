@@ -24,6 +24,7 @@ function vote(overrides: Partial<VoteDto> = {}): VoteDto {
     winningOption: null,
     tieResolution: null,
     winnerOutcome: null,
+    ballots: null,
     recordedAt: "2026-11-20T10:00:00.000Z",
     updatedAt: "2026-11-20T10:00:00.000Z",
     voidedAt: null,

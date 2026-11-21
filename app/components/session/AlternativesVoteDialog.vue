@@ -14,6 +14,11 @@ import {
   sameAlternatives,
 } from "~~/shared/utils/alternativesSplit";
 import { amendmentsMeet } from "~~/shared/utils/content/passages";
+import {
+  rollCallCounts,
+  rollCallVoters,
+  type VoteBallotInput,
+} from "~~/shared/utils/rollCall";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
@@ -115,7 +120,53 @@ watch(
   },
 );
 
+// A registered vote: each delegation of the latest headcount chooses an
+// option, abstains or does not vote (user's decision of 2026-11-21); the
+// counts follow, as the server takes them.
+const ballots = ref<VoteBallotInput[]>([]);
+const rollCallList = computed(() =>
+  method.value === "roll_call" && session.voteHeadcount.value
+    ? rollCallVoters(session.voteHeadcount.value.entries)
+    : [],
+);
+const rollCall = computed(() => rollCallList.value.length > 0);
+const rollCallChoices = computed(() => [
+  ...Array.from({ length: ALTERNATIVES_OPTION_COUNT }, (_, index) => ({
+    choice: "option" as const,
+    option: index,
+    label: alternativesText.optionName(index),
+  })),
+  { choice: "abstention" as const, label: t("session.vote.abstentions") },
+  { choice: "not_voting" as const, label: t("session.rollCall.notVoting") },
+]);
+watch(
+  ballots,
+  (list) => {
+    if (!rollCall.value) return;
+    const byMember = new Map(list.map((ballot) => [ballot.memberId, ballot]));
+    const tally = rollCallCounts(
+      rollCallList.value.map((voter) => {
+        const ballot = byMember.get(voter.memberId);
+        return {
+          choice: ballot?.choice ?? "not_voting",
+          option: ballot?.option ?? null,
+        };
+      }),
+      ALTERNATIVES_OPTION_COUNT,
+    );
+    counts.value = tally.options;
+    abstentions.value = tally.abstentions;
+    present.value = tally.present;
+    serverUndecided.value = null;
+  },
+  { deep: true },
+);
+watch(method, (value) => {
+  if (value !== "roll_call") ballots.value = [];
+});
+
 function resetCounts(): void {
+  ballots.value = [];
   counts.value = Array.from({ length: ALTERNATIVES_OPTION_COUNT }, () => 0);
   abstentions.value = 0;
   blank.value = 0;
@@ -247,6 +298,10 @@ async function record(tieResolution?: AlternativesTieResolution) {
       note: note.value.trim() || null,
       tieResolution,
       winnerOutcome: winnerOutcome.value,
+      ballots: rollCall.value ? ballots.value : undefined,
+      rollCallHeadcountId: rollCall.value
+        ? session.voteHeadcount.value?.id
+        : undefined,
     });
     if (result.ok) {
       open.value = false;
@@ -399,7 +454,14 @@ function amendmentLine(id: string): string {
               class="w-full sm:w-64"
             />
           </UFormField>
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <!-- A registered vote: each delegation of the latest headcount. -->
+          <SessionRollCallBallots
+            v-if="rollCall"
+            v-model="ballots"
+            :voters="rollCallList"
+            :choices="rollCallChoices"
+          />
+          <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <UFormField
               v-for="(_, index) in counts"
               :key="index"

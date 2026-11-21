@@ -2219,6 +2219,17 @@ export function sessionCleanVote(vote: VoteInput): VoteInput {
     clean.present = Math.max(0, Math.trunc(vote.present));
   }
   if (vote.majority) clean.majority = vote.majority;
+  // A registered vote carries each delegation's ballot (2026-11-21).
+  if (vote.method === "roll_call" && (vote.ballots?.length ?? 0) > 0) {
+    clean.ballots = vote.ballots!.map((ballot) => ({
+      memberId: ballot.memberId,
+      choice: ballot.choice,
+      ...(ballot.choice === "option" ? { option: ballot.option ?? 0 } : {}),
+    }));
+    if (vote.rollCallHeadcountId) {
+      clean.rollCallHeadcountId = vote.rollCallHeadcountId;
+    }
+  }
   const note = vote.note?.trim();
   if (note) clean.note = note;
   return clean;

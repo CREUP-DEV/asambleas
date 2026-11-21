@@ -102,5 +102,11 @@ const assentKey = computed(() => liveAssentKey(props.vote));
         </dd>
       </div>
     </dl>
+    <!-- A registered vote: what each delegation voted. -->
+    <VoteBallots
+      v-if="vote.ballots && vote.ballots.length > 0"
+      :vote="vote"
+      class="mt-3"
+    />
   </div>
 </template>

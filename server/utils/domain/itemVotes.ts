@@ -24,7 +24,12 @@ import {
 } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { assertSessionOpen } from "./sessionOpen";
-import { fillPresent, latestHeadcount } from "./headcounts";
+import {
+  fillPresent,
+  latestHeadcount,
+  resolveRollCallBallots,
+  withRollCallCounts,
+} from "./headcounts";
 import { resolveAgendaItem } from "./resolvers";
 import {
   loadItemVoteRows,
@@ -249,13 +254,30 @@ export async function recordItemVote(
     }
 
     const settings = assemblySettings(locked);
-    const based = fillPresent(
-      body.vote,
-      body.vote.method === "assent"
-        ? null
-        : await latestHeadcount(assembly.id, tx),
-      settings,
-    );
+    // A registered vote takes its counts from each delegation's ballot
+    // (resolveRollCallBallots, user's decision of 2026-11-21).
+    const rollCall =
+      body.vote.method === "roll_call" && (body.vote.ballots?.length ?? 0) > 0
+        ? await resolveRollCallBallots(
+            assembly.id,
+            body.vote.ballots!,
+            0,
+            tx,
+            body.vote.rollCallHeadcountId,
+          )
+        : null;
+    const based = rollCall
+      ? {
+          vote: withRollCallCounts(body.vote, rollCall.counts),
+          headcountId: rollCall.headcountId,
+        }
+      : fillPresent(
+          body.vote,
+          body.vote.method === "assent"
+            ? null
+            : await latestHeadcount(assembly.id, tx),
+          settings,
+        );
     const vote = based.vote;
     // Agenda items have no majority of their own.
     const { majority, outcome } = evaluateVoteInput(vote, settings, "simple");
@@ -275,6 +297,7 @@ export async function recordItemVote(
         notCast: vote.notCast ?? 0,
         present: vote.present ?? null,
         headcountId: based.headcountId,
+        ballots: rollCall?.ballots ?? null,
         majority,
         result: outcome.result,
         note: vote.note || null,

@@ -31,6 +31,7 @@ import type {
   AlternativesTieResolution,
   AlternativesWinnerOutcome,
 } from "../../../shared/utils/alternativesVote";
+import type { VoteBallot } from "../../../shared/utils/rollCall";
 import { majorityEnum } from "./document";
 
 /** One option of a vote between alternatives: its amendments and votes. */
@@ -197,6 +198,12 @@ export const votes = pgTable(
      * as every vote before it did.
      */
     winnerOutcome: text("winner_outcome").$type<AlternativesWinnerOutcome>(),
+    /**
+     * A registered vote (roll call, user's decision of 2026-11-21): what
+     * each delegation at the headcount voted, as named then; its counts
+     * come from these. Null on every other vote, and always on a secret one.
+     */
+    ballots: jsonb("ballots").$type<VoteBallot[]>(),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

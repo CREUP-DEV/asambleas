@@ -60,6 +60,7 @@ import type {
   AlternativesTieResolution,
   AlternativesWinnerOutcome,
 } from "~~/shared/utils/alternativesVote";
+import type { VoteBallotInput } from "~~/shared/utils/rollCall";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import {
   keepLastGoodData,
@@ -1710,6 +1711,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     note: string | null;
     tieResolution?: AlternativesTieResolution;
     winnerOutcome?: AlternativesWinnerOutcome;
+    /** A registered vote: each delegation's ballot. */
+    ballots?: VoteBallotInput[];
+    rollCallHeadcountId?: string;
   }): Promise<
     | { ok: true; vote: VoteDto }
     | { ok: false; undecided: "tie" | "short" | null }
@@ -1731,6 +1735,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       note: input.note,
       ...(input.tieResolution ? { tieResolution: input.tieResolution } : {}),
       ...(input.winnerOutcome ? { winnerOutcome: input.winnerOutcome } : {}),
+      ...(input.method === "roll_call" && (input.ballots?.length ?? 0) > 0
+        ? {
+            ballots: input.ballots,
+            ...(input.rollCallHeadcountId
+              ? { rollCallHeadcountId: input.rollCallHeadcountId }
+              : {}),
+          }
+        : {}),
       project: inControl.value,
     };
     try {

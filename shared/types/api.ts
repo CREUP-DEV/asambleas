@@ -42,6 +42,7 @@ import type {
   AlternativesTieResolution,
   AlternativesWinnerOutcome,
 } from "../utils/alternativesVote";
+import type { VoteBallot, VoteBallotInput } from "../utils/rollCall";
 import type { SeatAssignment } from "../utils/seating/groups";
 import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
 import type { SeatingAssignmentOp } from "../utils/seating/proposal";
@@ -1383,6 +1384,20 @@ export interface VoteInput {
   /** Members present who cast nothing (votos no emitidos). */
   notCast?: number;
   present?: number | null;
+  /**
+   * A registered vote (`roll_call`): what each delegation at the latest
+   * headcount votes. The server rebuilds the voters from that count,
+   * refuses a stranger or a repeat (422) and takes the counts and `present`
+   * from the ballots, whatever the body says; a voter left out does not
+   * vote. Never with another method.
+   */
+  ballots?: VoteBallotInput[];
+  /**
+   * The headcount the roll call was called from, with `ballots`: 409
+   * `session.rollCall.errors.headcountChanged` when a newer one was taken
+   * meanwhile, so the Mesa calls the new voters.
+   */
+  rollCallHeadcountId?: string;
   majority?: Majority;
   note?: string | null;
   /**
@@ -1585,6 +1600,11 @@ export interface VoteDto {
    * other votes and where none won.
    */
   winnerOutcome: AlternativesWinnerOutcome | null;
+  /**
+   * A registered vote: what each delegation voted, in the headcount's
+   * order (user's decision of 2026-11-21); null on other votes.
+   */
+  ballots: VoteBallot[] | null;
   recordedAt: IsoDate;
   /** Lock token for voiding it and changing its unanimity. */
   updatedAt: IsoDate;
@@ -1677,6 +1697,13 @@ export interface AlternativesVoteBody {
   present?: number | null;
   note?: string | null;
   tieResolution?: AlternativesTieResolution;
+  /**
+   * A registered vote: each delegation's option (`choice: "option"`),
+   * abstention or none; the option counts come from them.
+   */
+  ballots?: VoteBallotInput[];
+  /** As VoteInput's: the headcount the roll call was called from. */
+  rollCallHeadcountId?: string;
   /**
    * What a win does to the winning option's amendments: approve them (the
    * default), or keep them undecided and only reject the others.

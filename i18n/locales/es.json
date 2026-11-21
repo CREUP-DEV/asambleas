@@ -4705,6 +4705,18 @@
         "onScreen": "Está en pantalla como alternativa de una votación: se decide votando entre las opciones",
         "splitChanged": "El reparto no coincide con las opciones en pantalla: la sala vota lo que ve. Proyecta este reparto o vuelve al de la pantalla."
       }
+    },
+    "rollCall": {
+      "title": "Sentido del voto de cada delegación",
+      "all": "Todas:",
+      "notVoting": "No vota",
+      "votedBy": "vota {code}",
+      "nameVotedBy": "{code} (vota {by})",
+      "unmarked": "Sin marcar ninguna | Sin marcar: 1 (no vota) | Sin marcar: {count} (no votan)",
+      "show": "Ver el sentido del voto",
+      "errors": {
+        "headcountChanged": "El recuento de presentes ha cambiado: vuelve a pasar lista con el nuevo"
+      }
     }
   },
   "projection": {

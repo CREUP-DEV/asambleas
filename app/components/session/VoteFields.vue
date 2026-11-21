@@ -28,6 +28,11 @@ import {
   SECRET_BALLOT_KEYS,
   type BallotKey,
 } from "~~/shared/utils/votes";
+import {
+  rollCallCounts,
+  rollCallVoters,
+  type VoteBallotInput,
+} from "~~/shared/utils/rollCall";
 
 /**
  * Vote entry used by every session dialog: method, counts, majority and
@@ -162,9 +167,59 @@ function setField<K extends "method" | "majority" | "note">(
   if (key === "method") {
     for (const foreign of foreignBallotKeys(next.method)) next[foreign] = 0;
     if (next.method !== "secret") reveal.value = null;
+    // Only a registered vote keeps each delegation's ballot.
+    if (next.method !== "roll_call") delete next.ballots;
   }
   vote.value = next;
 }
+
+// A registered vote, delegation by delegation ------------------------------------
+
+/**
+ * The voters at the latest headcount when the vote is registered (user's
+ * decision of 2026-11-21): the rows to call. Empty when the form has no
+ * headcount with its entries (only the Mesa reads them): then the counts
+ * are typed as for any method.
+ */
+const rollCallList = computed(() =>
+  vote.value.method === "roll_call" && props.headcount
+    ? rollCallVoters(props.headcount.entries)
+    : [],
+);
+const rollCall = computed(() => rollCallList.value.length > 0);
+const rollCallChoices = computed(() => [
+  { choice: "in_favor" as const, label: t("session.vote.inFavor") },
+  { choice: "against" as const, label: t("session.vote.against") },
+  { choice: "abstention" as const, label: t("session.vote.abstentions") },
+  { choice: "not_voting" as const, label: t("session.rollCall.notVoting") },
+]);
+/** Each row's ballot; the counts follow them, as the server takes them. */
+const rollCallBallots = computed<VoteBallotInput[]>({
+  get: () => vote.value.ballots ?? [],
+  set: (ballots) => {
+    const byMember = new Map(
+      ballots.map((ballot) => [ballot.memberId, ballot]),
+    );
+    const counts = rollCallCounts(
+      rollCallList.value.map((voter) => ({
+        choice: byMember.get(voter.memberId)?.choice ?? "not_voting",
+        option: null,
+      })),
+    );
+    vote.value = {
+      ...vote.value,
+      ballots,
+      rollCallHeadcountId: props.headcount?.id,
+      inFavor: counts.inFavor,
+      against: counts.against,
+      abstentions: counts.abstentions,
+      blank: 0,
+      invalid: 0,
+      notCast: counts.notCast,
+      present: counts.present,
+    };
+  },
+});
 
 const assent = computed(() => vote.value.method === "assent");
 /** An assent nobody objected to when unanimity was asked. */
@@ -577,6 +632,14 @@ const denominatorText = computed(() =>
           </p>
         </div>
       </div>
+
+      <!-- A registered vote: each delegation of the latest headcount. -->
+      <SessionRollCallBallots
+        v-else-if="rollCall"
+        v-model="rollCallBallots"
+        :voters="rollCallList"
+        :choices="rollCallChoices"
+      />
 
       <div
         v-else

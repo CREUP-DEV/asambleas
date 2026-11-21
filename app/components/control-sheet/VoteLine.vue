@@ -90,5 +90,24 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
     >
       {{ counts }}
     </p>
+    <!-- A registered vote: what each delegation voted, on demand. -->
+    <UPopover v-if="vote.ballots && vote.ballots.length > 0">
+      <UButton
+        size="xs"
+        color="neutral"
+        variant="link"
+        icon="i-lucide-list-checks"
+        :label="t('session.rollCall.show')"
+        class="px-0"
+      />
+      <template #content>
+        <div class="max-w-md space-y-1 p-3">
+          <p class="text-highlighted text-sm font-medium">
+            {{ t("session.rollCall.title") }}
+          </p>
+          <VoteBallots :vote="vote" />
+        </div>
+      </template>
+    </UPopover>
   </div>
 </template>

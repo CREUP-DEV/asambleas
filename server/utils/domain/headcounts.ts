@@ -31,6 +31,14 @@ import {
   votesInHeadcount,
   type QuorumThreshold,
 } from "~~/shared/utils/headcount";
+import {
+  resolveRollCall,
+  rollCallCounts,
+  rollCallVoters,
+  type RollCallCounts,
+  type VoteBallot,
+  type VoteBallotInput,
+} from "~~/shared/utils/rollCall";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { canModerate, type Actor } from "./actor";
 import { lockAssembly } from "./agendaWrites";
@@ -591,10 +599,135 @@ export async function withHeadcount(
   assemblyId: string,
   vote: VoteInput,
   settings: Pick<AssemblySettings, "denominator">,
-): Promise<{ vote: VoteInput; headcountId: string | null }> {
+): Promise<{
+  vote: VoteInput;
+  headcountId: string | null;
+  /** A registered vote's ballots, as recorded. */
+  ballots?: VoteBallot[];
+}> {
   if (vote.method === "assent") return { vote, headcountId: null };
+  if (vote.method === "roll_call" && (vote.ballots?.length ?? 0) > 0) {
+    const resolved = await resolveRollCallBallots(
+      assemblyId,
+      vote.ballots!,
+      0,
+      db,
+      vote.rollCallHeadcountId,
+    );
+    return {
+      vote: withRollCallCounts(vote, resolved.counts),
+      headcountId: resolved.headcountId,
+      ballots: resolved.ballots,
+    };
+  }
   const latest = await latestHeadcount(assemblyId);
   return fillPresent(vote, latest, settings);
+}
+
+/** The vote with the counts its ballots give, whatever was typed. */
+export function withRollCallCounts(
+  vote: VoteInput,
+  counts: RollCallCounts,
+): VoteInput {
+  return {
+    ...vote,
+    inFavor: counts.inFavor,
+    against: counts.against,
+    abstentions: counts.abstentions,
+    blank: 0,
+    invalid: 0,
+    notCast: counts.notCast,
+    present: counts.present,
+  };
+}
+
+/**
+ * The ballots of a registered vote checked against the latest headcount
+ * (user's decision of 2026-11-21): its voters (the entries with a vote,
+ * those delegated voted by their delegate) in the roll call's order, each
+ * with the ballot sent or «No vota»; 409 without a headcount, 422 for a
+ * ballot of someone who is not a voter, a repeated one, or a choice the vote
+ * does not take (`optionCount` for a vote between alternatives).
+ */
+export async function resolveRollCallBallots(
+  assemblyId: string,
+  ballots: readonly VoteBallotInput[],
+  optionCount = 0,
+  executor: Executor = db,
+  /** The headcount the roll call was called from, when the form says. */
+  calledFrom?: string,
+): Promise<{
+  ballots: VoteBallot[];
+  counts: RollCallCounts;
+  headcountId: string;
+}> {
+  const latest = await latestHeadcount(assemblyId, executor);
+  if (!latest) {
+    fail(
+      409,
+      "Para registrar el voto de cada delegación hace falta un recuento de presentes",
+    );
+  }
+  // A headcount taken while the roll was called changes who votes: the
+  // Mesa calls the new one (the form keeps the rows it marked).
+  if (calledFrom && calledFrom !== latest.id) {
+    fail(
+      409,
+      "El recuento de presentes ha cambiado: vuelve a pasar lista con el nuevo",
+      { messageKey: "session.rollCall.errors.headcountChanged" },
+    );
+  }
+  const entries = await executor
+    .select({
+      member: MEMBER_COLUMNS,
+      mark: headcountEntries.mark,
+      voting: headcountEntries.voting,
+      delegateMemberId: headcountEntries.delegateMemberId,
+    })
+    .from(headcountEntries)
+    .innerJoin(members, eq(members.id, headcountEntries.memberId))
+    .where(eq(headcountEntries.headcountId, latest.id));
+  const delegateIds = entries
+    .map((entry) => entry.delegateMemberId)
+    .filter((id): id is string => id !== null);
+  const delegates = new Map(
+    (delegateIds.length > 0
+      ? await executor
+          .select({ id: members.id, acronym: members.acronym })
+          .from(members)
+          .where(inArray(members.id, delegateIds))
+      : []
+    ).map((row) => [row.id, row]),
+  );
+  const voters = rollCallVoters(
+    [...entries]
+      .sort((a, b) => compareRollCall(a.member, b.member))
+      .map((entry) => ({
+        member: entry.member,
+        mark: entry.mark,
+        voting: entry.voting,
+        delegate: entry.delegateMemberId
+          ? (delegates.get(entry.delegateMemberId) ?? null)
+          : null,
+      })),
+  );
+  const result = resolveRollCall(voters, ballots, optionCount);
+  if ("problem" in result) {
+    fail(
+      422,
+      result.problem.reason === "unknown_member"
+        ? "Alguna delegación no está en el último recuento de presentes"
+        : result.problem.reason === "repeated_member"
+          ? "Alguna delegación vota dos veces"
+          : "Algún voto no corresponde a esta votación",
+      { reasons: [{ index: -1, reason: result.problem.reason }] },
+    );
+  }
+  return {
+    ballots: result.ballots,
+    counts: rollCallCounts(result.ballots, optionCount),
+    headcountId: latest.id,
+  };
 }
 
 /**
