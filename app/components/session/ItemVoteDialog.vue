@@ -17,6 +17,7 @@ import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
 import {
   computeElectionOutcome,
+  electionRunoffRule,
   type ElectionInput,
   type ElectionRecord,
 } from "~~/shared/utils/election";
@@ -35,7 +36,8 @@ import {
  * their votes instead of in favour and against: the Mesa sets the posts
  * (the most that may be elected), the most each ballot may mark and the
  * rule (the absolute majority with a second round, or a simple majority),
- * by secret ballot to start with. An item whose sub-items are candidacies
+ * by secret ballot to start with; «Mostrar el recuento en la proyección»
+ * beside «Es una elección» puts its count on screen as it is entered. An item whose sub-items are candidacies
  * (or that holds them itself) opens as an election among them
  * (sessionElectionCandidates). When a second round is due, once the first
  * is recorded the dialog stays open with it prepared: the candidates who
@@ -119,6 +121,12 @@ function emptyElection(): ElectionInput {
   };
 }
 const election = ref<ElectionInput>(emptyElection());
+/**
+ * «Mostrar el recuento en la proyección», beside «Es una elección» (user's
+ * decision of 2026-11-21): off until the Mesa turns it on, off again for a
+ * second round.
+ */
+const electionProjected = ref(false);
 /** The first round just recorded, when the dialog prepared the second. */
 const runoffFrom = ref<ElectionRecord | null>(null);
 /** An election is secret, by show of hands or, in an AGET, on the portal. */
@@ -146,6 +154,7 @@ watch(isElection, (on) => {
     }
   } else {
     runoffFrom.value = null;
+    electionProjected.value = false;
   }
 });
 const voteCount = (key: "blank" | "invalid" | "abstentions") =>
@@ -255,6 +264,7 @@ watch(open, (isOpen) => {
   vote.value = sessionEmptyVote("simple");
   isElection.value = false;
   election.value = emptyElection();
+  electionProjected.value = false;
   // An election point opens as an election among its candidacies
   // (sessionElectionCandidates), which the Mesa can still edit.
   const candidates = itemId.value
@@ -381,9 +391,10 @@ function prepareRunoff(first: ElectionRecord): void {
     // A ballot never marks more than in the first round, nor than the
     // posts left.
     maxChoices: Math.max(1, Math.min(first.maxChoices, left)),
-    rule: "simple",
+    rule: electionRunoffRule(first.rule),
     ballots: 0,
   };
+  electionProjected.value = false;
   setElectionMethod(vote.value.method);
   vote.value = { ...vote.value, note: null };
   runoffFrom.value = first;
@@ -468,11 +479,30 @@ async function record(): Promise<void> {
           />
         </UFormField>
 
-        <USwitch
-          v-model="isElection"
-          :label="t('session.election.toggle')"
-          :description="t('session.election.toggleHelp')"
-        />
+        <!-- An election, and whether its count goes on screen. -->
+        <div class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          <USwitch
+            v-model="isElection"
+            :label="t('session.election.toggle')"
+            :description="t('session.election.toggleHelp')"
+          />
+          <div
+            v-if="isElection && session.inSession.value"
+            class="min-w-0 space-y-1"
+          >
+            <USwitch
+              v-model="electionProjected"
+              :label="t('session.election.project')"
+              :description="t('session.election.projectHelp')"
+            />
+            <p
+              v-if="electionProjected && !session.inControl.value"
+              class="text-muted text-xs"
+            >
+              {{ t("session.vote.reveal.notProjected") }}
+            </p>
+          </div>
+        </div>
 
         <template v-if="isElection">
           <UAlert
@@ -484,6 +514,9 @@ async function record(): Promise<void> {
             :description="
               t('session.election.runoffReady.description', {
                 first: electionText.outcome(runoffFrom),
+                rule: t(
+                  `session.election.rules.${electionRunoffRule(runoffFrom.rule)}`,
+                ),
               })
             "
           />
@@ -501,14 +534,20 @@ async function record(): Promise<void> {
               (value) => setElectionMethod(value as VoteMethod)
             "
           />
+          <!-- A new form for the second round: the first round's count
+               leaves the screen until the Mesa shows the new one. -->
           <SessionElectionFields
+            :key="runoffFrom ? 'runoff' : 'first'"
             v-model="election"
             v-model:blank="electionBlank"
             v-model:invalid="electionInvalid"
             v-model:abstentions="electionAbstentions"
+            v-model:projected="electionProjected"
             :settings="session.settings.value"
             :headcount="session.voteHeadcount.value"
             :secret="vote.method === 'secret'"
+            :method="vote.method"
+            :announce="announce"
           />
           <p
             v-if="electionProblem && election.counts.some((value) => value > 0)"

@@ -23,6 +23,11 @@ import type {
   LiveStateBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
+import {
+  ELECTION_CANDIDATE_MAX_LENGTH,
+  ELECTION_MAX_CANDIDATES,
+  ELECTION_RULES,
+} from "../election";
 import { VOTE_QUESTION_MAX_LENGTH } from "./vote";
 
 /**
@@ -359,6 +364,25 @@ export const liveTallyBodySchema = z.object({
         })
         .nullable(),
       options: z.array(ballotCount).max(10).nullable().optional(),
+      election: z
+        .object({
+          candidates: z
+            .array(
+              z
+                .string()
+                .max(ELECTION_CANDIDATE_MAX_LENGTH)
+                .transform((value) => normalizeText(value).trim()),
+            )
+            .min(1)
+            .max(ELECTION_MAX_CANDIDATES),
+          counts: z.array(ballotCount).max(ELECTION_MAX_CANDIDATES),
+          ballots: ballotCount.nullable(),
+          posts: z.number().int().min(1).max(ELECTION_MAX_CANDIDATES),
+          maxChoices: z.number().int().min(1).max(ELECTION_MAX_CANDIDATES),
+          rule: z.enum(ELECTION_RULES),
+        })
+        .nullable()
+        .optional(),
       present: ballotCount.nullable(),
       majority: z.enum(MAJORITIES),
     })

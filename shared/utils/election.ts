@@ -12,10 +12,21 @@ import { majorityThreshold } from "./votes";
  *   cast, up to the posts; the posts left go to a second round between the
  *   most voted of the rest (twice as many as posts left), by simple
  *   majority, which the Mesa holds as a new vote;
- * - `simple`: the most voted, up to the posts.
+ * - `simple`: the most voted, up to the posts;
+ * - `absolute_two_fifths`: elected in the first round whoever reaches the
+ *   absolute majority, up to the posts; the posts left go to a second
+ *   round among the candidates not elected, `two_fifths`, where whoever
+ *   reaches two fifths of the votes cast is elected; a post still unfilled
+ *   is left to the Mesa (electionLeftToMesa; user's decision of
+ *   2026-11-21, the CEA's election).
  * A tie at the last post leaves it unfilled for the Mesa to decide.
  */
-export const ELECTION_RULES = ["absolute_runoff", "simple"] as const;
+export const ELECTION_RULES = [
+  "absolute_runoff",
+  "simple",
+  "absolute_two_fifths",
+  "two_fifths",
+] as const;
 export type ElectionRule = (typeof ELECTION_RULES)[number];
 
 /** The most candidates an election takes. */
@@ -55,6 +66,8 @@ export interface ElectionOutcome {
   denominator: number;
   /** More ballots than members present. */
   inconsistent: boolean;
+  /** A post left unfilled in a round by two fifths: the Mesa decides. */
+  leftToMesa: boolean;
 }
 
 /**
@@ -80,9 +93,12 @@ export function computeElectionOutcome(
     .filter((entry) => entry.count > 0)
     .sort((a, b) => b.count - a.count || a.index - b.index);
   const threshold =
-    election.rule === "absolute_runoff"
+    election.rule === "absolute_runoff" ||
+    election.rule === "absolute_two_fifths"
       ? majorityThreshold("absolute", denominator)
-      : null;
+      : election.rule === "two_fifths"
+        ? twoFifthsThreshold(denominator)
+        : null;
   const qualifying =
     threshold === null
       ? ranked
@@ -109,6 +125,14 @@ export function computeElectionOutcome(
     const going = cut ? rest.filter((entry) => entry.count >= cut.count) : rest;
     runoff = going.length > 0 ? going.map((entry) => entry.index) : null;
   }
+  if (election.rule === "absolute_two_fifths" && left > 0 && !tie) {
+    // Every candidate not elected, the most voted first.
+    const going = election.counts
+      .map((count, index) => ({ count, index }))
+      .filter((entry) => !electedIds.includes(entry.index))
+      .sort((a, b) => b.count - a.count || a.index - b.index);
+    runoff = going.length > 0 ? going.map((entry) => entry.index) : null;
+  }
   return {
     elected: electedIds,
     runoff,
@@ -116,6 +140,7 @@ export function computeElectionOutcome(
     threshold,
     denominator,
     inconsistent,
+    leftToMesa: election.rule === "two_fifths" && !tie && left > 0,
   };
 }
 
@@ -127,6 +152,37 @@ export function computeElectionOutcome(
 export type StoredElectionRecord = Omit<ElectionRecord, "posts"> & {
   posts?: number;
 };
+
+/** Votes that make two fifths of `denominator` (at least two fifths). */
+export function twoFifthsThreshold(denominator: number): number {
+  return Math.ceil((denominator * 2) / 5);
+}
+
+/**
+ * The rule of the second round an election's first round leads to: two
+ * fifths after `absolute_two_fifths`, a simple majority otherwise.
+ */
+export function electionRunoffRule(rule: ElectionRule): ElectionRule {
+  return rule === "absolute_two_fifths" ? "two_fifths" : "simple";
+}
+
+/**
+ * A second round by two fifths that left a post unfilled without a tie:
+ * the Mesa decides what to do (user's decision of 2026-11-21).
+ */
+export function electionLeftToMesa(
+  election: Pick<
+    ElectionRecord,
+    "rule" | "elected" | "tie" | "posts" | "candidates"
+  >,
+): boolean {
+  return (
+    election.rule === "two_fifths" &&
+    !election.tie &&
+    election.elected.length <
+      Math.min(election.posts, election.candidates.length)
+  );
+}
 
 /** A stored election with its posts (StoredElectionRecord). */
 export function electionWithPosts(

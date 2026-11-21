@@ -4,6 +4,7 @@ import type {
   VoteInput,
 } from "~~/shared/types/api";
 import { VOTE_QUESTION_MAX_LENGTH } from "~~/shared/utils/schemas/vote";
+import type { ElectionInput } from "~~/shared/utils/election";
 import { SECRET_BALLOT_KEYS } from "~~/shared/utils/votes";
 
 /**
@@ -64,6 +65,57 @@ export function sessionLiveTally(
         : null,
     present: options.present,
     majority: vote.majority ?? "simple",
+  };
+}
+
+/**
+ * The count of an election on screen (user's decision of 2026-11-21): only
+ * from the console of an open session and while the Mesa has «Mostrar el
+ * recuento en la proyección» on, whatever the method. It names the
+ * candidates, the posts and the rule, and carries each candidate's votes,
+ * the blank and invalid ballots and, when a ballot may mark several, the
+ * ballots that marked someone, as they are entered. Null means nothing on
+ * screen.
+ */
+export function sessionElectionTally(
+  election: Pick<
+    ElectionInput,
+    "candidates" | "counts" | "ballots" | "posts" | "maxChoices" | "rule"
+  >,
+  vote: Pick<VoteInput, "method" | "blank" | "invalid">,
+  options: {
+    counting: boolean;
+    projected: boolean;
+    announce?: LiveTallyAnnounce | null;
+    present: number | null;
+  },
+): LiveTally | null {
+  if (!options.counting || !options.projected) return null;
+  // A name still empty goes empty: the projection says «Candidatura N».
+  const candidates = election.candidates.map((name) => name.trim());
+  return {
+    subject: options.announce?.subject ?? null,
+    question:
+      options.announce?.question?.trim().slice(0, VOTE_QUESTION_MAX_LENGTH) ||
+      null,
+    method: vote.method,
+    reveal: "live",
+    counts: {
+      inFavor: 0,
+      against: 0,
+      blank: vote.blank ?? 0,
+      invalid: vote.invalid ?? 0,
+    },
+    election: {
+      candidates,
+      counts: candidates.map((_, index) => election.counts[index] ?? 0),
+      ballots: election.maxChoices > 1 ? election.ballots : null,
+      posts: election.posts,
+      maxChoices: election.maxChoices,
+      rule: election.rule,
+    },
+    present: options.present,
+    majority: "simple",
   };
 }
 

@@ -62,6 +62,7 @@ import {
   sessionFinalVoteReasons,
   sessionFormatDuration,
   sessionItemDocuments,
+  sessionItemGoneThrough,
   sessionNextAgendaTarget,
   sessionSubItemsLeft,
   sessionNextItemDocument,
@@ -2637,7 +2638,7 @@ describe("sessionNextAgendaTarget around an item voted as a whole", () => {
     treated: string[] = [],
   ) => ({
     vote: (row: (typeof rows)[number]) => votes[row.item.id] ?? null,
-    treated: (row: (typeof rows)[number]) => treated.includes(row.item.id),
+    goneThrough: (row: (typeof rows)[number]) => treated.includes(row.item.id),
   });
   const next = (
     current: string,
@@ -2678,5 +2679,19 @@ describe("sessionNextAgendaTarget around an item voted as a whole", () => {
     expect(sessionSubItemsLeft(rows, "p22", treated(["c1"]))).toBe(true);
     expect(sessionSubItemsLeft(rows, "p22", treated(["c1", "c2"]))).toBe(false);
     expect(sessionSubItemsLeft(rows, "p21", treated([]))).toBe(false);
+  });
+});
+
+describe("sessionItemGoneThrough", () => {
+  const row = {
+    item: { id: "c1" },
+    documents: [{ id: "d1" }],
+  } as unknown as Parameters<typeof sessionItemGoneThrough>[0];
+
+  it("takes an item treated or with a document already on screen", () => {
+    expect(sessionItemGoneThrough(row, new Set(["c1"]), new Set())).toBe(true);
+    // Presented while it waited for a vote: never marked, but projected.
+    expect(sessionItemGoneThrough(row, new Set(), new Set(["d1"]))).toBe(true);
+    expect(sessionItemGoneThrough(row, new Set(), new Set(["d2"]))).toBe(false);
   });
 });

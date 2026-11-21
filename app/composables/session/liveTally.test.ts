@@ -3,6 +3,7 @@ import type { LiveTally, VoteInput } from "~~/shared/types/api";
 import { VOTE_QUESTION_MAX_LENGTH } from "~~/shared/utils/schemas/vote";
 import {
   latestTallySender,
+  sessionElectionTally,
   sessionLiveTally,
   sessionPendingTallyVote,
   sessionRevealAllowed,
@@ -239,5 +240,72 @@ describe("sessionRevealAllowed", () => {
     expect(sessionRevealAllowed(null, "end", 5)).toBe(true);
     expect(sessionRevealAllowed("live", "end", 5)).toBe(true);
     expect(sessionRevealAllowed("end", "end", 5)).toBe(true);
+  });
+});
+
+describe("sessionElectionTally (an election counted on screen)", () => {
+  const election = {
+    candidates: [" EL VALOR DE ESTAR UNIDOS ", ""],
+    counts: [7, 2],
+    ballots: 9,
+    posts: 1,
+    maxChoices: 1,
+    rule: "absolute_runoff" as const,
+  };
+  const secret = { method: "secret" as const, blank: 1, invalid: 2 };
+  const options = {
+    counting: true,
+    projected: true,
+    announce: {
+      subject: { type: "agenda_item" as const, id: "i1" },
+      question: "22. Elección",
+    },
+    present: 30,
+  };
+
+  it("carries each candidate's votes, the blank and the invalid ones", () => {
+    expect(sessionElectionTally(election, secret, options)).toEqual({
+      subject: { type: "agenda_item", id: "i1" },
+      question: "22. Elección",
+      method: "secret",
+      reveal: "live",
+      counts: { inFavor: 0, against: 0, blank: 1, invalid: 2 },
+      election: {
+        candidates: ["EL VALOR DE ESTAR UNIDOS", ""],
+        counts: [7, 2],
+        ballots: null,
+        posts: 1,
+        maxChoices: 1,
+        rule: "absolute_runoff",
+      },
+      present: 30,
+      majority: "simple",
+    });
+  });
+
+  it("carries the ballots when one may mark several", () => {
+    expect(
+      sessionElectionTally({ ...election, maxChoices: 2 }, secret, options)
+        ?.election?.ballots,
+    ).toBe(9);
+  });
+
+  it("goes on screen by show of hands too", () => {
+    expect(
+      sessionElectionTally(
+        election,
+        { method: "show_of_hands", blank: 0, invalid: 0 },
+        options,
+      )?.method,
+    ).toBe("show_of_hands");
+  });
+
+  it("puts nothing on screen while the switch is off or out of session", () => {
+    expect(
+      sessionElectionTally(election, secret, { ...options, projected: false }),
+    ).toBeNull();
+    expect(
+      sessionElectionTally(election, secret, { ...options, counting: false }),
+    ).toBeNull();
   });
 });

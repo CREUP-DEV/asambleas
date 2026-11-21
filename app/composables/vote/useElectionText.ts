@@ -1,4 +1,7 @@
-import type { ElectionRecord } from "~~/shared/utils/election";
+import {
+  electionLeftToMesa,
+  type ElectionRecord,
+} from "~~/shared/utils/election";
 
 /**
  * How an election reads (user's decisions of 2026-11-21): who was elected,
@@ -27,6 +30,9 @@ export function useElectionText() {
       );
     }
     if (election.tie) parts.push(t("amendment.vote.election.tie"));
+    if (electionLeftToMesa(election)) {
+      parts.push(t("amendment.vote.election.leftToMesa"));
+    }
     if (election.runoff && election.runoff.length > 0) {
       parts.push(
         t("amendment.vote.election.runoff", {

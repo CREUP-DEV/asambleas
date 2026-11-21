@@ -44,7 +44,11 @@ import type {
   AlternativesWinnerOutcome,
 } from "../utils/alternativesVote";
 import type { VoteBallot, VoteBallotInput } from "../utils/rollCall";
-import type { ElectionInput, ElectionRecord } from "../utils/election";
+import type {
+  ElectionInput,
+  ElectionRecord,
+  ElectionRule,
+} from "../utils/election";
 import type { SeatAssignment } from "../utils/seating/groups";
 import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
 import type { SeatingAssignmentOp } from "../utils/seating/proposal";
@@ -2858,8 +2862,30 @@ export interface LiveTally {
    * absent on any other vote.
    */
   options?: number[] | null;
+  /**
+   * An election whose count the Mesa shows (user's decision of
+   * 2026-11-21): its candidates, posts and rule and each candidate's votes
+   * as they are entered, with `counts` keeping the blank and invalid
+   * ballots (in favour and against 0). Null or absent on any other vote.
+   */
+  election?: LiveTallyElection | null;
   present: number | null;
   majority: Majority;
+}
+
+/** An election being counted (LiveTally.election). */
+export interface LiveTallyElection {
+  candidates: string[];
+  /** Each candidate's votes, in order. */
+  counts: number[];
+  /**
+   * Ballots that marked someone, when a ballot may mark several (the votes
+   * cast are these plus the blank ones); null when each marks one.
+   */
+  ballots: number | null;
+  posts: number;
+  maxChoices: number;
+  rule: ElectionRule;
 }
 
 /** POST .../live-tally (session:moderate): the announcement, or null when it ends. */

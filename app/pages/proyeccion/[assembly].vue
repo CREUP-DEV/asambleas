@@ -469,6 +469,26 @@ useIntervalFn(() => {
 }, 5_000);
 const tallyRows = computed(() => liveTallyRows(tally.value));
 const tallyCast = computed(() => liveTallyCast(tally.value));
+/**
+ * How the count is decided: the majority, or in an election its rule and
+ * posts («Mayoría absoluta y segunda vuelta · 1 puesto(s)»).
+ */
+const tallyRule = computed(() => {
+  const value = tally.value;
+  if (!value) return "";
+  return value.election
+    ? t("amendment.vote.election.ruleLine", {
+        rule: t(`session.election.rules.${value.election.rule}`),
+        posts: value.election.posts,
+      })
+    : t(`session.enums.majority.${value.majority}`);
+});
+/** «Votación secreta», or «Recuento de la elección» for an election. */
+const tallyTitle = computed(() =>
+  tally.value?.election
+    ? t("projection.tally.electionTitle")
+    : t("projection.tally.title"),
+);
 usePointerFade(mesaPointer);
 function onMesaPointer(pointer: LivePointerDto): void {
   if (pointer.documentId !== documentId.value) return;
@@ -1329,7 +1349,7 @@ useHead(() => ({
             class="bg-error size-[0.6em] rounded-full motion-safe:animate-pulse"
             aria-hidden="true"
           />
-          {{ t("projection.tally.title") }}
+          {{ tallyTitle }}
         </p>
         <p
           v-if="tallySubject"
@@ -1354,9 +1374,14 @@ useHead(() => ({
           >
             <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
               {{
-                row.key === "option"
-                  ? alternativesText.optionName(row.option ?? 0)
-                  : t(`projection.vote.${row.key}`)
+                row.key === "candidate"
+                  ? row.name ||
+                    t("session.election.candidate", {
+                      n: (row.option ?? 0) + 1,
+                    })
+                  : row.key === "option"
+                    ? alternativesText.optionName(row.option ?? 0)
+                    : t(`projection.vote.${row.key}`)
               }}
             </dt>
             <dd
@@ -1375,7 +1400,7 @@ useHead(() => ({
                     ? 'bg-success'
                     : row.key === 'against'
                       ? 'bg-error'
-                      : row.key === 'option'
+                      : row.key === 'option' || row.key === 'candidate'
                         ? 'bg-primary'
                         : 'bg-(--ui-text-dimmed)'
                 "
@@ -1396,14 +1421,14 @@ useHead(() => ({
                 })
               : t("projection.tally.cast", { count: tallyCast }, tallyCast)
           }}
-          · {{ t(`session.enums.majority.${tally.majority}`) }}
+          · {{ tallyRule }}
         </p>
         <p
           v-else
           class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.125rem,1.8vw,2rem)] font-medium"
         >
           {{ t("projection.tally.revealAtEnd") }}
-          · {{ t(`session.enums.majority.${tally.majority}`) }}
+          · {{ tallyRule }}
         </p>
       </section>
 

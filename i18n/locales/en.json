@@ -1828,6 +1828,7 @@
         "tie": "Tie for the last post",
         "runoff": "Second round: {names}",
         "nobody": "Nobody elected",
+        "leftToMesa": "Without the 2/5 majority: the Mesa decides",
         "electedMark": "Elected",
         "runoffMark": "2nd round",
         "ruleLine": "{rule} · {posts} post(s)"
@@ -4468,6 +4469,7 @@
       "late": "1 late amendment awaits the assembly's decision | {count} late amendments await the assembly's decision",
       "startWith": "Start with {code}",
       "nextItem": "Next item: {title}",
+      "backToVote": "Back to {title} to vote it",
       "documentInDebate": "{title}, under debate",
       "inDebate": "Under debate",
       "next": "Next: {code}",
@@ -4536,7 +4538,6 @@
       "visible": "Show attendees who has the floor",
       "visibleOn": "They see it live and on the projection, along with who is next.",
       "visibleOff": "Only the Mesa sees it now.",
-      "backToVote": "Back to {title} to vote it",
       "loadError": "The speaking turns could not be loaded",
       "stale": "The turns could not be updated: showing the last ones received.",
       "floor": "The floor",
@@ -4803,6 +4804,8 @@
       "postsHelp": "The most candidates that may be elected.",
       "maxChoices": "Candidates per ballot",
       "maxChoicesHelp": "The most each ballot may mark; not necessarily the posts.",
+      "project": "Show the count on the projection",
+      "projectHelp": "Each vote you enter shows on the screen at once. Off, nothing shows until the result.",
       "ballots": "Ballots with a vote",
       "ballotsHelp": "Those marking at least one candidate; blank and invalid ones are not counted.",
       "rule": "How they are elected",
@@ -4810,11 +4813,16 @@
         "absolute_runoff": "Absolute majority and second round",
         "absolute_runoffHint": "Elected whoever gets more than half the votes cast; the posts left go to a second round by simple majority, as in the CAS and the CAI.",
         "simple": "Simple majority",
-        "simpleHint": "The most voted candidates are elected, up to the posts."
+        "simpleHint": "The most voted candidates are elected, up to the posts.",
+        "absolute_two_fifths": "Absolute majority and a second round by 2/5",
+        "absolute_two_fifthsHint": "Whoever passes half of the votes cast is elected; the posts left go to a second round among the other candidates, where 2/5 of the votes are needed. Failing that, the Mesa decides.",
+        "two_fifths": "Two-fifths majority",
+        "two_fifthsHint": "Whoever reaches 2/5 of the votes cast is elected; if nobody does, the Mesa decides."
       },
       "inconsistent": "There are more ballots than members present.",
       "elected": "Elected: {names} | Elected: {names}",
       "tie": "Tie for the last post: the Mesa decides",
+      "leftToMesa": "Nobody reaches {threshold} votes (2/5): the Mesa decides",
       "runoff": "Nobody else reaches {threshold} votes: second round between {names}",
       "nobody": "Nobody is elected",
       "problems": {
@@ -4824,7 +4832,7 @@
       },
       "runoffReady": {
         "title": "First round recorded: second round ready",
-        "description": "{first}. Enter the second round's votes, by simple majority, or close if the Mesa does not hold it now."
+        "description": "{first}. Enter the second round's votes ({rule}), or close if the Mesa does not hold it now."
       }
     }
   },
@@ -4837,6 +4845,7 @@
     },
     "tally": {
       "title": "Secret vote",
+      "electionTitle": "Election count",
       "revealAtEnd": "Counting in progress: the result will be shown at the end",
       "castOf": "{count} of {present} present have voted",
       "cast": "1 vote counted | {count} votes counted"

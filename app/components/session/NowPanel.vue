@@ -6,8 +6,8 @@ import {
   sessionItemDocuments,
   sessionItemVotePlan,
   sessionNextItemDocument,
-} from "~/composables/session/sessionModel";
   sessionSubItemsLeft,
+} from "~/composables/session/sessionModel";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useItemVoteText } from "~/composables/session/useItemVoteText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -149,6 +149,12 @@ const nextAgenda = computed(() => session.nextAgendaTarget.value);
 const nextAgendaLabel = computed(() =>
   nextAgenda.value ? rowLabel(nextAgenda.value.row) : "",
 );
+/** «Siguiente punto: …», or back to an item voted as a whole to vote it. */
+const nextAgendaText = computed(() =>
+  nextAgenda.value?.returning
+    ? t("session.now.backToVote", { title: nextAgendaLabel.value })
+    : t("session.now.nextItem", { title: nextAgendaLabel.value }),
+);
 
 /** The published documents of the item in debate, in the agenda's order. */
 const itemDocuments = computed(() => sessionItemDocuments(liveRow.value));
@@ -158,12 +164,6 @@ const nextDocument = computed(() =>
 );
 /** The document in debate, if any. */
 const selectedId = computed(() => live.value?.documentId ?? null);
-/** «Siguiente punto: …», or back to an item voted as a whole to vote it. */
-const nextAgendaText = computed(() =>
-  nextAgenda.value?.returning
-    ? t("session.now.backToVote", { title: nextAgendaLabel.value })
-    : t("session.now.nextItem", { title: nextAgendaLabel.value }),
-);
 /**
  * The documents the card lists: the item's, or the one in debate alone
  * when the agenda does not have its item.
@@ -276,8 +276,9 @@ const offerItemVote = computed(
   () => Boolean(itemPlan.value?.canRecord) && !itemVote.value,
 );
 /**
- * An item voted as a whole with sub-items not treated yet (user's decision
- * of 2026-11-21): the Mesa goes through them first and comes back to vote.
+ * An item voted as a whole with sub-items not gone through yet (user's
+ * decision of 2026-11-21): the Mesa goes through them first and comes back
+ * to vote.
  */
 const subItemsFirst = computed(
   () =>
@@ -286,7 +287,7 @@ const subItemsFirst = computed(
     sessionSubItemsLeft(
       session.agendaRows.value,
       liveRow.value.item.id,
-      (row) => session.treatedItemIds.value.has(row.item.id),
+      session.itemGoneThrough,
     ),
 );
 /**

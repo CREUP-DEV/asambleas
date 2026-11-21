@@ -1218,8 +1218,12 @@ export interface SessionAgendaFlow {
    * `recorded`; null for any other item.
    */
   vote: (row: SessionAgendaRow) => "pending" | "recorded" | null;
-  /** The item reads treated (the control sheet's rule). */
-  treated: (row: SessionAgendaRow) => boolean;
+  /**
+   * The Mesa has gone through the item: it reads treated (the control
+   * sheet's rule) or one of its documents has been on screen, which also
+   * holds for one presented while it waited for a vote, never marked.
+   */
+  goneThrough: (row: SessionAgendaRow) => boolean;
 }
 
 /** The index after the last row under `index` (rows are depth-first). */
@@ -1231,19 +1235,39 @@ function subtreeEnd(rows: readonly SessionAgendaRow[], index: number): number {
 }
 
 /**
- * Whether some item under this one is not treated yet: an item voted as a
- * whole goes through them before its vote.
+ * Whether the Mesa has gone through an item (SessionAgendaFlow.goneThrough):
+ * it reads treated, or one of its documents has been on screen. An item
+ * presented while it waited for a vote (a sub-item whose candidacy was
+ * still voted, one marked «Se vota el punto») is never marked treated, nor
+ * is one whose mark the Mesa took away, but its projected text still says
+ * the Mesa went through it.
+ */
+export function sessionItemGoneThrough(
+  row: Pick<SessionAgendaRow, "item" | "documents">,
+  treatedItemIds: ReadonlySet<string>,
+  projectedDocumentIds: ReadonlySet<string>,
+): boolean {
+  return (
+    treatedItemIds.has(row.item.id) ||
+    row.documents.some((document) => projectedDocumentIds.has(document.id))
+  );
+}
+
+/**
+ * Whether the Mesa has yet to go through some item under this one
+ * (SessionAgendaFlow.goneThrough): an item voted as a whole goes through
+ * them before its vote.
  */
 export function sessionSubItemsLeft(
   rows: readonly SessionAgendaRow[],
   itemId: string,
-  treated: (row: SessionAgendaRow) => boolean,
+  goneThrough: (row: SessionAgendaRow) => boolean,
 ): boolean {
   const index = rows.findIndex((row) => row.item.id === itemId);
   if (index === -1) return false;
   return rows
     .slice(index + 1, subtreeEnd(rows, index))
-    .some((row) => !treated(row));
+    .some((row) => !goneThrough(row));
 }
 
 /**
@@ -1256,7 +1280,8 @@ export function sessionSubItemsLeft(
  * first, then its sub-items one by one, and after the last of them the
  * Mesa goes back to it to vote it (`returning`), the innermost first when
  * several end there. From the item itself, once its vote is in force or
- * every sub-item is treated, the next is the item after its sub-items.
+ * every sub-item is gone through, the next is the item after its
+ * sub-items.
  */
 export function sessionNextAgendaTarget(
   rows: SessionAgendaRow[],
@@ -1275,7 +1300,7 @@ export function sessionNextAgendaTarget(
       end > index + 1 &&
       vote !== null &&
       (vote === "recorded" ||
-        !sessionSubItemsLeft(rows, current.item.id, flow.treated))
+        !sessionSubItemsLeft(rows, current.item.id, flow.goneThrough))
     ) {
       nextIndex = end;
     }

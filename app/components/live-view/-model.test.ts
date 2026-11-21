@@ -1017,6 +1017,43 @@ describe("a secret vote being counted", () => {
     expect(liveTallyCast(tally)).toBe(7);
   });
 
+  it("counts each candidate of an election as the votes come in", () => {
+    const election = {
+      candidates: ["Ana", ""],
+      counts: [6, 3],
+      ballots: null,
+      posts: 1,
+      maxChoices: 1,
+      rule: "absolute_runoff" as const,
+    };
+    const tally = {
+      method: "secret" as const,
+      counts: { inFavor: 0, against: 0, blank: 2, invalid: 1 },
+      election,
+    };
+    expect(liveTallyRows(tally)).toEqual([
+      { key: "candidate", option: 0, name: "Ana", count: 6, share: 1 },
+      { key: "candidate", option: 1, name: "", count: 3, share: 0.5 },
+      { key: "blank", option: null, count: 2, share: 2 / 6 },
+      { key: "invalid", option: null, count: 1, share: 1 / 6 },
+    ]);
+    // One mark per ballot: the votes, the blank and the invalid ones.
+    expect(liveTallyCast(tally)).toBe(12);
+    // Several marks per ballot: the ballots that marked someone instead.
+    expect(
+      liveTallyCast({
+        ...tally,
+        election: { ...election, maxChoices: 2, ballots: 7 },
+      }),
+    ).toBe(10);
+    // By show of hands: no blank nor invalid ballots on screen.
+    expect(
+      liveTallyRows({ ...tally, method: "show_of_hands" }).map(
+        (row) => row.key,
+      ),
+    ).toEqual(["candidate", "candidate"]);
+  });
+
   it("shows no count when the result comes at the end", () => {
     expect(liveTallyRows({ counts: null })).toEqual([]);
     expect(liveTallyCast({ counts: null })).toBe(0);

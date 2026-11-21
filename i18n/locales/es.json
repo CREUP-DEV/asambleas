@@ -1828,6 +1828,7 @@
         "tie": "Empate en el último puesto",
         "runoff": "Segunda vuelta: {names}",
         "nobody": "Nadie elegido",
+        "leftToMesa": "Sin la mayoría de 2/5: decide la Mesa",
         "electedMark": "Elegida",
         "runoffMark": "2.ª vuelta",
         "ruleLine": "{rule} · {posts} puesto(s)"
@@ -4468,6 +4469,7 @@
       "late": "1 enmienda fuera de plazo espera la decisión de la asamblea | {count} enmiendas fuera de plazo esperan la decisión de la asamblea",
       "startWith": "Empezar con {code}",
       "nextItem": "Siguiente punto: {title}",
+      "backToVote": "Volver a {title} para votarlo",
       "documentInDebate": "{title}, en debate",
       "inDebate": "En debate",
       "next": "Siguiente: {code}",
@@ -4536,7 +4538,6 @@
       "visible": "Mostrar a los asistentes quién tiene la palabra",
       "visibleOn": "Lo ven en directo y en la proyección, junto con quién va después.",
       "visibleOff": "Ahora solo lo ve la Mesa.",
-      "backToVote": "Volver a {title} para votarlo",
       "loadError": "No se han podido cargar los turnos de palabra",
       "stale": "No se han podido actualizar los turnos: se muestran los últimos recibidos.",
       "floor": "Uso de la palabra",
@@ -4803,6 +4804,8 @@
       "postsHelp": "El máximo de candidaturas que pueden salir elegidas.",
       "maxChoices": "Candidaturas por papeleta",
       "maxChoicesHelp": "El máximo que se puede marcar en cada papeleta; no tiene por qué coincidir con los puestos.",
+      "project": "Mostrar el recuento en la proyección",
+      "projectHelp": "Cada voto que anotes se ve al momento en la pantalla. Apagado, no se ve nada hasta el resultado.",
       "ballots": "Papeletas con algún voto",
       "ballotsHelp": "Las que marcan al menos una candidatura; sin contar las blancas ni las nulas.",
       "rule": "Cómo se elige",
@@ -4810,11 +4813,16 @@
         "absolute_runoff": "Mayoría absoluta y segunda vuelta",
         "absolute_runoffHint": "Sale quien supere la mitad de los votos emitidos; los puestos que queden van a una segunda vuelta por mayoría simple, como en la CAS y la CAI.",
         "simple": "Mayoría simple",
-        "simpleHint": "Salen las candidaturas más votadas, hasta cubrir los puestos."
+        "simpleHint": "Salen las candidaturas más votadas, hasta cubrir los puestos.",
+        "absolute_two_fifths": "Mayoría absoluta y segunda vuelta por 2/5",
+        "absolute_two_fifthsHint": "Sale quien supere la mitad de los votos emitidos; los puestos que queden van a una segunda vuelta entre las demás candidaturas, donde hacen falta 2/5 de los votos. Si tampoco, decide la Mesa.",
+        "two_fifths": "Mayoría de 2/5",
+        "two_fifthsHint": "Sale quien llegue a 2/5 de los votos emitidos; si nadie llega, decide la Mesa."
       },
       "inconsistent": "Hay más papeletas que miembros presentes.",
       "elected": "Elegida: {names} | Elegidas: {names}",
       "tie": "Empate en el último puesto: lo decide la Mesa",
+      "leftToMesa": "Nadie llega a {threshold} votos (2/5): decide la Mesa",
       "runoff": "Nadie más llega a {threshold} votos: segunda vuelta entre {names}",
       "nobody": "Nadie resulta elegido",
       "problems": {
@@ -4824,7 +4832,7 @@
       },
       "runoffReady": {
         "title": "Primera vuelta registrada: segunda vuelta preparada",
-        "description": "{first}. Anota los votos de la segunda vuelta, por mayoría simple, o cierra si la Mesa no la celebra ahora."
+        "description": "{first}. Anota los votos de la segunda vuelta ({rule}) o cierra si la Mesa no la celebra ahora."
       }
     }
   },
@@ -4837,6 +4845,7 @@
     },
     "tally": {
       "title": "Votación secreta",
+      "electionTitle": "Recuento de la elección",
       "revealAtEnd": "Recuento en curso: el resultado se mostrará al final",
       "castOf": "{count} de {present} presentes han votado",
       "cast": "1 voto contado | {count} votos contados"

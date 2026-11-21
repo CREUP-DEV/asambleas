@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import type { HeadcountDto } from "~~/shared/types/api";
-import type { AssemblySettings } from "~~/shared/constants/domain";
+import type { AssemblySettings, VoteMethod } from "~~/shared/constants/domain";
 import {
   computeElectionOutcome,
   ELECTION_CANDIDATE_MAX_LENGTH,
   ELECTION_MAX_CANDIDATES,
+  ELECTION_RULES,
   type ElectionInput,
 } from "~~/shared/utils/election";
+import { useOptionalSessionConsole } from "~/composables/session/useSessionConsole";
+import {
+  sessionElectionTally,
+  sessionTallyRepeatDue,
+  type LiveTallyAnnounce,
+} from "~/composables/session/liveTally";
 
 /**
  * An election in an agenda item's vote (user's decisions of 2026-11-21):
@@ -17,24 +24,40 @@ import {
  * someone (worked out with one post), then blank and invalid ballots in a
  * secret vote or abstentions by show of hands. The preview says who is
  * elected, or who goes to a second round.
+ *
+ * In the console of an open session, «Mostrar el recuento en la
+ * proyección» (`projected`, the dialog's switch beside «Es una elección»;
+ * off by default, any method; user's decision of 2026-11-21) puts the
+ * count on screen: each candidate gets a tile that adds a vote,
+ * and the projection shows each candidate's votes as they are entered
+ * (sessionElectionTally), sent again every 15 s while the switch is on and
+ * the form open, and taken off when it is turned off or the form closes.
+ * Off, the votes are typed in and nothing reaches the screen until the
+ * result.
  */
 const props = defineProps<{
   settings: Pick<AssemblySettings, "denominator">;
   headcount?: HeadcountDto | null;
   /** Secret: blank and invalid ballots; otherwise abstentions. */
   secret: boolean;
+  /** How it is voted, for the projection. */
+  method: VoteMethod;
+  /** What is voted, for the projection's announcement of the count. */
+  announce?: LiveTallyAnnounce | null;
 }>();
 
 const election = defineModel<ElectionInput>({ required: true });
 const blank = defineModel<number>("blank", { required: true });
 const invalid = defineModel<number>("invalid", { required: true });
 const abstentions = defineModel<number>("abstentions", { required: true });
+/** «Mostrar el recuento en la proyección», the dialog's switch. */
+const projected = defineModel<boolean>("projected", { default: false });
 
 const { t } = useI18n();
 
 function update(next: Partial<ElectionInput>): void {
   const merged = { ...election.value, ...next };
-  // With one post, the ballots that marked someone are the votes.
+  // With one mark per ballot, the ballots that marked someone are the votes.
   if (merged.maxChoices === 1) {
     merged.ballots = merged.counts.reduce((sum, value) => sum + value, 0);
   }
@@ -101,6 +124,11 @@ const preview = computed(() => {
     );
   }
   if (result.tie) parts.push(t("session.election.tie"));
+  if (result.leftToMesa) {
+    parts.push(
+      t("session.election.leftToMesa", { threshold: result.threshold ?? 0 }),
+    );
+  }
   if (result.runoff) {
     parts.push(
       t("session.election.runoff", {
@@ -111,6 +139,107 @@ const preview = computed(() => {
   }
   if (parts.length === 0) parts.push(t("session.election.nobody"));
   return parts.join(" · ");
+});
+// The count on screen ----------------------------------------------------------
+
+const session = useOptionalSessionConsole();
+/** The form belongs to the console of an open session: it can project. */
+const projectionOffered = computed(() => Boolean(session?.inSession.value));
+/** Counted tile by tile, which the projection follows. */
+const liveCount = computed(() => projectionOffered.value && projected.value);
+/** The votes are typed in. */
+const typedCounts = computed(() => !liveCount.value);
+/** A tile of the live count: a candidate, the ballots, blank or invalid. */
+type TileKey = number | "ballots" | "blank" | "invalid";
+const tiles = computed(() => [
+  ...election.value.candidates.map((name, index) => ({
+    key: index as TileKey,
+    label: name.trim() || t("session.election.candidate", { n: index + 1 }),
+    count: election.value.counts[index] ?? 0,
+  })),
+  // A ballot that may mark several: the Mesa counts the ballots too.
+  ...(election.value.maxChoices > 1
+    ? [
+        {
+          key: "ballots" as TileKey,
+          label: t("session.election.ballots"),
+          count: election.value.ballots,
+        },
+      ]
+    : []),
+  // Blank and invalid ballots only in a secret vote.
+  ...(props.secret
+    ? [
+        {
+          key: "blank" as TileKey,
+          label: t("amendment.vote.blank"),
+          count: blank.value,
+        },
+        {
+          key: "invalid" as TileKey,
+          label: t("amendment.vote.invalid"),
+          count: invalid.value,
+        },
+      ]
+    : []),
+]);
+function addVote(key: TileKey, step: 1 | -1): void {
+  if (key === "blank") blank.value = Math.max(0, blank.value + step);
+  else if (key === "invalid") invalid.value = Math.max(0, invalid.value + step);
+  else if (key === "ballots") {
+    update({ ballots: Math.max(0, election.value.ballots + step) });
+  } else {
+    setCount(key, Math.max(0, (election.value.counts[key] ?? 0) + step));
+  }
+}
+
+/** What the projection shows: null while the switch is off. */
+const announcement = computed(() =>
+  sessionElectionTally(
+    election.value,
+    {
+      method: props.method,
+      blank: props.secret ? blank.value : 0,
+      invalid: props.secret ? invalid.value : 0,
+    },
+    {
+      counting: projectionOffered.value,
+      projected: projected.value,
+      announce: props.announce,
+      present: props.headcount?.present ?? null,
+    },
+  ),
+);
+let tallyShown = false;
+watch(
+  announcement,
+  (tally) => {
+    if (!session) return;
+    if (tally) {
+      session.pushTally(tally);
+      tallyShown = true;
+    } else if (tallyShown) {
+      session.pushTally(null);
+      tallyShown = false;
+    }
+  },
+  { deep: true },
+);
+// Memory only on the server: sent again while the form is open, but not
+// while the console saves (sessionTallyRepeatDue), as VoteFields does.
+let repeatSkipped = false;
+useIntervalFn(() => {
+  if (!session || !announcement.value) return;
+  const busy = Object.values(session.busy.value).some(Boolean);
+  if (!sessionTallyRepeatDue({ busy, skippedLast: repeatSkipped })) {
+    repeatSkipped = true;
+    return;
+  }
+  repeatSkipped = false;
+  session.pushTally(announcement.value);
+}, 15_000);
+onBeforeUnmount(() => {
+  if (tallyShown) session?.pushTally(null);
 });
 </script>
 
@@ -136,7 +265,11 @@ const preview = computed(() => {
             @update:model-value="(value) => setCandidate(index, String(value))"
           />
         </UFormField>
-        <UFormField :label="t('session.election.votes')" class="w-28">
+        <UFormField
+          v-if="typedCounts"
+          :label="t('session.election.votes')"
+          class="w-28"
+        >
           <UInputNumber
             :model-value="election.counts[index] ?? 0"
             :min="0"
@@ -164,6 +297,94 @@ const preview = computed(() => {
       />
     </fieldset>
 
+    <!-- On screen: one tile per candidate, then the ballots when one may
+         mark several, and the blank and invalid ones in a secret vote. -->
+    <div v-if="liveCount" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div
+        v-for="tile in tiles"
+        :key="String(tile.key)"
+        class="border-default flex min-w-0 flex-col items-center gap-2 rounded-lg border p-3"
+      >
+        <span
+          class="text-muted w-full truncate text-center text-sm font-medium"
+          :title="tile.label"
+        >
+          {{ tile.label }}
+        </span>
+        <span
+          class="text-highlighted text-3xl font-bold tabular-nums"
+          aria-live="polite"
+        >
+          {{ tile.count }}
+        </span>
+        <div class="flex items-center gap-1">
+          <UButton
+            size="lg"
+            icon="i-lucide-plus"
+            :label="t('session.vote.addBallot')"
+            :aria-label="t('session.vote.addBallotFor', { option: tile.label })"
+            @click="addVote(tile.key, 1)"
+          />
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-minus"
+            :aria-label="
+              t('session.vote.removeBallotFor', { option: tile.label })
+            "
+            :disabled="tile.count === 0"
+            @click="addVote(tile.key, -1)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- The rest of the count: blank and invalid ballots, or abstentions,
+         the ballots that marked someone and the members present. -->
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <template v-if="secret && typedCounts">
+        <UFormField :label="t('amendment.vote.blank')">
+          <UInputNumber v-model="blank" :min="0" :max="100000" class="w-full" />
+        </UFormField>
+        <UFormField :label="t('amendment.vote.invalid')">
+          <UInputNumber
+            v-model="invalid"
+            :min="0"
+            :max="100000"
+            class="w-full"
+          />
+        </UFormField>
+      </template>
+      <UFormField v-if="!secret" :label="t('amendment.vote.abstentions')">
+        <UInputNumber
+          v-model="abstentions"
+          :min="0"
+          :max="100000"
+          class="w-full"
+        />
+      </UFormField>
+      <UFormField
+        v-if="election.maxChoices > 1 && typedCounts"
+        :label="t('session.election.ballots')"
+        :help="t('session.election.ballotsHelp')"
+      >
+        <UInputNumber
+          :model-value="election.ballots"
+          :min="0"
+          :max="100000"
+          class="w-full"
+          @update:model-value="(value) => update({ ballots: value ?? 0 })"
+        />
+      </UFormField>
+      <div class="border-default rounded-lg border px-3 py-2">
+        <p class="text-muted text-xs">{{ t("session.vote.present") }}</p>
+        <p class="text-highlighted text-lg font-semibold tabular-nums">
+          {{ headcount?.present ?? "—" }}
+        </p>
+      </div>
+    </div>
+
+    <!-- How it is decided, below the count (user's decision of 2026-11-21). -->
     <div class="grid gap-3 sm:grid-cols-2">
       <UFormField
         :label="t('session.election.posts')"
@@ -193,36 +414,18 @@ const preview = computed(() => {
           "
         />
       </UFormField>
-      <UFormField
-        v-if="election.maxChoices > 1"
-        :label="t('session.election.ballots')"
-        :help="t('session.election.ballotsHelp')"
-      >
-        <UInputNumber
-          :model-value="election.ballots"
-          :min="0"
-          :max="100000"
-          class="w-full"
-          @update:model-value="(value) => update({ ballots: value ?? 0 })"
-        />
-      </UFormField>
     </div>
 
     <URadioGroup
       :model-value="election.rule"
       :legend="t('session.election.rule')"
-      :items="[
-        {
-          value: 'absolute_runoff',
-          label: t('session.election.rules.absolute_runoff'),
-          description: t('session.election.rules.absolute_runoffHint'),
-        },
-        {
-          value: 'simple',
-          label: t('session.election.rules.simple'),
-          description: t('session.election.rules.simpleHint'),
-        },
-      ]"
+      :items="
+        ELECTION_RULES.map((rule) => ({
+          value: rule,
+          label: t(`session.election.rules.${rule}`),
+          description: t(`session.election.rules.${rule}Hint`),
+        }))
+      "
       variant="card"
       :ui="{ fieldset: 'grid gap-2 sm:grid-cols-2' }"
       @update:model-value="
@@ -230,41 +433,14 @@ const preview = computed(() => {
       "
     />
 
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <template v-if="secret">
-        <UFormField :label="t('amendment.vote.blank')">
-          <UInputNumber v-model="blank" :min="0" :max="100000" class="w-full" />
-        </UFormField>
-        <UFormField :label="t('amendment.vote.invalid')">
-          <UInputNumber
-            v-model="invalid"
-            :min="0"
-            :max="100000"
-            class="w-full"
-          />
-        </UFormField>
-      </template>
-      <UFormField v-else :label="t('amendment.vote.abstentions')">
-        <UInputNumber
-          v-model="abstentions"
-          :min="0"
-          :max="100000"
-          class="w-full"
-        />
-      </UFormField>
-      <div class="border-default rounded-lg border px-3 py-2">
-        <p class="text-muted text-xs">{{ t("session.vote.present") }}</p>
-        <p class="text-highlighted text-lg font-semibold tabular-nums">
-          {{ headcount?.present ?? "—" }}
-        </p>
-      </div>
-    </div>
-
     <p
       v-if="preview"
       class="text-sm font-medium"
       :class="
-        outcome.inconsistent || outcome.runoff || outcome.tie
+        outcome.inconsistent ||
+        outcome.runoff ||
+        outcome.tie ||
+        outcome.leftToMesa
           ? 'text-warning'
           : 'text-success'
       "

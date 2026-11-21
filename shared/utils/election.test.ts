@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeElectionOutcome, electionWithPosts } from "./election";
+import {
+  computeElectionOutcome,
+  electionLeftToMesa,
+  electionRunoffRule,
+  electionWithPosts,
+  twoFifthsThreshold,
+} from "./election";
 
 const valid = { denominator: "valid_votes" } as const;
 const none = { blank: 0, invalid: 0, present: null };
@@ -130,5 +136,74 @@ describe("electionWithPosts", () => {
 
   it("keeps the posts of one that has them", () => {
     expect(electionWithPosts({ ...stored, posts: 1 }).posts).toBe(1);
+  });
+});
+
+describe("absolute majority, then two fifths (the CEA)", () => {
+  it("elects in the first round with the absolute majority", () => {
+    // 20 cast (17 + 3 blank): 11 needed.
+    expect(
+      computeElectionOutcome(
+        { counts: [17], ballots: 17, posts: 1, rule: "absolute_two_fifths" },
+        { blank: 3, invalid: 0, present: null },
+        valid,
+      ),
+    ).toMatchObject({ elected: [0], runoff: null, leftToMesa: false });
+  });
+
+  it("sends every candidate not elected to the second round", () => {
+    expect(
+      computeElectionOutcome(
+        { counts: [9, 0], ballots: 9, posts: 1, rule: "absolute_two_fifths" },
+        { blank: 11, invalid: 0, present: null },
+        valid,
+      ),
+    ).toMatchObject({ elected: [], runoff: [0, 1], threshold: 11 });
+    expect(electionRunoffRule("absolute_two_fifths")).toBe("two_fifths");
+    expect(electionRunoffRule("absolute_runoff")).toBe("simple");
+  });
+
+  it("elects in the second round with two fifths of the votes cast", () => {
+    // 20 cast: 8 needed.
+    expect(twoFifthsThreshold(20)).toBe(8);
+    expect(twoFifthsThreshold(21)).toBe(9);
+    expect(
+      computeElectionOutcome(
+        { counts: [8], ballots: 8, posts: 1, rule: "two_fifths" },
+        { blank: 12, invalid: 0, present: null },
+        valid,
+      ),
+    ).toMatchObject({ elected: [0], runoff: null, leftToMesa: false });
+  });
+
+  it("leaves it to the Mesa when nobody reaches two fifths", () => {
+    const outcome = computeElectionOutcome(
+      { counts: [7], ballots: 7, posts: 1, rule: "two_fifths" },
+      { blank: 13, invalid: 0, present: null },
+      valid,
+    );
+    expect(outcome).toMatchObject({
+      elected: [],
+      runoff: null,
+      leftToMesa: true,
+    });
+    expect(
+      electionLeftToMesa({
+        rule: "two_fifths",
+        elected: [],
+        tie: false,
+        posts: 1,
+        candidates: ["A"],
+      }),
+    ).toBe(true);
+    expect(
+      electionLeftToMesa({
+        rule: "absolute_runoff",
+        elected: [],
+        tie: false,
+        posts: 1,
+        candidates: ["A"],
+      }),
+    ).toBe(false);
   });
 });

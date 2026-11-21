@@ -772,19 +772,45 @@ export const LIVE_TALLY_KEYS = [
  * with the result (`reveal: "end"`, no counts).
  */
 export function liveTallyRows(
-  tally: Pick<LiveTally, "counts" | "options"> | null | undefined,
+  tally:
+    | (Pick<LiveTally, "counts" | "options" | "election"> &
+        Partial<Pick<LiveTally, "method">>)
+    | null
+    | undefined,
 ): {
-  /** A ballot key, or `option` with its index in a vote between alternatives. */
-  key: (typeof LIVE_TALLY_KEYS)[number] | "option";
+  /**
+   * A ballot key, `option` with its index in a vote between alternatives,
+   * or `candidate` with its index (and `name`) in an election.
+   */
+  key: (typeof LIVE_TALLY_KEYS)[number] | "option" | "candidate";
   option: number | null;
+  /** The candidate's name (`candidate` only; empty while unnamed). */
+  name?: string;
   count: number;
   share: number;
 }[] {
   const counts = tally?.counts;
   if (!counts) return [];
-  // Between alternatives: each option, then blank and invalid ballots.
-  const rows =
-    tally?.options && tally.options.length > 0
+  const election = tally?.election;
+  // An election: each candidate, then, in a secret vote, blank and invalid
+  // ballots.
+  const rows = election
+    ? [
+        ...election.candidates.map((name, option) => ({
+          key: "candidate" as const,
+          option,
+          name,
+          count: election.counts[option] ?? 0,
+        })),
+        ...(tally?.method === "secret"
+          ? [
+              { key: "blank" as const, option: null, count: counts.blank },
+              { key: "invalid" as const, option: null, count: counts.invalid },
+            ]
+          : []),
+      ]
+    : // Between alternatives: each option, then blank and invalid ballots.
+      tally?.options && tally.options.length > 0
       ? [
           ...tally.options.map((count, option) => ({
             key: "option" as const,
@@ -803,11 +829,23 @@ export function liveTallyRows(
   return rows.map((row) => ({ ...row, share: row.count / top }));
 }
 
-/** The ballots counted so far; 0 without a running count. */
+/**
+ * The ballots counted so far; 0 without a running count. In an election,
+ * the votes when each ballot marks one, or the ballots that marked someone
+ * when it may mark several, plus the blank and invalid ones.
+ */
 export function liveTallyCast(
-  tally: Pick<LiveTally, "counts" | "options"> | null | undefined,
+  tally: Pick<LiveTally, "counts" | "options" | "election"> | null | undefined,
 ): number {
   const counts = tally?.counts;
+  const election = tally?.election;
+  if (counts && election) {
+    const marked =
+      election.maxChoices > 1
+        ? (election.ballots ?? 0)
+        : election.counts.reduce((sum, count) => sum + count, 0);
+    return marked + counts.blank + counts.invalid;
+  }
   const options = (tally?.options ?? []).reduce((sum, count) => sum + count, 0);
   return counts
     ? LIVE_TALLY_KEYS.reduce((sum, key) => sum + counts[key], 0) + options

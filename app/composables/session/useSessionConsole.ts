@@ -100,8 +100,9 @@ import {
   sessionLapseOffer,
   sessionLeavesPendingVote,
   sessionLiveMoved,
-  sessionNextAgendaTarget,
+  sessionItemGoneThrough,
   sessionItemVotePlan,
+  sessionNextAgendaTarget,
   sessionNextAmendmentId,
   sessionPendingTransactionalIds,
   sessionQueueCounts,
@@ -109,8 +110,9 @@ import {
   sessionSettleConfirm,
   sessionValidationIds,
   type SessionAdmissionDecision,
-  type SessionAgendaTarget,
   type SessionAgendaFlow,
+  type SessionAgendaRow,
+  type SessionAgendaTarget,
   type SessionAmendmentStage,
   type SessionLivePointer,
   type SessionSettleAction,
@@ -734,8 +736,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   });
   /**
    * How the agenda is gone through around an item voted as a whole: its
-   * own vote (pending or recorded) and the items treated, read when the
-   * next item is worked out (sessionNextAgendaTarget).
+   * own vote (pending or recorded) and the items gone through (treated, or
+   * with a document that has been on screen), read when the next item is
+   * worked out (sessionNextAgendaTarget).
    */
   const agendaFlow: SessionAgendaFlow = {
     vote: (row) => {
@@ -748,7 +751,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       if (!plan.takesVote) return null;
       return plan.vote ? "recorded" : "pending";
     },
-    treated: (row) => treatedItemIds.value.has(row.item.id),
+    goneThrough: (row) => itemGoneThrough(row),
   };
   /**
    * The agenda item after the one in debate, with its only document; after
@@ -758,6 +761,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     sessionNextAgendaTarget(
       agendaRows.value,
       debate.value?.agendaItemId ?? null,
+      agendaFlow,
     ),
   );
 
@@ -782,7 +786,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   });
 
   /** Moves the page focus to an amendment's card, wherever it now sits. */
-      agendaFlow,
   function focusCard(id: string): void {
     if (!import.meta.client) return;
     void nextTick(() => {
@@ -944,6 +947,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           .map((entry) => entry.id),
       ),
   );
+
+  /**
+   * The Mesa has gone through the item: treated, or one of its documents
+   * has been on screen (an item presented while it waited for a vote is
+   * never marked treated).
+   */
+  function itemGoneThrough(row: SessionAgendaRow): boolean {
+    return sessionItemGoneThrough(
+      row,
+      treatedItemIds.value,
+      projectedDocumentIds.value,
+    );
+  }
 
   function refreshProgress(): Promise<void> {
     return progressFetch.refresh();
@@ -3239,6 +3255,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     debatedAmendment,
     nextAmendment,
     nextAgendaTarget,
+    itemGoneThrough,
     followLive,
     // live
     connected,
