@@ -234,9 +234,11 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
     acceptedAmendments: "vote",
     majority: "simple",
   },
+  // Not voted by itself: the candidacies are elected in the vote of their
+  // agenda item, an election among them (user's decision of 2026-11-21).
   candidacy: {
     amendable: false,
-    voted: true,
+    voted: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },

@@ -3,6 +3,7 @@ import { db } from "../../db";
 import { votes } from "../../db/schema";
 import type { Executor } from "./events";
 import type { VoteDto } from "~~/shared/types/api";
+import { electionWithPosts } from "~~/shared/utils/election";
 
 /**
  * The one shape of a stored vote on its way out, for every path that
@@ -54,7 +55,7 @@ export function toVoteDto(vote: VoteRow): VoteDto {
     tieResolution: vote.tieResolution ?? null,
     ballots: vote.ballots ?? null,
     blocAmendmentIds: vote.blocAmendmentIds ?? null,
-    election: vote.election ?? null,
+    election: vote.election ? electionWithPosts(vote.election) : null,
     winnerOutcome:
       vote.options && vote.winningOption !== null
         ? (vote.winnerOutcome ?? "approve")

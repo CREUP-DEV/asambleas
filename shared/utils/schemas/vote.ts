@@ -175,11 +175,18 @@ const electionSchema = z
       )
       .min(1)
       .max(ELECTION_MAX_CANDIDATES),
+    // Absent from a page loaded before the posts were set apart from the
+    // marks per ballot (2026-11-21): then they were the same.
+    posts: z.number().int().min(1).max(ELECTION_MAX_CANDIDATES).optional(),
     maxChoices: z.number().int().min(1).max(ELECTION_MAX_CANDIDATES),
     rule: z.enum(ELECTION_RULES),
     counts: z.array(count).max(ELECTION_MAX_CANDIDATES),
     ballots: count,
   })
+  .transform(({ posts, ...election }) => ({
+    ...election,
+    posts: posts ?? election.maxChoices,
+  }))
   .superRefine((election, ctx) => {
     if (election.counts.length !== election.candidates.length) {
       ctx.addIssue({
@@ -188,11 +195,18 @@ const electionSchema = z
         message: "count_per_candidate",
       });
     }
+    if (election.posts > election.candidates.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["posts"],
+        message: "too_many_posts",
+      });
+    }
     if (election.maxChoices > election.candidates.length) {
       ctx.addIssue({
         code: "custom",
         path: ["maxChoices"],
-        message: "too_many_posts",
+        message: "too_many_choices",
       });
     }
     // No candidate gets more votes than ballots marked someone, nor do all

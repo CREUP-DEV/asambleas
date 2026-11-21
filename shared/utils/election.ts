@@ -3,8 +3,10 @@ import { majorityThreshold } from "./votes";
 
 /**
  * An election in an agenda item's vote (user's decisions of 2026-11-21):
- * candidates, a number of posts (the most each ballot may mark,
- * `maxChoices`) and the rule, set per vote because the bodies differ:
+ * candidates, the posts to fill (`posts`, the most candidates that may be
+ * elected), the most candidates each ballot may mark (`maxChoices`, not
+ * necessarily the posts) and the rule, set per vote because the bodies
+ * differ:
  * - `absolute_runoff`: as the regulations of the CAS and the CAI, elected
  *   in the first round whoever reaches the absolute majority of the votes
  *   cast, up to the posts; the posts left go to a second round between the
@@ -23,7 +25,9 @@ export const ELECTION_CANDIDATE_MAX_LENGTH = 120;
 /** An election as the Mesa records it. */
 export interface ElectionInput {
   candidates: string[];
-  /** Posts to fill, and the most candidates a ballot may mark. */
+  /** Posts to fill: the most candidates that may be elected. */
+  posts: number;
+  /** The most candidates a ballot may mark. */
   maxChoices: number;
   rule: ElectionRule;
   /** Each candidate's votes, in order. */
@@ -59,7 +63,7 @@ export interface ElectionOutcome {
  * when the assembly counts majorities on them (`denominator`).
  */
 export function computeElectionOutcome(
-  election: Pick<ElectionInput, "counts" | "ballots" | "maxChoices" | "rule">,
+  election: Pick<ElectionInput, "counts" | "ballots" | "posts" | "rule">,
   rest: { blank: number; invalid: number; present: number | null },
   settings: Pick<AssemblySettings, "denominator">,
 ): ElectionOutcome {
@@ -70,10 +74,7 @@ export function computeElectionOutcome(
       : cast;
   const inconsistent =
     rest.present != null && cast + rest.invalid > rest.present;
-  const posts = Math.max(
-    0,
-    Math.min(election.maxChoices, election.counts.length),
-  );
+  const posts = Math.max(0, Math.min(election.posts, election.counts.length));
   const ranked = election.counts
     .map((count, index) => ({ count, index }))
     .filter((entry) => entry.count > 0)
@@ -116,4 +117,20 @@ export function computeElectionOutcome(
     denominator,
     inconsistent,
   };
+}
+
+/**
+ * An election as `votes.election` may hold it: one recorded before the
+ * posts were set apart from the marks per ballot (2026-11-21) has no
+ * `posts`, and then its posts were its `maxChoices`.
+ */
+export type StoredElectionRecord = Omit<ElectionRecord, "posts"> & {
+  posts?: number;
+};
+
+/** A stored election with its posts (StoredElectionRecord). */
+export function electionWithPosts(
+  election: StoredElectionRecord,
+): ElectionRecord {
+  return { ...election, posts: election.posts ?? election.maxChoices };
 }

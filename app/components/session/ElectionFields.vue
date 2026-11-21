@@ -10,7 +10,8 @@ import {
 
 /**
  * An election in an agenda item's vote (user's decisions of 2026-11-21):
- * the candidates, the posts (the most each ballot may mark), the rule (the
+ * the candidates, the posts (the most that may be elected), the most each
+ * ballot may mark (not necessarily the posts), the rule (the
  * absolute majority with a second round, as the CAS and the CAI elect, or
  * a simple majority), each candidate's votes and the ballots that marked
  * someone (worked out with one post), then blank and invalid ballots in a
@@ -57,6 +58,7 @@ function removeCandidate(index: number): void {
   update({
     candidates,
     counts: election.value.counts.filter((_, at) => at !== index),
+    posts: Math.min(election.value.posts, candidates.length),
     maxChoices: Math.min(election.value.maxChoices, candidates.length),
   });
 }
@@ -166,6 +168,20 @@ const preview = computed(() => {
       <UFormField
         :label="t('session.election.posts')"
         :help="t('session.election.postsHelp')"
+      >
+        <UInputNumber
+          :model-value="election.posts"
+          :min="1"
+          :max="election.candidates.length"
+          class="w-full"
+          @update:model-value="
+            (value) => update({ posts: Math.max(1, value ?? 1) })
+          "
+        />
+      </UFormField>
+      <UFormField
+        :label="t('session.election.maxChoices')"
+        :help="t('session.election.maxChoicesHelp')"
       >
         <UInputNumber
           :model-value="election.maxChoices"

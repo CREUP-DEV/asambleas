@@ -62,7 +62,7 @@ export function useElectionText() {
   function rule(election: ElectionRecord): string {
     return t("amendment.vote.election.ruleLine", {
       rule: t(`session.election.rules.${election.rule}`),
-      posts: election.maxChoices,
+      posts: election.posts,
     });
   }
 

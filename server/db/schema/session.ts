@@ -32,7 +32,7 @@ import type {
   AlternativesWinnerOutcome,
 } from "../../../shared/utils/alternativesVote";
 import type { VoteBallot } from "../../../shared/utils/rollCall";
-import type { ElectionRecord } from "../../../shared/utils/election";
+import type { StoredElectionRecord } from "../../../shared/utils/election";
 import { majorityEnum } from "./document";
 
 /** One option of a vote between alternatives: its amendments and votes. */
@@ -212,9 +212,11 @@ export const votes = pgTable(
     blocAmendmentIds: jsonb("bloc_amendment_ids").$type<string[]>(),
     /**
      * An election in an agenda item's vote (user's decision of 2026-11-21):
-     * its candidates, posts, rule, votes and result. Null on other votes.
+     * its candidates, posts, marks per ballot, rule, votes and result. One
+     * recorded before the posts were set apart has none (its posts were its
+     * marks per ballot: electionWithPosts). Null on other votes.
      */
-    election: jsonb("election").$type<ElectionRecord>(),
+    election: jsonb("election").$type<StoredElectionRecord>(),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

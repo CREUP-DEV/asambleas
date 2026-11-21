@@ -101,6 +101,7 @@ import {
   sessionLeavesPendingVote,
   sessionLiveMoved,
   sessionNextAgendaTarget,
+  sessionItemVotePlan,
   sessionNextAmendmentId,
   sessionPendingTransactionalIds,
   sessionQueueCounts,
@@ -109,6 +110,7 @@ import {
   sessionValidationIds,
   type SessionAdmissionDecision,
   type SessionAgendaTarget,
+  type SessionAgendaFlow,
   type SessionAmendmentStage,
   type SessionLivePointer,
   type SessionSettleAction,
@@ -730,7 +732,28 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     );
     return id ? (byId.value.get(id) ?? null) : null;
   });
-  /** The agenda item after the one in debate, with its only document. */
+  /**
+   * How the agenda is gone through around an item voted as a whole: its
+   * own vote (pending or recorded) and the items treated, read when the
+   * next item is worked out (sessionNextAgendaTarget).
+   */
+  const agendaFlow: SessionAgendaFlow = {
+    vote: (row) => {
+      if (!row.item.voted) return null;
+      const plan = sessionItemVotePlan(
+        row,
+        itemVotes.value,
+        assembly.value?.status,
+      );
+      if (!plan.takesVote) return null;
+      return plan.vote ? "recorded" : "pending";
+    },
+    treated: (row) => treatedItemIds.value.has(row.item.id),
+  };
+  /**
+   * The agenda item after the one in debate, with its only document; after
+   * the sub-items of an item voted as a whole, back to it to vote it.
+   */
   const nextAgendaTarget = computed(() =>
     sessionNextAgendaTarget(
       agendaRows.value,
@@ -759,6 +782,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   });
 
   /** Moves the page focus to an amendment's card, wherever it now sits. */
+      agendaFlow,
   function focusCard(id: string): void {
     if (!import.meta.client) return;
     void nextTick(() => {

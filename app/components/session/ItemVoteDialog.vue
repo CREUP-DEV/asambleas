@@ -6,6 +6,7 @@ import type { VoteMethod } from "~~/shared/constants/domain";
 import { VOTE_QUESTION_MAX_LENGTH } from "~~/shared/utils/schemas/vote";
 import {
   isSessionFinalVoteReady,
+  sessionElectionCandidates,
   sessionEmptyVote,
   sessionFinalVoteResult,
   sessionItemVotePlan,
@@ -32,10 +33,13 @@ import {
  *
  * An election (user's decisions of 2026-11-21) records candidates and
  * their votes instead of in favour and against: the Mesa sets the posts
- * and the rule (the absolute majority with a second round, or a simple
- * majority), by secret ballot to start with. When a second round is due,
- * once the first is recorded the dialog stays open with it prepared: the
- * candidates who go, the posts left and a simple majority.
+ * (the most that may be elected), the most each ballot may mark and the
+ * rule (the absolute majority with a second round, or a simple majority),
+ * by secret ballot to start with. An item whose sub-items are candidacies
+ * (or that holds them itself) opens as an election among them
+ * (sessionElectionCandidates). When a second round is due, once the first
+ * is recorded the dialog stays open with it prepared: the candidates who
+ * go, the posts left and a simple majority.
  *
  * Like the final vote, recording takes two steps: the Mesa checks the
  * result before confirming it, so Enter never records. It records on the
@@ -107,6 +111,7 @@ const isElection = ref(false);
 function emptyElection(): ElectionInput {
   return {
     candidates: ["", ""],
+    posts: 1,
     maxChoices: 1,
     rule: "absolute_runoff",
     counts: [0, 0],
@@ -250,6 +255,20 @@ watch(open, (isOpen) => {
   vote.value = sessionEmptyVote("simple");
   isElection.value = false;
   election.value = emptyElection();
+  // An election point opens as an election among its candidacies
+  // (sessionElectionCandidates), which the Mesa can still edit.
+  const candidates = itemId.value
+    ? sessionElectionCandidates(itemId.value, session.agendaRows.value)
+    : [];
+  if (candidates.length > 0) {
+    isElection.value = true;
+    election.value = {
+      ...emptyElection(),
+      candidates,
+      counts: candidates.map(() => 0),
+    };
+    setElectionMethod("secret");
+  }
   runoffFrom.value = null;
   serverTie.value = false;
   confirming.value = false;
@@ -290,7 +309,7 @@ const goesToRunoff = computed(
 const expected = computed(() =>
   isElection.value
     ? electionRecord.value.elected.length >=
-      Math.min(election.value.maxChoices, election.value.candidates.length)
+      Math.min(election.value.posts, election.value.candidates.length)
       ? "approved"
       : "rejected"
     : sessionFinalVoteResult(vote.value, outcome.value),
@@ -350,14 +369,18 @@ function prepareRunoff(first: ElectionRecord): void {
   const candidates = (first.runoff ?? []).map(
     (index) => first.candidates[index] ?? "",
   );
-  const posts = Math.min(first.maxChoices, first.candidates.length);
+  const posts = Math.min(first.posts, first.candidates.length);
+  const left = Math.max(
+    1,
+    Math.min(posts - first.elected.length, candidates.length),
+  );
   election.value = {
     candidates,
     counts: candidates.map(() => 0),
-    maxChoices: Math.max(
-      1,
-      Math.min(posts - first.elected.length, candidates.length),
-    ),
+    posts: left,
+    // A ballot never marks more than in the first round, nor than the
+    // posts left.
+    maxChoices: Math.max(1, Math.min(first.maxChoices, left)),
     rule: "simple",
     ballots: 0,
   };

@@ -7,6 +7,7 @@ import {
   sessionItemVotePlan,
   sessionNextItemDocument,
 } from "~/composables/session/sessionModel";
+  sessionSubItemsLeft,
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useItemVoteText } from "~/composables/session/useItemVoteText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -22,7 +23,10 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  *   documents is voted may take a vote of its own (a ratification, an
  *   election), the main action when it is marked «Se vota el punto» and
  *   has no vote in force, and then one line says how it went; "Más" votes
- *   it again, voids the vote or changes its unanimity;
+ *   it again, voids the vote or changes its unanimity. One with sub-items
+ *   goes through them first (the next item is the main action while any
+ *   is untreated) and, after the last, «Volver a … para votarlo» brings
+ *   the debate back to it (sessionNextAgendaTarget);
  * - a document: the same card of its item (user's decision of 2026-11-18),
  *   its row marked as the one in debate and pressed again to take it out;
  *   under it, where it stands and its next step: the next amendment the
@@ -154,6 +158,12 @@ const nextDocument = computed(() =>
 );
 /** The document in debate, if any. */
 const selectedId = computed(() => live.value?.documentId ?? null);
+/** «Siguiente punto: …», or back to an item voted as a whole to vote it. */
+const nextAgendaText = computed(() =>
+  nextAgenda.value?.returning
+    ? t("session.now.backToVote", { title: nextAgendaLabel.value })
+    : t("session.now.nextItem", { title: nextAgendaLabel.value }),
+);
 /**
  * The documents the card lists: the item's, or the one in debate alone
  * when the agenda does not have its item.
@@ -265,8 +275,27 @@ const itemVote = computed(() => itemPlan.value?.vote ?? null);
 const offerItemVote = computed(
   () => Boolean(itemPlan.value?.canRecord) && !itemVote.value,
 );
-/** «Se vota el punto» and no vote yet: the vote is the main action. */
-const itemVotePending = computed(() => Boolean(itemPlan.value?.pending));
+/**
+ * An item voted as a whole with sub-items not treated yet (user's decision
+ * of 2026-11-21): the Mesa goes through them first and comes back to vote.
+ */
+const subItemsFirst = computed(
+  () =>
+    Boolean(itemPlan.value?.pending) &&
+    liveRow.value !== null &&
+    sessionSubItemsLeft(
+      session.agendaRows.value,
+      liveRow.value.item.id,
+      (row) => session.treatedItemIds.value.has(row.item.id),
+    ),
+);
+/**
+ * «Se vota el punto» and no vote yet: the vote is the main action, once
+ * its sub-items, if any, are gone through.
+ */
+const itemVotePending = computed(
+  () => Boolean(itemPlan.value?.pending) && !subItemsFirst.value,
+);
 
 /**
  * "Siguiente punto" is the main step once nothing else is left: no
@@ -275,7 +304,9 @@ const itemVotePending = computed(() => Boolean(itemPlan.value?.pending));
  */
 const nextItemPrimary = computed(() => {
   if (itemVotePending.value) return false;
-  if (!selectedId.value) return cardDocuments.value.length === 0;
+  if (!selectedId.value) {
+    return cardDocuments.value.length === 0 || subItemsFirst.value;
+  }
   return !next.value && !finalVoteReady.value && !nextDocument.value;
 });
 
@@ -859,7 +890,7 @@ const announcement = computed(() => {
             :variant="nextItemPrimary ? 'solid' : 'ghost'"
             trailing-icon="i-lucide-arrow-right"
             class="min-w-0"
-            :label="t('session.now.nextItem', { title: nextAgendaLabel })"
+            :label="nextAgendaText"
             :disabled="closed || liveBusy"
             @click="session.debateAgendaTarget(nextAgenda)"
           />

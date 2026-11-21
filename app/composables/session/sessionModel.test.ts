@@ -63,6 +63,7 @@ import {
   sessionFormatDuration,
   sessionItemDocuments,
   sessionNextAgendaTarget,
+  sessionSubItemsLeft,
   sessionNextItemDocument,
   sessionNextAmendmentId,
   sessionSpeakers,
@@ -83,6 +84,7 @@ import {
   sessionPendingTransactionalIds,
   sessionSettleConfirm,
   sessionTransactionalWaitsFor,
+  sessionElectionCandidates,
   sessionItemVotePlan,
   sessionItemVotes,
   sortSessionAmendments,
@@ -2486,5 +2488,195 @@ describe("openRoomAlternatives (VOT-3)", () => {
       ),
     ).toBeNull();
     expect(openRoomAlternatives(null, byId())).toBeNull();
+  });
+});
+
+describe("sessionElectionCandidates (an election point among its candidacies)", () => {
+  const item = (
+    id: string,
+    title: string,
+    over: {
+      parentId?: string | null;
+      unlisted?: boolean;
+      titleHidden?: boolean;
+      publicTitleHidden?: boolean;
+    } = {},
+  ) => ({
+    id,
+    title,
+    parentId: over.parentId ?? null,
+    unlisted: over.unlisted ?? false,
+    titleHidden: over.titleHidden ?? false,
+    publicTitleHidden: over.publicTitleHidden ?? false,
+  });
+  const candidacy = (
+    title: string,
+    status: DocumentSummaryDto["status"] = "published",
+  ) => ({ kind: "candidacy" as const, status, title });
+  const convocation = {
+    kind: "other" as const,
+    status: "published" as const,
+    title: "Convocatoria",
+  };
+
+  it("names each candidacy sub-item without «Candidatura:»", () => {
+    const rows = [
+      {
+        item: item("p", "Elección de la Comisión Ejecutiva"),
+        documents: [convocation],
+      },
+      {
+        item: item("a", "Candidatura: EL VALOR DE ESTAR UNIDOS", {
+          parentId: "p",
+        }),
+        documents: [candidacy("Programa Electoral: EL VALOR DE ESTAR UNIDOS")],
+      },
+      {
+        item: item("b", "Candidatura - Otra lista", { parentId: "p" }),
+        documents: [candidacy("CV"), candidacy("Aval")],
+      },
+    ];
+    expect(sessionElectionCandidates("p", rows)).toEqual([
+      "EL VALOR DE ESTAR UNIDOS",
+      "Otra lista",
+    ]);
+  });
+
+  it("leaves out sub-items without a published candidacy", () => {
+    const rows = [
+      { item: item("p", "Elección"), documents: [] },
+      {
+        item: item("a", "Candidatura: Retirada", { parentId: "p" }),
+        documents: [candidacy("Programa", "withdrawn")],
+      },
+      {
+        item: item("b", "Otra cosa", { parentId: "p" }),
+        documents: [convocation],
+      },
+      {
+        item: item("c", "Candidatura: Ana Pérez", { parentId: "p" }),
+        documents: [candidacy("CV Ana Pérez")],
+      },
+    ];
+    expect(sessionElectionCandidates("p", rows)).toEqual(["Ana Pérez"]);
+  });
+
+  it("leaves empty a candidacy whose title the room does not read", () => {
+    const rows = [
+      { item: item("p", "Elección"), documents: [] },
+      {
+        item: item("a", "Candidatura: Oculta", {
+          parentId: "p",
+          publicTitleHidden: true,
+        }),
+        documents: [candidacy("Programa")],
+      },
+    ];
+    expect(sessionElectionCandidates("p", rows)).toEqual([""]);
+  });
+
+  it("takes the item's own candidacies when it has no such sub-items", () => {
+    const rows = [
+      {
+        item: item("p", "Elección del Comité"),
+        documents: [convocation, candidacy("Ana Pérez"), candidacy("Luis Gil")],
+      },
+    ];
+    expect(sessionElectionCandidates("p", rows)).toEqual([
+      "Ana Pérez",
+      "Luis Gil",
+    ]);
+  });
+
+  it("proposes nothing for an item that is not an election", () => {
+    expect(
+      sessionElectionCandidates("p", [
+        { item: item("p", "Ratificación"), documents: [convocation] },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("sessionNextAgendaTarget around an item voted as a whole", () => {
+  const item = (
+    id: string,
+    order: number,
+    parentId: string | null = null,
+    voted = false,
+  ) => ({
+    id,
+    slug: id,
+    parentId,
+    title: id,
+    description: null,
+    order,
+    acceptsSubmissions: false,
+    submissionKinds: [],
+    voted,
+    auto: false,
+    generatedForDocumentId: null,
+    titleHidden: false,
+    unlisted: false,
+    publicTitleHidden: false,
+    titleCustom: false,
+    updatedAt: "",
+  });
+  // 21, 22 (an election voted as a whole) with 22.1 and 22.2, then 23.
+  const rows = buildSessionAgendaRows(
+    [
+      item("p21", 0),
+      item("p22", 1, null, true),
+      item("c1", 0, "p22"),
+      item("c2", 1, "p22"),
+      item("p23", 2),
+    ],
+    [],
+  );
+  const flow = (
+    votes: Record<string, "pending" | "recorded">,
+    treated: string[] = [],
+  ) => ({
+    vote: (row: (typeof rows)[number]) => votes[row.item.id] ?? null,
+    treated: (row: (typeof rows)[number]) => treated.includes(row.item.id),
+  });
+  const next = (
+    current: string,
+    votes: Record<string, "pending" | "recorded">,
+    treated: string[] = [],
+  ) => {
+    const found = sessionNextAgendaTarget(rows, current, flow(votes, treated));
+    return found ? [found.row.item.id, found.returning] : null;
+  };
+
+  it("goes through the sub-items, then back to the item to vote it", () => {
+    const pending = { p22: "pending" } as const;
+    expect(next("p21", pending)).toEqual(["p22", false]);
+    expect(next("p22", pending)).toEqual(["c1", false]);
+    expect(next("c1", pending, ["c1"])).toEqual(["c2", false]);
+    expect(next("c2", pending, ["c1", "c2"])).toEqual(["p22", true]);
+  });
+
+  it("moves past the sub-items once they are treated or the vote is in force", () => {
+    expect(next("p22", { p22: "pending" }, ["c1", "c2"])).toEqual([
+      "p23",
+      false,
+    ]);
+    expect(next("p22", { p22: "recorded" })).toEqual(["p23", false]);
+    // Its vote in force: the last sub-item leads on to the next item.
+    expect(next("c2", { p22: "recorded" })).toEqual(["p23", false]);
+  });
+
+  it("keeps the plain order for an item not voted as a whole", () => {
+    expect(next("c2", {})).toEqual(["p23", false]);
+    expect(next("p22", {})).toEqual(["c1", false]);
+    expect(sessionNextAgendaTarget(rows, "c2")?.row.item.id).toBe("p23");
+  });
+
+  it("says whether an item has sub-items left to go through", () => {
+    const treated = (ids: string[]) => (row: (typeof rows)[number]) =>
+      ids.includes(row.item.id);
+    expect(sessionSubItemsLeft(rows, "p22", treated(["c1"]))).toBe(true);
+    expect(sessionSubItemsLeft(rows, "p22", treated(["c1", "c2"]))).toBe(false);
+    expect(sessionSubItemsLeft(rows, "p21", treated([]))).toBe(false);
   });
 });

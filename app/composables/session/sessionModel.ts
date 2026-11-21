@@ -58,6 +58,10 @@ import {
   type PassageWordingInput,
 } from "~~/shared/utils/content/passages";
 import { itemTakesOwnVote, latestItemVote } from "~~/shared/utils/controlSheet";
+import {
+  ELECTION_CANDIDATE_MAX_LENGTH,
+  ELECTION_MAX_CANDIDATES,
+} from "~~/shared/utils/election";
 import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { findOverlaps } from "~~/shared/utils/content/overlaps";
@@ -1199,26 +1203,108 @@ export interface SessionAgendaTarget {
   row: SessionAgendaRow;
   /** Its only published document, debated with the item; null otherwise. */
   document: DocumentSummaryDto | null;
+  /**
+   * Back to an item voted as a whole, its sub-items gone through, to vote
+   * it (sessionNextAgendaTarget).
+   */
+  returning: boolean;
+}
+
+/** How the agenda is gone through around the items voted as a whole. */
+export interface SessionAgendaFlow {
+  /**
+   * The item's own vote when it is voted as a whole («Se vota el punto»
+   * and it takes a vote of its own): `pending` until one is in force, then
+   * `recorded`; null for any other item.
+   */
+  vote: (row: SessionAgendaRow) => "pending" | "recorded" | null;
+  /** The item reads treated (the control sheet's rule). */
+  treated: (row: SessionAgendaRow) => boolean;
+}
+
+/** The index after the last row under `index` (rows are depth-first). */
+function subtreeEnd(rows: readonly SessionAgendaRow[], index: number): number {
+  const depth = rows[index]?.depth ?? 0;
+  let end = index + 1;
+  while (end < rows.length && rows[end]!.depth > depth) end++;
+  return end;
+}
+
+/**
+ * Whether some item under this one is not treated yet: an item voted as a
+ * whole goes through them before its vote.
+ */
+export function sessionSubItemsLeft(
+  rows: readonly SessionAgendaRow[],
+  itemId: string,
+  treated: (row: SessionAgendaRow) => boolean,
+): boolean {
+  const index = rows.findIndex((row) => row.item.id === itemId);
+  if (index === -1) return false;
+  return rows
+    .slice(index + 1, subtreeEnd(rows, index))
+    .some((row) => !treated(row));
 }
 
 /**
  * The agenda item after `currentId` (the first one when nothing is under
  * debate), with its document when it has exactly one published: the Mesa
  * moves to the item and its text in one step. Null after the last item.
+ *
+ * An item voted as a whole («Se vota el punto», `flow`; user's decision of
+ * 2026-11-21, an election among the candidacies under it) is gone through
+ * first, then its sub-items one by one, and after the last of them the
+ * Mesa goes back to it to vote it (`returning`), the innermost first when
+ * several end there. From the item itself, once its vote is in force or
+ * every sub-item is treated, the next is the item after its sub-items.
  */
 export function sessionNextAgendaTarget(
   rows: SessionAgendaRow[],
   currentId: string | null,
+  flow?: SessionAgendaFlow,
 ): SessionAgendaTarget | null {
   const index = currentId
     ? rows.findIndex((row) => row.item.id === currentId)
     : -1;
-  const row = rows[index + 1];
-  if (!row) return null;
+  let nextIndex = index + 1;
+  const current = rows[index];
+  if (current && flow) {
+    const end = subtreeEnd(rows, index);
+    const vote = flow.vote(current);
+    if (
+      end > index + 1 &&
+      vote !== null &&
+      (vote === "recorded" ||
+        !sessionSubItemsLeft(rows, current.item.id, flow.treated))
+    ) {
+      nextIndex = end;
+    }
+    // Leaving an item voted as a whole that waits for its vote: back to it.
+    let depth = current.depth;
+    for (let at = index - 1; at >= 0 && depth > 0; at--) {
+      const ancestor = rows[at]!;
+      if (ancestor.depth >= depth) continue;
+      depth = ancestor.depth;
+      if (subtreeEnd(rows, at) > nextIndex) break;
+      if (flow.vote(ancestor) === "pending") return target(ancestor, true);
+    }
+  }
+  const row = rows[nextIndex];
+  return row ? target(row, false) : null;
+}
+
+function target(
+  row: SessionAgendaRow,
+  returning: boolean,
+): SessionAgendaTarget {
   const published = row.documents.filter(
     (document) => document.status === "published",
   );
-  return { row, document: published.length === 1 ? published[0]! : null };
+  return {
+    row,
+    document: published.length === 1 ? published[0]! : null,
+    returning,
+  };
 }
 
 /** The published documents of an agenda item, in the agenda's order. */
@@ -2301,6 +2387,58 @@ export function sessionItemVotePlan(
     canChange: assemblyStatus != null && assemblyStatus !== "closed",
     pending: takesVote && open && row.item.voted && vote === null,
   };
+}
+
+/** «Candidatura: X» as the Mesa titles a candidacy's sub-item: X. */
+const CANDIDACY_TITLE_PREFIX = /^\s*candidaturas?\s*[:.\-–—]\s*/i;
+
+/**
+ * The candidates an item's election proposes (user's decision of
+ * 2026-11-21): an election point is voted as a whole, among its
+ * candidacies, never one sub-item at a time. Each sub-item holding a
+ * published candidacy is one, named by its title without «Candidatura:»;
+ * one the room does not read by its title (`unlisted`, `titleHidden`,
+ * `publicTitleHidden`) comes empty, for the Mesa to name, since the names
+ * go to the projection. With no such sub-item, the item's own published
+ * candidacies, by their titles. The Mesa edits them all before recording.
+ */
+export function sessionElectionCandidates(
+  itemId: string,
+  rows: readonly {
+    item: Pick<
+      AgendaItemDto,
+      | "id"
+      | "parentId"
+      | "title"
+      | "unlisted"
+      | "titleHidden"
+      | "publicTitleHidden"
+    >;
+    documents: readonly Pick<DocumentSummaryDto, "kind" | "status" | "title">[];
+  }[],
+): string[] {
+  const isCandidacy = (document: { kind: string; status: string }) =>
+    document.kind === "candidacy" && document.status === "published";
+  const fit = (name: string) =>
+    name.trim().slice(0, ELECTION_CANDIDATE_MAX_LENGTH);
+  const fromItems = rows
+    .filter(
+      (row) => row.item.parentId === itemId && row.documents.some(isCandidacy),
+    )
+    .map((row) =>
+      row.item.unlisted ||
+      row.item.titleHidden ||
+      row.item.publicTitleHidden !== false
+        ? ""
+        : fit(row.item.title.replace(CANDIDACY_TITLE_PREFIX, "")),
+    );
+  const names =
+    fromItems.length > 0
+      ? fromItems
+      : (rows.find((row) => row.item.id === itemId)?.documents ?? [])
+          .filter(isCandidacy)
+          .map((document) => fit(document.title));
+  return names.slice(0, ELECTION_MAX_CANDIDATES);
 }
 
 // Agenda ---------------------------------------------------------------------

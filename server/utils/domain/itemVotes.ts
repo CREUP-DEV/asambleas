@@ -301,7 +301,7 @@ export async function recordItemVote(
           reasons: [{ index: -1, reason: "inconsistent_counts" }],
         });
       }
-      const posts = Math.min(input.maxChoices, input.candidates.length);
+      const posts = Math.min(input.posts, input.candidates.length);
       return {
         record: {
           ...input,
