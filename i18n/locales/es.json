@@ -6312,7 +6312,7 @@
     "announce": {
       "amendment": "Ahora se debate la enmienda {code}",
       "document": "Ahora se debate: {title}",
-      "speaker": "Hablando: {name}"
+      "speaker": "Hablando {name}"
     },
     "loadFailed": "No podemos mostrar qué se está debatiendo ahora mismo. Lo volvemos a intentar enseguida; no hace falta recargar la página.",
     "attendance": {
