@@ -4874,6 +4874,7 @@
       "maxChoicesHelp": "The most each ballot may mark; not necessarily the posts.",
       "project": "Show the count on the projection",
       "projectHelp": "Each vote you enter shows on the screen at once. Off, nothing shows until the result.",
+      "liveCountHintKeys": "Keys 1 to {last}: one vote to each tile, in their order. Each vote shows on the projection at once.",
       "ballots": "Ballots with a vote",
       "ballotsHelp": "Those marking at least one candidate; blank and invalid ones are not counted.",
       "rule": "How they are elected",

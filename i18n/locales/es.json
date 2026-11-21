@@ -4874,6 +4874,7 @@
       "maxChoicesHelp": "El máximo que se puede marcar en cada papeleta; no tiene por qué coincidir con los puestos.",
       "project": "Mostrar el recuento en la proyección",
       "projectHelp": "Cada voto que anotes se ve al momento en la pantalla. Apagado, no se ve nada hasta el resultado.",
+      "liveCountHintKeys": "Teclas 1 a {last}: un voto a cada casilla, en su orden. Cada voto se ve al momento en la proyección.",
       "ballots": "Papeletas con algún voto",
       "ballotsHelp": "Las que marcan al menos una candidatura; sin contar las blancas ni las nulas.",
       "rule": "Cómo se elige",

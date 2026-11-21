@@ -33,7 +33,10 @@ import {
  * (sessionElectionTally), sent again every 15 s while the switch is on and
  * the form open, and taken off when it is turned off or the form closes.
  * Off, the votes are typed in and nothing reaches the screen until the
- * result.
+ * result. Counted on screen, the keys 1 to 9 add a vote to the tiles in
+ * their order (user's decision of 2026-11-21), unless single-key shortcuts
+ * are off (WCAG 2.1.4) or the focus is in a field, and «Deshacer el
+ * último» takes the last one back.
  */
 const props = defineProps<{
   settings: Pick<AssemblySettings, "denominator">;
@@ -183,7 +186,7 @@ const tiles = computed(() => [
       ]
     : []),
 ]);
-function addVote(key: TileKey, step: 1 | -1): void {
+function changeVote(key: TileKey, step: 1 | -1): void {
   if (key === "blank") blank.value = Math.max(0, blank.value + step);
   else if (key === "invalid") invalid.value = Math.max(0, invalid.value + step);
   else if (key === "ballots") {
@@ -192,6 +195,52 @@ function addVote(key: TileKey, step: 1 | -1): void {
     setCount(key, Math.max(0, (election.value.counts[key] ?? 0) + step));
   }
 }
+/** The votes added, in order, so «Deshacer el último» takes the last back. */
+const history = ref<TileKey[]>([]);
+watch(liveCount, () => {
+  history.value = [];
+});
+function addVote(key: TileKey): void {
+  changeVote(key, 1);
+  history.value = [...history.value, key];
+}
+function removeVote(key: TileKey): void {
+  const tile = tiles.value.find((entry) => entry.key === key);
+  if (!tile || tile.count === 0) return;
+  changeVote(key, -1);
+  const index = history.value.lastIndexOf(key);
+  if (index !== -1) {
+    history.value = history.value.filter((_, at) => at !== index);
+  }
+}
+function undoVote(): void {
+  const key = history.value.at(-1);
+  if (key === undefined) return;
+  history.value = history.value.slice(0, -1);
+  changeVote(key, -1);
+}
+
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+const shortcutsOn = computed(() => liveCount.value && shortcutsEnabled.value);
+/** The tiles a key reaches: the first nine (keys 1 to 9). */
+const KEYED_TILES = 9;
+/** Keys 1 to 9 add a vote, except in a field (WCAG 2.1.4: they can be off). */
+useEventListener(window, "keydown", (event: KeyboardEvent) => {
+  if (!shortcutsOn.value || event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable='true']")) {
+    return;
+  }
+  if (!/^[1-9]$/.test(event.key)) return;
+  const tile = tiles.value[Number(event.key) - 1];
+  if (!tile) return;
+  event.preventDefault();
+  addVote(tile.key);
+});
+/** The last key that reaches a tile, for the hint. */
+const lastKey = computed(() => Math.min(tiles.value.length, KEYED_TILES));
 
 /** What the projection shows: null while the switch is off. */
 const announcement = computed(() =>
@@ -301,7 +350,7 @@ onBeforeUnmount(() => {
          mark several, and the blank and invalid ones in a secret vote. -->
     <div v-if="liveCount" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <div
-        v-for="tile in tiles"
+        v-for="(tile, index) in tiles"
         :key="String(tile.key)"
         class="border-default flex min-w-0 flex-col items-center gap-2 rounded-lg border p-3"
       >
@@ -323,7 +372,10 @@ onBeforeUnmount(() => {
             icon="i-lucide-plus"
             :label="t('session.vote.addBallot')"
             :aria-label="t('session.vote.addBallotFor', { option: tile.label })"
-            @click="addVote(tile.key, 1)"
+            :aria-keyshortcuts="
+              shortcutsOn && index < KEYED_TILES ? String(index + 1) : undefined
+            "
+            @click="addVote(tile.key)"
           />
           <UButton
             color="neutral"
@@ -333,10 +385,32 @@ onBeforeUnmount(() => {
               t('session.vote.removeBallotFor', { option: tile.label })
             "
             :disabled="tile.count === 0"
-            @click="addVote(tile.key, -1)"
+            @click="removeVote(tile.key)"
           />
         </div>
+        <UKbd
+          v-if="shortcutsOn && index < KEYED_TILES"
+          :value="String(index + 1)"
+        />
       </div>
+    </div>
+    <div v-if="liveCount" class="flex flex-wrap items-center gap-2">
+      <UButton
+        color="neutral"
+        variant="outline"
+        size="sm"
+        icon="i-lucide-undo-2"
+        :label="t('session.vote.undoBallot')"
+        :disabled="history.length === 0"
+        @click="undoVote"
+      />
+      <p class="text-muted text-xs">
+        {{
+          shortcutsOn
+            ? t("session.election.liveCountHintKeys", { last: lastKey })
+            : t("session.vote.liveCountHint")
+        }}
+      </p>
     </div>
 
     <!-- The rest of the count: blank and invalid ballots, or abstentions,
