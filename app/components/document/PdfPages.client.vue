@@ -1,8 +1,45 @@
-<script setup lang="ts">
+<script lang="ts">
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { scrollParentOf } from "~/utils/scrollAnchor";
+import { createPdfCache, type LoadedPdf, type PdfLease } from "./-pdfCache";
 
+/** Reads a PDF and the size of every page, asked of the worker side by side. */
+async function openPdf(url: string): Promise<LoadedPdf<PDFDocumentProxy>> {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  const document = await pdfjs.getDocument({ url, isEvalSupported: false })
+    .promise;
+  try {
+    const pages = await Promise.all(
+      Array.from({ length: document.numPages }, (_, index) =>
+        document.getPage(index + 1),
+      ),
+    );
+    const sizes = pages.map((page) => {
+      const viewport = page.getViewport({ scale: 1 });
+      return { width: viewport.width, height: viewport.height };
+    });
+    return { document, sizes };
+  } catch (error) {
+    void document.destroy();
+    throw error;
+  }
+}
+
+/**
+ * The PDFs this tab keeps loaded (createPdfCache): closing a PDF's window
+ * or leaving its page and coming back draws it at once. The last two that
+ * nobody shows stay; the file is downloaded again only when it is not one.
+ */
+const pdfDocuments = createPdfCache<PDFDocumentProxy>({
+  open: openPdf,
+  close: (document) => void document.destroy(),
+  keep: 2,
+});
+</script>
+
+<script setup lang="ts">
 /**
  * A PDF drawn by the platform itself (pdf.js), page after page at the
  * width of its container: the one PDF viewer of the platform (user's
@@ -21,6 +58,10 @@ import { scrollParentOf } from "~/utils/scrollAnchor";
  *   found with the browser's search and read by a screen reader, and its
  *   links to the web open in a new tab (other links are left out). The
  *   session and the projection, which only show the pages, leave both out.
+ *
+ * - The PDF itself, read and with every page's size, stays loaded in the
+ *   tab once the component goes (pdfDocuments, the last two nobody shows),
+ *   so opening it again draws its pages without downloading it again.
  *
  * Emits `ready` once every page has its size, and again after the width
  * changes, so the caller can scroll to where it should be.
@@ -51,6 +92,8 @@ const failed = ref(false);
 const width = ref(0);
 
 let pdf: PDFDocumentProxy | null = null;
+/** This component's hold on the PDF it shows (pdfDocuments). */
+let lease: PdfLease<PDFDocumentProxy> | null = null;
 let observer: IntersectionObserver | null = null;
 /** Pages drawn, or being drawn, at the current width. */
 const drawn = new Set<number>();
@@ -76,40 +119,47 @@ const pageSelector = (number: number) => `[data-page="${number}"]`;
 const pageElement = (number: number) =>
   root.value?.querySelector<HTMLElement>(pageSelector(number)) ?? null;
 
-async function load(url: string): Promise<void> {
+/**
+ * Shows the PDF at `url`, leased from the tab's PDFs (pdfDocuments): one
+ * already loaded takes its pages' sizes at once, so it opens again with
+ * no skeleton and only the pages in view to draw.
+ */
+function load(url: string): void {
   const token = ++loadToken;
   failed.value = false;
   freeAll();
   shown.value = new Set();
-  sizes.value = [];
-  try {
-    const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    const next = await pdfjs.getDocument({ url, isEvalSupported: false })
-      .promise;
-    if (token !== loadToken) {
-      void next.destroy();
-      return;
-    }
-    void pdf?.destroy();
-    pdf = next;
-    const pageSizes: PageSize[] = [];
-    for (let number = 1; number <= next.numPages; number++) {
-      const page = await next.getPage(number);
-      const viewport = page.getViewport({ scale: 1 });
-      pageSizes.push({ width: viewport.width, height: viewport.height });
-    }
-    if (token !== loadToken) return;
-    sizes.value = pageSizes;
-    await nextTick();
-    observePages();
-    emit("ready");
-    if (props.textLayer) void buildLayers(next, token);
-  } catch {
-    if (token !== loadToken) return;
-    failed.value = true;
-    emit("failed");
+  lease?.release();
+  pdf = null;
+  const next = pdfDocuments.lease(url);
+  lease = next;
+  if (next.loaded) {
+    show(next.loaded, token);
+    return;
   }
+  sizes.value = [];
+  next.ready.then(
+    (loaded) => show(loaded, token),
+    () => {
+      if (token !== loadToken) return;
+      failed.value = true;
+      emit("failed");
+    },
+  );
+}
+
+async function show(
+  loaded: LoadedPdf<PDFDocumentProxy>,
+  token: number,
+): Promise<void> {
+  if (token !== loadToken) return;
+  pdf = loaded.document;
+  sizes.value = loaded.sizes;
+  await nextTick();
+  if (token !== loadToken) return;
+  observePages();
+  emit("ready");
+  if (props.textLayer) void buildLayers(loaded.document, token);
 }
 
 function bumpToken(number: number): number {
@@ -289,7 +339,9 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   clearTimeout(resizeTimer);
   freeAll();
-  void pdf?.destroy();
+  // Kept for the next view of it (pdfDocuments), not destroyed.
+  lease?.release();
+  lease = null;
   pdf = null;
 });
 </script>

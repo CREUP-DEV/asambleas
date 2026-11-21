@@ -1,7 +1,9 @@
 import {
   createError,
   defineEventHandler,
+  getRequestHeader,
   getRouterParam,
+  sendNoContent,
   sendStream,
   setResponseHeaders,
 } from "h3";
@@ -11,6 +13,11 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../../db";
 import { assemblies } from "../../../db/schema";
+import {
+  etagMatches,
+  fileEtag,
+  REVALIDATED_FILE_CACHE_CONTROL,
+} from "../../../utils/core/fileValidators";
 import { getUploadDir } from "../../../utils/core/uploadPaths";
 import { requireActor } from "../../../utils/domain/actor";
 import { CONVOCATION_URL_PREFIX } from "../../../utils/domain/convocation";
@@ -61,11 +68,19 @@ export default defineEventHandler(async (event) => {
   if (!row || !canSeeAssembly(actor, { status: row.status })) notFound();
 
   const filePath = join(getUploadDir(), filename);
-  try {
-    const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) notFound();
-  } catch {
-    notFound();
+  const fileStat = await stat(filePath).catch(() => null);
+  if (!fileStat?.isFile()) notFound();
+
+  // Kept by the browser and asked about each time, after the checks above:
+  // a PDF it already holds answers 304 instead of being sent again.
+  const etag = fileEtag(fileStat);
+  setResponseHeaders(event, {
+    "Cache-Control": REVALIDATED_FILE_CACHE_CONTROL,
+    ETag: etag,
+    "X-Content-Type-Options": "nosniff",
+  });
+  if (etagMatches(getRequestHeader(event, "if-none-match"), etag)) {
+    return sendNoContent(event, 304);
   }
 
   setResponseHeaders(event, {
@@ -73,8 +88,6 @@ export default defineEventHandler(async (event) => {
     "Content-Disposition": contentDisposition(
       cleanFileName(row.fileName ?? "", filename),
     ),
-    "Cache-Control": "private, no-store",
-    "X-Content-Type-Options": "nosniff",
   });
 
   return sendStream(event, createReadStream(filePath));
