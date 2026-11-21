@@ -135,6 +135,11 @@ const summary = computed(() =>
         </dd>
       </div>
     </dl>
+    <!-- A vote on a bloc: the amendments it decided together. -->
+    <p v-if="vote.blocAmendmentIds" class="text-muted text-sm">
+      {{ t("amendment.vote.bloc") }}:
+      <AmendmentCodeLinks :ids="vote.blocAmendmentIds" :label-of="codeOf" />
+    </p>
     <!-- A registered vote: what each delegation voted. -->
     <section v-if="vote.ballots && vote.ballots.length > 0" class="space-y-1">
       <h4 class="text-muted text-xs font-medium">

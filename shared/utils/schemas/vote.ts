@@ -3,6 +3,11 @@ import { MAJORITIES, VOTE_METHODS } from "../../constants/domain";
 import { foreignBallotKeys } from "../votes";
 import { ROLL_CALL_CHOICES } from "../rollCall";
 import {
+  ELECTION_CANDIDATE_MAX_LENGTH,
+  ELECTION_MAX_CANDIDATES,
+  ELECTION_RULES,
+} from "../election";
+import {
   ALTERNATIVES_OPTION_COUNT,
   ALTERNATIVES_TIE_RESOLUTIONS,
   ALTERNATIVES_WINNER_OUTCOMES,
@@ -10,6 +15,7 @@ import {
 } from "../alternativesVote";
 import type {
   AlternativesVoteBody,
+  BlocVoteBody,
   ItemVoteBody,
   VoteInput,
   VoteUnanimityBody,
@@ -156,16 +162,98 @@ export const alternativesVoteBodySchema = z
     }
   });
 
+/** An election's candidates and votes (ElectionInput). */
+const electionSchema = z
+  .object({
+    candidates: z
+      .array(
+        z
+          .string()
+          .max(ELECTION_CANDIDATE_MAX_LENGTH)
+          .transform((value) => normalizeText(value).trim())
+          .pipe(z.string().min(1)),
+      )
+      .min(1)
+      .max(ELECTION_MAX_CANDIDATES),
+    maxChoices: z.number().int().min(1).max(ELECTION_MAX_CANDIDATES),
+    rule: z.enum(ELECTION_RULES),
+    counts: z.array(count).max(ELECTION_MAX_CANDIDATES),
+    ballots: count,
+  })
+  .superRefine((election, ctx) => {
+    if (election.counts.length !== election.candidates.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["counts"],
+        message: "count_per_candidate",
+      });
+    }
+    if (election.maxChoices > election.candidates.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["maxChoices"],
+        message: "too_many_posts",
+      });
+    }
+    // No candidate gets more votes than ballots marked someone, nor do all
+    // of them more than the ballots may mark.
+    const total = election.counts.reduce((sum, value) => sum + value, 0);
+    if (
+      election.counts.some((value) => value > election.ballots) ||
+      total > election.ballots * election.maxChoices
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ballots"],
+        message: "ballots_short",
+      });
+    }
+  });
+
 /** Body of POST .../agenda/[item]/votes (ItemVoteBody). */
-export const itemVoteBodySchema = z.object({
-  question: z
-    .string()
-    .max(VOTE_QUESTION_MAX_LENGTH)
-    .transform((value) => normalizeText(value).trim())
-    .pipe(z.string().min(1)),
-  vote: voteInputSchema,
-  project: z.boolean().optional(),
-});
+export const itemVoteBodySchema = z
+  .object({
+    question: z
+      .string()
+      .max(VOTE_QUESTION_MAX_LENGTH)
+      .transform((value) => normalizeText(value).trim())
+      .pipe(z.string().min(1)),
+    vote: voteInputSchema,
+    election: electionSchema.optional(),
+    project: z.boolean().optional(),
+  })
+  .refine(
+    (body) =>
+      !body.election ||
+      (body.vote.method !== "assent" && body.vote.method !== "roll_call"),
+    {
+      path: ["vote", "method"],
+      message: "An election is never by assent nor registered",
+    },
+  );
+
+/**
+ * Body of POST .../amendments/bloc-vote (BlocVoteBody): two or more
+ * different amendments, a counted vote (never assent: it has its own
+ * request).
+ */
+export const blocVoteBodySchema = z
+  .object({
+    items: z
+      .array(z.object({ id: z.string().min(1).max(64), updatedAt }))
+      .min(2)
+      .max(200)
+      .refine(
+        (items) => new Set(items.map((item) => item.id)).size === items.length,
+        { message: "duplicate_ids" },
+      ),
+    vote: voteInputSchema,
+    project: z.boolean().optional(),
+  })
+  .refine((body) => body.vote.method !== "assent", {
+    path: ["vote", "method"],
+    message: "A bloc is approved by assent through POST .../assent",
+  });
 
 /** Body of DELETE .../votes/[vote] (VoteVoidBody). */
 export const voteVoidBodySchema = z.object({ updatedAt });
@@ -180,6 +268,7 @@ export const voteUnanimityBodySchema = z.object({
 type Assignable<T, U extends T> = U;
 export type _VoteSchemaChecks = [
   Assignable<VoteInput, z.output<typeof voteInputSchema>>,
+  Assignable<BlocVoteBody, z.output<typeof blocVoteBodySchema>>,
   Assignable<AlternativesVoteBody, z.output<typeof alternativesVoteBodySchema>>,
   Assignable<ItemVoteBody, z.output<typeof itemVoteBodySchema>>,
   Assignable<VoteVoidBody, z.output<typeof voteVoidBodySchema>>,

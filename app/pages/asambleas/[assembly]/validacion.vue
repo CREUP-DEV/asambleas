@@ -307,11 +307,17 @@ const transactionalsListed = computed(() =>
 const lateCount = computed(() =>
   lateGroups.value.reduce((total, group) => total + group.late.length, 0),
 );
+/** Corrections of form to approved texts proposed by their presenters. */
+const formCorrections = computed(() =>
+  canDocuments.value ? (queue.value?.formCorrections ?? []) : [],
+);
+
 /** Nothing waits at all; filtered away, the sections say so one by one. */
 const empty = computed(
   () =>
     !filtering.value &&
     documents.value.length === 0 &&
+    formCorrections.value.length === 0 &&
     amendmentCount.value === 0 &&
     lateCount.value === 0,
 );
@@ -639,6 +645,38 @@ async function confirmBulkPublish() {
           @click="clearFilters"
         />
       </div>
+
+      <!-- Corrections of form proposed to approved texts. -->
+      <UAlert
+        v-if="formCorrections.length > 0"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-spell-check"
+        :title="t('review.formCorrections.title')"
+      >
+        <template #description>
+          <ul class="mt-1 space-y-1">
+            <li v-for="entry in formCorrections" :key="entry.document.id">
+              <ULink
+                :to="`${documentPath(entry.document.slug)}/consolidado`"
+                class="text-highlighted font-medium underline underline-offset-2"
+              >
+                {{ entry.document.title }}
+              </ULink>
+              <span class="text-muted">
+                ·
+                {{
+                  t(
+                    "review.formCorrections.count",
+                    { count: entry.count },
+                    entry.count,
+                  )
+                }}
+              </span>
+            </li>
+          </ul>
+        </template>
+      </UAlert>
 
       <div v-if="pending && !queue" class="space-y-3" role="status">
         <span class="sr-only">{{ t("review.loading") }}</span>

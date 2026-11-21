@@ -46,6 +46,7 @@ import type {
   AcceptanceDecision,
   AcceptedAmendmentRule,
   AdmissionStatus,
+  DecisionKind,
   AmendmentKind,
   AmendmentStatus,
   ApprovalMethod,
@@ -65,6 +66,8 @@ import type {
   AdmissionBody,
   AlternativesVoteBody,
   AlternativesVoteDto,
+  BlocVoteBody,
+  BlocVoteDto,
   AmendmentAuthorsBody,
   AmendmentCapabilities,
   AmendmentComposerAuthorsDto,
@@ -5975,7 +5978,7 @@ async function recordAmendmentOutcome(
   if (alternatives && body.wholeVote !== true) {
     fail(
       409,
-      "Se decidió en una votación entre alternativas: reabrirla anula la votación y reabre todas sus enmiendas",
+      "Se decidió en una votación de varias enmiendas: reabrirla anula la votación y reabre todas sus enmiendas",
       {
         messageKey: "amendment.reopenAlternatives.required",
         amendmentIds: alternatives.amendmentIds,
@@ -6217,9 +6220,9 @@ async function assertNotOnScreenAsAlternatives(
 }
 
 /**
- * The amendments a vote between alternatives decided, when `voteId` is one
- * (it has options): every amendment of the document still pointing at it.
- * Null for any other vote, or none.
+ * The amendments a vote on several decided, when `voteId` is one (a vote
+ * between alternatives, with options, or on a bloc): every amendment of
+ * the document still pointing at it. Null for any other vote, or none.
  */
 async function alternativesVoteSiblings(
   documentId: string,
@@ -6227,10 +6230,10 @@ async function alternativesVoteSiblings(
 ): Promise<{ voteId: string; amendmentIds: string[] } | null> {
   if (!voteId) return null;
   const [vote] = await db
-    .select({ options: votes.options })
+    .select({ options: votes.options, bloc: votes.blocAmendmentIds })
     .from(votes)
     .where(eq(votes.id, voteId));
-  if (!vote?.options) return null;
+  if (!vote?.options && !vote?.bloc) return null;
   const rows = await db
     .select({ id: amendments.id })
     .from(amendments)
@@ -6299,7 +6302,7 @@ export async function decideAlternatives(
   body: AlternativesVoteBody,
   options: { controlsProjection?: boolean } = {},
 ): Promise<AlternativesVoteDto> {
-  const { actor, document, now } = ctx;
+  const { actor, document } = ctx;
   if (!canRecordResults(actor)) {
     fail(403, "No tienes permiso para realizar esta acción");
   }
@@ -6309,12 +6312,6 @@ export async function decideAlternatives(
     option.items.map((item) => item.id),
   );
   const allIds = optionIds.flat();
-  const allSet = new Set(allIds);
-  const seenAt = new Map(
-    body.options.flatMap((option) =>
-      option.items.map((item) => [item.id, item.updatedAt] as const),
-    ),
-  );
   const loaded = await findAmendments(
     db,
     and(eq(amendments.documentId, document.id), inArray(amendments.id, allIds)),
@@ -6326,12 +6323,6 @@ export async function decideAlternatives(
     fail(404, "Enmienda no encontrada");
   }
   const byId = new Map(loaded.map((row) => [row.id, row]));
-  const sourcesOf = (id: string) => {
-    const row = byId.get(id)!;
-    return row.kind === "transactional"
-      ? row.sources.map((source) => source.sourceId)
-      : [];
-  };
 
   // A registered vote takes each option's votes, the abstentions and those
   // who did not vote from each delegation's ballot (user's decision of
@@ -6420,10 +6411,114 @@ export async function decideAlternatives(
       : tieResolution === "reject_all"
         ? "rejected"
         : null;
-  const projectVote =
-    body.project !== false &&
-    canModerate(actor) &&
-    options.controlsProjection === true;
+  return recordMultiAmendmentVote(ctx, {
+    items: body.options.flatMap((option) => option.items),
+    loaded: byId,
+    statusOf: (id) =>
+      statusOf(optionIds.findIndex((option) => option.includes(id))),
+    payloadOf: (id) => {
+      const index = optionIds.findIndex((option) => option.includes(id));
+      return {
+        method: "vote",
+        alternatives: true,
+        option: index,
+        optionCount: body.options[index]!.count,
+        winningOption: winner,
+        ...(tieResolution ? { tieResolution } : {}),
+        ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
+      };
+    },
+    vote: {
+      method: body.method,
+      inFavor: 0,
+      against: 0,
+      abstentions: body.abstentions ?? 0,
+      blank: body.blank ?? 0,
+      invalid: body.invalid ?? 0,
+      notCast: body.notCast ?? 0,
+      present,
+      headcountId: based.headcountId,
+      majority,
+      result: winner !== null ? "approved" : "rejected",
+      note: body.note ?? null,
+      options: body.options.map((option, index) => ({
+        amendmentIds: optionIds[index]!,
+        count: option.count,
+      })),
+      winningOption: winner,
+      tieResolution,
+      winnerOutcome: winnerOutcome === "keep" ? "keep" : null,
+      ballots: rollCall?.ballots ?? null,
+    },
+    decisionKind: "alternatives",
+    decisionPayload: {
+      winningOption: winner,
+      ...(tieResolution ? { tieResolution } : {}),
+      ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
+    },
+    note: body.note ?? null,
+    // The session is still open and the split is the one on screen, under
+    // the assembly's lock (the vote also goes on screen).
+    underLock: (tx) =>
+      assertAlternativesUnderLock(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        options: optionIds,
+      }),
+    project:
+      body.project !== false &&
+      canModerate(actor) &&
+      options.controlsProjection === true,
+  });
+}
+
+/**
+ * One vote that decides several amendments of the document at once: a vote
+ * between alternatives (decideAlternatives) or on a bloc (decideBlocVote).
+ * In one transaction: `underLock` checks under the assembly's share lock
+ * (assembly before document, "Row locks"); every amendment, what its
+ * transactional replaces and the other transactionals over any of them are
+ * locked in one ordered pass, and each must still be open, admitted and
+ * public (a transactional, accepted by its parties and with its sources
+ * admitted), else 409 for the whole vote; then the vote and its decision,
+ * and each amendment `statusOf` says: approved or rejected with
+ * `outcomeVoteId` on the vote (closing the transactionals over it, an
+ * approved transactional replacing its sources, as a single vote does), or
+ * left undecided with a trace (`amendment_vote_without_effect`). Returns
+ * the decision, the amendments and what the approved ones now collide with
+ * outside the vote.
+ */
+async function recordMultiAmendmentVote(
+  ctx: DocumentAmendmentContext,
+  input: {
+    items: { id: string; updatedAt: string }[];
+    loaded: Map<string, LoadedAmendment>;
+    statusOf: (
+      id: string,
+    ) => Extract<AmendmentStatus, "approved" | "rejected"> | null;
+    payloadOf: (id: string) => Record<string, unknown>;
+    vote: Omit<
+      typeof votes.$inferInsert,
+      "assemblyId" | "subjectType" | "subjectId" | "recordedByUserId"
+    >;
+    decisionKind: DecisionKind;
+    decisionPayload: Record<string, unknown>;
+    note: string | null;
+    underLock: (tx: Tx) => Promise<void>;
+    project: boolean;
+  },
+): Promise<AlternativesVoteDto> {
+  const { actor, document, now } = ctx;
+  const allIds = input.items.map((item) => item.id);
+  const allSet = new Set(allIds);
+  const seenAt = new Map(input.items.map((item) => [item.id, item.updatedAt]));
+  const byId = input.loaded;
+  const sourcesOf = (id: string) => {
+    const row = byId.get(id)!;
+    return row.kind === "transactional"
+      ? row.sources.map((source) => source.sourceId)
+      : [];
+  };
   const base = {
     assemblyId: ctx.assembly.id,
     documentId: document.id,
@@ -6432,14 +6527,7 @@ export async function decideAlternatives(
   };
 
   const result = await db.transaction(async (tx) => {
-    // The session is still open and the split is the one on screen, under
-    // the assembly's lock (the vote also goes on screen): assembly before
-    // document ("Row locks").
-    await assertAlternativesUnderLock(tx, {
-      assemblyId: ctx.assembly.id,
-      documentId: document.id,
-      options: optionIds,
-    });
+    await input.underLock(tx);
     const { agendaItemId } = await lockDocument(tx, document.id, "share");
     // The amendments, what their transactionals replace and the other
     // transactionals over any of them (which deciding them closes), in one
@@ -6505,29 +6593,10 @@ export async function decideAlternatives(
     const [voteRow] = await tx
       .insert(votes)
       .values({
+        ...input.vote,
         assemblyId: ctx.assembly.id,
         subjectType: "decision",
         subjectId: decisionId,
-        method: body.method,
-        inFavor: 0,
-        against: 0,
-        abstentions: body.abstentions ?? 0,
-        blank: body.blank ?? 0,
-        invalid: body.invalid ?? 0,
-        notCast: body.notCast ?? 0,
-        present,
-        headcountId: based.headcountId,
-        majority,
-        result: winner !== null ? "approved" : "rejected",
-        note: body.note ?? null,
-        options: body.options.map((option, index) => ({
-          amendmentIds: optionIds[index]!,
-          count: option.count,
-        })),
-        winningOption: winner,
-        tieResolution,
-        winnerOutcome: winnerOutcome === "keep" ? "keep" : null,
-        ballots: rollCall?.ballots ?? null,
         recordedByUserId: actor.user.id,
       })
       .returning();
@@ -6536,11 +6605,11 @@ export async function decideAlternatives(
       .values({
         id: decisionId,
         assemblyId: ctx.assembly.id,
-        kind: "alternatives",
+        kind: input.decisionKind,
         method: "vote",
         voteId: voteRow!.id,
         subjectIds: allIds,
-        note: body.note ?? null,
+        note: input.note,
         decidedByUserId: actor.user.id,
       })
       .returning();
@@ -6561,12 +6630,10 @@ export async function decideAlternatives(
       entityId: decisionId,
       type: "decision_recorded",
       payload: {
-        kind: "alternatives",
+        kind: input.decisionKind,
         method: "vote",
         subjectIds: allIds,
-        winningOption: winner,
-        ...(tieResolution ? { tieResolution } : {}),
-        ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
+        ...input.decisionPayload,
       },
     });
 
@@ -6575,86 +6642,72 @@ export async function decideAlternatives(
       code: string | null;
       status: AmendmentStatus;
     }[] = [];
-    for (const [index, ids] of optionIds.entries()) {
-      const status = statusOf(index);
-      for (const id of ids) {
-        const amendment = byId.get(id)!;
-        const payload = {
-          method: "vote",
-          voteId: voteRow!.id,
-          decisionId,
-          alternatives: true,
-          option: index,
-          optionCount: body.options[index]!.count,
-          winningOption: winner,
-          ...(tieResolution ? { tieResolution } : {}),
-          ...(winnerOutcome === "keep" ? { winnerOutcome } : {}),
-        };
-        if (!status) {
-          // Nobody won and the Mesa left them undecided, or this option won
-          // and is voted next against the original text: the amendment's
-          // history still says it was voted. Its token moves on, so the
-          // same request sent twice (two consoles, a retry) records one
-          // vote and the second gets 409; a new vote on the same options
-          // after a tie, with the fresh token, still goes.
-          await touchVotedWithoutEffect(tx, id, seenAt.get(id)!, amendment);
-          await recordEvent(tx, {
-            ...base,
-            entityId: id,
-            type: "amendment_vote_without_effect",
-            payload,
-          });
-          continue;
-        }
-        const updated = await tx
-          .update(amendments)
-          .set({
-            status,
-            approvalMethod: status === "approved" ? "vote" : null,
-            outcomeVoteId: voteRow!.id,
-            outcomeNote: body.note ?? null,
-            decidedAt: now,
-          })
-          .where(
-            and(
-              eq(amendments.id, id),
-              eq(amendments.status, "submitted"),
-              eq(amendments.admission, "admitted"),
-              buildOptimisticLockCondition(
-                amendments.updatedAt,
-                seenAt.get(id)!,
-              ),
-            ),
-          )
-          .returning({ id: amendments.id });
-        if (updated.length === 0) {
-          fail(
-            409,
-            `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
-          );
-        }
+    for (const id of allIds) {
+      const amendment = byId.get(id)!;
+      const status = input.statusOf(id);
+      const payload = {
+        ...input.payloadOf(id),
+        voteId: voteRow!.id,
+        decisionId,
+      };
+      if (!status) {
+        // Left undecided by the vote: the amendment's history still says it
+        // was voted. Its token moves on, so the same request sent twice
+        // (two consoles, a retry) records one vote and the second gets 409.
+        await touchVotedWithoutEffect(tx, id, seenAt.get(id)!, amendment);
         await recordEvent(tx, {
           ...base,
           entityId: id,
-          type:
-            status === "approved" ? "amendment_approved" : "amendment_rejected",
+          type: "amendment_vote_without_effect",
           payload,
         });
-        const sources = sourcesOf(id);
-        if (status === "approved" && sources.length > 0) {
-          await replaceSources(tx, {
-            assemblyId: ctx.assembly.id,
-            documentId: document.id,
-            actor,
-            now,
-            transactional: { id, code: amendment.code },
-            sources: locked.filter((row) => sources.includes(row.id)),
-            competitors: lockedCompetitors(competitors, locked),
-            allowTransacted: true,
-          });
-        }
-        decided.push({ id, code: amendment.code, status });
+        continue;
       }
+      const updated = await tx
+        .update(amendments)
+        .set({
+          status,
+          approvalMethod: status === "approved" ? "vote" : null,
+          outcomeVoteId: voteRow!.id,
+          outcomeNote: input.note,
+          decidedAt: now,
+        })
+        .where(
+          and(
+            eq(amendments.id, id),
+            eq(amendments.status, "submitted"),
+            eq(amendments.admission, "admitted"),
+            buildOptimisticLockCondition(amendments.updatedAt, seenAt.get(id)!),
+          ),
+        )
+        .returning({ id: amendments.id });
+      if (updated.length === 0) {
+        fail(
+          409,
+          `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
+        );
+      }
+      await recordEvent(tx, {
+        ...base,
+        entityId: id,
+        type:
+          status === "approved" ? "amendment_approved" : "amendment_rejected",
+        payload,
+      });
+      const sources = sourcesOf(id);
+      if (status === "approved" && sources.length > 0) {
+        await replaceSources(tx, {
+          assemblyId: ctx.assembly.id,
+          documentId: document.id,
+          actor,
+          now,
+          transactional: { id, code: amendment.code },
+          sources: locked.filter((row) => sources.includes(row.id)),
+          competitors: lockedCompetitors(competitors, locked),
+          allowTransacted: true,
+        });
+      }
+      decided.push({ id, code: amendment.code, status });
     }
     if (decided.length > 0) {
       await closeDependents(tx, ctx, competitors, locked, decided);
@@ -6684,7 +6737,7 @@ export async function decideAlternatives(
             ),
           }
         : null;
-    if (projectVote) {
+    if (input.project) {
       await pointLiveVote(tx, {
         assemblyId: ctx.assembly.id,
         voteId: voteRow!.id,
@@ -6708,6 +6761,96 @@ export async function decideAlternatives(
     amendments: await Promise.all(allIds.map((id) => amendmentDto(ctx, id))),
     warnings: result.warnings,
   };
+}
+
+// Votes on a bloc ---------------------------------------------------------------
+
+/**
+ * One vote on a bloc of amendments (POST .../amendments/bloc-vote; user's
+ * decision of 2026-11-21): carried, every one is approved; not carried,
+ * every one is rejected, all pointing at that vote (decision kind "bloc").
+ * The majority is the one the document's amendments need (absolute on the
+ * Estatutos and the regulations, RRI art. 65.5), any counted method, a
+ * registered one with each delegation's ballot (withHeadcount). Everything
+ * as recordMultiAmendmentVote: one amendment that cannot be decided refuses
+ * the whole vote, and so do alternatives on screen among them. Reopening
+ * one voids the vote and reopens the whole bloc (alternativesVoteSiblings).
+ */
+export async function decideBlocVote(
+  ctx: DocumentAmendmentContext,
+  body: BlocVoteBody,
+  options: { controlsProjection?: boolean } = {},
+): Promise<BlocVoteDto> {
+  const { actor, document } = ctx;
+  if (!canRecordResults(actor)) {
+    fail(403, "No tienes permiso para realizar esta acción");
+  }
+  assertNotFinal(ctx);
+  assertSessionOpen(ctx.assembly.status);
+  const ids = body.items.map((item) => item.id);
+  await assertNotOnScreenAsAlternatives(ctx.assembly.id, ids);
+  const loaded = await findAmendments(
+    db,
+    and(eq(amendments.documentId, document.id), inArray(amendments.id, ids)),
+  );
+  if (
+    loaded.length !== ids.length ||
+    !loaded.every((row) => isVisible(ctx, row))
+  ) {
+    fail(404, "Enmienda no encontrada");
+  }
+  const byId = new Map(loaded.map((row) => [row.id, row]));
+  // The members present come from the Mesa's latest headcount unless typed;
+  // a registered vote's counts come from each delegation's ballot.
+  const based = await withHeadcount(ctx.assembly.id, body.vote, ctx.settings);
+  // Absolute in a reform of the Estatutos or a regulation (RRI art. 65.5).
+  const evaluated = evaluateVoteInput(
+    based.vote,
+    ctx.settings,
+    amendmentVoteMajority(document.kind),
+  );
+  const status =
+    evaluated.outcome.result === "approved" ? "approved" : "rejected";
+  // In text order, as the bloc on screen lists them.
+  const ordered = [...ids].sort(
+    (a, b) =>
+      (byId.get(a)!.positionKey ?? 0) - (byId.get(b)!.positionKey ?? 0) ||
+      a.localeCompare(b),
+  );
+  return recordMultiAmendmentVote(ctx, {
+    items: body.items,
+    loaded: byId,
+    statusOf: () => status,
+    payloadOf: () => ({
+      method: "vote",
+      bloc: true,
+      blocSize: ids.length,
+      inFavor: based.vote.inFavor ?? 0,
+      against: based.vote.against ?? 0,
+      abstentions: based.vote.abstentions ?? 0,
+      blank: based.vote.blank ?? 0,
+      invalid: based.vote.invalid ?? 0,
+      notCast: based.vote.notCast ?? 0,
+    }),
+    vote: {
+      method: based.vote.method,
+      ...voteCounts(based.vote),
+      headcountId: based.headcountId,
+      majority: evaluated.majority,
+      result: evaluated.outcome.result,
+      note: based.vote.note ?? null,
+      ballots: based.ballots ?? null,
+      blocAmendmentIds: ordered,
+    },
+    decisionKind: "bloc",
+    decisionPayload: { result: evaluated.outcome.result },
+    note: based.vote.note ?? null,
+    underLock: (tx) => lockOpenSession(tx, ctx.assembly.id),
+    project:
+      body.project !== false &&
+      canModerate(actor) &&
+      options.controlsProjection === true,
+  });
 }
 
 // Transactionals -------------------------------------------------------------

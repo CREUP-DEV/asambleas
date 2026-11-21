@@ -1,9 +1,12 @@
 import type { InjectionKey, MaybeRefOrGetter, Ref } from "vue";
+import type { ElectionInput } from "~~/shared/utils/election";
 import type {
   AdmissionBody,
   AgendaDto,
   AlternativesVoteBody,
   AlternativesVoteDto,
+  BlocVoteBody,
+  BlocVoteDto,
   AmendmentAdmissionDto,
   AmendmentDto,
   AmendmentOutcomeDto,
@@ -1654,6 +1657,81 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (!state || state.documentId !== documentId.value) return null;
     return openRoomAlternatives(state.amendmentBlocOptions, byId.value);
   });
+  /**
+   * The dialog of a vote on a bloc (user's decision of 2026-11-21): one
+   * vote, every amendment approved or every one rejected.
+   */
+  const blocVoteDialog = reactive({ open: false, ids: [] as string[] });
+  /**
+   * Opens it on the bloc chosen; while a bloc is on screen, on that one,
+   * as approving by assent does (roomBlocOpen). Never on alternatives on
+   * screen: those are voted between.
+   */
+  function openBlocVote(ids: string[]): void {
+    if (!requireInSession()) return;
+    if (roomAlternatives.value) {
+      toast.add({
+        id: "session-bloc-vote-alternatives",
+        title: t("session.alternatives.assentBlocked"),
+        color: "warning",
+        icon: "i-lucide-scale",
+      });
+      return;
+    }
+    const target = roomBlocOpen.value.length > 0 ? roomBlocOpen.value : ids;
+    blocVoteDialog.ids = target.filter((id) => {
+      const amendment = byId.value.get(id);
+      return amendment !== undefined && isSessionOpen(amendment);
+    });
+    blocVoteDialog.open = true;
+  }
+  /** Records the vote on the bloc; false when it was not recorded. */
+  async function voteBloc(ids: string[], vote: VoteInput): Promise<boolean> {
+    if (!requireInSession()) return false;
+    const body: BlocVoteBody = {
+      items: ids.map((id) => ({
+        id,
+        updatedAt: byId.value.get(id)?.updatedAt ?? "",
+      })),
+      vote,
+      project: inControl.value,
+    };
+    try {
+      const result = await track("bloc-vote", () =>
+        api.send<BlocVoteDto>(documentApi("/amendments/bloc-vote"), { body }),
+      );
+      for (const amendment of result.amendments) upsertAmendment(amendment);
+      void refreshAmendments();
+      const approved = result.decision.vote?.result === "approved";
+      toast.add({
+        id: `session-bloc-vote-${result.decision.id}`,
+        title: approved
+          ? t("session.blocVote.approved", { count: ids.length }, ids.length)
+          : t("session.blocVote.rejected", { count: ids.length }, ids.length),
+        color: approved ? "success" : "warning",
+        icon: "i-lucide-check",
+      });
+      cancelBloc();
+      const first = result.amendments.find(
+        (amendment) => amendment.status === "approved",
+      );
+      if (first) offerLapses(first, result.warnings);
+      return true;
+    } catch (error) {
+      if (sessionErrorData(error)?.tie === true) {
+        toast.add({
+          id: "session-bloc-vote-tie",
+          title: t("session.vote.tieTitle"),
+          description: t("session.vote.tieRepeat"),
+          color: "warning",
+          icon: "i-lucide-scale",
+        });
+        return false;
+      }
+      api.notifyError(error, "session.blocVote.errors.record");
+      return false;
+    }
+  }
   /** The dialog of a vote between alternatives, on the amendments chosen. */
   const alternativesDialog = reactive({
     open: false,
@@ -1950,6 +2028,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       finalVoteAnnulDialog.open ||
       assentDialog.open ||
       alternativesDialog.open ||
+      blocVoteDialog.open ||
       lapseDialog.open ||
       wordingDialog.open ||
       speakerRenameDialog.open ||
@@ -2287,10 +2366,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   async function reopen(amendment: AmendmentDto) {
     const vote = amendment.outcomeVote;
-    if (vote?.options && vote.options.length > 0) {
+    const several = [
+      ...(vote?.options ?? []).flatMap((option) => option.amendmentIds),
+      ...(vote?.blocAmendmentIds ?? []),
+    ];
+    if (vote && several.length > 0) {
       // Those the vote decided: a winner it kept undecided is not reopened.
-      const others = vote.options
-        .flatMap((option) => option.amendmentIds)
+      const others = several
         .filter(
           (id) =>
             id !== amendment.id &&
@@ -2885,12 +2967,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   async function recordItemVote(
     itemId: string,
-    input: { question: string; vote: VoteInput },
+    input: { question: string; vote: VoteInput; election?: ElectionInput },
   ): Promise<SessionItemVoteResult> {
     if (!requireInSession()) return { ok: false, tie: false };
     const body: ItemVoteBody = {
       question: input.question.trim(),
       vote: sessionCleanVote(input.vote),
+      ...(input.election
+        ? {
+            election: {
+              ...input.election,
+              candidates: input.election.candidates.map((name) => name.trim()),
+            },
+          }
+        : {}),
       project: true,
     };
     try {
@@ -2905,9 +2995,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       const approved = result.vote.result === "approved";
       toast.add({
         id: `session-item-vote-${result.vote.id}`,
-        title: approved
-          ? t("session.toasts.itemVoteApproved")
-          : t("session.toasts.itemVoteRejected"),
+        title: result.vote.election
+          ? t("session.toasts.electionRecorded")
+          : approved
+            ? t("session.toasts.itemVoteApproved")
+            : t("session.toasts.itemVoteRejected"),
         description: result.projected
           ? undefined
           : t("session.toasts.itemVoteNotProjected"),
@@ -3171,6 +3263,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteAnnulDialog,
     assentDialog,
     roomAlternatives,
+    blocVoteDialog,
+    openBlocVote,
+    voteBloc,
     alternativesDialog,
     openAlternatives,
     projectAlternatives,

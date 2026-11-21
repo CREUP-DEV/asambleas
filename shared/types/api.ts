@@ -21,6 +21,7 @@ import type {
   DocumentFormat,
   DocumentKind,
   DocumentStatus,
+  FormCorrectionStatus,
   Majority,
   MemberKind,
   MemberSource,
@@ -43,6 +44,7 @@ import type {
   AlternativesWinnerOutcome,
 } from "../utils/alternativesVote";
 import type { VoteBallot, VoteBallotInput } from "../utils/rollCall";
+import type { ElectionInput, ElectionRecord } from "../utils/election";
 import type { SeatAssignment } from "../utils/seating/groups";
 import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
 import type { SeatingAssignmentOp } from "../utils/seating/proposal";
@@ -375,6 +377,15 @@ export interface ReviewQueueDto {
   documents: DocumentSummaryDto[];
   /** Amendments waiting for validation or publication, by document. */
   amendments: ReviewQueueAmendmentDto[];
+  /**
+   * Documents whose presenters proposed corrections of form to the
+   * approved text that wait for the Secretaría (document:manage), with how
+   * many; empty for anyone else.
+   */
+  formCorrections: {
+    document: { id: string; slug: string; title: string };
+    count: number;
+  }[];
 }
 
 /**
@@ -825,6 +836,12 @@ export interface VersionDto {
   kind: "draft" | "base" | "consolidated";
   blocks: Block[];
   contentHash: string;
+  /**
+   * A consolidated version corrected in form after the final vote: the one
+   * it replaced (FormCorrectionDto), and the correction's reason in `note`.
+   */
+  replacesVersionId: string | null;
+  note: string | null;
   createdAt: IsoDate;
 }
 
@@ -849,6 +866,71 @@ export interface DocumentCapabilities {
   /** Record proponent positions. */
   position: boolean;
   moderate: boolean;
+  /**
+   * Correct the approved text in form (user's decisions of 2026-11-21):
+   * `direct` for the Secretaría and the Mesa, applied at once; `propose`
+   * for its presenters, for the Secretaría to apply; null when there is no
+   * approved text to correct or the reader may do neither.
+   */
+  correctForm: "direct" | "propose" | null;
+}
+
+/** Who made a correction of form, as the record names them. */
+export type FormCorrectionAuthor = "secretaria" | "mesa" | "presenter";
+
+/**
+ * A correction of form to the approved text (GET .../form-corrections):
+ * the text it was made on (`before`) and the corrected one (`blocks`), its
+ * reason and what came of it. Applied ones are public as the text is;
+ * the others only reach the Secretaría, the Mesa and the presenters.
+ */
+export interface FormCorrectionDto {
+  id: string;
+  status: FormCorrectionStatus;
+  madeAs: FormCorrectionAuthor;
+  reason: string;
+  fromVersionId: string;
+  before: Block[];
+  blocks: Block[];
+  /**
+   * Made on the text in force: false for a pending one another correction
+   * overtook, which can no longer be applied as is.
+   */
+  onCurrentText: boolean;
+  decisionNote: string | null;
+  createdAt: IsoDate;
+  decidedAt: IsoDate | null;
+  updatedAt: IsoDate;
+  can: { apply: boolean; reject: boolean; withdraw: boolean };
+}
+
+export interface FormCorrectionsDto {
+  corrections: FormCorrectionDto[];
+  /** The consolidated version the final vote approved, before any correction. */
+  votedVersionId: string | null;
+}
+
+/**
+ * Body of POST .../form-corrections: the whole corrected text over the
+ * consolidated version the editor opened (`fromVersionId`, 409 `stale`
+ * when it is no longer the one in force) and why.
+ */
+export interface FormCorrectionBody {
+  fromVersionId: string;
+  blocks: Block[];
+  reason: string;
+}
+
+/** Body of POST .../form-corrections/[correction]/decision. */
+export interface FormCorrectionDecisionBody {
+  decision: "apply" | "reject";
+  note?: string | null;
+  updatedAt: IsoDate;
+}
+
+/** Body of DELETE .../form-corrections/[correction] (its author withdraws it). */
+export interface FormCorrectionWithdrawBody {
+  updatedAt: IsoDate;
 }
 
 export interface DocumentDto extends DocumentSummaryDto {
@@ -1605,6 +1687,17 @@ export interface VoteDto {
    * order (user's decision of 2026-11-21); null on other votes.
    */
   ballots: VoteBallot[] | null;
+  /**
+   * A vote on a bloc of amendments (user's decision of 2026-11-21): the
+   * amendments it approved or rejected together; null on other votes.
+   */
+  blocAmendmentIds: string[] | null;
+  /**
+   * An election (an agenda item's vote; user's decision of 2026-11-21):
+   * candidates, posts, rule, votes, who was elected and who goes to a
+   * second round. Null on other votes.
+   */
+  election: ElectionRecord | null;
   recordedAt: IsoDate;
   /** Lock token for voiding it and changing its unanimity. */
   updatedAt: IsoDate;
@@ -1627,6 +1720,13 @@ export interface VoteDto {
 export interface ItemVoteBody {
   question: string;
   vote: VoteInput;
+  /**
+   * An election instead of a vote in favour or against (user's decision of
+   * 2026-11-21): the candidates and each one's votes; the vote keeps the
+   * method, blank and invalid ballots (abstentions by show of hands),
+   * present and note. Never by assent nor registered.
+   */
+  election?: ElectionInput;
   project?: boolean;
 }
 
@@ -1712,6 +1812,26 @@ export interface AlternativesVoteBody {
   /** As OutcomeBody's: false leaves the projection where it is. */
   project?: boolean;
 }
+
+/**
+ * POST .../documents/[document]/amendments/bloc-vote (results:record): one
+ * vote on a bloc of amendments (user's decision of 2026-11-21), each with
+ * the `updatedAt` it was seen at. Carried, every one is approved; not
+ * carried, every one is rejected, under the majority the document's
+ * amendments need (absolute on the Estatutos and the regulations). Any
+ * counted method, registered and secret included; assent has its own
+ * request (POST .../amendments/assent). A tie under `tieRule: "repeat"`
+ * answers 409 `{ tie: true }`.
+ */
+export interface BlocVoteBody {
+  items: { id: string; updatedAt: IsoDate }[];
+  vote: VoteInput;
+  /** As OutcomeBody's: false leaves the projection where it is. */
+  project?: boolean;
+}
+
+/** Response of POST .../amendments/bloc-vote, as AlternativesVoteDto's. */
+export type BlocVoteDto = AlternativesVoteDto;
 
 /** Response of POST .../amendments/alternatives. */
 export interface AlternativesVoteDto {
@@ -2731,6 +2851,13 @@ export interface LiveTally {
   method: VoteMethod;
   reveal: LiveTallyReveal;
   counts: LiveTallyCounts | null;
+  /**
+   * A vote between alternatives counted ballot by ballot (user's decision
+   * of 2026-11-21): each option's ballots, in order (A, B…), with `counts`
+   * keeping the blank and invalid ones (in favour and against 0). Null or
+   * absent on any other vote.
+   */
+  options?: number[] | null;
   present: number | null;
   majority: Majority;
 }

@@ -27,8 +27,16 @@ const alternatives = computed(() =>
   alternativesText.isAlternatives(props.vote),
 );
 
+const electionText = useElectionText();
+
 const counts = computed(() => {
   if (props.vote.method === "assent") return "";
+  if (props.vote.election) {
+    const rest = shownVoteCounts(props.vote)
+      .filter((row) => row.key !== "inFavor" && row.key !== "against")
+      .map(({ key, value }) => `${t(`amendment.vote.${key}`)} ${value}`);
+    return [electionText.counts(props.vote.election), ...rest].join(" · ");
+  }
   if (alternatives.value) {
     return `${alternativesText.counts(props.vote)} · ${alternativesText.outcome(props.vote)}`;
   }
@@ -63,7 +71,15 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
       />
       <!-- The size of «Resultado»'s badges, so the cell reads as one. -->
       <UBadge
-        v-if="alternatives"
+        v-if="vote.election"
+        color="neutral"
+        variant="subtle"
+        size="sm"
+        icon="i-lucide-vote"
+        :label="t('amendment.vote.election.title')"
+      />
+      <UBadge
+        v-else-if="alternatives"
         color="neutral"
         variant="subtle"
         size="sm"
@@ -84,6 +100,12 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         t(`amendment.vote.methods.${vote.method}`)
       }}</span>
     </div>
+    <p
+      v-if="vote.election"
+      :class="['text-default', voided ? 'line-through' : '']"
+    >
+      {{ electionText.outcome(vote.election) }}
+    </p>
     <p
       v-if="counts"
       :class="['text-muted tabular-nums', voided ? 'line-through' : '']"

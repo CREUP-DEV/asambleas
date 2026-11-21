@@ -31,6 +31,7 @@ import {
   assemblies,
   assemblyMilestones,
   documentFiles,
+  documentFormCorrections,
   documentImages,
   documents,
   documentVersions,
@@ -472,6 +473,36 @@ export function deleteBlocker(
   return null;
 }
 
+/** The text can be corrected in form: structured, approved by the final vote. */
+export function hasApprovedText(
+  document: Pick<
+    DocumentRow,
+    "format" | "finalVoteId" | "consolidatedVersionId"
+  >,
+): boolean {
+  return (
+    document.format === "structured" &&
+    document.finalVoteId !== null &&
+    document.consolidatedVersionId !== null
+  );
+}
+
+/**
+ * How the actor may correct the approved text in form (user's decisions of
+ * 2026-11-21; server/utils/domain/formCorrections.ts): directly (the
+ * Secretaría and the Mesa), by proposing it (its presenters), or not at
+ * all. No deadline, and the assembly may be closed.
+ */
+export function formCorrectionMode(
+  actor: Actor,
+  document: PresentedDocumentRow,
+): "direct" | "propose" | null {
+  if (!hasApprovedText(document)) return null;
+  if (canManageDocuments(actor) || canModerate(actor)) return "direct";
+  if (isProponentSide(actor, document)) return "propose";
+  return null;
+}
+
 export function documentCapabilities(
   actor: Actor,
   assembly: Pick<AssemblyRow, "status">,
@@ -495,6 +526,7 @@ export function documentCapabilities(
       document.status === "published" &&
       (isDocumentPresenter(actor, document) || canModerate(actor)),
     moderate: canModerate(actor),
+    correctForm: formCorrectionMode(actor, document),
   };
 }
 
@@ -520,6 +552,8 @@ export function toVersionDto(version: VersionRow): VersionDto {
     kind: version.kind,
     blocks: version.blocks,
     contentHash: version.contentHash,
+    replacesVersionId: version.replacesVersionId ?? null,
+    note: version.kind === "consolidated" ? (version.note ?? null) : null,
     createdAt: version.createdAt.toISOString(),
   };
 }
@@ -1167,7 +1201,7 @@ export async function requirePresentersMayPresent(
  * insert rows that reference it (see "Row locks" by shareLockAssembly); only
  * a transaction that deletes the row takes `update`.
  */
-async function lockDocument(
+export async function lockDocument(
   executor: Executor,
   documentId: string,
   strength: "no key update" | "update" = "no key update",
@@ -3054,6 +3088,17 @@ export async function annulFinalVote(
       .update(documents)
       .set({ finalVoteId: null, consolidatedVersionId: null })
       .where(eq(documents.id, document.id));
+    // The proposals of correction of form still waiting lose their text;
+    // the applied ones stay for the record (formCorrections.ts).
+    await tx
+      .update(documentFormCorrections)
+      .set({ status: "void", decidedAt: new Date() })
+      .where(
+        and(
+          eq(documentFormCorrections.documentId, document.id),
+          eq(documentFormCorrections.status, "pending"),
+        ),
+      );
 
     await recordEvent(tx, {
       assemblyId: assembly.id,

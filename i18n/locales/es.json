@@ -1781,7 +1781,8 @@
         "lost": "Votación entre alternativas: estaba en la opción {option} ({count} votos) y ganó la {winner}",
         "rejectedAll": "Votación entre alternativas sin opción ganadora: la Mesa las rechazó todas",
         "noEffect": "Votación entre alternativas sin opción ganadora: la Mesa las dejó sin decidir"
-      }
+      },
+      "bloc": "Votación en bloque de {count} enmiendas · {inFavor} a favor, {against} en contra, {abstentions} abstenciones"
     },
     "vote": {
       "counts": "Recuento",
@@ -1819,6 +1820,17 @@
         "rejectedAll": "Ninguna opción ganó: la Mesa las rechazó todas",
         "noEffect": "Ninguna opción ganó: la Mesa las dejó sin decidir",
         "amendments": "Enmiendas"
+      },
+      "bloc": "Votación en bloque",
+      "election": {
+        "title": "Elección",
+        "elected": "Elegida: {names} | Elegidas: {names}",
+        "tie": "Empate en el último puesto",
+        "runoff": "Segunda vuelta: {names}",
+        "nobody": "Nadie elegido",
+        "electedMark": "Elegida",
+        "runoffMark": "2.ª vuelta",
+        "ruleLine": "{rule} · {posts} puesto(s)"
       }
     },
     "composer": {
@@ -2065,7 +2077,7 @@
       "sheetEdited": "Última edición: {name}, {when}"
     },
     "reopenAlternatives": {
-      "required": "Se decidió en una votación entre alternativas: reabrirla anula la votación y reabre todas sus enmiendas"
+      "required": "Se decidió en una votación de varias enmiendas: reabrirla anula la votación y reabre todas sus enmiendas"
     }
   },
   "admin": {
@@ -3730,6 +3742,53 @@
         "inadmissible": "Inadmitidas"
       }
     },
+    "formCorrections": {
+      "title": "Correcciones de forma",
+      "description": "Erratas y otros cambios de forma del texto aprobado. Cada corrección sustituye al texto consolidado, sin anexo, y queda aquí con su motivo.",
+      "descriptionPropose": "Puedes proponer cambios de forma al texto aprobado. La Secretaría los revisa antes de que sustituyan al texto consolidado.",
+      "edit": "Corregir la forma",
+      "propose": "Proponer una corrección",
+      "pendingTitle": "{count} corrección propuesta espera tu revisión | {count} correcciones propuestas esperan tu revisión",
+      "editHintDirect": "Al guardar, este texto sustituye al consolidado. Solo cambios de forma: el contenido es el que aprobó la asamblea.",
+      "editHintPropose": "Solo cambios de forma: el contenido es el que aprobó la asamblea. La Secretaría la revisará.",
+      "textLabel": "Texto aprobado",
+      "reason": "Motivo",
+      "reasonHelp": "Qué se corrige y por qué. Lo ve todo el mundo junto a la corrección.",
+      "reasonRequired": "Escribe el motivo de la corrección.",
+      "noChange": "Todavía no has cambiado nada del texto.",
+      "apply": "Guardar la corrección",
+      "send": "Enviar a la Secretaría",
+      "status": {
+        "pending": "Pendiente",
+        "applied": "Aplicada",
+        "rejected": "Rechazada",
+        "withdrawn": "Retirada",
+        "void": "Sin efecto"
+      },
+      "madeAs": {
+        "secretaria": "Secretaría",
+        "mesa": "Mesa",
+        "presenter": "Quien presenta"
+      },
+      "decisionNote": "Nota de la Secretaría: {note}",
+      "overtaken": "Otra corrección ha cambiado el texto después. Ya no se puede aplicar tal cual.",
+      "applyProposal": "Aplicar",
+      "reject": "Rechazar",
+      "withdraw": "Retirar",
+      "rejectNote": "Nota para quien la propuso (opcional)",
+      "rejectConfirm": "Rechazar la corrección",
+      "toasts": {
+        "applied": "Corrección aplicada al texto consolidado",
+        "proposed": "Corrección enviada a la Secretaría",
+        "rejected": "Corrección rechazada"
+      },
+      "errors": {
+        "load": "No se pudieron cargar las correcciones de forma",
+        "save": "No se pudo guardar la corrección",
+        "decide": "No se pudo actualizar la corrección"
+      },
+      "correctedText": "Texto con correcciones de forma posteriores a la votación. Debajo están las correcciones y sus cambios."
+    },
     "export": {
       "clean": "PDF limpio",
       "annotated": "PDF anotado",
@@ -4010,6 +4069,7 @@
       "unincorporated": "{code} sale del texto y vuelve a quedar pendiente",
       "itemVoteApproved": "Punto aprobado",
       "itemVoteRejected": "Punto rechazado",
+      "electionRecorded": "Elección registrada",
       "itemVoteNotProjected": "La votación se ha registrado, pero no se ha proyectado: el punto ya no está en debate.",
       "itemVoteVoided": "Votación del punto anulada",
       "itemVoteUnanimous": "La votación consta por unanimidad",
@@ -4321,7 +4381,7 @@
       "confirm": "Confirmar y registrar",
       "annul": "Anular votación final",
       "annulTitle": "Anular la votación final",
-      "annulDescription": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y se descarta el texto consolidado. Las enmiendas se pueden volver a decidir.",
+      "annulDescription": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y se descarta el texto consolidado, con sus correcciones de forma si las tenía. Las enmiendas se pueden volver a decidir.",
       "annulNote": "Motivo",
       "annulSubmit": "Anular votación"
     },
@@ -4717,6 +4777,52 @@
       "errors": {
         "headcountChanged": "El recuento de presentes ha cambiado: vuelve a pasar lista con el nuevo"
       }
+    },
+    "blocVote": {
+      "open": "Votar en bloque",
+      "title": "Votación del bloque ({count} enmienda) | Votación del bloque ({count} enmiendas)",
+      "description": "Una sola votación: si sale, se aprueban todas; si no, se rechazan todas.",
+      "submit": "Registrar la votación",
+      "question": "Votación en bloque: {codes}",
+      "approved": "Bloque aprobado: {count} enmienda | Bloque aprobado: {count} enmiendas",
+      "rejected": "Bloque rechazado: {count} enmienda | Bloque rechazado: {count} enmiendas",
+      "errors": {
+        "record": "No se ha podido registrar la votación del bloque"
+      }
+    },
+    "election": {
+      "toggle": "Es una elección",
+      "toggleHelp": "Candidaturas con sus votos en lugar de a favor y en contra.",
+      "candidates": "Candidaturas",
+      "candidate": "Candidatura {n}",
+      "votes": "Votos",
+      "remove": "Quitar la candidatura {n}",
+      "add": "Añadir candidatura",
+      "posts": "Puestos a cubrir",
+      "postsHelp": "También es el máximo de candidaturas que se pueden marcar en cada papeleta.",
+      "ballots": "Papeletas con algún voto",
+      "ballotsHelp": "Las que marcan al menos una candidatura; sin contar las blancas ni las nulas.",
+      "rule": "Cómo se elige",
+      "rules": {
+        "absolute_runoff": "Mayoría absoluta y segunda vuelta",
+        "absolute_runoffHint": "Sale quien supere la mitad de los votos emitidos; los puestos que queden van a una segunda vuelta por mayoría simple, como en la CAS y la CAI.",
+        "simple": "Mayoría simple",
+        "simpleHint": "Salen las candidaturas más votadas, hasta cubrir los puestos."
+      },
+      "inconsistent": "Hay más papeletas que miembros presentes.",
+      "elected": "Elegida: {names} | Elegidas: {names}",
+      "tie": "Empate en el último puesto: lo decide la Mesa",
+      "runoff": "Nadie más llega a {threshold} votos: segunda vuelta entre {names}",
+      "nobody": "Nadie resulta elegido",
+      "problems": {
+        "names": "Falta el nombre de alguna candidatura.",
+        "empty": "Anota los votos de cada candidatura.",
+        "ballots": "Alguna candidatura tiene más votos que papeletas con voto, o los votos superan lo que esas papeletas pueden marcar."
+      },
+      "runoffReady": {
+        "title": "Primera vuelta registrada: segunda vuelta preparada",
+        "description": "{first}. Anota los votos de la segunda vuelta, por mayoría simple, o cierra si la Mesa no la celebra ahora."
+      }
     }
   },
   "projection": {
@@ -4783,7 +4889,8 @@
       "majority": "Mayoría",
       "agendaItem": "Votación del punto {title}",
       "agendaItemUnknown": "Votación de un punto del orden del día",
-      "unanimous": "Por unanimidad"
+      "unanimous": "Por unanimidad",
+      "bloc": "Votación en bloque: {codes}"
     },
     "stale": "Mostrando los últimos datos recibidos",
     "sessionExpired": "Sesión caducada: vuelve a entrar",
@@ -4864,6 +4971,10 @@
       "lateHint": "Se envió después del cierre de presentación de documentos: la asamblea tendrá que aceptar tratarlo.",
       "bulkConfirmVisible": "Toda la asamblea podrá leerlos.",
       "bulkConfirmFrozen": "Sus textos quedan fijados: ya no se podrán editar y recibirán su referencia si su tipo la lleva."
+    },
+    "formCorrections": {
+      "title": "Correcciones de forma propuestas a textos aprobados",
+      "count": "{count} pendiente | {count} pendientes"
     },
     "transactionals": {
       "title": "Transaccionales",
@@ -5404,7 +5515,7 @@
       "finalAnnulled": "Votación final anulada: {title}",
       "annul": "Anular",
       "annulTitle": "Anular la votación final",
-      "annulHint": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y pierde su texto consolidado.",
+      "annulHint": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y pierde su texto consolidado, con sus correcciones de forma si las tenía.",
       "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final.",
       "finalBlocked": "Todavía no se puede anotar la votación final",
       "finalFromConsole": "La Mesa lo resuelve desde la consola de la sesión."
@@ -6803,6 +6914,10 @@
       "document_deleted": "Documento borrado",
       "document_voted": "Votación final del documento",
       "final_vote_annulled": "Votación final anulada",
+      "document_form_corrected": "Corrección de forma del texto aprobado",
+      "document_form_correction_proposed": "Corrección de forma propuesta",
+      "document_form_correction_rejected": "Corrección de forma rechazada",
+      "document_form_correction_withdrawn": "Corrección de forma retirada",
       "passage_worded": "Redacción de un pasaje fijada por la Mesa",
       "passage_wording_removed": "Redacción de un pasaje quitada",
       "amendment_created": "@:amendment.history.events.amendment_created",

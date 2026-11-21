@@ -134,6 +134,8 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   tieResolution: null,
   winnerOutcome: null,
   ballots: null,
+  blocAmendmentIds: null,
+  election: null,
   recordedAt: "2026-11-14T10:30:00Z",
   updatedAt: "2026-11-14T10:30:00Z",
   voidedAt: null,
@@ -993,12 +995,26 @@ describe("a secret vote being counted", () => {
       counts: { inFavor: 6, against: 3, blank: 0, invalid: 1 },
     };
     expect(liveTallyRows(tally)).toEqual([
-      { key: "inFavor", count: 6, share: 1 },
-      { key: "against", count: 3, share: 0.5 },
-      { key: "blank", count: 0, share: 0 },
-      { key: "invalid", count: 1, share: 1 / 6 },
+      { key: "inFavor", option: null, count: 6, share: 1 },
+      { key: "against", option: null, count: 3, share: 0.5 },
+      { key: "blank", option: null, count: 0, share: 0 },
+      { key: "invalid", option: null, count: 1, share: 1 / 6 },
     ]);
     expect(liveTallyCast(tally)).toBe(10);
+  });
+
+  it("counts each option of a vote between alternatives", () => {
+    const tally = {
+      counts: { inFavor: 0, against: 0, blank: 1, invalid: 0 },
+      options: [4, 2],
+    };
+    expect(liveTallyRows(tally)).toEqual([
+      { key: "option", option: 0, count: 4, share: 1 },
+      { key: "option", option: 1, count: 2, share: 0.5 },
+      { key: "blank", option: null, count: 1, share: 0.25 },
+      { key: "invalid", option: null, count: 0, share: 0 },
+    ]);
+    expect(liveTallyCast(tally)).toBe(7);
   });
 
   it("shows no count when the result comes at the end", () => {

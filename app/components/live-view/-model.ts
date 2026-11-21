@@ -749,8 +749,9 @@ export function liveVoteCounts(
   vote: VoteDto,
 ): { key: LiveVoteCountKey; value: number }[] {
   const counts = shownVoteCounts(vote);
-  // A vote between alternatives counts each option instead.
-  return vote.options && vote.options.length > 0
+  // A vote between alternatives counts each option instead, and an
+  // election each candidate.
+  return (vote.options && vote.options.length > 0) || vote.election
     ? counts.filter((row) => row.key !== "inFavor" && row.key !== "against")
     : counts;
 }
@@ -771,28 +772,44 @@ export const LIVE_TALLY_KEYS = [
  * with the result (`reveal: "end"`, no counts).
  */
 export function liveTallyRows(
-  tally: Pick<LiveTally, "counts"> | null | undefined,
+  tally: Pick<LiveTally, "counts" | "options"> | null | undefined,
 ): {
-  key: (typeof LIVE_TALLY_KEYS)[number];
+  /** A ballot key, or `option` with its index in a vote between alternatives. */
+  key: (typeof LIVE_TALLY_KEYS)[number] | "option";
+  option: number | null;
   count: number;
   share: number;
 }[] {
   const counts = tally?.counts;
   if (!counts) return [];
-  const top = Math.max(1, ...LIVE_TALLY_KEYS.map((key) => counts[key]));
-  return LIVE_TALLY_KEYS.map((key) => ({
-    key,
-    count: counts[key],
-    share: counts[key] / top,
-  }));
+  // Between alternatives: each option, then blank and invalid ballots.
+  const rows =
+    tally?.options && tally.options.length > 0
+      ? [
+          ...tally.options.map((count, option) => ({
+            key: "option" as const,
+            option,
+            count,
+          })),
+          { key: "blank" as const, option: null, count: counts.blank },
+          { key: "invalid" as const, option: null, count: counts.invalid },
+        ]
+      : LIVE_TALLY_KEYS.map((key) => ({
+          key,
+          option: null,
+          count: counts[key],
+        }));
+  const top = Math.max(1, ...rows.map((row) => row.count));
+  return rows.map((row) => ({ ...row, share: row.count / top }));
 }
 
 /** The ballots counted so far; 0 without a running count. */
 export function liveTallyCast(
-  tally: Pick<LiveTally, "counts"> | null | undefined,
+  tally: Pick<LiveTally, "counts" | "options"> | null | undefined,
 ): number {
   const counts = tally?.counts;
+  const options = (tally?.options ?? []).reduce((sum, count) => sum + count, 0);
   return counts
-    ? LIVE_TALLY_KEYS.reduce((sum, key) => sum + counts[key], 0)
+    ? LIVE_TALLY_KEYS.reduce((sum, key) => sum + counts[key], 0) + options
     : 0;
 }

@@ -443,6 +443,7 @@ defineShortcuts({
       <SessionWordingDialog />
       <SessionBulkAssentDialog />
       <SessionAlternativesVoteDialog />
+      <SessionBlocVoteDialog />
       <SessionTransactionalComposer />
 
       <template #fallback>

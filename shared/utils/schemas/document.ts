@@ -15,6 +15,9 @@ import type {
   DocumentUpdateBody,
   FinalVoteAnnulBody,
   FinalVoteBody,
+  FormCorrectionBody,
+  FormCorrectionDecisionBody,
+  FormCorrectionWithdrawBody,
 } from "../../types/api";
 import { BULK_DOCUMENTS_MAX } from "../agendaSubmissions";
 import { blocksSchema } from "./content";
@@ -155,6 +158,34 @@ export const documentContentSchema = z.object({
   baseHash: contentHashSchema,
 });
 
+/** The most a correction of form's reason or the Secretaría's note takes. */
+export const FORM_CORRECTION_REASON_MAX_LENGTH = 2_000;
+
+/** Body of POST .../form-corrections (FormCorrectionBody). */
+export const formCorrectionSchema = z.object({
+  fromVersionId: z.string().min(1).max(64),
+  blocks: blocksSchema,
+  reason: z.string().trim().min(1).max(FORM_CORRECTION_REASON_MAX_LENGTH),
+});
+
+/** Body of POST .../form-corrections/[correction]/decision. */
+export const formCorrectionDecisionSchema = z.object({
+  decision: z.enum(["apply", "reject"]),
+  note: z
+    .string()
+    .trim()
+    .max(FORM_CORRECTION_REASON_MAX_LENGTH)
+    .transform((value) => value || null)
+    .nullable()
+    .optional(),
+  updatedAt: isoDateSchema,
+});
+
+/** Body of DELETE .../form-corrections/[correction]. */
+export const formCorrectionWithdrawSchema = z.object({
+  updatedAt: isoDateSchema,
+});
+
 /** Time a published document was open (DocumentReadingBody). */
 export const documentReadingSchema = z.strictObject({
   opened: z.boolean().optional(),
@@ -214,4 +245,13 @@ export type _DocumentSchemaChecks = [
   Assignable<UndoValidationBody, z.output<typeof undoValidationBodySchema>>,
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
   Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
+  Assignable<FormCorrectionBody, z.output<typeof formCorrectionSchema>>,
+  Assignable<
+    FormCorrectionDecisionBody,
+    z.output<typeof formCorrectionDecisionSchema>
+  >,
+  Assignable<
+    FormCorrectionWithdrawBody,
+    z.output<typeof formCorrectionWithdrawSchema>
+  >,
 ];

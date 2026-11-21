@@ -53,6 +53,8 @@ export function toVoteDto(vote: VoteRow): VoteDto {
     winningOption: vote.winningOption ?? null,
     tieResolution: vote.tieResolution ?? null,
     ballots: vote.ballots ?? null,
+    blocAmendmentIds: vote.blocAmendmentIds ?? null,
+    election: vote.election ?? null,
     winnerOutcome:
       vote.options && vote.winningOption !== null
         ? (vote.winnerOutcome ?? "approve")

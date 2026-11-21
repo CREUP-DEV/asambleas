@@ -449,6 +449,22 @@ export const VOTE_SUBJECTS = [
 export type VoteSubject = (typeof VOTE_SUBJECTS)[number];
 
 /** New values go at the end, as VOTE_SUBJECTS says. */
+/**
+ * A correction of form to an approved text (user's decisions of
+ * 2026-11-21): the Secretaría and the Mesa apply theirs at once
+ * (`applied`); one by a presenter waits (`pending`) until the Secretaría
+ * applies or rejects it, or its author withdraws it; annulling the final
+ * vote voids the ones still waiting (`void`).
+ */
+export const FORM_CORRECTION_STATUSES = [
+  "pending",
+  "applied",
+  "rejected",
+  "withdrawn",
+  "void",
+] as const;
+export type FormCorrectionStatus = (typeof FORM_CORRECTION_STATUSES)[number];
+
 export const DECISION_KINDS = [
   "admit_late",
   "inadmission",
@@ -460,6 +476,11 @@ export const DECISION_KINDS = [
    * and the others' rejected (shared/utils/alternativesVote.ts).
    */
   "alternatives",
+  /**
+   * A vote on a bloc of amendments (user's decision of 2026-11-21): one
+   * vote, every amendment approved or every one rejected.
+   */
+  "bloc",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 

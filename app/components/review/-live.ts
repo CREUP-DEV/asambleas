@@ -54,6 +54,11 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "acceptance_recorded",
   "document_voted",
   "final_vote_annulled",
+  // Corrections of form proposed to an approved text.
+  "document_form_corrected",
+  "document_form_correction_proposed",
+  "document_form_correction_rejected",
+  "document_form_correction_withdrawn",
 ]);
 
 /** Whether a batch of live events may have changed the review queue. */

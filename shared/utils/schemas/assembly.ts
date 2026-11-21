@@ -358,6 +358,7 @@ export const liveTallyBodySchema = z.object({
           invalid: ballotCount,
         })
         .nullable(),
+      options: z.array(ballotCount).max(10).nullable().optional(),
       present: ballotCount.nullable(),
       majority: z.enum(MAJORITIES),
     })

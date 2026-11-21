@@ -2244,6 +2244,8 @@ describe("agenda item votes", () => {
     tieResolution: null,
     winnerOutcome: null,
     ballots: null,
+    blocAmendmentIds: null,
+    election: null,
     recordedAt: "2026-11-15T10:00:00Z",
     updatedAt: "2026-11-15T10:00:00Z",
     voidedAt: null,

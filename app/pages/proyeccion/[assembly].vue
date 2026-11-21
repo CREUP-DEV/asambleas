@@ -782,11 +782,20 @@ const voteSubjectKind = computed(() =>
     : null,
 );
 const voteSubject = computed(() =>
-  voteAlternatives.value
-    ? t("amendment.vote.alternatives.title")
-    : voteSubjectKind.value
-      ? liveVoteSubjectText(voteSubjectKind.value, t)
-      : "",
+  vote.value?.blocAmendmentIds
+    ? t("projection.vote.bloc", {
+        codes: vote.value.blocAmendmentIds
+          .map(
+            (id) =>
+              amendments.value.find((item) => item.id === id)?.code ?? "?",
+          )
+          .join(", "),
+      })
+    : voteAlternatives.value
+      ? t("amendment.vote.alternatives.title")
+      : voteSubjectKind.value
+        ? liveVoteSubjectText(voteSubjectKind.value, t)
+        : "",
 );
 /**
  * A vote between alternatives on screen (user's decisions of 2026-11-20):
@@ -805,9 +814,11 @@ const voteAlternatives = computed(() => {
     won: vote.value?.winningOption === index,
   }));
 });
+const electionText = useElectionText();
 const voteHeadline = computed(() => {
   const current = vote.value;
   if (!current) return "";
+  if (current.election) return electionText.outcome(current.election);
   if (!voteAlternatives.value) {
     return current.result === "approved"
       ? t("projection.vote.approved")
@@ -1336,9 +1347,17 @@ useHead(() => ({
           v-if="tally.counts"
           class="mt-[clamp(0.5rem,1vw,1rem)] grid grid-cols-2 gap-x-[clamp(1rem,3vw,3rem)] gap-y-[clamp(0.5rem,1vw,1rem)] lg:grid-cols-4"
         >
-          <div v-for="row in tallyRows" :key="row.key" class="min-w-0">
+          <div
+            v-for="row in tallyRows"
+            :key="`${row.key}:${row.option}`"
+            class="min-w-0"
+          >
             <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
-              {{ t(`projection.vote.${row.key}`) }}
+              {{
+                row.key === "option"
+                  ? alternativesText.optionName(row.option ?? 0)
+                  : t(`projection.vote.${row.key}`)
+              }}
             </dt>
             <dd
               class="text-[clamp(2.25rem,4.5vw,4.75rem)] leading-tight font-extrabold tabular-nums"
@@ -1356,7 +1375,9 @@ useHead(() => ({
                     ? 'bg-success'
                     : row.key === 'against'
                       ? 'bg-error'
-                      : 'bg-(--ui-text-dimmed)'
+                      : row.key === 'option'
+                        ? 'bg-primary'
+                        : 'bg-(--ui-text-dimmed)'
                 "
                 :style="{ width: `${row.share * 100}%` }"
               />
@@ -1408,12 +1429,14 @@ useHead(() => ({
           {{ voteQuestion }}
         </p>
         <p
-          class="text-[clamp(2.25rem,5vw,5.5rem)] leading-none font-extrabold tracking-tight uppercase"
-          :class="
+          :class="[
+            vote.election
+              ? 'text-[clamp(1.75rem,3.5vw,3.75rem)] leading-tight font-bold'
+              : 'text-[clamp(2.25rem,5vw,5.5rem)] leading-none font-extrabold tracking-tight uppercase',
             vote.result === 'approved'
               ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
-              : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
-          "
+              : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)',
+          ]"
         >
           {{ voteHeadline }}
         </p>
@@ -1424,9 +1447,28 @@ useHead(() => ({
         >
           {{ t("projection.vote.keepNote") }}
         </p>
+        <!-- An election: each candidate's votes, then blank and invalid. -->
+        <div
+          v-if="vote.election"
+          class="mt-[clamp(0.5rem,1vw,1rem)] space-y-[clamp(0.5rem,1vw,1rem)]"
+        >
+          <VoteElection :election="vote.election" size="lg" />
+          <dl class="flex flex-wrap gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2">
+            <div v-for="count in voteCounts" :key="count.key">
+              <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
+                {{ t(`projection.vote.${count.key}`) }}
+              </dt>
+              <dd
+                class="text-[clamp(1.25rem,2.5vw,2.75rem)] leading-tight font-bold tabular-nums"
+              >
+                {{ count.value }}
+              </dd>
+            </div>
+          </dl>
+        </div>
         <!-- Alternatives: each option's codes and votes. -->
         <dl
-          v-if="voteAlternatives"
+          v-else-if="voteAlternatives"
           class="mt-[clamp(0.5rem,1vw,1rem)] flex flex-wrap gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2"
         >
           <div

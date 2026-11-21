@@ -753,15 +753,26 @@ const announcement = computed(() => {
                     :disabled="closed"
                     @click="session.openAlternatives([])"
                   />
-                  <UButton
-                    v-else-if="blocOpenIds.length > 0"
-                    size="sm"
-                    color="success"
-                    icon="i-lucide-check-check"
-                    :label="t('session.bloc.approve')"
-                    :disabled="closed"
-                    @click="session.openAssent(blocOpenIds)"
-                  />
+                  <template v-else-if="blocOpenIds.length > 0">
+                    <UButton
+                      size="sm"
+                      color="success"
+                      icon="i-lucide-check-check"
+                      :label="t('session.bloc.approve')"
+                      :disabled="closed"
+                      @click="session.openAssent(blocOpenIds)"
+                    />
+                    <UButton
+                      v-if="blocOpenIds.length >= 2"
+                      size="sm"
+                      color="neutral"
+                      variant="outline"
+                      icon="i-lucide-gavel"
+                      :label="t('session.blocVote.open')"
+                      :disabled="closed"
+                      @click="session.openBlocVote(blocOpenIds)"
+                    />
+                  </template>
                   <UButton
                     v-if="session.inControl.value"
                     size="sm"

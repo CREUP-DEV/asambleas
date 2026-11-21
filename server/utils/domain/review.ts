@@ -37,6 +37,7 @@ import type {
 } from "~~/shared/types/api";
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 import { canManageDocuments, canReviewAmendments, type Actor } from "./actor";
+import { countPendingFormCorrections } from "./formCorrections";
 import {
   buildAmendmentDtos,
   buildDocumentAmendmentContext,
@@ -163,7 +164,22 @@ export async function loadReviewQueue(
       )
     : [];
 
-  return { documents: documentDtos, amendments: amendmentDtos };
+  // Corrections of form a presenter proposed, for the Secretaría.
+  const pendingCorrections = manageDocuments
+    ? await countPendingFormCorrections(visible.map((row) => row.id))
+    : new Map<string, number>();
+  const formCorrections = visible
+    .filter((row) => (pendingCorrections.get(row.id) ?? 0) > 0)
+    .map((row) => ({
+      document: { id: row.id, slug: row.slug, title: row.title },
+      count: pendingCorrections.get(row.id) ?? 0,
+    }));
+
+  return {
+    documents: documentDtos,
+    amendments: amendmentDtos,
+    formCorrections,
+  };
 }
 
 type ReviewDocumentRow = Awaited<

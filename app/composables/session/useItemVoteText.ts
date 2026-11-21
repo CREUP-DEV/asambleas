@@ -11,6 +11,16 @@ import type { VoteDto } from "~~/shared/types/api";
  */
 export function useItemVoteText() {
   const { t } = useI18n();
+  const electionText = useElectionText();
+
+  /** An election: who was elected (or the second round) and how. */
+  function electionLine(vote: VoteDto): string | null {
+    if (!vote.election) return null;
+    return [
+      electionText.outcome(vote.election),
+      t(`session.enums.voteMethod.${vote.method}`),
+    ].join(" · ");
+  }
 
   function result(vote: VoteDto): string {
     return vote.result === "approved"
@@ -29,6 +39,7 @@ export function useItemVoteText() {
     // In favour, against and abstentions (blank in a secret vote), in that
     // order: the Mesa's own shorthand, the same in every language.
     return (
+      electionLine(vote) ??
       assentLine(vote) ??
       [
         result(vote),
@@ -40,6 +51,7 @@ export function useItemVoteText() {
 
   function spoken(vote: VoteDto): string {
     return (
+      electionLine(vote) ??
       assentLine(vote) ??
       t(voteTextKey("session.itemVote.status.spoken", vote.method), {
         result: result(vote),

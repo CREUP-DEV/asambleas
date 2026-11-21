@@ -22,6 +22,7 @@ import {
   ACCEPTED_AMENDMENT_RULES,
   DOCUMENT_FORMATS,
   DOCUMENT_KINDS,
+  FORM_CORRECTION_STATUSES,
   DOCUMENT_STATUSES,
   MAJORITIES,
 } from "../../../shared/constants/domain";
@@ -277,6 +278,14 @@ export const documentVersions = pgTable(
     blocks: jsonb("blocks").$type<Block[]>().notNull(),
     contentHash: text("content_hash").notNull(),
     note: text("note"),
+    /**
+     * A consolidated version corrected in form after the final vote: the
+     * one it replaced (documentFormCorrections). Null for the voted one.
+     */
+    replacesVersionId: text("replaces_version_id").references(
+      (): AnyPgColumn => documentVersions.id,
+      { onDelete: "set null" },
+    ),
     createdByUserId: text("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -292,6 +301,68 @@ export const documentVersions = pgTable(
     uniqueIndex("document_versions_number_unique").on(
       table.documentId,
       table.number,
+    ),
+  ],
+);
+
+export const formCorrectionStatusEnum = pgEnum(
+  "form_correction_status",
+  FORM_CORRECTION_STATUSES,
+);
+
+/**
+ * Corrections of form to an approved text (user's decisions of
+ * 2026-11-21). Each one is the whole corrected text over the consolidated
+ * version it was made on (`fromVersionId`) and a reason; once applied, the
+ * new consolidated version it gave (`resultVersionId`) replaces that one,
+ * with no annex. The Secretaría's and the Mesa's are applied when made; a
+ * presenter's waits for the Secretaría.
+ */
+export const documentFormCorrections = pgTable(
+  "document_form_corrections",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    assemblyId: text("assembly_id")
+      .notNull()
+      .references(() => assemblies.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    fromVersionId: text("from_version_id")
+      .notNull()
+      .references(() => documentVersions.id, { onDelete: "cascade" }),
+    blocks: jsonb("blocks").$type<Block[]>().notNull(),
+    contentHash: text("content_hash").notNull(),
+    reason: text("reason").notNull(),
+    status: formCorrectionStatusEnum("status").notNull().default("pending"),
+    /** Who made it, as the record names them: the office, or a presenter. */
+    madeAs: text("made_as")
+      .$type<"secretaria" | "mesa" | "presenter">()
+      .notNull(),
+    proposedByUserId: text("proposed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    resultVersionId: text("result_version_id").references(
+      () => documentVersions.id,
+      { onDelete: "set null" },
+    ),
+    decidedByUserId: text("decided_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at", { withTimezone: true, mode: "date" }),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+  },
+  (table) => [
+    index("document_form_corrections_document_idx").on(
+      table.documentId,
+      table.createdAt,
     ),
   ],
 );

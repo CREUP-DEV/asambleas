@@ -44,6 +44,8 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   tieResolution: null,
   winnerOutcome: null,
   ballots: null,
+  blocAmendmentIds: null,
+  election: null,
   recordedAt: "2026-11-20T10:00:00.000Z",
   updatedAt: "2026-11-20T10:00:00.000Z",
   voidedAt: null,

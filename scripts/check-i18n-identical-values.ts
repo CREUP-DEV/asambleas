@@ -57,6 +57,11 @@ const ALLOWLIST: AllowlistEntry[] = [
       "The Mesa is the body's own name, kept untranslated in English too.",
   },
   {
+    pattern: /^workspace\.formCorrections\.madeAs\.(secretaria|mesa)$/,
+    reason:
+      "The Secretaría and the Mesa are the association's own bodies, kept untranslated.",
+  },
+  {
     pattern: /^amendment\.vote\.alternatives\.optionCount$/,
     reason: "Placeholders and punctuation only: «{option}: {count}».",
   },

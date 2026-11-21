@@ -25,6 +25,8 @@ const alternatives = computed(() =>
   alternativesText.isAlternatives(props.vote),
 );
 
+const electionText = useElectionText();
+
 const approved = computed(() => props.vote.result === "approved");
 const counts = computed(() => liveVoteCounts(props.vote));
 const assentKey = computed(() => liveAssentKey(props.vote));
@@ -38,7 +40,13 @@ const assentKey = computed(() => liveAssentKey(props.vote));
     "
   >
     <p class="text-muted text-sm">
-      {{ alternatives ? t("amendment.vote.alternatives.title") : subject }}
+      {{
+        alternatives
+          ? t("amendment.vote.alternatives.title")
+          : vote.blocAmendmentIds
+            ? t("amendment.vote.bloc")
+            : subject
+      }}
     </p>
     <p
       v-if="question"
@@ -56,6 +64,9 @@ const assentKey = computed(() => liveAssentKey(props.vote));
     >
       <template v-if="alternatives">
         {{ alternativesText.outcome(vote) }}
+      </template>
+      <template v-else-if="vote.election">
+        {{ electionText.outcome(vote.election) }}
       </template>
       <template v-else>
         {{
@@ -83,6 +94,19 @@ const assentKey = computed(() => liveAssentKey(props.vote));
         </dd>
       </div>
     </dl>
+    <div v-else-if="vote.election" class="mt-2 space-y-2">
+      <VoteElection :election="vote.election" />
+      <dl class="flex flex-wrap gap-x-6 gap-y-2">
+        <div v-for="count in counts" :key="count.key">
+          <dt class="text-muted text-xs">
+            {{ t(`projection.vote.${count.key}`) }}
+          </dt>
+          <dd class="text-highlighted text-lg font-semibold tabular-nums">
+            {{ count.value }}
+          </dd>
+        </div>
+      </dl>
+    </div>
     <p v-else-if="assentKey" class="text-default mt-1">
       {{ t(assentKey) }}
     </p>

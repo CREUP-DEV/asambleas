@@ -1781,7 +1781,8 @@
         "lost": "Vote between alternatives: it was in option {option} ({count} votes) and {winner} won",
         "rejectedAll": "Vote between alternatives with no winning option: the Mesa rejected them all",
         "noEffect": "Vote between alternatives with no winning option: the Mesa left them undecided"
-      }
+      },
+      "bloc": "Vote on a bloc of {count} amendments · {inFavor} in favour, {against} against, {abstentions} abstentions"
     },
     "vote": {
       "counts": "Count",
@@ -1819,6 +1820,17 @@
         "rejectedAll": "No option won: the Mesa rejected them all",
         "noEffect": "No option won: the Mesa left them undecided",
         "amendments": "Amendments"
+      },
+      "bloc": "Vote on a bloc",
+      "election": {
+        "title": "Election",
+        "elected": "Elected: {names} | Elected: {names}",
+        "tie": "Tie for the last post",
+        "runoff": "Second round: {names}",
+        "nobody": "Nobody elected",
+        "electedMark": "Elected",
+        "runoffMark": "2nd round",
+        "ruleLine": "{rule} · {posts} post(s)"
       }
     },
     "composer": {
@@ -2065,7 +2077,7 @@
       "sheetEdited": "Last edited by {name}, {when}"
     },
     "reopenAlternatives": {
-      "required": "It was decided in a vote between alternatives: reopening it voids the vote and reopens all its amendments"
+      "required": "It was decided in a vote on several amendments: reopening it voids the vote and reopens all its amendments"
     }
   },
   "admin": {
@@ -3730,6 +3742,53 @@
         "inadmissible": "Inadmissible"
       }
     },
+    "formCorrections": {
+      "title": "Corrections of form",
+      "description": "Typos and other changes of form to the approved text. Each correction replaces the consolidated text, with no annex, and is listed here with its reason.",
+      "descriptionPropose": "You can propose changes of form to the approved text. The Secretaría reviews them before they replace the consolidated text.",
+      "edit": "Correct the form",
+      "propose": "Propose a correction",
+      "pendingTitle": "{count} proposed correction awaits your review | {count} proposed corrections await your review",
+      "editHintDirect": "On saving, this text replaces the consolidated one. Changes of form only: the content is what the assembly approved.",
+      "editHintPropose": "Changes of form only: the content is what the assembly approved. The Secretaría will review it.",
+      "textLabel": "Approved text",
+      "reason": "Reason",
+      "reasonHelp": "What is corrected and why. Everyone sees it next to the correction.",
+      "reasonRequired": "Write the reason for the correction.",
+      "noChange": "You have not changed anything in the text yet.",
+      "apply": "Save the correction",
+      "send": "Send to the Secretaría",
+      "status": {
+        "pending": "Pending",
+        "applied": "Applied",
+        "rejected": "Rejected",
+        "withdrawn": "Withdrawn",
+        "void": "Void"
+      },
+      "madeAs": {
+        "secretaria": "Secretaría",
+        "mesa": "Mesa",
+        "presenter": "Presenter"
+      },
+      "decisionNote": "Note from the Secretaría: {note}",
+      "overtaken": "Another correction changed the text since. It can no longer be applied as is.",
+      "applyProposal": "Apply",
+      "reject": "Reject",
+      "withdraw": "Withdraw",
+      "rejectNote": "Note for whoever proposed it (optional)",
+      "rejectConfirm": "Reject the correction",
+      "toasts": {
+        "applied": "Correction applied to the consolidated text",
+        "proposed": "Correction sent to the Secretaría",
+        "rejected": "Correction rejected"
+      },
+      "errors": {
+        "load": "The corrections of form could not be loaded",
+        "save": "The correction could not be saved",
+        "decide": "The correction could not be updated"
+      },
+      "correctedText": "Text with corrections of form after the vote. The corrections and their changes are below."
+    },
     "export": {
       "clean": "Clean PDF",
       "annotated": "Annotated PDF",
@@ -4010,6 +4069,7 @@
       "unincorporated": "{code} comes out of the text and is undecided again",
       "itemVoteApproved": "Item approved",
       "itemVoteRejected": "Item rejected",
+      "electionRecorded": "Election recorded",
       "itemVoteNotProjected": "The vote was recorded but not shown on screen: the item is no longer under debate.",
       "itemVoteVoided": "Item vote voided",
       "itemVoteUnanimous": "The vote is recorded as unanimous",
@@ -4321,7 +4381,7 @@
       "confirm": "Confirm and record",
       "annul": "Annul final vote",
       "annulTitle": "Annul the final vote",
-      "annulDescription": "The vote stays in the history, but the document goes back to awaiting its final vote and the consolidated text is discarded. The amendments can be decided again.",
+      "annulDescription": "The vote stays in the history, but the document goes back to awaiting its final vote and the consolidated text is discarded, with its corrections of form if it had any. The amendments can be decided again.",
       "annulNote": "Reason",
       "annulSubmit": "Annul vote"
     },
@@ -4717,6 +4777,52 @@
       "errors": {
         "headcountChanged": "The headcount changed: call the roll again with the new one"
       }
+    },
+    "blocVote": {
+      "open": "Vote the bloc",
+      "title": "Vote on the bloc ({count} amendment) | Vote on the bloc ({count} amendments)",
+      "description": "One vote: carried, they are all approved; not carried, they are all rejected.",
+      "submit": "Record the vote",
+      "question": "Vote on the bloc: {codes}",
+      "approved": "Bloc approved: {count} amendment | Bloc approved: {count} amendments",
+      "rejected": "Bloc rejected: {count} amendment | Bloc rejected: {count} amendments",
+      "errors": {
+        "record": "The bloc's vote could not be recorded"
+      }
+    },
+    "election": {
+      "toggle": "This is an election",
+      "toggleHelp": "Candidates with their votes instead of in favour and against.",
+      "candidates": "Candidates",
+      "candidate": "Candidate {n}",
+      "votes": "Votes",
+      "remove": "Remove candidate {n}",
+      "add": "Add candidate",
+      "posts": "Posts to fill",
+      "postsHelp": "Also the most candidates each ballot may mark.",
+      "ballots": "Ballots with a vote",
+      "ballotsHelp": "Those marking at least one candidate; blank and invalid ones are not counted.",
+      "rule": "How they are elected",
+      "rules": {
+        "absolute_runoff": "Absolute majority and second round",
+        "absolute_runoffHint": "Elected whoever gets more than half the votes cast; the posts left go to a second round by simple majority, as in the CAS and the CAI.",
+        "simple": "Simple majority",
+        "simpleHint": "The most voted candidates are elected, up to the posts."
+      },
+      "inconsistent": "There are more ballots than members present.",
+      "elected": "Elected: {names} | Elected: {names}",
+      "tie": "Tie for the last post: the Mesa decides",
+      "runoff": "Nobody else reaches {threshold} votes: second round between {names}",
+      "nobody": "Nobody is elected",
+      "problems": {
+        "names": "A candidate has no name.",
+        "empty": "Enter each candidate's votes.",
+        "ballots": "A candidate has more votes than ballots with a vote, or the votes exceed what those ballots can mark."
+      },
+      "runoffReady": {
+        "title": "First round recorded: second round ready",
+        "description": "{first}. Enter the second round's votes, by simple majority, or close if the Mesa does not hold it now."
+      }
     }
   },
   "projection": {
@@ -4783,7 +4889,8 @@
       "majority": "Majority",
       "agendaItem": "Vote on item {title}",
       "agendaItemUnknown": "Vote on an agenda item",
-      "unanimous": "Unanimously"
+      "unanimous": "Unanimously",
+      "bloc": "Vote on a bloc: {codes}"
     },
     "stale": "Showing the last data received",
     "sessionExpired": "Session expired: sign in again",
@@ -4864,6 +4971,10 @@
       "lateHint": "Sent after the documents deadline: the assembly will have to agree to treat it.",
       "bulkConfirmVisible": "The whole assembly will be able to read them.",
       "bulkConfirmFrozen": "Their texts are fixed: they can no longer be edited, and they get their reference if their kind has one."
+    },
+    "formCorrections": {
+      "title": "Corrections of form proposed to approved texts",
+      "count": "{count} pending | {count} pending"
     },
     "transactionals": {
       "title": "Transactional amendments",
@@ -5404,7 +5515,7 @@
       "finalAnnulled": "Final vote annulled: {title}",
       "annul": "Annul",
       "annulTitle": "Annul the final vote",
-      "annulHint": "The vote stays in the history, but the document is pending its final vote again and loses its consolidated text.",
+      "annulHint": "The vote stays in the history, but the document is pending its final vote again and loses its consolidated text, with its corrections of form if it had any.",
       "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote.",
       "finalBlocked": "The final vote cannot be recorded yet",
       "finalFromConsole": "The Mesa sorts it out from the session console."
@@ -6803,6 +6914,10 @@
       "document_deleted": "Document deleted",
       "document_voted": "Final vote on the document",
       "final_vote_annulled": "Final vote annulled",
+      "document_form_corrected": "Correction of form to the approved text",
+      "document_form_correction_proposed": "Correction of form proposed",
+      "document_form_correction_rejected": "Correction of form rejected",
+      "document_form_correction_withdrawn": "Correction of form withdrawn",
       "passage_worded": "Passage wording set by the Mesa",
       "passage_wording_removed": "Passage wording removed",
       "amendment_created": "@:amendment.history.events.amendment_created",

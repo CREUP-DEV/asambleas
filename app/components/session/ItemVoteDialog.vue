@@ -14,6 +14,11 @@ import {
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
+import {
+  computeElectionOutcome,
+  type ElectionInput,
+  type ElectionRecord,
+} from "~~/shared/utils/election";
 
 /**
  * Vote on an agenda item itself (a ratification, an election), for an item
@@ -24,6 +29,13 @@ import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
  * in an AGET. The majority is simple
  * unless the Mesa picks another; an assent nobody objected to when the Mesa
  * asked for unanimity can be recorded as unanimous.
+ *
+ * An election (user's decisions of 2026-11-21) records candidates and
+ * their votes instead of in favour and against: the Mesa sets the posts
+ * and the rule (the absolute majority with a second round, or a simple
+ * majority), by secret ballot to start with. When a second round is due,
+ * once the first is recorded the dialog stays open with it prepared: the
+ * candidates who go, the posts left and a simple majority.
  *
  * Like the final vote, recording takes two steps: the Mesa checks the
  * result before confirming it, so Enter never records. It records on the
@@ -89,6 +101,99 @@ const methods = computed<VoteMethod[]>(() => [
 
 const question = ref("");
 const vote = ref<VoteInput>(sessionEmptyVote("simple"));
+
+/** An election instead of a vote in favour or against. */
+const isElection = ref(false);
+function emptyElection(): ElectionInput {
+  return {
+    candidates: ["", ""],
+    maxChoices: 1,
+    rule: "absolute_runoff",
+    counts: [0, 0],
+    ballots: 0,
+  };
+}
+const election = ref<ElectionInput>(emptyElection());
+/** The first round just recorded, when the dialog prepared the second. */
+const runoffFrom = ref<ElectionRecord | null>(null);
+/** An election is secret, by show of hands or, in an AGET, on the portal. */
+const electionMethods = computed<VoteMethod[]>(() =>
+  methods.value.filter(
+    (method) => method !== "assent" && method !== "roll_call",
+  ),
+);
+function setElectionMethod(method: VoteMethod): void {
+  // Only what the method counts: blank and invalid, or abstentions.
+  vote.value = {
+    ...vote.value,
+    method,
+    inFavor: 0,
+    against: 0,
+    abstentions: 0,
+    blank: 0,
+    invalid: 0,
+  };
+}
+watch(isElection, (on) => {
+  if (on) {
+    if (!electionMethods.value.includes(vote.value.method)) {
+      setElectionMethod("secret");
+    }
+  } else {
+    runoffFrom.value = null;
+  }
+});
+const voteCount = (key: "blank" | "invalid" | "abstentions") =>
+  computed({
+    get: () => vote.value[key] ?? 0,
+    set: (value: number) => {
+      vote.value = { ...vote.value, [key]: value };
+    },
+  });
+const electionBlank = voteCount("blank");
+const electionInvalid = voteCount("invalid");
+const electionAbstentions = voteCount("abstentions");
+const electionOutcome = computed(() =>
+  computeElectionOutcome(
+    election.value,
+    {
+      blank: vote.value.blank ?? 0,
+      invalid: vote.value.invalid ?? 0,
+      present:
+        vote.value.present ?? session.voteHeadcount.value?.present ?? null,
+    },
+    session.settings.value,
+  ),
+);
+/** The election as it would be recorded, for the check step. */
+const electionRecord = computed<ElectionRecord>(() => ({
+  ...election.value,
+  candidates: election.value.candidates.map((name) => name.trim()),
+  elected: electionOutcome.value.elected,
+  runoff: electionOutcome.value.runoff,
+  tie: electionOutcome.value.tie,
+}));
+/** Why the election cannot be recorded yet, if anything. */
+const electionProblem = computed<string | null>(() => {
+  const current = election.value;
+  if (current.candidates.some((name) => name.trim().length === 0)) {
+    return t("session.election.problems.names");
+  }
+  const total = current.counts.reduce((sum, value) => sum + value, 0);
+  if (total === 0 && (vote.value.blank ?? 0) === 0) {
+    return t("session.election.problems.empty");
+  }
+  if (
+    current.counts.some((value) => value > current.ballots) ||
+    total > current.ballots * current.maxChoices
+  ) {
+    return t("session.election.problems.ballots");
+  }
+  if (electionOutcome.value.inconsistent) {
+    return t("session.election.inconsistent");
+  }
+  return null;
+});
 const serverTie = ref(false);
 /** Second step: the result is shown for a last check before recording. */
 const confirming = ref(false);
@@ -143,6 +248,9 @@ watch(open, (isOpen) => {
       : "";
   // "Present" opens empty: the latest headcount fills it (VoteFields).
   vote.value = sessionEmptyVote("simple");
+  isElection.value = false;
+  election.value = emptyElection();
+  runoffFrom.value = null;
   serverTie.value = false;
   confirming.value = false;
   questionTouched.value = false;
@@ -151,7 +259,7 @@ watch(open, (isOpen) => {
 // Any change sends the Mesa back to the first step, and so does a new
 // headcount: with "present" empty it changes the base of the result.
 watch(
-  [vote, question, () => session.voteHeadcount.value?.id],
+  [vote, question, isElection, election, () => session.voteHeadcount.value?.id],
   () => {
     confirming.value = false;
   },
@@ -175,9 +283,19 @@ const outcome = computed(() =>
     session.voteHeadcount.value,
   ),
 );
-const expected = computed(() =>
-  sessionFinalVoteResult(vote.value, outcome.value),
+/** A first round that sends someone to a second: not a rejection. */
+const goesToRunoff = computed(
+  () => isElection.value && (electionRecord.value.runoff?.length ?? 0) > 0,
 );
+const expected = computed(() =>
+  isElection.value
+    ? electionRecord.value.elected.length >=
+      Math.min(election.value.maxChoices, election.value.candidates.length)
+      ? "approved"
+      : "rejected"
+    : sessionFinalVoteResult(vote.value, outcome.value),
+);
+const electionText = useElectionText();
 const baseText = useVoteBaseText(
   vote,
   () => session.settings.value,
@@ -189,7 +307,9 @@ const blocked = computed(
     !row.value ||
     !canRecord.value ||
     questionMissing.value ||
-    !isSessionFinalVoteReady(vote.value, outcome.value),
+    (isElection.value
+      ? electionProblem.value !== null
+      : !isSessionFinalVoteReady(vote.value, outcome.value)),
 );
 
 /** The method and the counts (or assent, or unanimity) in one line. */
@@ -222,6 +342,31 @@ function review(): void {
   void nextTick(() => summary.value?.focus());
 }
 
+/**
+ * The second round, prepared in the same dialog: the candidates who go,
+ * the posts left, by a simple majority, the same method and question.
+ */
+function prepareRunoff(first: ElectionRecord): void {
+  const candidates = (first.runoff ?? []).map(
+    (index) => first.candidates[index] ?? "",
+  );
+  const posts = Math.min(first.maxChoices, first.candidates.length);
+  election.value = {
+    candidates,
+    counts: candidates.map(() => 0),
+    maxChoices: Math.max(
+      1,
+      Math.min(posts - first.elected.length, candidates.length),
+    ),
+    rule: "simple",
+    ballots: 0,
+  };
+  setElectionMethod(vote.value.method);
+  vote.value = { ...vote.value, note: null };
+  runoffFrom.value = first;
+  confirming.value = false;
+}
+
 function cancelOrBack(close: () => void): void {
   if (confirming.value) confirming.value = false;
   else close();
@@ -233,8 +378,14 @@ async function record(): Promise<void> {
   const result = await session.recordItemVote(target, {
     question: question.value,
     vote: vote.value,
+    ...(isElection.value ? { election: election.value } : {}),
   });
   if (result.ok) {
+    const first = result.vote.election;
+    if (first?.runoff && first.runoff.length > 0) {
+      prepareRunoff(first);
+      return;
+    }
     open.value = false;
     return;
   }
@@ -294,7 +445,58 @@ async function record(): Promise<void> {
           />
         </UFormField>
 
+        <USwitch
+          v-model="isElection"
+          :label="t('session.election.toggle')"
+          :description="t('session.election.toggleHelp')"
+        />
+
+        <template v-if="isElection">
+          <UAlert
+            v-if="runoffFrom"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-repeat"
+            :title="t('session.election.runoffReady.title')"
+            :description="
+              t('session.election.runoffReady.description', {
+                first: electionText.outcome(runoffFrom),
+              })
+            "
+          />
+          <URadioGroup
+            :model-value="vote.method"
+            :legend="t('session.vote.method')"
+            :items="
+              electionMethods.map((method) => ({
+                value: method,
+                label: t(`session.enums.voteMethod.${method}`),
+              }))
+            "
+            orientation="horizontal"
+            @update:model-value="
+              (value) => setElectionMethod(value as VoteMethod)
+            "
+          />
+          <SessionElectionFields
+            v-model="election"
+            v-model:blank="electionBlank"
+            v-model:invalid="electionInvalid"
+            v-model:abstentions="electionAbstentions"
+            :settings="session.settings.value"
+            :headcount="session.voteHeadcount.value"
+            :secret="vote.method === 'secret'"
+          />
+          <p
+            v-if="electionProblem && election.counts.some((value) => value > 0)"
+            class="text-warning text-sm"
+          >
+            {{ electionProblem }}
+          </p>
+        </template>
+
         <SessionVoteFields
+          v-else
           v-model="vote"
           :settings="session.settings.value"
           :headcount="session.voteHeadcount.value"
@@ -313,7 +515,9 @@ async function record(): Promise<void> {
           :class="
             expected === 'approved'
               ? 'border-success/50 bg-success/10'
-              : 'border-error/50 bg-error/10'
+              : goesToRunoff
+                ? 'border-warning/50 bg-warning/10'
+                : 'border-error/50 bg-error/10'
           "
         >
           <p class="text-highlighted font-semibold">
@@ -322,7 +526,17 @@ async function record(): Promise<void> {
           <p class="text-default mt-1 text-sm whitespace-pre-line">
             {{ question.trim() }}
           </p>
+          <div v-if="isElection" class="mt-2 space-y-1">
+            <p class="text-highlighted text-sm font-medium">
+              {{ electionText.outcome(electionRecord) }}
+              <span class="text-muted font-normal">
+                · {{ t(`session.enums.voteMethod.${vote.method}`) }}
+              </span>
+            </p>
+            <VoteElection :election="electionRecord" />
+          </div>
           <p
+            v-else
             class="text-default mt-1 flex flex-wrap items-center gap-2 text-sm"
           >
             <UBadge
@@ -332,7 +546,10 @@ async function record(): Promise<void> {
             />
             <span class="tabular-nums">{{ methodText }}</span>
           </p>
-          <p v-if="!assent" class="text-muted mt-1 text-xs tabular-nums">
+          <p
+            v-if="!assent && !isElection"
+            class="text-muted mt-1 text-xs tabular-nums"
+          >
             {{ baseText }}
           </p>
           <p class="text-muted mt-2 text-xs">
@@ -353,7 +570,7 @@ async function record(): Promise<void> {
           v-if="confirming"
           type="button"
           icon="i-lucide-gavel"
-          :color="expected === 'approved' ? 'primary' : 'error'"
+          :color="expected === 'approved' || goesToRunoff ? 'primary' : 'error'"
           :label="t('session.finalVote.confirm')"
           :loading="Boolean(session.busy.value['item-vote'])"
           :disabled="blocked"

@@ -447,6 +447,18 @@ function alternativesDetail(payload: Record<string, unknown>): string {
       });
 }
 
+/** A vote on a bloc: how many it decided, with its counts. */
+function blocDetail(payload: Record<string, unknown>): string {
+  const count = (key: string) =>
+    typeof payload[key] === "number" ? (payload[key] as number) : 0;
+  return t("amendment.history.bloc", {
+    count: count("blocSize"),
+    inFavor: count("inFavor"),
+    against: count("against"),
+    abstentions: count("abstentions") + count("blank"),
+  });
+}
+
 function detailOf(event: EventDto): string | null {
   const payload = event.payload ?? {};
   switch (event.type) {
@@ -572,6 +584,7 @@ function detailOf(event: EventDto): string | null {
       return alternativesDetail(payload);
     case "amendment_approved": {
       if (payload.alternatives === true) return alternativesDetail(payload);
+      if (payload.bloc === true) return blocDetail(payload);
       const method = text(payload.method);
       // Accepted by the main presenter under the "incorporate" rule, or by
       // itself when it is formal.
@@ -584,6 +597,7 @@ function detailOf(event: EventDto): string | null {
     }
     case "amendment_rejected":
       if (payload.alternatives === true) return alternativesDetail(payload);
+      if (payload.bloc === true) return blocDetail(payload);
       // A formal one its main presenter rejected: not debated by default.
       return payload.reason === "formal_rejected"
         ? t("amendment.history.rejectedFormalByPresenter")

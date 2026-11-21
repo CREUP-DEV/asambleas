@@ -584,6 +584,16 @@ useEventListener(scroller, "pointerdown", letGo);
           :disabled="blocSelected.length === 0 || !session.inSession.value"
           @click="session.openAssent(blocSelected)"
         />
+        <!-- One vote on the whole bloc (user's decision of 2026-11-21). -->
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-gavel"
+          :label="t('session.blocVote.open')"
+          :disabled="blocSelected.length < 2 || !session.inSession.value"
+          @click="session.openBlocVote(blocSelected)"
+        />
         <!-- Two or more amendments put to a vote between alternatives
              (user's decision of 2026-11-20). -->
         <UButton

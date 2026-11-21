@@ -32,6 +32,7 @@ import type {
   AlternativesWinnerOutcome,
 } from "../../../shared/utils/alternativesVote";
 import type { VoteBallot } from "../../../shared/utils/rollCall";
+import type { ElectionRecord } from "../../../shared/utils/election";
 import { majorityEnum } from "./document";
 
 /** One option of a vote between alternatives: its amendments and votes. */
@@ -204,6 +205,16 @@ export const votes = pgTable(
      * come from these. Null on every other vote, and always on a secret one.
      */
     ballots: jsonb("ballots").$type<VoteBallot[]>(),
+    /**
+     * A vote on a bloc of amendments (decision kind "bloc"): the amendments
+     * it decided together, in text order. Null on every other vote.
+     */
+    blocAmendmentIds: jsonb("bloc_amendment_ids").$type<string[]>(),
+    /**
+     * An election in an agenda item's vote (user's decision of 2026-11-21):
+     * its candidates, posts, rule, votes and result. Null on other votes.
+     */
+    election: jsonb("election").$type<ElectionRecord>(),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

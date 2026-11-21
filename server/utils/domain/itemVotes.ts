@@ -1,4 +1,8 @@
 import { createError } from "h3";
+import {
+  computeElectionOutcome,
+  type ElectionInput,
+} from "~~/shared/utils/election";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { agendaItems, documents, votes } from "../../db/schema";
@@ -279,8 +283,46 @@ export async function recordItemVote(
           settings,
         );
     const vote = based.vote;
+    // An election: its own rule, set by the Mesa (computeElectionOutcome);
+    // carried when every post was filled.
+    const election = body.election ? electionResult(body.election) : null;
+    function electionResult(input: ElectionInput) {
+      const result = computeElectionOutcome(
+        input,
+        {
+          blank: vote.blank ?? 0,
+          invalid: vote.invalid ?? 0,
+          present: vote.present ?? null,
+        },
+        settings,
+      );
+      if (result.inconsistent) {
+        fail(422, "Los votos emitidos superan a los miembros presentes", {
+          reasons: [{ index: -1, reason: "inconsistent_counts" }],
+        });
+      }
+      const posts = Math.min(input.maxChoices, input.candidates.length);
+      return {
+        record: {
+          ...input,
+          elected: result.elected,
+          runoff: result.runoff,
+          tie: result.tie,
+        },
+        filled: result.elected.length >= posts,
+      };
+    }
     // Agenda items have no majority of their own.
-    const { majority, outcome } = evaluateVoteInput(vote, settings, "simple");
+    const { majority, outcome } = election
+      ? {
+          majority: "simple" as const,
+          outcome: {
+            result: election.filled
+              ? ("approved" as const)
+              : ("rejected" as const),
+          },
+        }
+      : evaluateVoteInput(vote, settings, "simple");
 
     const [row] = await tx
       .insert(votes)
@@ -289,8 +331,8 @@ export async function recordItemVote(
         subjectType: "agenda_item",
         subjectId: current.id,
         method: vote.method,
-        inFavor: vote.inFavor ?? 0,
-        against: vote.against ?? 0,
+        inFavor: election ? 0 : (vote.inFavor ?? 0),
+        against: election ? 0 : (vote.against ?? 0),
         abstentions: vote.abstentions ?? 0,
         blank: vote.blank ?? 0,
         invalid: vote.invalid ?? 0,
@@ -298,6 +340,7 @@ export async function recordItemVote(
         present: vote.present ?? null,
         headcountId: based.headcountId,
         ballots: rollCall?.ballots ?? null,
+        election: election?.record ?? null,
         majority,
         result: outcome.result,
         note: vote.note || null,

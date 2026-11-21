@@ -14,6 +14,7 @@ import {
   sameAlternatives,
 } from "~~/shared/utils/alternativesSplit";
 import { amendmentsMeet } from "~~/shared/utils/content/passages";
+import type { LiveTally, LiveTallyReveal } from "~~/shared/types/api";
 import {
   rollCallCounts,
   rollCallVoters,
@@ -163,10 +164,86 @@ watch(
 );
 watch(method, (value) => {
   if (value !== "roll_call") ballots.value = [];
+  if (value !== "secret") reveal.value = null;
+});
+
+// A secret vote announced on screen (user's decision of 2026-11-21) ----------
+
+/**
+ * How the room follows a secret vote's count, as in every vote form: at
+ * the end with the result, or ballot by ballot, each option's tile and the
+ * blank and invalid ones. Nothing is counted, nor announced, until the Mesa
+ * picks one; only from the console of an open session.
+ */
+const reveal = ref<LiveTallyReveal | null>(null);
+const revealOffered = computed(
+  () => method.value === "secret" && session.inSession.value,
+);
+const revealPending = computed(() => revealOffered.value && !reveal.value);
+const liveCount = computed(
+  () => revealOffered.value && reveal.value === "live",
+);
+function addBallot(index: number | "blank" | "invalid", step: 1 | -1): void {
+  if (index === "blank") blank.value = Math.max(0, blank.value + step);
+  else if (index === "invalid")
+    invalid.value = Math.max(0, invalid.value + step);
+  else {
+    const next = [...counts.value];
+    next[index] = Math.max(0, (next[index] ?? 0) + step);
+    counts.value = next;
+  }
+  serverUndecided.value = null;
+}
+/** What the projection shows while the secret vote is counted. */
+const announcement = computed<LiveTally | null>(() => {
+  if (!open.value || !revealOffered.value || !reveal.value) return null;
+  return {
+    subject: { type: "decision", id: null },
+    question: [
+      t("amendment.vote.alternatives.title"),
+      ...options.value.map(
+        (ids, index) =>
+          `${alternativesText.optionName(index)}: ${ids
+            .map((id) => session.label(id))
+            .join(", ")}`,
+      ),
+    ].join(" · "),
+    method: "secret",
+    reveal: reveal.value,
+    counts:
+      reveal.value === "live"
+        ? { inFavor: 0, against: 0, blank: blank.value, invalid: invalid.value }
+        : null,
+    options: reveal.value === "live" ? [...counts.value] : null,
+    present: presentForOutcome.value,
+    majority: majority.value,
+  };
+});
+let tallyShown = false;
+watch(
+  announcement,
+  (tally) => {
+    if (tally) {
+      session.pushTally(tally);
+      tallyShown = true;
+    } else if (tallyShown) {
+      session.pushTally(null);
+      tallyShown = false;
+    }
+  },
+  { deep: true },
+);
+// The server keeps it in memory for 90 s: sent again while counting.
+useIntervalFn(() => {
+  if (announcement.value) session.pushTally(announcement.value);
+}, 15_000);
+onBeforeUnmount(() => {
+  if (tallyShown) session.pushTally(null);
 });
 
 function resetCounts(): void {
   ballots.value = [];
+  reveal.value = null;
   counts.value = Array.from({ length: ALTERNATIVES_OPTION_COUNT }, () => 0);
   abstentions.value = 0;
   blank.value = 0;
@@ -454,14 +531,102 @@ function amendmentLine(id: string): string {
               class="w-full sm:w-64"
             />
           </UFormField>
+          <!-- A secret vote in the console: how the room follows the count. -->
+          <div v-if="revealOffered" class="space-y-2">
+            <URadioGroup
+              :model-value="reveal ?? undefined"
+              :legend="t('session.vote.reveal.label')"
+              :items="[
+                {
+                  value: 'end',
+                  label: t('session.vote.reveal.end'),
+                  description: t('session.vote.reveal.endHint'),
+                },
+                {
+                  value: 'live',
+                  label: t('session.vote.reveal.live'),
+                  description: t('session.vote.reveal.liveHint'),
+                },
+              ]"
+              variant="card"
+              :ui="{ fieldset: 'grid gap-2 sm:grid-cols-2' }"
+              @update:model-value="
+                (value) => (reveal = value as LiveTallyReveal)
+              "
+            />
+            <p v-if="revealPending" class="text-muted text-sm">
+              {{ t("session.vote.reveal.pending") }}
+            </p>
+            <p v-else-if="!session.inControl.value" class="text-muted text-xs">
+              {{ t("session.vote.reveal.notProjected") }}
+            </p>
+          </div>
+          <!-- Counted live: one tile per option and per blank or invalid ballot. -->
+          <div v-if="liveCount" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div
+              v-for="tile in [
+                ...counts.map((count, index) => ({
+                  key: index as number | 'blank' | 'invalid',
+                  label: alternativesText.optionName(index),
+                  count,
+                })),
+                {
+                  key: 'blank' as const,
+                  label: t('amendment.vote.blank'),
+                  count: blank,
+                },
+                {
+                  key: 'invalid' as const,
+                  label: t('amendment.vote.invalid'),
+                  count: invalid,
+                },
+              ]"
+              :key="String(tile.key)"
+              class="border-default flex flex-col items-center gap-2 rounded-lg border p-3"
+            >
+              <span class="text-muted text-sm font-medium">{{
+                tile.label
+              }}</span>
+              <span
+                class="text-highlighted text-3xl font-bold tabular-nums"
+                aria-live="polite"
+              >
+                {{ tile.count }}
+              </span>
+              <div class="flex items-center gap-1">
+                <UButton
+                  size="lg"
+                  icon="i-lucide-plus"
+                  :label="t('session.vote.addBallot')"
+                  :aria-label="
+                    t('session.vote.addBallotFor', { option: tile.label })
+                  "
+                  @click="addBallot(tile.key, 1)"
+                />
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-minus"
+                  :aria-label="
+                    t('session.vote.removeBallotFor', { option: tile.label })
+                  "
+                  :disabled="tile.count === 0"
+                  @click="addBallot(tile.key, -1)"
+                />
+              </div>
+            </div>
+          </div>
           <!-- A registered vote: each delegation of the latest headcount. -->
           <SessionRollCallBallots
-            v-if="rollCall"
+            v-else-if="rollCall"
             v-model="ballots"
             :voters="rollCallList"
             :choices="rollCallChoices"
           />
-          <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div
+            v-else-if="!revealPending"
+            class="grid grid-cols-2 gap-3 sm:grid-cols-4"
+          >
             <UFormField
               v-for="(_, index) in counts"
               :key="index"

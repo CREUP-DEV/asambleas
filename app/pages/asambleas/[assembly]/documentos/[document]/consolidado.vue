@@ -43,7 +43,25 @@ const {
   pending,
   errorStatusCode,
   refreshAll,
+  refreshDocument,
 } = workspace;
+
+/** Base url of this document's API, by ids. */
+const documentApi = computed(() =>
+  assembly.value && document.value
+    ? `/api/assemblies/${encodeURIComponent(assembly.value.id)}/documents/${encodeURIComponent(document.value.id)}`
+    : "",
+);
+/** The editor of a correction of form is open (it shows the text itself). */
+const correcting = ref(false);
+/**
+ * The text in force was corrected in form after the final vote (user's
+ * decisions of 2026-11-21): it is shown as stored, without the amendments'
+ * marks, which belong to the voted text.
+ */
+const corrected = computed(() =>
+  Boolean(document.value?.consolidatedVersion?.replacesVersionId),
+);
 
 useHead({
   title: () =>
@@ -309,6 +327,7 @@ watch(popoverOpen, (open) => {
         <!-- Text -->
         <!-- The text keeps the editor's measure (`main.css`), centred. -->
         <section
+          v-if="!correcting"
           class="border-default rounded-lg border p-4 sm:p-6 lg:px-[max(1.5rem,calc((100%_-_52rem)/2))]"
           aria-labelledby="consolidated-text"
         >
@@ -320,14 +339,28 @@ watch(popoverOpen, (open) => {
               {{ t("workspace.consolidatedView.text") }}
             </h2>
             <p
-              v-if="provenanceMatches && consolidation.applied.length > 0"
+              v-if="
+                !corrected &&
+                provenanceMatches &&
+                consolidation.applied.length > 0
+              "
               class="text-muted text-sm"
             >
               {{ t("workspace.consolidatedView.legend") }}
             </p>
           </div>
 
-          <template v-if="provenanceMatches">
+          <template v-if="corrected && finalText">
+            <UAlert
+              color="neutral"
+              variant="subtle"
+              icon="i-lucide-spell-check"
+              class="mb-4"
+              :title="t('workspace.formCorrections.correctedText')"
+            />
+            <ContentView :blocks="finalText" />
+          </template>
+          <template v-else-if="provenanceMatches">
             <div
               @click.capture="rememberFragment"
               @keydown.capture="rememberFragment"
@@ -353,6 +386,15 @@ watch(popoverOpen, (open) => {
             <ContentView :blocks="finalText" />
           </template>
         </section>
+
+        <!-- Corrections of form after the final vote. -->
+        <DocumentFormCorrections
+          v-if="document.finalVote && document.consolidatedVersion"
+          v-model:editing="correcting"
+          :document="document"
+          :document-api="documentApi"
+          @changed="refreshDocument"
+        />
 
         <UPopover
           v-model:open="popoverOpen"
