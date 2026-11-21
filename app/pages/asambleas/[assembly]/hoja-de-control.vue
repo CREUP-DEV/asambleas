@@ -11,6 +11,7 @@ import type {
   ControlSheetDto,
   ControlSheetItemBody,
   ControlSheetItemRowDto,
+  ControlSheetNotesDto,
   DocumentAmendmentsDto,
   DocumentDto,
   LiveEventDto,
@@ -83,6 +84,10 @@ import {
   type SheetRowDocument,
   type TreatedControl,
 } from "~/components/control-sheet/-model";
+import {
+  awaitsPresenterAnswer,
+  indexOwnNotes,
+} from "~/components/control-sheet/-readers";
 import {
   LIVE_AMENDMENT_STATES,
   type LiveAmendmentState,
@@ -398,7 +403,7 @@ const selectItems = computed(() =>
   documentOptions.value.map((document) => ({
     value: document.id,
     label: document.title,
-    description:
+    description: [
       document.undecided > 0
         ? t(
             "controlSheet.document.undecided",
@@ -410,6 +415,17 @@ const selectItems = computed(() =>
             { count: document.amendments },
             document.amendments,
           ),
+      // What waits for the reader's answer, on a document it presents.
+      document.presenting && document.awaitingAnswer > 0
+        ? t(
+            "controlSheet.answer.awaiting",
+            { count: document.awaitingAnswer },
+            document.awaitingAnswer,
+          )
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   })),
 );
 const selectedDocumentId = computed<string | undefined>({
@@ -481,8 +497,19 @@ const generalRows = computed(() =>
     live.value?.agendaItemId ?? null,
   ),
 );
-const amendmentRows = computed(() =>
-  buildAmendmentRows(
+/**
+ * The reader presents the chosen document (ControlSheetDocumentDto
+ * .presenting): what waits for its answer is marked (awaitsAnswer).
+ */
+const presentingSelected = computed(
+  () => selectedDocument.value?.presenting ?? false,
+);
+/** The reader presents a document of the sheet: «Mis documentos». */
+const presentsAny = computed(
+  () => sheet.value?.documents.some((document) => document.presenting) ?? false,
+);
+const amendmentRows = computed(() => {
+  const rows = buildAmendmentRows(
     amendmentsData.value?.amendments ?? [],
     sheet.value?.sessionStartedAt ?? null,
     live.value?.amendmentId ?? null,
@@ -492,8 +519,13 @@ const amendmentRows = computed(() =>
     // The console's order, by answer whether public or not yet.
     { byAnswer: true },
     new Set(sheet.value?.treated?.amendmentIds ?? []),
-  ),
-);
+  );
+  if (!presentingSelected.value) return rows;
+  return rows.map((row) => ({
+    ...row,
+    awaitsAnswer: awaitsPresenterAnswer(row, true),
+  }));
+});
 
 // Sorting and filtering, kept in the query ------------------------------------
 
@@ -522,7 +554,11 @@ const INTERNAL_SORT_KEYS: ReadonlySet<string> = new Set(["speakers"]);
  * link from someone else's sheet falls back to the defaults).
  */
 const generalState = computed(() => {
-  const state = parseGeneralSheetQuery(route.query);
+  const parsed = parseGeneralSheetQuery(route.query);
+  // «Mis documentos» only for whoever presents one.
+  const state = presentsAny.value
+    ? parsed
+    : { ...parsed, filters: { ...parsed.filters, mine: false } };
   if (internal.value) return state;
   return {
     ...state,
@@ -533,7 +569,11 @@ const generalState = computed(() => {
   };
 });
 const amendmentState = computed(() => {
-  const state = parseAmendmentSheetQuery(route.query);
+  const parsed = parseAmendmentSheetQuery(route.query);
+  // «Por responder» only on a document the reader presents.
+  const state = presentingSelected.value
+    ? parsed
+    : { ...parsed, filters: { ...parsed.filters, mine: false } };
   if (internal.value) return state;
   const hidden =
     INTERNAL_SORT_KEYS.has(state.sort.key) ||
@@ -659,6 +699,17 @@ const generalGroups = computed<SheetFilterGroup[]>(() => {
       selected: filters.observations ? ["with"] : [],
     });
   }
+  // «Mis documentos» (user's decision of 2026-11-21).
+  if (presentsAny.value) {
+    groups.push({
+      key: "mine",
+      label: t("controlSheet.filters.mine.general.label"),
+      items: [
+        { value: "mine", label: t("controlSheet.filters.mine.general.item") },
+      ],
+      selected: filters.mine ? ["mine"] : [],
+    });
+  }
   return groups;
 });
 
@@ -706,6 +757,20 @@ const amendmentGroups = computed<SheetFilterGroup[]>(() => {
     items: voteItems.value,
     selected: filters.votes,
   });
+  // «Por responder»: what waits for the reader's answer as its presenter.
+  if (presentingSelected.value) {
+    groups.push({
+      key: "mine",
+      label: t("controlSheet.filters.mine.amendments.label"),
+      items: [
+        {
+          value: "mine",
+          label: t("controlSheet.filters.mine.amendments.item"),
+        },
+      ],
+      selected: filters.mine ? ["mine"] : [],
+    });
+  }
   return groups;
 });
 
@@ -715,6 +780,7 @@ function onGeneralFilter(key: string, values: string[]): void {
   else if (key === "members") filters.members = values;
   else if (key === "votes") filters.votes = values as VoteFilter[];
   else if (key === "observations") filters.observations = values.length > 0;
+  else if (key === "mine") filters.mine = values.length > 0;
   setGeneral(generalSort.value, filters);
 }
 
@@ -725,6 +791,7 @@ function onAmendmentFilter(key: string, values: string[]): void {
   else if (key === "members") filters.members = values;
   else if (key === "positions") filters.positions = values as PositionLead[];
   else if (key === "votes") filters.votes = values as VoteFilter[];
+  else if (key === "mine") filters.mine = values.length > 0;
   setAmendments(amendmentSort.value, filters);
 }
 
@@ -1074,6 +1141,44 @@ watch(
 
 const canEdit = computed(() => sheet.value?.can.edit ?? false);
 const canModerate = computed(() => sheet.value?.can.moderate ?? false);
+
+/**
+ * «Mis notas» (user's decision of 2026-11-21): every reader without the
+ * sheet's key to edit gets a column with its own general private notes on
+ * each document and amendment, read through their own endpoint (never part
+ * of the sheet's answer, refetched on every live batch), and writes them in
+ * the row's panel. Notes send no live event: they are read again
+ * when the window comes back to the front, when the panel closes and after
+ * a note is written there.
+ */
+const showOwnNotes = computed(() => Boolean(sheet.value) && !canEdit.value);
+const ownNotesFetch = useAsyncData<ControlSheetNotesDto | null>(
+  computed(
+    () =>
+      `control-sheet-notes:${showOwnNotes.value ? (assembly.value?.id ?? "none") : "none"}`,
+  ),
+  () =>
+    showOwnNotes.value
+      ? api.get<ControlSheetNotesDto>(`${apiBase.value}/control-sheet/notes`)
+      : Promise.resolve(null),
+  { default: () => null, lazy: true, server: false },
+);
+const ownNotes = computed(() =>
+  showOwnNotes.value ? indexOwnNotes(ownNotesFetch.data.value) : null,
+);
+function refreshOwnNotes(): void {
+  if (showOwnNotes.value) void ownNotesFetch.refresh();
+}
+if (import.meta.client) useEventListener(window, "focus", refreshOwnNotes);
+/** What the row's panel needs for «Mis notas». */
+const panelOwnNotes = computed(() =>
+  showOwnNotes.value
+    ? {
+        documentPath: (slug: string) =>
+          sectionPath(`documentos/${encodeURIComponent(slug)}`),
+      }
+    : null,
+);
 const panelOpen = ref(false);
 /** What the panel shows, by id, so a refetch brings its row up to date. */
 const panelSubject = ref<
@@ -1213,6 +1318,8 @@ let followWaiting = false;
 watch(panelOpen, (open) => {
   if (open) return;
   amendmentPanelDocumentId.value = null;
+  // A note on the amendment may have been written in the panel.
+  refreshOwnNotes();
   if (followWaiting) {
     followWaiting = false;
     void followDebate();
@@ -2355,6 +2462,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :flat="generalFlat"
             :internal="internal"
             :amendment-counts="amendmentCounts"
+            :own-notes="ownNotes"
             @open="openItem"
             @sort="onGeneralSort"
             @amendments="openDocumentAmendments"
@@ -2563,6 +2671,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               :sort="amendmentSort"
               :internal="internal"
               :show-positions="showPositions"
+              :own-notes="ownNotes"
               @open="openAmendment"
               @sort="onAmendmentSort"
               @preview="openAmendmentPreview"
@@ -2614,6 +2723,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       :document="panelDocument"
       :speaker-turns="sheet?.turns ?? []"
       :speakers="{ note: canNoteSpeakers, open: speakerNotesOpen }"
+      :own-notes="panelOwnNotes"
       :results="{
         record: canRecordResults,
         amendments: amendmentsData?.amendments ?? [],
@@ -2627,6 +2737,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       @speakers-updated="onSpeakersUpdated"
       @result-changed="onResultChanged"
       @reopen="reopenPanel"
+      @notes-changed="refreshOwnNotes"
     />
 
     <LiveViewDocumentWindow

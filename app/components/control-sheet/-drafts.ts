@@ -174,3 +174,17 @@ export async function settledWithin(
     clearTimeout(timer);
   }
 }
+
+/**
+ * The presenter's answer the row panel shows once the saved one went from
+ * `savedBefore` to `savedNow` (given elsewhere: the document, the console,
+ * another reader) while the reader's choice was `draft`: the new answer,
+ * unless the reader had chosen another of their own, which stays. Also what
+ * cancelling the question «Propone una transaccional» asks puts back, with
+ * the choice and the saved answer from before the question: an answer given
+ * while it was open is taken, never left as a draft the reader did not
+ * choose (it would be saved over the new one, with the new one's token).
+ */
+export function answerDraftAfter<T>(draft: T, savedBefore: T, savedNow: T): T {
+  return draft === savedBefore ? savedNow : draft;
+}

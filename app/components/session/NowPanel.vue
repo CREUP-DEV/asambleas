@@ -3,11 +3,14 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import {
   isSessionOpen,
+  isSessionPendingAdmission,
   sessionItemDocuments,
   sessionItemVotePlan,
   sessionNextItemDocument,
   sessionSubItemsLeft,
 } from "~/composables/session/sessionModel";
+import { admissionDecisionOf } from "~/composables/session/admissionProposal";
+import { liveBlocOutcome } from "~/components/live-view/-model";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useItemVoteText } from "~/composables/session/useItemVoteText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -75,7 +78,13 @@ const screenLine = computed(() => {
       ? session.label(screen.amendmentId)
       : null,
     bloc.length > 0
-      ? t("session.bloc.onScreenWhat", { count: bloc.length }, bloc.length)
+      ? t(
+          screen.amendmentBlocPurpose
+            ? "session.admissionProposal.onScreenWhat"
+            : "session.bloc.onScreenWhat",
+          { count: bloc.length },
+          bloc.length,
+        )
       : null,
     documentTitle ??
       (row
@@ -212,9 +221,12 @@ const documentStatus = computed(() => {
   const current = document.value;
   if (!current) return null;
   if (finalVote.value) {
-    return finalVote.value.result === "approved"
-      ? t("session.preview.finalApproved")
-      : t("session.preview.finalRejected");
+    if (finalVote.value.result !== "approved") {
+      return t("session.preview.finalRejected");
+    }
+    return current.pendingConciliation > 0
+      ? t("session.preview.finalApprovedPending")
+      : t("session.preview.finalApproved");
   }
   if (!current.amendable || current.format === "file") {
     return current.voted
@@ -253,6 +265,32 @@ const blocOpenIds = computed(() =>
 const blocApproved = computed(
   () => bloc.value.filter((entry) => entry.approved).length,
 );
+
+/**
+ * A proposal to admit late amendments or not on screen (user's decision of
+ * 2026-11-21): its codes in text order, each with what was decided, and
+ * those still pending, which «Decidir admisión» opens the dialog on.
+ */
+const proposal = computed(() => {
+  const onScreen = session.proposalOnScreen.value;
+  if (!onScreen) return null;
+  const ids = new Set(onScreen.ids);
+  const entries = session.amendments.value
+    .filter((amendment) => ids.has(amendment.id))
+    .map((amendment) => ({
+      id: amendment.id,
+      code: session.label(amendment.id),
+      outcome: liveBlocOutcome(amendment, onScreen.purpose),
+      pending: isSessionPendingAdmission(amendment),
+    }));
+  return {
+    purpose: onScreen.purpose,
+    entries,
+    pendingIds: entries
+      .filter((entry) => entry.pending)
+      .map((entry) => entry.id),
+  };
+});
 
 // Agenda item under debate ---------------------------------------------------------
 
@@ -818,8 +856,81 @@ const announcement = computed(() => {
                 </div>
               </section>
 
+              <!-- A proposal on admission on screen: its codes, each with
+                   what was decided; it stays until the Mesa takes it off. -->
+              <section
+                v-if="proposal"
+                class="border-warning/40 bg-warning/5 space-y-2 rounded-lg border p-3"
+                aria-labelledby="session-now-proposal-title"
+              >
+                <p
+                  id="session-now-proposal-title"
+                  class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+                >
+                  <UIcon
+                    name="i-lucide-monitor"
+                    class="text-warning size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {{
+                    t(`session.admissionProposal.onScreen.${proposal.purpose}`)
+                  }}
+                </p>
+                <ul class="flex flex-wrap gap-1.5">
+                  <li v-for="entry in proposal.entries" :key="entry.id">
+                    <UBadge
+                      :color="
+                        entry.outcome === 'admitted' ? 'success' : 'neutral'
+                      "
+                      :variant="entry.outcome ? 'subtle' : 'outline'"
+                      :icon="
+                        entry.outcome === 'admitted'
+                          ? 'i-lucide-check'
+                          : entry.outcome === 'notAdmitted'
+                            ? 'i-lucide-x'
+                            : undefined
+                      "
+                      :label="entry.code"
+                      :aria-label="
+                        entry.outcome
+                          ? `${entry.code}: ${t(`projection.proposal.${entry.outcome}`)}`
+                          : entry.code
+                      "
+                    />
+                  </li>
+                </ul>
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-if="proposal.pendingIds.length > 0"
+                    size="sm"
+                    color="warning"
+                    variant="soft"
+                    icon="i-lucide-gavel"
+                    :label="t('session.admissionProposal.decide')"
+                    :disabled="Boolean(session.busy.value.admission)"
+                    @click="
+                      session.openAdmission(
+                        proposal.pendingIds,
+                        admissionDecisionOf(proposal.purpose),
+                      )
+                    "
+                  />
+                  <UButton
+                    v-if="session.inControl.value"
+                    size="sm"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-monitor-off"
+                    :label="t('session.bloc.unproject')"
+                    :loading="liveBusy"
+                    @click="session.unprojectBloc()"
+                  />
+                </div>
+              </section>
+
+              <!-- One notice per fact: a proposal on screen already says it. -->
               <UAlert
-                v-if="lateCount > 0"
+                v-if="lateCount > 0 && !proposal"
                 color="warning"
                 variant="subtle"
                 icon="i-lucide-clock-alert"

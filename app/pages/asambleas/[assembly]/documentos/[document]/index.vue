@@ -16,6 +16,7 @@ import type {
 } from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { consolidateApproved } from "~~/shared/utils/content/passages";
+import { usePendingConciliation } from "~/composables/document/pendingConciliation";
 import {
   firstTouchedBlockId,
   touchedBlockIds,
@@ -58,6 +59,11 @@ import {
   documentProgress,
 } from "~/composables/document/documentProgress";
 import { provideSheetObservations } from "~/composables/document/useSheetObservations";
+import {
+  contentPages,
+  documentPagesTarget,
+  useDocumentPages,
+} from "~/composables/document/useDocumentPages";
 
 /**
  * Document workspace (inside the assembly hub). Its one primary action, for
@@ -136,6 +142,8 @@ interface TextViewHandle {
   ) => void;
   currentHeading: () => string | null;
   outline: OutlineEntry[];
+  /** The PDF page being read, when the view shows pages. */
+  currentPage?: number | null;
   root: HTMLElement | null;
 }
 
@@ -493,6 +501,19 @@ const moreItems = computed<MoreItem[][]>(() => {
       label: t("workspace.more.consolidated"),
       icon: "i-lucide-file-check",
       to: documentPath("consolidado"),
+    });
+  }
+  // Corrections of form to the approved text, on «Texto consolidado».
+  const correctForm = document.value?.can.correctForm;
+  if (correctForm && document.value?.consolidatedVersion) {
+    text.push({
+      label: t(
+        correctForm === "direct"
+          ? "workspace.formCorrections.edit"
+          : "workspace.formCorrections.propose",
+      ),
+      icon: "i-lucide-spell-check",
+      to: `${documentPath("consolidado")}?corregir`,
     });
   }
   if (canExportClean.value) {
@@ -1625,9 +1646,57 @@ const pendingPassages = computed(
       (passage) => passage.status === "pending",
     ) ?? [],
 );
+/**
+ * Passages the final vote left pending conciliation (user's decisions of
+ * 2026-11-21): marked in the text, which is never read as final meanwhile.
+ */
+const { codes: joinedPendingCodes, marks: pendingMarksOf } =
+  usePendingConciliation();
+const conciliation = computed(
+  () => document.value?.consolidatedVersion?.pendingPassages ?? [],
+);
+const pendingMarks = computed(() =>
+  pendingMarksOf(document.value?.consolidatedVersion, list.labelOf),
+);
 const compareBlocks = computed(
   () => finalText.value ?? consolidation.value?.blocks ?? [],
 );
+
+// PDF pages -----------------------------------------------------------------------
+// «pág. N» as the package's PDFs print it (user's decisions of 2026-11-21):
+// the consolidated PDF's in «Con lo aprobado» once voted; the original's
+// everywhere else, on its own blocks (an inserted one has none).
+
+const { pages: pdfPages } = useDocumentPages(() =>
+  documentPagesTarget(assembly.value?.id, document.value),
+);
+const consolidatedPagesShown = computed(
+  () => textMode.value === "consolidated" && Boolean(finalText.value),
+);
+const basePages = computed(() =>
+  contentPages(pdfPages.value?.base, document.value?.baseVersion),
+);
+const textPages = computed(() =>
+  consolidatedPagesShown.value
+    ? contentPages(
+        pdfPages.value?.consolidated,
+        document.value?.consolidatedVersion,
+      )
+    : basePages.value,
+);
+const textPageTotal = computed(
+  () =>
+    (consolidatedPagesShown.value
+      ? pdfPages.value?.consolidated?.total
+      : pdfPages.value?.base?.total) ?? 0,
+);
+/** The page the original's column of «lado a lado» is read at. */
+const sidePage = ref<number | null>(null);
+const textPage = computed(() => {
+  if (!textPages.value) return null;
+  if (textMode.value === "compare" && !compareDiff.value) return sidePage.value;
+  return textView.value?.currentPage ?? null;
+});
 /**
  * "Incluir las aceptadas" previews the amendments the main presenter accepted
  * as if approved. Under the "incorporate" rule accepting already approves
@@ -2075,10 +2144,17 @@ const filteredBlockLabel = computed(() =>
                     showAcceptedSwitch ||
                     showAmendmentsToggle ||
                     showMarkersSwitch ||
-                    textMode === 'compare'
+                    textMode === 'compare' ||
+                    textPage !== null
                   "
                   #right
                 >
+                  <!-- The PDF page being read (its «pág. N» marks sit
+                       beside the text). -->
+                  <ContentPageIndicator
+                    :page="textPage"
+                    :total="textPageTotal"
+                  />
                   <!-- How the text shows, behind one button, so the tabs and
                        these fit on one line beside the list. -->
                   <UPopover
@@ -2199,6 +2275,7 @@ const filteredBlockLabel = computed(() =>
                     :blocks="base"
                     :markers="marginMarkers ? list.markers.value : undefined"
                     :selected="originalSelected"
+                    :pages="basePages"
                     marker-buttons
                     @marker-click="onMarkerClick"
                   />
@@ -2259,6 +2336,7 @@ const filteredBlockLabel = computed(() =>
                     :annotated="amendedAnnotated"
                     mode="diff"
                     :selected="overlapBlockIds"
+                    :pages="basePages"
                   />
                 </template>
               </template>
@@ -2268,7 +2346,26 @@ const filteredBlockLabel = computed(() =>
                 v-else-if="textMode === 'consolidated' && consolidation"
               >
                 <UAlert
-                  v-if="finalText"
+                  v-if="finalText && conciliation.length > 0"
+                  color="warning"
+                  variant="subtle"
+                  icon="i-lucide-git-merge"
+                  :title="t('document.pendingConciliation.status')"
+                  :description="
+                    conciliation
+                      .map((passage) =>
+                        t('document.pendingConciliation.passage', {
+                          codes: joinedPendingCodes(
+                            passage.amendmentIds,
+                            list.labelOf,
+                          ),
+                        }),
+                      )
+                      .join(' · ')
+                  "
+                />
+                <UAlert
+                  v-else-if="finalText"
                   color="success"
                   variant="subtle"
                   icon="i-lucide-badge-check"
@@ -2347,6 +2444,8 @@ const filteredBlockLabel = computed(() =>
                   mode="provenance"
                   :label="list.shortLabelOf"
                   :focus="selectedId"
+                  :pending="finalText ? pendingMarks : []"
+                  :pages="textPages"
                   interactive
                   @amendment-click="selectAmendment($event, { fromText: true })"
                 />
@@ -2365,6 +2464,7 @@ const filteredBlockLabel = computed(() =>
                   ref="textView"
                   :annotated="consolidation?.annotated ?? []"
                   mode="diff"
+                  :pages="basePages"
                 />
               </template>
 
@@ -2377,7 +2477,11 @@ const filteredBlockLabel = computed(() =>
                     >
                       {{ t("workspace.compare.original") }}
                     </h3>
-                    <ContentView :blocks="base" />
+                    <ContentView
+                      :blocks="base"
+                      :pages="basePages"
+                      @page="sidePage = $event"
+                    />
                   </section>
                   <section
                     class="border-default min-w-0 border-t pt-6 @3xl:border-t-0 @3xl:border-s @3xl:ps-6 @3xl:pt-0"

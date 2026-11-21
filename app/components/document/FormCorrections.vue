@@ -9,6 +9,7 @@ import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import { FORM_CORRECTION_REASON_MAX_LENGTH } from "~~/shared/utils/schemas/document";
 import { formatDateTime } from "~/utils/format";
+import { usePendingConciliation } from "~/composables/document/pendingConciliation";
 
 /**
  * Corrections of form to the approved text (user's decisions of
@@ -20,12 +21,20 @@ import { formatDateTime } from "~/utils/format";
  * made on, as an amendment's); the ones not applied only reach those who
  * may make or decide them.
  *
- * `editing` lets the page hide the text while the editor shows it.
+ * `editing` lets the page hide the text while the editor shows it; the
+ * page opens the editor (`start`) from the button next to the text's
+ * heading, or on arriving with `?corregir` (the document's «Más» menu).
  */
 const props = defineProps<{
   document: DocumentDto;
   /** "/api/assemblies/{assembly}/documents/{document}" (ids). */
   documentApi: string;
+  /**
+   * An amendment's code as the reader reads it: a conciliation of a passage
+   * the final vote left pending (user's decisions of 2026-11-21) is listed
+   * here too, as «Conciliación de E3 y E5».
+   */
+  labelOf?: (amendmentId: string) => string;
 }>();
 
 const emit = defineEmits<{ changed: [] }>();
@@ -87,6 +96,17 @@ function start(): void {
 }
 function cancel(): void {
   editing.value = false;
+}
+
+defineExpose({ start, load });
+
+const { codes: joinedCodes } = usePendingConciliation();
+/** «E3 y E5»: the amendments a conciliation words. */
+function passageCodes(correction: FormCorrectionDto): string {
+  return joinedCodes(
+    correction.passage?.amendmentIds ?? [],
+    props.labelOf ?? (() => "?"),
+  );
 }
 
 const changedText = computed(
@@ -157,9 +177,11 @@ async function decide(
     toast.add({
       id: `form-correction-${correction.id}`,
       title:
-        decision === "apply"
-          ? t("workspace.formCorrections.toasts.applied")
-          : t("workspace.formCorrections.toasts.rejected"),
+        decision !== "apply"
+          ? t("workspace.formCorrections.toasts.rejected")
+          : correction.passage
+            ? t("document.pendingConciliation.toasts.applied")
+            : t("workspace.formCorrections.toasts.applied"),
       color: decision === "apply" ? "success" : "neutral",
       icon: decision === "apply" ? "i-lucide-spell-check" : "i-lucide-x",
     });
@@ -239,17 +261,6 @@ function when(value: string | null): string {
           }}
         </p>
       </div>
-      <UButton
-        v-if="mode && !editing"
-        icon="i-lucide-spell-check"
-        :label="
-          mode === 'direct'
-            ? t('workspace.formCorrections.edit')
-            : t('workspace.formCorrections.propose')
-        "
-        :disabled="!current"
-        @click="start"
-      />
     </div>
 
     <UAlert
@@ -359,7 +370,21 @@ function when(value: string | null): string {
             {{ when(correction.decidedAt ?? correction.createdAt) }}
           </span>
         </div>
-        <p class="text-default text-sm whitespace-pre-line">
+        <p
+          v-if="correction.passage"
+          class="text-highlighted flex items-center gap-1.5 text-sm font-medium"
+        >
+          <UIcon name="i-lucide-git-merge" class="size-4 shrink-0" />
+          {{
+            t("document.pendingConciliation.entry", {
+              codes: passageCodes(correction),
+            })
+          }}
+        </p>
+        <p
+          v-if="correction.reason"
+          class="text-default text-sm whitespace-pre-line"
+        >
           {{ correction.reason }}
         </p>
         <p

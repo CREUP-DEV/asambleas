@@ -7,6 +7,11 @@ import {
   unreadAmendmentsPath,
 } from "~/composables/document/documentLinks";
 import { affectsDocumentDto } from "~/composables/assembly/-liveFilters";
+import {
+  contentPages,
+  documentPagesTarget,
+  useDocumentPages,
+} from "~/composables/document/useDocumentPages";
 
 /**
  * The published documents of an agenda item, read in place: one on show at
@@ -51,7 +56,7 @@ const props = defineProps<{
 const { t } = useI18n();
 const api = useApi();
 const route = useRoute();
-const { apiBase, onLive } = useCurrentAssembly();
+const { assembly, apiBase, onLive } = useCurrentAssembly();
 const marks = useReadMarks();
 
 const wanted = computed(() => {
@@ -128,6 +133,22 @@ onLive((events) => {
 });
 
 const blocks = computed(() => detail.value?.baseVersion?.blocks ?? []);
+
+// «pág. N» of the text as presented, as the package's PDF prints it (user's
+// decisions of 2026-11-21), and the page being read.
+const { pages: pdfPages } = useDocumentPages(() =>
+  documentPagesTarget(assembly.value?.id, detail.value),
+);
+const textPages = computed(() =>
+  contentPages(pdfPages.value?.base, detail.value?.baseVersion),
+);
+const textPage = ref<number | null>(null);
+watch(
+  () => detail.value?.id,
+  () => {
+    textPage.value = null;
+  },
+);
 
 // How long each document on show is open, for the statistics: every
 // document here is published.
@@ -512,13 +533,25 @@ function pick(slug: unknown): void {
           >
             <!-- For whoever may amend, a right click on the text offers
                  "Hacer enmienda aquí", which opens the document's editor. -->
+            <!-- The PDF page being read, kept in view as it scrolls. -->
+            <ContentPageIndicator
+              :page="textPage"
+              :total="pdfPages?.base?.total ?? 0"
+              floating
+            />
             <AmendmentTextActions
               :amend="canAmend"
               :note="Boolean(notes?.available)"
               @amend="amendAt"
               @note="(blockId, span) => notes?.annotate(blockId, span)"
             >
-              <ContentView ref="textView" :key="detail.id" :blocks="blocks" />
+              <ContentView
+                ref="textView"
+                :key="detail.id"
+                :blocks="blocks"
+                :pages="textPages"
+                @page="textPage = $event"
+              />
             </AmendmentTextActions>
           </div>
 

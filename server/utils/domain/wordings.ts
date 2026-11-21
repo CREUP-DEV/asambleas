@@ -80,7 +80,8 @@ interface ApprovedRow {
   ops: AmendmentOp[];
 }
 
-async function approvedRows(
+/** The document's approved amendments, in approval order. */
+export async function approvedRows(
   executor: Executor,
   documentId: string,
 ): Promise<ApprovedRow[]> {

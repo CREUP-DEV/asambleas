@@ -671,8 +671,12 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     case "document_correction_requested":
       return make("home.news.document.correction");
     case "document_voted":
-      return news.value === "rejected"
-        ? make("home.news.document.rejected", "error")
+      if (news.value === "rejected") {
+        return make("home.news.document.rejected", "error");
+      }
+      // Approved pending conciliation (user's decisions of 2026-11-21).
+      return news.value === "approved_pending"
+        ? make("home.news.document.approvedPending", "success")
         : make("home.news.document.approved", "success");
     case "document_status_changed":
       if (news.value === "withdrawn" || news.value === "postponed") {

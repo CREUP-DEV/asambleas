@@ -1,7 +1,10 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db";
 import { documents, roles, users } from "../../db/schema";
-import { findAmendmentsByIds } from "../domain/amendments";
+import {
+  findAmendmentsByIds,
+  type StoredAmendmentMeta,
+} from "../domain/amendments";
 import type { Executor } from "../domain/events";
 import { loadCoProponentIds } from "../domain/presenters";
 import {
@@ -78,6 +81,11 @@ async function loadFacts(
             status: row.status,
             validated: row.validatedAt !== null,
             authorIds: row.authors.map((author) => author.memberId),
+            proposerMemberId:
+              row.kind === "transactional"
+                ? ((row.meta as StoredAmendmentMeta | null)?.proposerMemberId ??
+                  null)
+                : null,
             parties: row.acceptances
               .filter((acceptance) => acceptance.role === "author")
               .map((acceptance) => ({

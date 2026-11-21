@@ -148,7 +148,11 @@
         "label": "Document contents",
         "progress": "Section {current} of {total}"
       },
-      "blockHint": "Press Enter to choose this paragraph; Shift and Enter adds it to the ones already chosen."
+      "blockHint": "Press Enter to choose this paragraph; Shift and Enter adds it to the ones already chosen.",
+      "pageMark": "p. {pages} | pp. {pages}",
+      "pageMarkTitle": "Page {pages} of the PDF | Pages {pages} of the PDF",
+      "pageOf": "Page {page} of {total}",
+      "pageOfTitle": "The page of the documentation PDF you are reading"
     },
     "editor": {
       "bold": "Bold",
@@ -322,6 +326,7 @@
       "assemblyManage": "Edit assemblies and change status",
       "documentCreate": "Create and submit documents",
       "documentManage": "Edit, publish and withdraw any document",
+      "documentCorrectForm": "Correct the form of approved texts: typos and changes of form that replace the consolidated text",
       "amendmentCreate": "Create and submit amendments",
       "amendmentManage": "Manage other members' amendments",
       "amendmentReview": "Validate and publish amendments, and record their admission",
@@ -1285,6 +1290,23 @@
       "errors": {
         "debateStarted": "The debate of its agenda item has started: the answers are public and cannot be made private again."
       }
+    },
+    "pendingConciliation": {
+      "status": "Approved · pending reconciliation",
+      "description": "The text was approved with 1 passage where approved amendments clash still unworded. Until it is reconciled, the automatic proposal is read there, marked in the text. | The text was approved with {count} passages where approved amendments clash still unworded. Until they are reconciled, the automatic proposal is read there, marked in the text.",
+      "passage": "Pending reconciliation of {codes}",
+      "entry": "Reconciliation of {codes}",
+      "conciliate": "Reconcile",
+      "propose": "Propose a wording",
+      "save": "Reconcile the passage",
+      "send": "Send to the Secretaría",
+      "toasts": {
+        "applied": "Passage reconciled in the approved text",
+        "proposed": "Wording sent to the Secretaría"
+      },
+      "errors": {
+        "save": "The passage could not be reconciled"
+      }
     }
   },
   "amendment": {
@@ -1607,6 +1629,8 @@
       },
       "answerAuto": "Accepted automatically: formal amendment",
       "answerAutoCleared": "Unanswered again: no longer a formal amendment",
+      "answerProposed": "{member} accepts it by presenting it",
+      "answerOnProposing": "Accepted by presenting it",
       "blocked": {
         "publication": "It can be answered once the Secretariat publishes it.",
         "validation": "It can be answered once the Secretariat validates it.",
@@ -1625,6 +1649,7 @@
       "savedDecided": "The decision stays as it was: the answer does not change it.",
       "later": "It can be answered later by {member}.",
       "laterYou": "You can answer it later.",
+      "acceptsOnProposing": "Presented by {member}, who presents the document: it counts as accepted as soon as it can be answered.",
       "yourTurn": "It is your turn to answer it.",
       "answersByMesa": {
         "accept": "The Mesa accepted it on behalf of {member}",
@@ -1649,6 +1674,9 @@
       "title": "Who has to accept it",
       "summary": "{accepted} of {total} have accepted it",
       "none": "Nobody has to accept it.",
+      "presentedBy": "Presented by {member}",
+      "presenterAccepts": "{member}, who presents the document, accepts it by presenting it",
+      "presenterLater": "{member}, who presents the document, answers once the Secretariat validates it",
       "roles": {
         "proponent": "presents the document",
         "mainAuthor": "main author of an amendment it would replace",
@@ -2076,6 +2104,20 @@
       },
       "sheetTitle": "In the control sheet",
       "sheetEdited": "Last edited by {name}, {when}"
+    },
+    "transactAnswer": {
+      "title": "Write the transactional?",
+      "pendingTitle": "A transactional is already under way",
+      "answer": "The answer “Proposes a transactional” to {code} will be saved.",
+      "answerMesa": "The answer “Proposes a transactional” to {code} will be saved on behalf of {member}.",
+      "draft": "Then the document opens with {code} chosen to write the transactional. If you cancel, the answer stays as it was.",
+      "draftMesa": "Then the document opens with {code} chosen to write the transactional, which will be the Mesa's. If you cancel, the answer stays as it was.",
+      "pending": "The transactional {list} over this amendment is already under way: you can open it or write another one. | The transactionals {list} over this amendment are already under way: you can open the first one or write another one.",
+      "saveOnly": "Only save the answer",
+      "draftButton": "Write the transactional",
+      "draftAnother": "Write another one",
+      "openPending": "Open {code}",
+      "notCombinable": "The answer was saved, but {code} can no longer be combined into a transactional."
     },
     "reopenAlternatives": {
       "required": "It was decided in a vote on several amendments: reopening it voids the vote and reopens all its amendments"
@@ -2517,7 +2559,7 @@
         },
         "presenter_transactional": {
           "title": "Transactional to their document",
-          "description": "When the Secretariat validates a member's transactional to the document they present, so they answer it. Not when their own member proposed it."
+          "description": "When the Secretariat validates a member's transactional to the document they present, so they answer it. Not when one of the document's presenters presented it: that was their answer."
         },
         "presenter_decided": {
           "title": "Settled",
@@ -2613,6 +2655,10 @@
         "assent": "Approved by assent at the {assembly} on {date}.",
         "unanimous": "Approved unanimously at the {assembly} on {date}."
       },
+      "pendingConciliation": {
+        "heading": "Approved pending reconciliation of amendments {passages}.",
+        "passage": "Pending reconciliation of {codes}"
+      },
       "majorities": {
         "simple": "simple majority",
         "absolute": "absolute majority",
@@ -2656,8 +2702,8 @@
         "notApplied": "Not incorporated: clashes with {codes}",
         "notAppliedInvalid": "Not incorporated: no longer fits the text",
         "supersededBy": "No effect on the final text: {codes} deleted or rewrote it",
-        "worded": "Wording set by the Mesa together with {codes}",
-        "wordingPending": "Wording pending from the Mesa, together with {codes}"
+        "worded": "Wording reconciled together with {codes}",
+        "wordingPending": "Wording pending reconciliation, together with {codes}"
       },
       "amendmentStatuses": {
         "draft": "Draft",
@@ -3157,6 +3203,7 @@
         "published": "The document was published: the whole assembly can read it now.",
         "correction": "The Secretariat asks you to correct the document. Send it again once it is ready.",
         "approved": "The assembly approved the document's final text.",
+        "approvedPending": "The assembly approved the document, with passages pending reconciliation.",
         "rejected": "The assembly rejected the document's final text.",
         "other": "There is news about the document."
       }
@@ -3769,6 +3816,7 @@
       "madeAs": {
         "secretaria": "Secretaría",
         "mesa": "Mesa",
+        "authorized": "Authorised person",
         "presenter": "Presenter"
       },
       "decisionNote": "Note from the Secretaría: {note}",
@@ -4061,6 +4109,7 @@
       "relationCreated": "Link recorded",
       "transactionalCreated": "Transactional {code} created",
       "finalApproved": "Final text approved",
+      "finalApprovedPending": "Text approved, pending reconciliation",
       "finalRejected": "Final text rejected",
       "finalAnnulled": "Final vote annulled",
       "validated": "Amendment validated and published | {count} amendments validated and published",
@@ -4177,6 +4226,21 @@
       "titleInadmit": "Declare amendments inadmissible",
       "emptyAdmit": "No amendments can be admitted",
       "emptyInadmit": "No amendments can be declared inadmissible"
+    },
+    "admissionProposal": {
+      "project": "Project proposal",
+      "unpublished": "One late amendment is not published and cannot be projected: the Secretaría has to publish it first. | {count} late amendments are not published and cannot be projected: the Secretaría has to publish them first.",
+      "onScreen": {
+        "admit": "On screen: proposed for admission to debate",
+        "inadmit": "On screen: proposed not to be admitted"
+      },
+      "onScreenWhat": "an admission proposal of 1 amendment | an admission proposal of {count} amendments",
+      "decide": "Decide admission",
+      "mismatch": "The selection does not match the proposal on screen: project it, or tick the same amendments to decide.",
+      "mismatchDecision": "The screen proposes the opposite decision: project this proposal, or choose the same decision and the same amendments to decide.",
+      "errors": {
+        "notPending": "Only published late amendments awaiting admission can be projected"
+      }
     },
     "relation": {
       "title": "Links of {code}",
@@ -4357,6 +4421,7 @@
       "applied": "No amendments applied | 1 amendment applied | {count} amendments applied",
       "empty": "The base text is empty",
       "finalApproved": "Final text approved",
+      "finalApprovedPending": "Text approved, pending reconciliation",
       "finalRejected": "Final text rejected",
       "notVoted": "This document is not put to a vote",
       "notPublished": "The document is not published",
@@ -4376,9 +4441,12 @@
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
       "conflictsTitle": "The approved amendments cannot be applied together",
       "conflictsHint": "Reopen or decide one of them again before the final vote.",
+      "leavePending": "Vote leaving the passage pending reconciliation | Vote leaving the {count} passages pending reconciliation",
+      "leavePendingHint": "If approved, the text carries the automatic proposal and reads «Approved · pending reconciliation» until the Mesa or the Secretaría sets the wording.",
       "submit": "Record final vote",
       "confirmTitle": "Check the result before recording it",
       "confirmDescription": "The final vote closes the document's amendments. If there is a mistake, the Mesa will have to annul it.",
+      "pendingNote": "1 passage stays pending reconciliation. | {count} passages stay pending reconciliation.",
       "confirm": "Confirm and record",
       "annul": "Annul final vote",
       "annulTitle": "Annul the final vote",
@@ -4843,6 +4911,15 @@
       "transacts": "Combines:",
       "approved": "Approved"
     },
+    "proposal": {
+      "title": {
+        "admit": "Proposed for admission to debate",
+        "inadmit": "Proposed not to be admitted"
+      },
+      "late": "Submitted after the deadline",
+      "admitted": "Admitted",
+      "notAdmitted": "Not admitted"
+    },
     "tally": {
       "title": "Secret vote",
       "electionTitle": "Election count",
@@ -4875,6 +4952,7 @@
     "resultCountsSecret": "{inFavor} in favour, {against} against, {third} blank.",
     "amendmentStats": "{approved} amendments approved · {undecided} undecided · {total} in total",
     "finalApproved": "Final text approved",
+    "finalApprovedPending": "Text approved, pending reconciliation",
     "finalRejected": "Final text rejected",
     "live": "Connected",
     "polling": "Reconnecting",
@@ -4902,7 +4980,13 @@
       "agendaItem": "Vote on item {title}",
       "agendaItemUnknown": "Vote on an agenda item",
       "unanimous": "Unanimously",
-      "bloc": "Vote on a bloc: {codes}"
+      "bloc": "Vote on a bloc: {codes}",
+      "admission": {
+        "admitted": "Admitted to debate: {what} | Admitted to debate: {what}",
+        "notAdmitted": "Not admitted: {what} | Not admitted: {what}",
+        "amendments": "one amendment | {count} amendments",
+        "more": "{codes} and one more | {codes} and {count} more"
+      }
     },
     "stale": "Showing the last data received",
     "sessionExpired": "Session expired: sign in again",
@@ -4985,7 +5069,7 @@
       "bulkConfirmFrozen": "Their texts are fixed: they can no longer be edited, and they get their reference if their kind has one."
     },
     "formCorrections": {
-      "title": "Corrections of form proposed to approved texts",
+      "title": "Approved text: proposed corrections and reconciliations",
       "count": "{count} pending | {count} pending"
     },
     "transactionals": {
@@ -5443,6 +5527,16 @@
           "treated": "Treated"
         }
       },
+      "mine": {
+        "general": {
+          "label": "My documents",
+          "item": "Only the ones I present"
+        },
+        "amendments": {
+          "label": "Your answer",
+          "item": "Awaiting your answer"
+        }
+      },
       "button": "Filters",
       "buttonActive": "Filters. In use: {count}",
       "any": "Any",
@@ -5490,6 +5584,19 @@
       "button": "Edit",
       "item": "Edit item {title}",
       "amendment": "Edit amendment {code}"
+    },
+    "answer": {
+      "button": "Answer",
+      "amendment": "Answer amendment {code}",
+      "pending": "Awaiting your answer",
+      "awaiting": "{count} unanswered | {count} unanswered",
+      "panelDescription": "Your document: this amendment awaits your answer"
+    },
+    "ownNotes": {
+      "hint": "Only your account sees them. Here are the notes on the whole document.",
+      "more": "and {count} more | and {count} more",
+      "none": "No notes of yours",
+      "anchored": "{count} note on the text: open it in the document | {count} notes on the text: open them in the document"
     },
     "results": {
       "title": "Result",
@@ -6080,6 +6187,7 @@
       "title": "Speaking turns",
       "current": "Has the floor",
       "next": "Next",
+      "nextInline": "Next:",
       "more": "and 1 more | and {count} more",
       "empty": "Nobody has the floor right now.",
       "unnamed": "No name"
@@ -6274,10 +6382,10 @@
       "reseedConfirm": "Changing the amendments you combine restarts the text and loses what you have written. Continue?",
       "resetConfirm": "Your changes to the text will be lost. Go back to the starting text?",
       "sent": {
-        "toast": "Transactional amendment sent",
-        "title": "Transactional amendment {code} sent",
+        "toast": "Transactional amendment presented",
+        "title": "Transactional amendment {code} presented",
         "titlePublished": "Transactional amendment {code} presented",
-        "titleUnnumbered": "Transactional amendment sent",
+        "titleUnnumbered": "Transactional amendment presented",
         "next": "What happens now",
         "view": "View the transactional amendment"
       },
@@ -6293,7 +6401,11 @@
       "replaces": "It replaces {list}.",
       "answer": {
         "incorporate": "Then the document's presenter answers it: if accepted, it goes into the text without a vote; otherwise the assembly votes on it.",
-        "vote": "Then the document's presenter answers it and the assembly votes on it."
+        "vote": "Then the document's presenter answers it and the assembly votes on it.",
+        "proposed": {
+          "incorporate": "As you present the document, presenting it is your acceptance: once the Secretariat validates it, it goes into the text without a vote.",
+          "vote": "As you present the document, presenting it is your acceptance. Then the assembly votes on it."
+        }
       }
     },
     "progress": {
@@ -6930,6 +7042,8 @@
       "document_form_correction_proposed": "Correction of form proposed",
       "document_form_correction_rejected": "Correction of form rejected",
       "document_form_correction_withdrawn": "Correction of form withdrawn",
+      "passage_conciliated": "Pending passage of the approved text reconciled",
+      "passage_conciliation_proposed": "Wording proposed for a passage pending reconciliation",
       "passage_worded": "Passage wording set by the Mesa",
       "passage_wording_removed": "Passage wording removed",
       "amendment_created": "@:amendment.history.events.amendment_created",

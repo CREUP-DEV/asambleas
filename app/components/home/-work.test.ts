@@ -66,6 +66,7 @@ const doc = (
     correctionNote: null,
     correctionRequestedAt: null,
     consolidated: false,
+    pendingConciliation: 0,
     updatedAt: "2026-11-01T00:00:00Z",
     ...over,
   },
@@ -859,6 +860,13 @@ describe("home work", () => {
       expect(
         key({ type: "document_voted", value: "rejected", amendment: null }),
       ).toBe("home.news.document.rejected");
+      expect(
+        key({
+          type: "document_voted",
+          value: "approved_pending",
+          amendment: null,
+        }),
+      ).toBe("home.news.document.approvedPending");
       expect(
         key({
           type: "document_status_changed",

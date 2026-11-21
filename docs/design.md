@@ -1130,7 +1130,7 @@ audiences:
 | `presenter_assigned`                 | `document_created`, a `document_updated` that names new presenters                                      | the new presenters                                         |
 | `presenter_correction`               | `document_correction_requested`, `amendment_correction_requested`                                       | presenters or authors                                      |
 | `presenter_validated`                | `document_published`, `amendment_validated`, `amendment_admitted`                                       | presenters or authors                                      |
-| `presenter_transactional`            | `amendment_validated` of a member's transactional, so they answer it                                    | the document's presenters, unless their member proposed it |
+| `presenter_transactional`            | `amendment_validated` of a member's transactional, so they answer it                                    | the document's presenters, unless one of them presented it |
 | `presenter_decided`                  | `document_voted`, approved, rejected, inadmissible, lapsed, transacted, withdrawn                       | presenters or authors                                      |
 | `presenter_changed`                  | `amendment_reclassified`, `amendment_authors_changed`, a new internal deadline (`dueAt`)                | presenters or authors                                      |
 

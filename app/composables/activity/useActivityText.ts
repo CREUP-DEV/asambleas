@@ -233,6 +233,7 @@ export function useActivityText() {
             ? t("amendment.position.answerAuto")
             : t("amendment.position.answerAutoCleared");
         }
+        if (detail.proposed) return t("amendment.position.answerOnProposing");
         return t(`amendment.position.options.${detail.position}`);
       case "acceptance":
         return t(`common.status.acceptance.${detail.decision}`);

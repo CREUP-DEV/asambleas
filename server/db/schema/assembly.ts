@@ -20,6 +20,7 @@ import {
   DEFAULT_ASSEMBLY_SETTINGS,
   MILESTONE_KEYS,
   type AssemblySettings,
+  type LiveBlocPurpose,
 } from "../../../shared/constants/domain";
 import { ALL_ASSEMBLY_TYPES } from "../../../shared/constants/assemblyTypes";
 import type { CalendarRules } from "../../../shared/utils/calendar";
@@ -151,6 +152,13 @@ export const liveState = pgTable("live_state", {
    * a bloc proposed for approval. Set and cleared with `amendmentBloc`.
    */
   amendmentBlocOptions: jsonb("amendment_bloc_options").$type<string[][]>(),
+  /**
+   * What the bloc on screen proposes (user's decision of 2026-11-21): null
+   * to approve it; `admit` or `inadmit` (LIVE_BLOC_PURPOSES) for late
+   * amendments the Mesa proposes to admit to debate or not to admit. Set
+   * and cleared with `amendmentBloc`, never with options.
+   */
+  amendmentBlocPurpose: text("amendment_bloc_purpose").$type<LiveBlocPurpose>(),
   voteId: text("vote_id"),
   message: text("message"),
   /** The Mesa shows who has the floor (and who is next) to attendees. */

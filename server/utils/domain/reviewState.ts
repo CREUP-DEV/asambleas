@@ -761,6 +761,63 @@ export function shouldAutoAcceptPosition(
 }
 
 /**
+ * The presenter of the document whose own member presented this
+ * transactional (user's decision of 2026-11-21), or null: the member stored
+ * as its proposer (`meta.proposerMemberId`, set only when a member, never
+ * the Mesa in session, presents it) when it is the document's main presenter
+ * or a co-presenter now. Being named a co-author by someone else never
+ * counts: only who presented it.
+ */
+export function proposingPresenterOf(input: {
+  kind: AmendmentKind;
+  proposerMemberId: string | null | undefined;
+  presenterIds: readonly (string | null)[];
+}): string | null {
+  if (input.kind !== "transactional" || !input.proposerMemberId) return null;
+  return input.presenterIds.includes(input.proposerMemberId)
+    ? input.proposerMemberId
+    : null;
+}
+
+/**
+ * Whether a transactional a presenter of its document presented gets that
+ * presenter's acceptance by itself now (user's decision of 2026-11-21: her
+ * own proposal is her answer): it was presented by a presenter
+ * (`proposingPresenterId`, proposingPresenterOf), it is answerable
+ * (positionBlocker with its parties' answers, so never before every party
+ * accepted it and the Secretaría validated it), undecided, unanswered (no
+ * row, or "pending") and nobody ever answered it (`answeredBefore`: a
+ * `position_changed` on record, so an answer someone set back to pending
+ * stays so). Under "incorporate" it is not accepted while a parent still
+ * awaits the assembly's admission (sourcesAwaitAdmission): that acceptance
+ * would incorporate it, which waits for the admission.
+ */
+export function shouldAcceptProposedTransactional(
+  row: Parameters<typeof positionBlocker>[0] & {
+    kind: AmendmentKind;
+    authorsApproval: AcceptanceDecision | null;
+  },
+  input: {
+    proposingPresenterId: string | null;
+    position: ProponentPosition | null;
+    answeredBefore: boolean;
+    sourcesAwaitAdmission: boolean;
+  },
+  rule: AcceptedAmendmentRule,
+  voted = false,
+): boolean {
+  return (
+    row.kind === "transactional" &&
+    input.proposingPresenterId !== null &&
+    row.status === "submitted" &&
+    (input.position === null || input.position === "pending") &&
+    !input.answeredBefore &&
+    !(rule === "incorporate" && input.sourcesAwaitAdmission) &&
+    positionBlocker(row, rule, voted) === null
+  );
+}
+
+/**
  * What reclassifying an amendment does to the main presenter's answer, once
  * its kind is `to`:
  * - "accept": it became formal, is answerable and has no answer yet

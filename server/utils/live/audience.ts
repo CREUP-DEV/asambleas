@@ -4,6 +4,8 @@ import {
   amendmentAuthors,
   amendmentSources,
   amendments,
+  documentProponents,
+  documents,
 } from "../../db/schema";
 import type { Executor } from "../domain/events";
 
@@ -151,6 +153,7 @@ export async function loadAmendmentAudienceRow(
   const [row] = await executor
     .select({
       kind: amendments.kind,
+      documentId: amendments.documentId,
       publishedAt: amendments.publishedAt,
       createdByUserId: amendments.createdByUserId,
     })
@@ -188,10 +191,29 @@ export async function loadAmendmentAudienceRow(
         .from(amendmentAcceptances)
         .where(eq(amendmentAcceptances.amendmentId, amendmentId))
     : [];
+  // A transactional also reaches the presenters of its document once
+  // presented (presentsTransactionalDocument in visibility.ts).
+  const presenters = transactional
+    ? await executor
+        .select({ memberId: documents.proponentMemberId })
+        .from(documents)
+        .where(eq(documents.id, row.documentId))
+        .union(
+          executor
+            .select({ memberId: documentProponents.memberId })
+            .from(documentProponents)
+            .where(eq(documentProponents.documentId, row.documentId)),
+        )
+    : [];
   return {
     publishedAt: null,
     createdByUserId: row.createdByUserId,
-    memberIds: [...authors, ...parties].map((item) => item.memberId),
+    memberIds: [
+      ...[...authors, ...parties].map((item) => item.memberId),
+      ...presenters
+        .map((item) => item.memberId)
+        .filter((id): id is string => id !== null),
+    ],
   };
 }
 

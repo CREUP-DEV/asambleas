@@ -21,6 +21,8 @@ import {
   transactionalLinksOf,
   transactionalMemberList,
   transactionalNextSteps,
+  proposedByPresenter,
+  proposerAcceptanceShown,
   transactionalPartySources,
   transactionalProgressMessage,
   transactionalProgressOf,
@@ -1208,6 +1210,108 @@ describe("after sending a transactional", () => {
       members: [member("ceum"), member("caub")],
     });
     expect(steps[2]).toEqual({ key: "answer", rule: "vote" });
+  });
+
+  it("says the presenter accepts it when a presenter presented it", () => {
+    const sent = {
+      kind: "transactional" as const,
+      reviewState: "pending_authors" as const,
+      sourceIds: ["s1"],
+      acceptances: [party("ceum", "author")],
+      proposer: { member: member("vips"), at: null, presentsDocument: true },
+    };
+    expect(transactionalNextSteps(sent, "incorporate").at(-1)).toEqual({
+      key: "answer",
+      rule: "incorporate",
+      proposed: true,
+    });
+    // An author of what it combines presented it: the presenter answers.
+    const byAuthor = {
+      ...sent,
+      proposer: { member: member("ceum"), at: null, presentsDocument: false },
+    };
+    expect(transactionalNextSteps(byAuthor, "vote").at(-1)).toEqual({
+      key: "answer",
+      rule: "vote",
+    });
+    expect(proposedByPresenter({ ...sent, proposer: null })).toBe(false);
+    expect(proposedByPresenter({ ...sent, kind: "partial" })).toBe(false);
+  });
+
+  it("trusts the server on who presents the document, not the ids", () => {
+    // Two different offices both read as the generic "CEA": the server
+    // says this one does not present the document.
+    const cea = member("cea");
+    const amendment = {
+      kind: "transactional" as const,
+      proposer: { member: cea, at: null, presentsDocument: false },
+    };
+    expect(proposedByPresenter(amendment)).toBe(false);
+    expect(
+      proposedByPresenter({
+        ...amendment,
+        proposer: { ...amendment.proposer, presentsDocument: true },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("the presenter's acceptance in «Quién tiene que aceptarla»", () => {
+  const proposed = {
+    kind: "transactional" as const,
+    proposer: { member: member("vips"), at: null, presentsDocument: true },
+  };
+  const answer = (position: "accept" | "reject" | "pending") => ({
+    position,
+    comment: null,
+    recordedBy: "presenter" as const,
+    updatedAt: "2026-11-21T10:00:00.000Z",
+  });
+
+  it("says it will happen while nobody can have answered yet", () => {
+    expect(
+      proposerAcceptanceShown({
+        ...proposed,
+        validatedAt: null,
+        position: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("follows the answer on record once validated", () => {
+    const validatedAt = "2026-11-21T09:00:00.000Z";
+    expect(
+      proposerAcceptanceShown({
+        ...proposed,
+        validatedAt,
+        position: answer("accept"),
+      }),
+    ).toBe(true);
+    // Changed to a rejection, or set back to pending: not said.
+    for (const position of ["reject", "pending"] as const) {
+      expect(
+        proposerAcceptanceShown({
+          ...proposed,
+          validatedAt,
+          position: answer(position),
+        }),
+      ).toBe(false);
+    }
+    // Hidden from the viewer: nothing claimed.
+    expect(
+      proposerAcceptanceShown({ ...proposed, validatedAt, position: null }),
+    ).toBe(false);
+  });
+
+  it("is never said when someone else presented it", () => {
+    expect(
+      proposerAcceptanceShown({
+        ...proposed,
+        proposer: { ...proposed.proposer, presentsDocument: false },
+        validatedAt: null,
+        position: null,
+      }),
+    ).toBe(false);
   });
 });
 

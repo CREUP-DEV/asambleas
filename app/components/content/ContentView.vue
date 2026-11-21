@@ -1,9 +1,25 @@
 <script setup lang="ts">
 import type { Block, ConsolidatedBlock } from "~~/shared/types/content";
 import { renderAnnotated, renderBlocks } from "~~/shared/utils/content/render";
-import { headingAtReadingLine } from "~/utils/outline";
+import {
+  pageMarks,
+  pageRange,
+  type PageMark,
+} from "~~/shared/utils/content/pageMarks";
+import type { PageMapStart } from "~~/shared/types/api";
+import { headingAtReadingLine, scrollParent } from "~/utils/outline";
 
 export type ContentViewMode = "plain" | "diff" | "provenance" | "clean";
+
+/**
+ * The pages of the text's PDF to show beside it (user's decisions of
+ * 2026-11-21; shared/utils/content/pageMarks.ts): where each page starts,
+ * and the blocks of the version they are for, in order.
+ */
+export interface ContentPages {
+  starts: PageMapStart[];
+  order?: string[];
+}
 
 /** A heading of the rendered text, for its index (ContentOutline). */
 export interface OutlineEntry {
@@ -59,6 +75,18 @@ const props = withDefaults(
     markerButtons?: boolean;
     /** Headings as real heading elements; false for excerpts. */
     headings?: boolean;
+    /**
+     * Passages approved pending conciliation (user's decisions of
+     * 2026-11-21): their blocks are marked and the first one opens with
+     * `label` («Pendiente de conciliar E3 y E5»).
+     */
+    pending?: { blockIds: string[]; label: string }[];
+    /**
+     * «pág. N» at the side opposite the gutter, where each page of the PDF
+     * starts (hidden on narrow screens); the page being read comes out as
+     * `page`, for the text's «Página X de N».
+     */
+    pages?: ContentPages | null;
   }>(),
   {
     blocks: undefined,
@@ -71,6 +99,8 @@ const props = withDefaults(
     interactive: false,
     markerButtons: false,
     headings: true,
+    pending: () => [],
+    pages: null,
   },
 );
 
@@ -79,6 +109,8 @@ const emit = defineEmits<{
   "amendment-click": [amendmentId: string];
   /** A gutter marker was activated (`interactive` or `markerButtons`). */
   "marker-click": [blockId: string, event: MouseEvent];
+  /** The PDF page being read, with `pages` (null without). */
+  page: [page: number | null];
 }>();
 
 const { t, locale } = useI18n();
@@ -131,6 +163,53 @@ const markerEntries = computed(() =>
 );
 const hasMarkers = computed(() => markerEntries.value.length > 0);
 
+/** The blocks the view shows, in order (read after each render). */
+const viewIds = shallowRef<string[]>([]);
+/** «pág. N» marks, in the order of the pages. */
+const pageMarkEntries = computed<[string, PageMark][]>(() =>
+  props.pages
+    ? Object.entries(
+        pageMarks(viewIds.value, props.pages.starts, props.pages.order),
+      )
+    : [],
+);
+const hasPages = computed(() => pageMarkEntries.value.length > 0);
+
+function pageMarkLabel(mark: PageMark): string {
+  return t(
+    "common.content.pageMark",
+    { pages: pageRange(mark.pages) },
+    mark.pages.length,
+  );
+}
+
+function pageMarkTitle(mark: PageMark): string {
+  return t(
+    "common.content.pageMarkTitle",
+    { pages: pageRange(mark.pages) },
+    mark.pages.length,
+  );
+}
+
+function readViewIds(root: HTMLElement): void {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
+    const id = element.dataset.blockId ?? "";
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  });
+  const previous = viewIds.value;
+  if (
+    previous.length !== ids.length ||
+    previous.some((id, index) => id !== ids[index])
+  ) {
+    viewIds.value = ids;
+  }
+}
+
 function markerLabel(marker: BlockMarker): string {
   const count = t(
     "common.content.markerCount",
@@ -153,6 +232,14 @@ function decorate(): void {
     return;
   }
   const selected = new Set(props.selected);
+  const pending = new Set(props.pending.flatMap((passage) => passage.blockIds));
+  const pendingLabels = new Map<string, string>();
+  for (const passage of props.pending) {
+    const first = passage.blockIds[0];
+    if (first && !pendingLabels.has(first)) {
+      pendingLabels.set(first, passage.label);
+    }
+  }
 
   root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
     const id = element.dataset.blockId ?? "";
@@ -163,6 +250,12 @@ function decorate(): void {
       element.removeAttribute("tabindex");
       element.removeAttribute("aria-describedby");
     }
+    // A passage pending conciliation: marked, its first block labelled.
+    element.classList.toggle("cx-pending", pending.has(id));
+    const pendingLabel = pendingLabels.get(id);
+    element.classList.toggle("cx-pending-start", Boolean(pendingLabel));
+    if (pendingLabel) element.dataset.pendingLabel = pendingLabel;
+    else delete element.dataset.pendingLabel;
     const isSelected = selected.has(id);
     element.classList.toggle("cx-selected", isSelected);
     if (isSelected) element.setAttribute("aria-current", "true");
@@ -201,6 +294,7 @@ function decorate(): void {
     });
 
   readOutline(root);
+  if (props.pages) readViewIds(root);
 
   const order = new Map<string, number>();
   root.querySelectorAll<HTMLElement>(".cx-prov").forEach((element) => {
@@ -273,10 +367,32 @@ const positions = shallowRef<Record<string, { top: number; height: number }>>(
 );
 let layoutFrame = 0;
 
+/** Where each «pág. N» goes: the top of its block, or of its table's row. */
+const pagePositions = shallowRef<Record<string, number>>({});
+
+function measurePages(root: HTMLElement, top: number): void {
+  const next: Record<string, number> = {};
+  for (const [id] of pageMarkEntries.value) {
+    const element = root.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(id)}"]`,
+    );
+    if (!element) continue;
+    const anchor = element.closest<HTMLElement>("tr") ?? element;
+    next[id] = Math.round(anchor.getBoundingClientRect().top - top);
+  }
+  pagePositions.value = next;
+}
+
 function measure(): void {
   layoutFrame = 0;
   const root = contentEl.value;
   const container = containerEl.value;
+  if (root && container && hasPages.value) {
+    measurePages(root, container.getBoundingClientRect().top);
+  } else if (Object.keys(pagePositions.value).length > 0) {
+    pagePositions.value = {};
+  }
+  updatePage();
   if (!root || !container || !hasMarkers.value) {
     positions.value = {};
     return;
@@ -302,12 +418,61 @@ function scheduleLayout(): void {
   layoutFrame = requestAnimationFrame(measure);
 }
 
+// The page being read ---------------------------------------------------------------
+// The page of the last «pág. N» above the reading line (as the outline reads
+// the section); within a block several pages run on to, by how far down it
+// the line falls.
+
+const currentPage = ref<number | null>(null);
+let pageFrame = 0;
+
+function pageAtReadingLine(): number | null {
+  const root = contentEl.value;
+  const entries = pageMarkEntries.value;
+  if (!root || entries.length === 0) return null;
+  const parent = scrollParent(root);
+  const box = parent
+    ? parent.getBoundingClientRect()
+    : { top: 0, height: window.innerHeight };
+  const line = box.top + Math.max(96, box.height / 4);
+  let current: number | null = null;
+  for (const [id, mark] of entries) {
+    const element = root.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(id)}"]`,
+    );
+    if (!element) continue;
+    const rect = (element.closest("tr") ?? element).getBoundingClientRect();
+    if (rect.top > line) break;
+    const share = rect.height > 0 ? (line - rect.top) / rect.height : 0;
+    const index = Math.min(
+      mark.pages.length - 1,
+      Math.max(0, Math.floor(share * mark.pages.length)),
+    );
+    current = mark.pages[index]!;
+  }
+  return current ?? entries[0]![1].pages[0]!;
+}
+
+function updatePage(): void {
+  pageFrame = 0;
+  const page = pageAtReadingLine();
+  if (page === currentPage.value) return;
+  currentPage.value = page;
+  emit("page", page);
+}
+
+function schedulePage(): void {
+  if (pageFrame || !hasPages.value) return;
+  pageFrame = requestAnimationFrame(updatePage);
+}
+
 useResizeObserver(contentEl, scheduleLayout);
 
 watch(
   [
     html,
     () => props.selected,
+    () => props.pending,
     () => props.interactive,
     selectableBlocks,
     locale,
@@ -315,17 +480,34 @@ watch(
   () => decorate(),
   { flush: "post" },
 );
-watch([html, markerEntries], scheduleLayout, { flush: "post" });
+watch([html, markerEntries, pageMarkEntries], scheduleLayout, {
+  flush: "post",
+});
+// The pages arrive after the text: its blocks are read then.
+watch(
+  () => props.pages,
+  () => {
+    if (props.pages && contentEl.value) readViewIds(contentEl.value);
+  },
+  { flush: "post" },
+);
 
 onMounted(() => {
   decorate();
   scheduleLayout();
   // Web fonts change line heights once they load.
   void document.fonts?.ready.then(scheduleLayout);
+  // Any scroll that may move the text (the page's or a pane's).
+  window.addEventListener("scroll", schedulePage, {
+    capture: true,
+    passive: true,
+  });
 });
 
 onBeforeUnmount(() => {
   if (layoutFrame) cancelAnimationFrame(layoutFrame);
+  if (pageFrame) cancelAnimationFrame(pageFrame);
+  window.removeEventListener("scroll", schedulePage, { capture: true });
 });
 
 // Events --------------------------------------------------------------------------
@@ -461,6 +643,7 @@ defineExpose({
   scrollToBlock,
   currentHeading,
   outline,
+  currentPage,
   root: contentEl,
 });
 </script>
@@ -471,10 +654,26 @@ defineExpose({
     class="cx-view relative min-w-0"
     :class="{
       'cx-has-gutter': hasMarkers,
+      'cx-has-pages': hasPages,
       'cx-interactive': interactive,
       'cx-selectable': selectableBlocks,
     }"
   >
+    <!-- The PDF's pages: what the bar's «Página X de N» says, for the eye. -->
+    <div v-if="hasPages && html" class="cx-pages" aria-hidden="true">
+      <template v-for="[id, mark] in pageMarkEntries" :key="id">
+        <span
+          v-if="pagePositions[id] !== undefined"
+          class="cx-page-mark"
+          :class="{ 'cx-page-mark--inside': mark.inside }"
+          :style="{ top: `${pagePositions[id]}px` }"
+        >
+          <span class="cx-page-mark-label" :title="pageMarkTitle(mark)">{{
+            pageMarkLabel(mark)
+          }}</span>
+        </span>
+      </template>
+    </div>
     <div v-if="hasMarkers && html" class="cx-gutter">
       <template v-for="[id, marker] in markerEntries" :key="id">
         <template v-if="positions[id] !== undefined">

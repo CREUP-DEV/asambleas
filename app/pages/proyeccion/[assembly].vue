@@ -27,6 +27,10 @@ import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
 import { followLiveState } from "~/composables/live/-liveState";
 import { useAppNow } from "~/composables/time/useAppNow";
 import {
+  amendmentCodeIn,
+  usePendingConciliation,
+} from "~/composables/document/pendingConciliation";
+import {
   buildSessionAgendaRows,
   sessionConnectionState,
 } from "~/composables/session/sessionModel";
@@ -57,6 +61,7 @@ import {
   liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
+  PROJECTION_SPEAKERS_MAX,
 } from "~/components/live-view/-model";
 import {
   affectsHeadcounts,
@@ -692,6 +697,17 @@ const previewBlocks = computed(
     document.value?.baseVersion?.blocks ??
     [],
 );
+/**
+ * Passages the final vote left pending conciliation (user's decisions of
+ * 2026-11-21): marked in the text with the codes the room reads.
+ */
+const { marks: pendingMarksOf } = usePendingConciliation();
+const projectionPendingMarks = computed(() =>
+  pendingMarksOf(
+    document.value?.consolidatedVersion,
+    amendmentCodeIn(amendments.value),
+  ),
+);
 const vote = computed<VoteDto | null>(() => live.value?.vote ?? null);
 const message = computed(() => live.value?.message?.trim() || null);
 
@@ -702,9 +718,17 @@ const recess = computed(() => live.value?.recess ?? null);
  * A bloc the Mesa proposes to approve together (user's decision of
  * 2026-11-19): its codes in text order, each with its main author and
  * whether it is approved yet (the amendments refresh on every outcome).
+ * Or a proposal on admission (`blocPurpose`, user's decision of
+ * 2026-11-21): late amendments the Mesa proposes to admit to debate or not,
+ * each chip saying what was decided until the Mesa moves on.
  */
+const blocPurpose = computed(() => live.value?.amendmentBlocPurpose ?? null);
 const blocEntries = computed(() =>
-  liveBlocEntries(live.value?.amendmentBloc, amendments.value),
+  liveBlocEntries(
+    live.value?.amendmentBloc,
+    amendments.value,
+    blocPurpose.value,
+  ),
 );
 /** The bloc's amendments, marked in the list beside it. */
 const blocIds = computed(
@@ -798,6 +822,9 @@ const voteSubjectKind = computed(() =>
         amendments: amendments.value,
         document: document.value ?? null,
         agenda: rows.value,
+        // A decision vote names what it decided (user's decision of
+        // 2026-11-21).
+        decision: live.value?.voteDecision ?? null,
       })
     : null,
 );
@@ -852,6 +879,20 @@ const voteHeadline = computed(() => {
   return current.tieResolution === "no_effect"
     ? t("projection.vote.noEffect")
     : t("projection.vote.rejectedAll");
+});
+/**
+ * A vote on admitting late amendments (user's decision of 2026-11-21): the
+ * chips of the proposal it decided stay under its result, each saying
+ * whether it was admitted, as they did on screen before the vote.
+ */
+const voteAdmissionEntries = computed(() => {
+  const decision = live.value?.voteDecision;
+  if (voteSubjectKind.value?.kind !== "admission" || !decision) return [];
+  return liveBlocEntries(
+    decision.subjectIds,
+    amendments.value,
+    decision.kind === "admit_late" ? "admit" : "inadmit",
+  );
 });
 /** What an agenda item's vote decided, unless the heading already says it. */
 const voteQuestion = computed(() =>
@@ -965,9 +1006,16 @@ const attendanceLine = computed(() => {
   return parts.join(" · ");
 });
 
-/** Who has the floor and who is next, only while the Mesa shows it. */
+/**
+ * Who has the floor and who is next, only while the Mesa shows it: up to
+ * PROJECTION_SPEAKERS_MAX waiting, of which the band shows those that fit.
+ */
 const speakers = computed(() =>
-  liveSpeakers(speakersDto.value, live.value?.speakersVisible ?? false),
+  liveSpeakers(
+    speakersDto.value,
+    live.value?.speakersVisible ?? false,
+    PROJECTION_SPEAKERS_MAX,
+  ),
 );
 /**
  * The document's amendments beside the amendment on screen, in the order
@@ -1141,7 +1189,7 @@ function layoutBloc(): void {
 }
 watch(
   () => [
-    blocEntries.value.map((entry) => `${entry.id}:${entry.approved}`).join(),
+    blocEntries.value.map((entry) => `${entry.id}:${entry.outcome}`).join(),
     blocBox.value,
   ],
   layoutBloc,
@@ -1182,6 +1230,13 @@ const recessLeft = computed(() => {
   if (left <= 60_000) return t("projection.recess.soon");
   const minutes = Math.floor(left / 60_000);
   return t("projection.recess.minutesLeft", { count: minutes }, minutes);
+});
+/** The same whole minutes, for the template to put in digit cells. */
+const recessMinutesLeft = computed(() => {
+  const until = recess.value?.until;
+  if (!until) return null;
+  const left = new Date(until).getTime() - now.value;
+  return left <= 60_000 ? null : Math.floor(left / 60_000);
 });
 
 const {
@@ -1387,7 +1442,7 @@ useHead(() => ({
             <dd
               class="text-[clamp(2.25rem,4.5vw,4.75rem)] leading-tight font-extrabold tabular-nums"
             >
-              {{ row.count }}
+              <CommonTabularDigits :text="String(row.count)" />
             </dd>
             <div
               class="bg-elevated h-[clamp(0.4rem,0.6vw,0.75rem)] overflow-hidden rounded-full"
@@ -1472,6 +1527,42 @@ useHead(() => ({
         >
           {{ t("projection.vote.keepNote") }}
         </p>
+        <!-- A vote on admission: the proposal's chips stay under it, each
+             saying what was decided (user's decision of 2026-11-21). -->
+        <ul
+          v-if="voteAdmissionEntries.length > 0"
+          class="mt-[clamp(0.5rem,1vw,1rem)] flex flex-wrap gap-[clamp(0.5rem,0.8vw,0.75rem)]"
+          :aria-label="voteSubject"
+        >
+          <li
+            v-for="entry in voteAdmissionEntries"
+            :key="entry.id"
+            class="border-default bg-default/60 flex flex-col rounded-xl border-2 px-[clamp(0.75rem,1vw,1rem)] py-[clamp(0.25rem,0.5vw,0.5rem)]"
+            :class="entry.outcome === 'notAdmitted' ? 'opacity-60' : ''"
+          >
+            <span
+              class="text-[clamp(1.5rem,2.4vw,2.75rem)] leading-none font-extrabold tabular-nums"
+            >
+              {{ entry.code }}
+            </span>
+            <span
+              class="text-muted text-[clamp(0.875rem,1.1vw,1.25rem)] font-semibold"
+            >
+              {{
+                [
+                  entry.author?.acronym,
+                  entry.outcome === "admitted"
+                    ? t("projection.proposal.admitted")
+                    : entry.outcome === "notAdmitted"
+                      ? t("projection.proposal.notAdmitted")
+                      : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              }}
+            </span>
+          </li>
+        </ul>
         <!-- An election: each candidate's votes, then blank and invalid. -->
         <div
           v-if="vote.election"
@@ -1607,7 +1698,18 @@ useHead(() => ({
           v-if="recessLeft"
           class="text-muted text-[clamp(1.25rem,2vw,2.25rem)] tabular-nums"
         >
-          {{ recessLeft }}
+          <i18n-t
+            v-if="recessMinutesLeft !== null"
+            keypath="projection.recess.minutesLeft"
+            :plural="recessMinutesLeft"
+            tag="span"
+            scope="global"
+          >
+            <template #count>
+              <CommonTabularDigits :text="String(recessMinutesLeft)" />
+            </template>
+          </i18n-t>
+          <template v-else>{{ recessLeft }}</template>
         </p>
       </section>
 
@@ -1698,12 +1800,22 @@ useHead(() => ({
                 {{
                   blocOptions
                     ? t("amendment.vote.alternatives.title")
-                    : t("projection.bloc.title")
+                    : blocPurpose
+                      ? t(`projection.proposal.title.${blocPurpose}`)
+                      : t("projection.bloc.title")
                 }}
               </h1>
             </div>
+            <!-- A proposal on admission: what they are, no count (they are
+                 decided together). -->
             <p
-              v-if="!blocOptions"
+              v-if="blocPurpose"
+              class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold"
+            >
+              {{ t("projection.proposal.late") }}
+            </p>
+            <p
+              v-else-if="!blocOptions"
               class="text-default pb-1 text-[clamp(1.25rem,2vw,2rem)] font-semibold tabular-nums"
             >
               {{
@@ -1777,7 +1889,7 @@ useHead(() => ({
               :key="entry.id"
               class="flex min-w-[6em] flex-col gap-[0.25em] rounded-2xl border-4 px-[1em] py-[0.5em] transition-colors duration-300"
               :class="
-                entry.approved
+                entry.outcome === 'approved' || entry.outcome === 'admitted'
                   ? 'border-success bg-success/10'
                   : entry.settled
                     ? 'border-default opacity-60'
@@ -1788,7 +1900,9 @@ useHead(() => ({
                 class="flex items-center gap-[0.3em] text-[2.4em] leading-none font-extrabold tabular-nums"
               >
                 <UIcon
-                  v-if="entry.approved"
+                  v-if="
+                    entry.outcome === 'approved' || entry.outcome === 'admitted'
+                  "
                   name="i-lucide-check"
                   class="text-success size-[0.8em] shrink-0"
                   aria-hidden="true"
@@ -1817,10 +1931,22 @@ useHead(() => ({
                 {{ entry.transacts.join(" · ") }}
               </span>
               <span
-                v-if="entry.approved"
+                v-if="
+                  entry.outcome === 'approved' || entry.outcome === 'admitted'
+                "
                 class="text-[0.85em] font-bold text-(--ui-color-success-800) uppercase dark:text-(--ui-color-success-300)"
               >
-                {{ t("projection.bloc.approved") }}
+                {{
+                  entry.outcome === "admitted"
+                    ? t("projection.proposal.admitted")
+                    : t("projection.bloc.approved")
+                }}
+              </span>
+              <span
+                v-else-if="entry.outcome === 'notAdmitted'"
+                class="text-default text-[0.85em] font-bold uppercase"
+              >
+                {{ t("projection.proposal.notAdmitted") }}
               </span>
             </li>
           </ul>
@@ -1864,7 +1990,7 @@ useHead(() => ({
 
       <section
         v-else-if="mode === 'document' && documentLoading"
-        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
+        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
       >
         <!-- The document the Mesa just put on screen, on its way. -->
         <div
@@ -1886,9 +2012,11 @@ useHead(() => ({
 
       <section
         v-else-if="mode === 'document' && document"
-        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
+        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
       >
-        <div class="flex min-h-0 flex-col">
+        <!-- Tracks of minmax(0, …): no text (a long address in a
+             footnote) widens its column past the screen (2026-11-21). -->
+        <div class="flex min-h-0 min-w-0 flex-col">
           <!-- What changes is announced; the text below is not. Always
                there (a live region added with its content may go unread),
                it takes room under it only when a line shows: otherwise
@@ -1927,9 +2055,11 @@ useHead(() => ({
               "
             >
               {{
-                document.finalVote.result === "approved"
-                  ? t("projection.finalApproved")
-                  : t("projection.finalRejected")
+                document.finalVote.result !== "approved"
+                  ? t("projection.finalRejected")
+                  : document.pendingConciliation > 0
+                    ? t("projection.finalApprovedPending")
+                    : t("projection.finalApproved")
               }}
             </p>
           </div>
@@ -1973,7 +2103,10 @@ useHead(() => ({
             class="projection-document projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
           >
             <div ref="documentContent" class="relative">
-              <ContentView :blocks="previewBlocks" />
+              <ContentView
+                :blocks="previewBlocks"
+                :pending="projectionPendingMarks"
+              />
               <SessionPointerLayer
                 :state="mesaPointer"
                 :scope="documentContent"
@@ -1984,7 +2117,7 @@ useHead(() => ({
         <nav
           ref="agendaNav"
           :aria-label="t('projection.agenda')"
-          class="projection-scroll hidden min-h-0 overflow-y-auto lg:block"
+          class="projection-scroll hidden min-h-0 min-w-0 overflow-y-auto lg:block"
         >
           <SessionProjectionAgenda
             :rows="rows"

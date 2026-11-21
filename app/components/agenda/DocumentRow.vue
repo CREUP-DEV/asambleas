@@ -163,8 +163,18 @@ const SENTENCE_COLORS: Record<string, string> = {
         :state="mark?.state"
         :own="mark?.own"
       />
+      <!-- Approved pending conciliation is never read as the final text
+           (user's decisions of 2026-11-21). -->
       <UBadge
-        v-if="document.consolidated"
+        v-if="document.consolidated && document.pendingConciliation > 0"
+        color="warning"
+        variant="outline"
+        size="sm"
+        icon="i-lucide-git-merge"
+        :label="t('document.pendingConciliation.status')"
+      />
+      <UBadge
+        v-else-if="document.consolidated"
         color="success"
         variant="outline"
         size="sm"

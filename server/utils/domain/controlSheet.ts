@@ -68,6 +68,7 @@ import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
 import { loadAwaitingVote } from "./sessionProgress";
+import { awaitingAnswerCounts, loadPresentedDocuments } from "./sheetReaders";
 import { loadSpokenTurns } from "./speakers";
 import {
   canSeeDocument,
@@ -207,7 +208,7 @@ const amendmentRowUsers = (row: AmendmentSheetRow) => [
 ];
 
 /** The documents of the assembly the actor sees, with their co-presenters. */
-async function loadVisibleDocuments(actor: Actor, assemblyId: string) {
+export async function loadVisibleDocuments(actor: Actor, assemblyId: string) {
   const rows = await db.query.documents
     .findMany({
       where: eq(documents.assemblyId, assemblyId),
@@ -450,6 +451,10 @@ export async function loadControlSheet(
     counts.set(row.documentId, count);
   }
   const voteById = new Map(finalVoteRows.map((row) => [row.id, row]));
+  // «Mis documentos» (user's decision of 2026-11-21): the documents the
+  // reader presents, and what of each waits for its presenters' answer.
+  const presented = await loadPresentedDocuments(actor, visibleDocuments);
+  const awaiting = awaitingAnswerCounts(visibleRows, presented);
 
   const documentDtos: ControlSheetDocumentDto[] = visibleDocuments.map(
     (row) => {
@@ -460,6 +465,8 @@ export async function loadControlSheet(
         finalVote: vote ? toVoteDto(vote) : null,
         amendments: count?.amendments ?? 0,
         undecided: count?.undecided ?? 0,
+        presenting: presented.has(row.id),
+        awaitingAnswer: awaiting.get(row.id) ?? 0,
       };
     },
   );

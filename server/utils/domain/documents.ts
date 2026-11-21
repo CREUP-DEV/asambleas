@@ -46,6 +46,7 @@ import { endLiveTally } from "../live/scroll";
 import { logError } from "../core/logger";
 import { assertOptimisticLock } from "../optimisticLock";
 import {
+  canCorrectForm,
   canManageAssemblies,
   canManageDocuments,
   canModerate,
@@ -148,6 +149,11 @@ import {
 } from "~~/shared/utils/agendaSubmissions";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { consolidateApproved } from "~~/shared/utils/content/passages";
+import {
+  pendingPassagesOf,
+  storedPendingPassages,
+  type PendingPassage,
+} from "~~/shared/utils/content/pendingPassages";
 import { loadPassageWordings, wordingInputs } from "./wordings";
 import { hashContent } from "~~/shared/utils/diff";
 import {
@@ -161,6 +167,7 @@ import {
   changedLiveFields,
   normalizeBloc,
   normalizeBlocOptions,
+  normalizeBlocPurpose,
   type LivePointerFields,
 } from "~~/shared/utils/liveBloc";
 
@@ -489,18 +496,33 @@ export function hasApprovedText(
 
 /**
  * How the actor may correct the approved text in form (user's decisions of
- * 2026-11-21; server/utils/domain/formCorrections.ts): directly (the
- * Secretaría and the Mesa), by proposing it (its presenters), or not at
- * all. No deadline, and the assembly may be closed.
+ * 2026-11-21; server/utils/domain/formCorrections.ts): directly
+ * (document:correct_form, the Secretaría and the Mesa by default), by
+ * proposing it (its presenters), or not at all. No deadline, and the assembly may be closed.
  */
 export function formCorrectionMode(
   actor: Actor,
   document: PresentedDocumentRow,
 ): "direct" | "propose" | null {
   if (!hasApprovedText(document)) return null;
-  if (canManageDocuments(actor) || canModerate(actor)) return "direct";
+  if (canCorrectForm(actor)) return "direct";
   if (isProponentSide(actor, document)) return "propose";
   return null;
+}
+
+/**
+ * How the actor may conciliate a passage the final vote left pending
+ * (user's decisions of 2026-11-21; formCorrections.ts createConciliation):
+ * as a correction of form, directly with document:correct_form or by
+ * proposing it as a presenter. Null when nothing is pending.
+ */
+export function conciliationMode(
+  actor: Actor,
+  document: PresentedDocumentRow,
+  pendingPassages: number,
+): "direct" | "propose" | null {
+  if (pendingPassages === 0) return null;
+  return formCorrectionMode(actor, document);
 }
 
 export function documentCapabilities(
@@ -511,6 +533,8 @@ export function documentCapabilities(
   /** Any amendment row at all, drafts and other members' included. */
   hasAmendments: boolean,
   now = new Date(),
+  /** Passages of the consolidated version still pending conciliation. */
+  pendingPassages = 0,
 ): DocumentCapabilities {
   return {
     edit: canEditDocument(actor, document) && !isTextFrozen(document),
@@ -526,7 +550,11 @@ export function documentCapabilities(
       document.status === "published" &&
       (isDocumentPresenter(actor, document) || canModerate(actor)),
     moderate: canModerate(actor),
-    correctForm: formCorrectionMode(actor, document),
+    // While a passage is pending conciliation, no correction of form
+    // (createFormCorrection answers 409): conciliating comes first.
+    correctForm:
+      pendingPassages > 0 ? null : formCorrectionMode(actor, document),
+    conciliate: conciliationMode(actor, document, pendingPassages),
   };
 }
 
@@ -554,6 +582,10 @@ export function toVersionDto(version: VersionRow): VersionDto {
     contentHash: version.contentHash,
     replacesVersionId: version.replacesVersionId ?? null,
     note: version.kind === "consolidated" ? (version.note ?? null) : null,
+    pendingPassages:
+      version.kind === "consolidated"
+        ? storedPendingPassages(version.pendingPassages)
+        : [],
     createdAt: version.createdAt.toISOString(),
   };
 }
@@ -573,6 +605,8 @@ export function toDocumentSummaryDto(
     hasContent: boolean;
     /** The actor may read the correction note (canSeeDocumentCorrection). */
     showCorrection: boolean;
+    /** Passages of its consolidated version pending conciliation. */
+    pendingConciliation?: number;
   },
 ): DocumentSummaryDto {
   return {
@@ -604,6 +638,10 @@ export function toDocumentSummaryDto(
       ? toIso(document.correctionRequestedAt)
       : null,
     consolidated: document.consolidatedVersionId !== null,
+    pendingConciliation:
+      document.consolidatedVersionId !== null
+        ? (extra.pendingConciliation ?? 0)
+        : 0,
     updatedAt: document.updatedAt.toISOString(),
   };
 }
@@ -632,6 +670,9 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
   const now = input.now ?? new Date();
   const window = amendmentWindow(document, milestones);
   const frozen = isTextFrozen(document);
+  const pendingPassages = storedPendingPassages(
+    input.consolidatedVersion?.pendingPassages,
+  ).length;
   return {
     ...toDocumentSummaryDto(document, {
       proponent: input.proponent,
@@ -641,6 +682,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       window: documentWindow(document, milestones, now),
       hasContent: input.hasContent,
       showCorrection: canSeeDocumentCorrection(actor, document),
+      pendingConciliation: pendingPassages,
     }),
     summary: document.summary,
     // A PDF left behind by a switch to text is not the document's.
@@ -670,6 +712,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       window,
       input.hasAmendments,
       now,
+      pendingPassages,
     ),
   };
 }
@@ -694,6 +737,7 @@ async function loadAmendmentVisibilityRows(
     .select({
       id: amendments.id,
       documentId: amendments.documentId,
+      kind: amendments.kind,
       status: amendments.status,
       publishedAt: amendments.publishedAt,
       validatedAt: amendments.validatedAt,
@@ -906,7 +950,7 @@ export async function buildDocumentSummaries(
   loadedCoProponents?: Map<string, MemberRef[]>,
 ): Promise<DocumentSummaryDto[]> {
   const ids = rows.map((row) => row.id);
-  const [counts, content, coProponents, amended] = await Promise.all([
+  const [counts, content, coProponents, amended, pending] = await Promise.all([
     countVisibleAmendments(actor, ids, executor),
     loadContentFlags(executor, rows),
     loadedCoProponents
@@ -915,6 +959,10 @@ export async function buildDocumentSummaries(
     seesAmendmentExistence(actor)
       ? loadAmendedDocumentIds(executor, ids)
       : Promise.resolve(null),
+    countPendingConciliation(
+      executor,
+      rows.map((row) => row.consolidatedVersionId),
+    ),
   ]);
   return rows.map(({ proponent, ...document }) => {
     const co = coProponents.get(document.id) ?? [];
@@ -933,8 +981,36 @@ export async function buildDocumentSummaries(
         ...document,
         coProponentMemberIds: co.map((member) => member.id),
       }),
+      pendingConciliation: document.consolidatedVersionId
+        ? (pending.get(document.consolidatedVersionId) ?? 0)
+        : 0,
     });
   });
+}
+
+/**
+ * How many passages each consolidated version leaves pending conciliation
+ * (user's decisions of 2026-11-21), by version id; final ones are left out.
+ */
+async function countPendingConciliation(
+  executor: Executor,
+  versionIds: (string | null)[],
+): Promise<Map<string, number>> {
+  const ids = [...new Set(versionIds.filter((id): id is string => !!id))];
+  if (ids.length === 0) return new Map();
+  const rows = await executor
+    .select({
+      id: documentVersions.id,
+      pending: documentVersions.pendingPassages,
+    })
+    .from(documentVersions)
+    .where(inArray(documentVersions.id, ids));
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const count = storedPendingPassages(row.pending).length;
+    if (count > 0) counts.set(row.id, count);
+  }
+  return counts;
 }
 
 /** Summaries of the documents of an assembly that the actor can see, in creation order. */
@@ -2608,6 +2684,7 @@ async function lockLiveState(
       amendmentId: liveState.amendmentId,
       amendmentBloc: liveState.amendmentBloc,
       amendmentBlocOptions: liveState.amendmentBlocOptions,
+      amendmentBlocPurpose: liveState.amendmentBlocPurpose,
       voteId: liveState.voteId,
     })
     .from(liveState)
@@ -2615,10 +2692,16 @@ async function lockLiveState(
     .for("no key update");
   if (!row) return null;
   const bloc = normalizeBloc(row.amendmentBloc);
+  const options = normalizeBlocOptions(row.amendmentBlocOptions, bloc);
   return {
     ...row,
     amendmentBloc: bloc,
-    amendmentBlocOptions: normalizeBlocOptions(row.amendmentBlocOptions, bloc),
+    amendmentBlocOptions: options,
+    amendmentBlocPurpose: normalizeBlocPurpose(
+      row.amendmentBlocPurpose,
+      bloc,
+      options,
+    ),
   };
 }
 
@@ -2685,6 +2768,7 @@ export async function pointLiveVote(
     voteId: input.voteId,
     amendmentBloc: null,
     amendmentBlocOptions: null,
+    amendmentBlocPurpose: null,
   };
   if (input.subject) {
     if (input.subject.documentId !== previous.documentId) {
@@ -2726,6 +2810,7 @@ export async function projectItemVote(
       voteId: input.voteId,
       amendmentBloc: null,
       amendmentBlocOptions: null,
+      amendmentBlocPurpose: null,
     },
     input.actor,
   );
@@ -2776,6 +2861,7 @@ async function clearLiveDocument(
       amendmentId: null,
       amendmentBloc: null,
       amendmentBlocOptions: null,
+      amendmentBlocPurpose: null,
       voteId: null,
     },
     input.actor,
@@ -2898,6 +2984,14 @@ export async function recordFinalVote(
       rows.filter((row) => row.status === "approved"),
     );
     let ordered = approved;
+    // A conciliation after the vote rebuilds the text in approval order,
+    // so passages may only stay pending over that order.
+    if (body.order && body.allowPendingPassages) {
+      fail(
+        422,
+        "No se puede dejar un pasaje pendiente de conciliar con otro orden de aplicación",
+      );
+    }
     if (body.order) {
       const byId = new Map(approved.map((row) => [row.id, row]));
       if (
@@ -2915,6 +3009,8 @@ export async function recordFinalVote(
       blocks: Block[];
       applied: string[];
       wordingIds: string[];
+      /** Approved pending conciliation (allowPendingPassages). */
+      pending: PendingPassage[];
     } | null = null;
     if (document.format === "structured") {
       const base = await loadVersion(document.baseVersionId, tx);
@@ -2931,11 +3027,18 @@ export async function recordFinalVote(
         });
       }
       // Where approved amendments collide, the Mesa words the passage
-      // first (shared/utils/content/passages.ts).
+      // first (shared/utils/content/passages.ts), unless it chose to vote
+      // leaving it pending conciliation (user's decisions of 2026-11-21):
+      // the text then carries the automatic proposal there.
       const pendingPassages = outcome.passages.filter(
         (passage) => passage.status === "pending",
       );
-      if (pendingPassages.length > 0) {
+      // A rejection fixes no text: nothing is left pending then.
+      if (
+        pendingPassages.length > 0 &&
+        result === "approved" &&
+        !body.allowPendingPassages
+      ) {
         fail(409, "Falta que la Mesa fije la redacción de algún pasaje", {
           pendingPassages,
         });
@@ -2944,6 +3047,7 @@ export async function recordFinalVote(
         blocks: outcome.blocks,
         applied: outcome.applied,
         wordingIds: outcome.wordingIds,
+        pending: pendingPassagesOf(outcome),
       };
     }
 
@@ -2983,11 +3087,17 @@ export async function recordFinalVote(
           kind: "consolidated",
           blocks: consolidated.blocks,
           contentHash: await hashBlocks(consolidated.blocks),
+          pendingPassages:
+            consolidated.pending.length > 0 ? consolidated.pending : null,
           createdByUserId: actor.user.id,
         })
         .returning({ id: documentVersions.id });
       consolidatedVersionId = version!.id;
     }
+    const pendingPassageKeys =
+      consolidatedVersionId && consolidated
+        ? consolidated.pending.map((passage) => passage.key)
+        : [];
 
     await tx
       .update(documents)
@@ -3030,6 +3140,7 @@ export async function recordFinalVote(
           result === "approved" ? (consolidated?.applied ?? []) : [],
         wordingIds:
           result === "approved" ? (consolidated?.wordingIds ?? []) : [],
+        ...(pendingPassageKeys.length > 0 ? { pendingPassageKeys } : {}),
       },
       actor,
     });

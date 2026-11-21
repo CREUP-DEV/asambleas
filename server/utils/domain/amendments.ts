@@ -204,10 +204,12 @@ import {
   positionEffect,
   positionRecordedBy,
   positionRecorder,
+  proposingPresenterOf,
   reclassifyIncorporation,
   reclassifyPositionPlan,
   REVIEW_INADMISSION_MESSAGE,
   reviewInadmissionCase,
+  shouldAcceptProposedTransactional,
   shouldAutoAcceptPosition,
   submissionLate,
   transactionalReopenBlocker,
@@ -221,6 +223,7 @@ import {
   competingTransactionalIds,
   inadmissibleSourcePlan,
   loadSourceMap,
+  proposedAcceptanceLockIds,
   reopenTransactionalsClosedBy,
   restoreLockIds,
   transactionalsOverIds,
@@ -235,6 +238,7 @@ import {
   redactAuthors,
   redactCorrectionNote,
   redactEventActor,
+  redactMembers,
   redactPayloadMembers,
   seesAnswerRecord,
   type DocumentPresenters,
@@ -259,6 +263,13 @@ type DocumentRow = Awaited<ReturnType<typeof resolveDocument>>;
  */
 export interface StoredAmendmentMeta extends AmendmentMeta {
   presentingMemberId?: string;
+  /**
+   * A transactional presented by a member (never the Mesa in session): the
+   * member that presented it, whatever its authors become. When it presents
+   * the document, presenting it is its answer (proposingPresenterOf, user's
+   * decision of 2026-11-21).
+   */
+  proposerMemberId?: string;
 }
 
 /** Response of POST .../amendments/[amendment]/outcome. */
@@ -764,6 +775,37 @@ function toRelationDto(
 
 function readMeta(row: { meta: AmendmentMeta | null }): StoredAmendmentMeta {
   return (row.meta ?? {}) as StoredAmendmentMeta;
+}
+
+/**
+ * AmendmentDto.proposer: the member that presented a transactional
+ * (`meta.proposerMemberId`) and when, read among its authors and redacted
+ * as they are (an executive office reads as "CEA" to whoever may not see
+ * the offices). Null for any other amendment, for one the Mesa presented in
+ * session, and when that member is no longer among its authors. Whether it
+ * presents the document is decided here, on the real ids, before redacting
+ * (proposingPresenterOf): two offices both read as "CEA".
+ */
+function proposerOf(
+  actor: Actor,
+  row: Pick<LoadedAmendment, "kind" | "authors" | "submittedAt">,
+  meta: StoredAmendmentMeta,
+  presenterIds: readonly (string | null)[],
+): AmendmentDto["proposer"] {
+  if (row.kind !== "transactional" || !meta.proposerMemberId) return null;
+  const author = row.authors.find(
+    (item) => item.memberId === meta.proposerMemberId,
+  );
+  if (!author) return null;
+  const [member] = redactMembers(actor, [toMemberRef(author.member)]);
+  if (!member) return null;
+  const presentsDocument =
+    proposingPresenterOf({
+      kind: row.kind,
+      proposerMemberId: meta.proposerMemberId,
+      presenterIds,
+    }) !== null;
+  return { member, at: iso(row.submittedAt), presentsDocument };
 }
 
 /** The main author first, then the rest by acronym. */
@@ -1297,6 +1339,7 @@ function restoreDependents(
  * parties unless they are through another parent; one with nothing else
  * left lapses. `dependents` are the transactionals over them
  * (findCompetitors), locked in the same ordered pass as those amendments.
+ * Returns the ones that go on without them.
  */
 async function settleTransactionalsOverInadmissible(
   tx: Tx,
@@ -1304,7 +1347,7 @@ async function settleTransactionalsOverInadmissible(
   dependents: Competitors,
   locked: Iterable<LockedAmendment>,
   inadmissible: { id: string; code: string | null }[],
-): Promise<void> {
+): Promise<string[]> {
   const { sourceMap, rows } = lockedCompetitors(dependents, locked);
   const plan = inadmissibleSourcePlan(
     sourceMap,
@@ -1346,7 +1389,7 @@ async function settleTransactionalsOverInadmissible(
     }
   }
 
-  if (plan.drop.length === 0) return;
+  if (plan.drop.length === 0) return [];
   const remaining = unique(plan.drop.flatMap((entry) => entry.remainingIds));
   const mainAuthors = new Map(
     (await findAmendments(tx, inArray(amendments.id, remaining))).map((row) => [
@@ -1400,6 +1443,7 @@ async function settleTransactionalsOverInadmissible(
       });
     }
   }
+  return plan.drop.map((entry) => entry.id);
 }
 
 /**
@@ -1775,6 +1819,10 @@ export async function buildAmendmentDtos(
           ),
         })),
       ),
+      proposer: proposerOf(ctx.actor, row, meta, [
+        ctx.document.proponentMemberId,
+        ...ctx.document.coProponentMemberIds,
+      ]),
       openRevision: openRevisions.get(row.id) ?? null,
       updatedAt: row.updatedAt.toISOString(),
       can: amendmentCapabilities({
@@ -2441,6 +2489,7 @@ export function canSeeLoadedAmendment(
   document: DocumentPresenters,
 ): boolean {
   return canSeeAmendment(actor, {
+    kind: row.kind,
     status: row.status,
     publishedAt: row.publishedAt,
     validatedAt: row.validatedAt,
@@ -3149,6 +3198,15 @@ export async function submitAmendment(
           status: "submitted",
           late: false,
           ...instantReview(instant, actor, now),
+          // Who presented it, when a member does (proposingPresenterOf).
+          ...(!instant && actor.memberId
+            ? {
+                meta: {
+                  ...meta,
+                  proposerMemberId: actor.memberId,
+                } as StoredAmendmentMeta,
+              }
+            : {}),
         })
         .where(
           and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
@@ -3472,6 +3530,19 @@ export async function decideAmendmentAdmission(
       admission === "admitted"
         ? transactionalsOverIds(sourceMap, body.amendmentIds)
         : [];
+    // Under "incorporate", a transactional over them that a presenter of the
+    // document presented gets her acceptance once no parent awaits the
+    // assembly any more, which incorporates it (acceptProposedTransactionals):
+    // admitted, or declared inadmissible and dropped from it while it goes
+    // on with its other parents. Its parents and the transactionals over
+    // those and over it are locked in the same pass.
+    const proposedOver =
+      rule !== "incorporate"
+        ? []
+        : admission === "admitted"
+          ? overIds
+          : dependents.ids;
+    const proposedLocks = proposedAcceptanceLockIds(sourceMap, proposedOver);
     const requested = new Set(body.amendmentIds);
     const lockedAll = await lockAmendments(
       tx,
@@ -3481,6 +3552,7 @@ export async function decideAmendmentAdmission(
         ...(admission === "inadmissible" ? dependents.ids : []),
         ...restoreLockIds(sourceMap, readmitting),
         ...overIds,
+        ...proposedLocks,
       ]),
     );
     const locked = lockedAll.filter((row) => requested.has(row.id));
@@ -3674,7 +3746,7 @@ export async function decideAmendmentAdmission(
       // Not admitted, it leaves the transactionals over it: they go on with
       // their other parents, or lapse with none left (user's decision of
       // 2026-11-19).
-      await settleTransactionalsOverInadmissible(
+      const kept = await settleTransactionalsOverInadmissible(
         tx,
         ctx,
         dependents,
@@ -3683,6 +3755,19 @@ export async function decideAmendmentAdmission(
           .filter((row) => row.status === "submitted")
           .map((row) => ({ id: row.id, code: row.code })),
       );
+      // One that goes on may wait for no admission any more: a presenter
+      // that presented it accepts it now (acceptProposedTransactionals),
+      // read without the parents it lost and with the parties it kept.
+      if (proposedLocks.length > 0 && kept.length > 0) {
+        await acceptProposedTransactionals(tx, ctx, {
+          ids: kept,
+          lockedIds: lockedAll.map((row) => row.id),
+          sourceMap: await loadSourceMap(tx, document.id),
+          parties: await lockParties(tx, kept, "share"),
+          rule,
+          voted: false,
+        });
+      }
     }
     if (readmitting.length > 0) {
       // Admitted again: what declaring it inadmissible closed comes back.
@@ -3724,6 +3809,16 @@ export async function decideAmendmentAdmission(
         rule,
         voted: false,
       });
+      if (proposedLocks.length > 0) {
+        await acceptProposedTransactionals(tx, ctx, {
+          ids: overIds,
+          lockedIds: lockedAll.map((row) => row.id),
+          sourceMap,
+          parties: restoreParties,
+          rule,
+          voted: false,
+        });
+      }
     }
     // On screen only from the console that controls the projection
     // (user's decision of 2026-11-19): one recorded from Validación or the
@@ -3981,6 +4076,17 @@ export async function validateAmendments(
       rule,
       voted: false,
     });
+    // A transactional a presenter of the document presented: presenting it
+    // was her answer (acceptProposedTransactionals). Its parents and the
+    // transactionals over them and over it are locked above.
+    await acceptProposedTransactionals(tx, ctx, {
+      ids: transactionalIds,
+      lockedIds: [...lockedById.keys()],
+      sourceMap,
+      parties: partyRows,
+      rule,
+      voted: false,
+    });
   });
 
   return listDocumentAmendments(ctx);
@@ -4142,6 +4248,42 @@ export async function settleFormalAmendments(
       ids,
       lockedIds,
       sourceMap,
+      rule: documentRow.acceptedAmendments,
+      voted: false,
+    });
+  });
+}
+
+/**
+ * Records the acceptance of the transactionals among `ids` that a presenter
+ * of the document presented and nobody ever answered
+ * (acceptProposedTransactionals), for those validated before that rule
+ * (backfillProposedTransactionals; user's decision of 2026-11-21). Nothing
+ * once the document is voted. Locks as validateAmendments does: the
+ * document (share), then in one ordered pass the transactionals, what they
+ * group and the other transactionals over those and over them, then their
+ * acceptances; the position rows last.
+ */
+export async function settleProposedTransactionals(
+  ctx: DocumentAmendmentContext,
+  ids: string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  await db.transaction(async (tx) => {
+    const documentRow = await lockDocumentRow(tx, ctx.document.id, "share");
+    if (documentVoted(documentRow)) return;
+    const sourceMap = await loadSourceMap(tx, ctx.document.id);
+    const lockedAll = await lockAmendments(
+      tx,
+      ctx.document.id,
+      proposedAcceptanceLockIds(sourceMap, ids),
+    );
+    const parties = await lockParties(tx, ids, "share");
+    await acceptProposedTransactionals(tx, ctx, {
+      ids,
+      lockedIds: lockedAll.map((row) => row.id),
+      sourceMap,
+      parties,
       rule: documentRow.acceptedAmendments,
       voted: false,
     });
@@ -4894,25 +5036,34 @@ async function recordPosition(
     competitors: Competitors;
     locked: LockedAmendment[];
     parties: Awaited<ReturnType<typeof lockParties>>;
+    /**
+     * The answer a presenter gave by presenting the transactional itself
+     * (acceptProposedTransactionals): whose it is and the account that
+     * presented it, recorded with `reason: "proposed"`.
+     */
+    proposed?: { memberId: string; userId: string | null };
   },
 ): Promise<void> {
   const { actor, document } = ctx;
-  const { current } = input;
+  const { current, proposed } = input;
   const auto = input.by === "auto";
   const effect = positionEffect(current, input.position, input.rule);
-  // Whose answer it is: the presenter the actor acts for (the main
-  // presenter or a co-presenter), else the main presenter, for whom the
-  // Mesa records it or the automatic answer is given.
-  const answeredFor =
-    input.by === "proponent" && actor.memberId
+  // Whose answer it is: the presenter that presented a transactional, or
+  // the presenter the actor acts for (the main presenter or a
+  // co-presenter), else the main presenter, for whom the Mesa records it
+  // or the automatic answer is given.
+  const answeredFor = proposed
+    ? proposed.memberId
+    : input.by === "proponent" && actor.memberId
       ? actor.memberId
       : document.proponentMemberId;
   const values = {
     position: input.position,
     comment: input.comment,
     // The automatic answer keeps who made the amendment answerable (the
-    // Secretaría or the Mesa); `by: "auto"` says nobody chose it.
-    decidedByUserId: actor.user.id,
+    // Secretaría or the Mesa); `by: "auto"` says nobody chose it. One
+    // given by presenting the transactional is that presenter's account.
+    decidedByUserId: proposed ? proposed.userId : actor.user.id,
     updatedAt: new Date(),
   };
   await tx
@@ -4938,6 +5089,8 @@ async function recordPosition(
       // Whose answer it is (`answeredFor`): the news of the other
       // presenters and of the authors name it, unless it is automatic.
       memberId: answeredFor,
+      // Given by presenting the transactional, not by a click.
+      ...(proposed ? { reason: "proposed" } : {}),
     },
   });
 
@@ -4945,6 +5098,7 @@ async function recordPosition(
     await incorporateAcceptance(tx, ctx, {
       current,
       auto,
+      proposed: Boolean(proposed),
       memberId: answeredFor,
       sourceIds: input.sourceIds,
       competitors: input.competitors,
@@ -5093,6 +5247,8 @@ async function incorporateAcceptance(
     current: LockedAmendment;
     /** The acceptance was the automatic one of a formal amendment. */
     auto: boolean;
+    /** The acceptance was given by presenting the transactional. */
+    proposed?: boolean;
     /** The presenter whose acceptance it is (position_changed's memberId). */
     memberId: string | null;
     sourceIds: string[];
@@ -5136,6 +5292,7 @@ async function incorporateAcceptance(
       byPosition: true,
       memberId: input.memberId,
       ...(input.auto ? { reason: "formal" } : {}),
+      ...(input.proposed ? { reason: "proposed" } : {}),
     },
   });
   if (input.sourceIds.length > 0) {
@@ -5280,6 +5437,122 @@ async function autoAcceptFormal(
       },
       locked,
       parties: input.parties,
+    });
+  }
+}
+
+/**
+ * Records, for each transactional among `ids` that a presenter of the
+ * document presented itself, that presenter's acceptance the moment it
+ * becomes answerable with no answer ever given (user's decision of
+ * 2026-11-21; shouldAcceptProposedTransactional): presenting it was her
+ * answer. The position_changed is hers (`by: "proponent"`, `memberId` the
+ * presenter, the account that presented it as decidedByUserId) with
+ * `reason: "proposed"`, and under "incorporate" it is incorporated like any
+ * acceptance (recordPosition), never while a parent awaits the assembly's
+ * admission. A transactional presented by an author of what it combines
+ * keeps waiting for the presenter's answer, as before.
+ * Runs at the end of the transaction that made it answerable, after
+ * autoAcceptFormal. The caller holds the document lock (`voted` and `rule`
+ * read under it) and, in its one ordered pass, the rows of `ids`, of the
+ * amendments they group and of the other transactionals over those and
+ * over them (`lockedIds`), then the acceptances of `ids` (`parties`). A
+ * transactional whose parents are not all among them is left for the
+ * presenter. The position rows are locked here, last.
+ */
+async function acceptProposedTransactionals(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  input: {
+    ids: string[];
+    lockedIds: string[];
+    sourceMap: Map<string, string[]>;
+    parties: Awaited<ReturnType<typeof lockParties>>;
+    rule: AcceptedAmendmentRule;
+    voted: boolean;
+  },
+): Promise<void> {
+  if (input.voted || input.ids.length === 0) return;
+  const { document } = ctx;
+  const presenterIds = [
+    document.proponentMemberId,
+    ...document.coProponentMemberIds,
+  ];
+  const rows = await tx
+    .select({
+      id: amendments.id,
+      kind: amendments.kind,
+      meta: amendments.meta,
+      submittedByUserId: amendments.submittedByUserId,
+    })
+    .from(amendments)
+    .where(
+      and(
+        eq(amendments.documentId, document.id),
+        inArray(amendments.id, input.ids),
+        eq(amendments.kind, "transactional"),
+      ),
+    );
+  const proposedBy = new Map<
+    string,
+    { memberId: string; userId: string | null }
+  >();
+  for (const row of rows) {
+    const memberId = proposingPresenterOf({
+      kind: row.kind,
+      proposerMemberId: readMeta(row).proposerMemberId,
+      presenterIds,
+    });
+    if (memberId) {
+      proposedBy.set(row.id, { memberId, userId: row.submittedByUserId });
+    }
+  }
+  if (proposedBy.size === 0) return;
+  const ids = [...proposedBy.keys()].sort();
+  const lockedIds = unique([...ids, ...input.lockedIds]);
+  const positions = await lockPositions(tx, ids);
+  for (const id of ids) {
+    // Again for each one: an earlier acceptance may have closed or
+    // replaced what the next one groups.
+    const locked = await rereadLocked(tx, document.id, lockedIds);
+    const current = locked.find((row) => row.id === id);
+    const sourceIds = input.sourceMap.get(id) ?? [];
+    const sources = locked.filter((row) => sourceIds.includes(row.id));
+    if (!current || sources.length !== sourceIds.length) continue;
+    const accepted = shouldAcceptProposedTransactional(
+      {
+        ...current,
+        presenterSeesValidated: ctx.presenterSeesValidated,
+        authorsApproval: authorsApproval({
+          kind: "transactional",
+          acceptances: input.parties.filter(
+            (party) => party.amendmentId === id,
+          ),
+        }),
+      },
+      {
+        proposingPresenterId: proposedBy.get(id)!.memberId,
+        position: positions.get(id)?.position ?? null,
+        answeredBefore: (await latestPositionPayload(tx, id)) !== undefined,
+        sourcesAwaitAdmission: sourcesAwaitAdmission(sources),
+      },
+      input.rule,
+    );
+    if (!accepted) continue;
+    await recordPosition(tx, ctx, {
+      current,
+      rule: input.rule,
+      position: "accept",
+      comment: null,
+      by: "proponent",
+      sourceIds,
+      competitors: {
+        sourceMap: input.sourceMap,
+        ids: competingTransactionalIds(input.sourceMap, id, [id, ...sourceIds]),
+      },
+      locked,
+      parties: input.parties,
+      proposed: proposedBy.get(id)!,
     });
   }
 }
@@ -7056,9 +7329,13 @@ export async function createTransactionalAmendment(
     // Images it inserts are this document's own.
     await assertOpImagesBelong(document.id, ops);
 
-    const meta: StoredAmendmentMeta = mainAuthorId
-      ? { presentingMemberId: mainAuthorId }
-      : {};
+    const meta: StoredAmendmentMeta = {
+      ...(mainAuthorId ? { presentingMemberId: mainAuthorId } : {}),
+      // Who presented it, when a member does (never the Mesa in session).
+      ...(submit && !instant && actor.memberId
+        ? { proposerMemberId: actor.memberId }
+        : {}),
+    };
     const [row] = await tx
       .insert(amendments)
       .values({

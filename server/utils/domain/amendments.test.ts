@@ -993,7 +993,8 @@ describe("composerAuthorsAccess", () => {
 });
 
 describe("visibility", () => {
-  const { canSeeAmendment, canSeeDocument } = visibility;
+  const { canSeeAmendment, canSeeDocument, presentsTransactionalDocument } =
+    visibility;
   type Actor = Parameters<typeof canSeeAmendment>[0];
   type AmendmentInput = Parameters<typeof canSeeAmendment>[1];
   type DocumentInput = Parameters<typeof canSeeDocument>[1];
@@ -1036,6 +1037,7 @@ describe("visibility", () => {
       status: AmendmentInput["status"],
       extra: Partial<AmendmentInput> = {},
     ): AmendmentInput => ({
+      kind: "partial",
       status,
       publishedAt: null,
       validatedAt: null,
@@ -1114,6 +1116,68 @@ describe("visibility", () => {
       expect(canSeeAmendment(actor("member", "co-presenter"), waiting)).toBe(
         false,
       );
+    });
+
+    it("shows a presented transactional to the document's presenters before its publication", () => {
+      // User's decision of 2026-11-21: from the moment it is presented.
+      for (const extra of [{}, { validatedAt }]) {
+        const transactional = amendment("submitted", {
+          kind: "transactional",
+          ...extra,
+        });
+        expect(
+          canSeeAmendment(actor("member", "presenter"), transactional),
+        ).toBe(true);
+        expect(
+          canSeeAmendment(actor("member", "co-presenter"), transactional),
+        ).toBe(true);
+        // Nobody else gains anything.
+        expect(canSeeAmendment(actor("member"), transactional)).toBe(false);
+        expect(canSeeAmendment(sheetReader, transactional)).toBe(
+          extra.validatedAt !== undefined,
+        );
+      }
+      // Never a draft or a withdrawn one, nor any other kind.
+      for (const status of ["draft", "withdrawn"] as const) {
+        expect(
+          canSeeAmendment(
+            actor("member", "presenter"),
+            amendment(status, { kind: "transactional" }),
+          ),
+        ).toBe(false);
+      }
+      expect(
+        canSeeAmendment(
+          actor("member", "presenter"),
+          amendment("submitted", { kind: "formal" }),
+        ),
+      ).toBe(false);
+    });
+
+    it("tells a transactional's presenters apart from its insiders", () => {
+      const transactional = {
+        kind: "transactional" as const,
+        status: "submitted" as const,
+        documentPresenters: {
+          proponentMemberId: "presenter",
+          coProponentMemberIds: ["co-presenter"],
+        },
+      };
+      expect(
+        presentsTransactionalDocument(
+          actor("member", "co-presenter"),
+          transactional,
+        ),
+      ).toBe(true);
+      expect(
+        presentsTransactionalDocument(actor("member", "author"), transactional),
+      ).toBe(false);
+      expect(
+        presentsTransactionalDocument(actor("member", "presenter"), {
+          ...transactional,
+          kind: "partial",
+        }),
+      ).toBe(false);
     });
 
     it("keeps drafts from the CEA and the document's presenters, validated before or not", () => {

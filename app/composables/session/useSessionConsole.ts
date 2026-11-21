@@ -51,6 +51,7 @@ import type { ApprovalImpact, Passage } from "~~/shared/utils/content/passages";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
   type AssemblySettings,
+  type LiveBlocPurpose,
   type ProponentPosition,
 } from "~~/shared/constants/domain";
 import {
@@ -127,6 +128,12 @@ import { useSessionSpeakers } from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
 import { useProjectionControl } from "./useProjectionControl";
 import { latestTallySender } from "./liveTally";
+import {
+  sessionAdmissionProposal,
+  sessionAdmissionTarget,
+  sessionApprovalBloc,
+  type SessionAdmissionProposal,
+} from "./admissionProposal";
 
 /**
  * Busy key of the "who sees the speaking turns" switch. It must not start
@@ -392,7 +399,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       documentId: own.documentId,
       amendmentId: own.amendmentId,
       amendmentBloc: onScreen ? live.amendmentBloc : [],
+      amendmentBlocOptions: onScreen ? live.amendmentBlocOptions : null,
+      amendmentBlocPurpose: onScreen ? live.amendmentBlocPurpose : null,
       vote: onScreen ? live.vote : null,
+      voteDecision: onScreen ? live.voteDecision : null,
     };
   });
   /** This console works on something else than what is on screen. */
@@ -687,22 +697,36 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     blocMode.value = false;
   }
   /**
-   * The bloc on screen for the document the console shows; empty without
-   * one, or while this console looks at another document.
+   * The bloc on screen proposed for approval, for the document the console
+   * shows; empty without one, while this console looks at another document,
+   * or for a proposal on admission (sessionApprovalBloc).
    */
-  const blocOnScreen = computed<string[]>(() => {
-    const state = debate.value;
-    if (!state || state.documentId !== documentId.value) return [];
-    // A server not updated yet sends none.
-    return state.amendmentBloc ?? [];
-  });
+  const blocOnScreen = computed<string[]>(() =>
+    sessionApprovalBloc(debate.value, documentId.value),
+  );
+  /**
+   * A proposal to admit late amendments or not on screen, for the document
+   * the console shows (user's decision of 2026-11-21); null otherwise.
+   */
+  const proposalOnScreen = computed<SessionAdmissionProposal | null>(() =>
+    sessionAdmissionProposal(debate.value, documentId.value),
+  );
+  /**
+   * The proposal on admission the room has on screen for this document,
+   * whatever this console follows: what the admission dialog decides.
+   */
+  const roomProposal = computed<SessionAdmissionProposal | null>(() =>
+    sessionAdmissionProposal(liveState.value, documentId.value),
+  );
   /** Why the final vote cannot be recorded yet (empty when it can). */
   const finalVoteReasons = computed(() =>
     sessionFinalVoteReasons({
       document: document.value ?? null,
       amendmentsLoaded: Boolean(amendmentsDto.value),
       blockers: finalVoteBlockers.value,
-      pendingWordings: pendingPassages.value.length,
+      // Passages still to word no longer hold the vote back: the final
+      // vote may leave them pending conciliation (user's decisions of
+      // 2026-11-21); the console offers their wording beside it.
     }),
   );
 
@@ -1453,12 +1477,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   /**
-   * Puts a bloc on screen («Se propone aprobar en bloque»), in place of the
-   * amendment or the vote on it. Only the console in control, on the
+   * Puts a bloc on screen («Se propone aprobar en bloque»; with a purpose,
+   * «Se propone admitir a debate» or «Se propone no admitir»), in place of
+   * the amendment or the vote on it. Only the console in control, on the
    * document on screen (or none yet): moving the room to another document
    * asks first, as debating an amendment of it does.
    */
-  async function projectBloc(ids: string[]): Promise<boolean> {
+  async function projectBloc(
+    ids: string[],
+    /**
+     * A proposal to admit late amendments or not instead (user's decision
+     * of 2026-11-21): published ones pending admission.
+     */
+    purpose: LiveBlocPurpose | null = null,
+  ): Promise<boolean> {
     if (!inControl.value || ids.length === 0) return false;
     const liveDocument = liveState.value?.documentId ?? null;
     if (liveDocument !== null && liveDocument !== documentId.value) {
@@ -1472,12 +1504,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
     return setLive({
       amendmentBloc: ids,
+      amendmentBlocPurpose: purpose,
       amendmentId: null,
       voteId: null,
     });
   }
 
-  /** Takes the bloc off the screen; the document stays. */
+  /**
+   * Takes the bloc, or the proposal on admission, off the screen; the
+   * document stays.
+   */
   function unprojectBloc(): Promise<boolean> {
     return setLive({ amendmentBloc: null });
   }
@@ -1655,12 +1691,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * `debate`): what the room was asked to approve.
    */
   const roomBlocOpen = computed<string[]>(() => {
-    const state = liveState.value;
-    if (!state || state.documentId !== documentId.value) return [];
-    return (state.amendmentBloc ?? []).filter((id) => {
-      const amendment = byId.value.get(id);
-      return amendment !== undefined && isSessionOpen(amendment);
-    });
+    // Never a proposal on admission: admitted, its amendments are open, and
+    // approving them is not what the room was asked (sessionApprovalBloc).
+    return sessionApprovalBloc(liveState.value, documentId.value).filter(
+      (id) => {
+        const amendment = byId.value.get(id);
+        return amendment !== undefined && isSessionOpen(amendment);
+      },
+    );
   });
   /**
    * Opens it on the accepted ones (the shortcut), or on a bloc. While a bloc
@@ -2104,8 +2142,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     ids: string[],
     decision: SessionAdmissionDecision,
   ): void {
-    admissionDialog.ids = ids;
-    admissionDialog.decision = decision;
+    // A proposal on admission the room has on screen (whatever this console
+    // follows) is what the dialog decides when opened on any of it.
+    const target = sessionAdmissionTarget(
+      ids,
+      decision,
+      roomProposal.value,
+      byId.value,
+    );
+    admissionDialog.ids = target.ids;
+    admissionDialog.decision = target.decision;
     admissionDialog.open = true;
   }
 
@@ -2920,9 +2966,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       refreshUnlessLive(refreshAgenda, refreshAmendments);
       toast.add({
         title:
-          updated.finalVote?.result === "approved"
-            ? t("session.toasts.finalApproved")
-            : t("session.toasts.finalRejected"),
+          updated.finalVote?.result !== "approved"
+            ? t("session.toasts.finalRejected")
+            : updated.pendingConciliation > 0
+              ? t("session.toasts.finalApprovedPending")
+              : t("session.toasts.finalApproved"),
         color: updated.finalVote?.result === "approved" ? "success" : "warning",
         icon: "i-lucide-gavel",
       });
@@ -3244,6 +3292,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     clearBlocSelection,
     cancelBloc,
     blocOnScreen,
+    proposalOnScreen,
+    roomProposal,
     projectBloc,
     unprojectBloc,
     finalVoteReasons,

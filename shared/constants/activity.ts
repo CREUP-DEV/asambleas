@@ -372,6 +372,8 @@ export const EVENT_TYPES = [
   "document_form_correction_proposed",
   "document_form_correction_rejected",
   "document_form_correction_withdrawn",
+  "passage_conciliated",
+  "passage_conciliation_proposed",
   "passage_worded",
   "passage_wording_removed",
   // Amendments
@@ -556,6 +558,8 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   document_form_correction_proposed: "document",
   document_form_correction_rejected: "document",
   document_form_correction_withdrawn: "document",
+  passage_conciliated: "document",
+  passage_conciliation_proposed: "document",
   passage_worded: "document",
   passage_wording_removed: "document",
   amendment_created: "amendment",

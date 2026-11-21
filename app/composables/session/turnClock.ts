@@ -39,3 +39,18 @@ export function turnClock(
     remaining,
   };
 }
+
+/**
+ * The widest text the clock of a turn takes (its digits all "0"), for a
+ * slot that must not change width while the turn lasts (the projection;
+ * every digit takes a cell of the same width, CommonTabularDigits). With a
+ * limit, the limit's shape signed, which covers the countdown and the time
+ * over until it reaches the limit again ("+0:00" for 3 minutes); without
+ * one, minutes in two digits ("00:00"), which covers the first hour.
+ */
+export function turnClockReserve(
+  limitSeconds: number | null | undefined,
+): string {
+  if (!limitSeconds || limitSeconds <= 0) return "00:00";
+  return `+${sessionFormatDuration(limitSeconds).replace(/\d/g, "0")}`;
+}

@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import type { LiveSpeakers } from "~/components/live-view/-model";
+import {
+  fittingCount,
+  LIVE_SPEAKERS_NEXT,
+  type LiveSpeakers,
+} from "~/components/live-view/-model";
 
 /**
  * Who has the floor, for how long, and who speaks next, as the Mesa wrote
  * them down. Only rendered while the Mesa makes the turns visible (see
  * liveSpeakers).
  *
- * `size="projection"` is the band at the bottom of the projection screen:
- * large type, the queue on one line, the heading for screen readers only,
- * and nothing about who has the floor while nobody does (the page leaves
- * the band out when nobody is waiting either).
+ * `size="projection"` is the band at the bottom of the projection screen,
+ * two lines at most (user's decision of 2026-11-21): who has the floor,
+ * their name cut on one line and the clock in a slot that keeps its width
+ * (SessionSpeakerTimer `reserve`); below, after «Después:», the acronyms of
+ * as many waiting turns as fit on the line (fittingCount, measured after
+ * layout; the page passes up to PROJECTION_SPEAKERS_MAX), then «y N más».
+ * The heading is for screen readers only, and nothing says who has the
+ * floor while nobody does (the page leaves the band out when nobody is
+ * waiting either).
  */
 const props = withDefaults(
   defineProps<{
@@ -26,6 +35,65 @@ const { t } = useI18n();
 
 const projection = computed(() => props.size === "projection");
 const headingTag = computed(() => `h${props.headingLevel}`);
+
+// The projection's queue: as many acronyms as fit on one line -----------------
+
+const queue = ref<HTMLElement | null>(null);
+const moreProbe = ref<HTMLElement | null>(null);
+/** Waiting turns shown on the line; the rest go into «y N más». */
+const shown = ref(LIVE_SPEAKERS_NEXT);
+/** Every waiting turn: the ones passed and those the page left out. */
+const waitingTotal = computed(
+  () => props.speakers.next.length + props.speakers.more,
+);
+const hiddenCount = computed(
+  () =>
+    Math.max(0, props.speakers.next.length - shown.value) + props.speakers.more,
+);
+
+/**
+ * Measures the chips (all rendered, the ones left out invisible behind the
+ * label) and keeps as many as fit with room for «y N más», measured with
+ * the widest count it may say (`moreProbe`). Hiding a chip does not change
+ * the list's width, so this never feeds back into its own observer.
+ */
+let queueFrame = 0;
+function fitQueue(): void {
+  if (!import.meta.client || !projection.value || queueFrame) return;
+  queueFrame = requestAnimationFrame(() => {
+    queueFrame = 0;
+    const list = queue.value;
+    if (!list) return;
+    const chips = Array.from(list.querySelectorAll<HTMLElement>("[data-chip]"));
+    const gap = Number.parseFloat(getComputedStyle(list).columnGap) || 0;
+    shown.value = fittingCount(
+      chips.map((chip) => chip.getBoundingClientRect().width),
+      gap,
+      list.clientWidth,
+      moreProbe.value?.getBoundingClientRect().width ?? 0,
+      waitingTotal.value,
+    );
+  });
+}
+watch(
+  () => [
+    props.speakers.next.map((turn) => turn.id).join(),
+    props.speakers.more,
+    queue.value,
+  ],
+  fitQueue,
+  { flush: "post" },
+);
+// The window was resized.
+useResizeObserver(queue, fitQueue);
+onMounted(() => {
+  fitQueue();
+  // Raleway may land after the first layout and widen the acronyms.
+  void window.document.fonts?.ready.then(fitQueue);
+});
+onBeforeUnmount(() => {
+  if (queueFrame) cancelAnimationFrame(queueFrame);
+});
 </script>
 
 <template>
@@ -33,7 +101,7 @@ const headingTag = computed(() => `h${props.headingLevel}`);
     :aria-labelledby="headingId"
     :class="
       projection
-        ? 'border-primary/40 bg-primary/5 flex flex-wrap items-center gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2 rounded-2xl border-2 px-[clamp(1rem,2vw,2rem)] py-[clamp(0.5rem,1vw,1rem)]'
+        ? 'border-primary/40 bg-primary/5 flex flex-col gap-y-[clamp(0.25rem,0.4vw,0.5rem)] rounded-2xl border-2 px-[clamp(1rem,2vw,2rem)] py-[clamp(0.25rem,0.6vw,0.625rem)]'
         : 'flex flex-col gap-3'
     "
   >
@@ -115,72 +183,104 @@ const headingTag = computed(() => `h${props.headingLevel}`);
       </div>
     </div>
 
-    <!-- Projection: one band. Nobody with the floor says nothing: the
-         screen keeps that room for the document and the agenda. -->
+    <!-- Projection: one band, two lines at most. Nobody with the floor says
+         nothing: the screen keeps that room for the document and the
+         agenda. -->
     <template v-else>
-      <div v-if="speakers.current" class="min-w-0">
-        <p class="text-muted text-[clamp(1rem,1.4vw,1.5rem)] font-medium">
+      <div
+        v-if="speakers.current"
+        class="flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)]"
+      >
+        <span
+          class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+        >
           {{ t("liveView.speakers.current") }}
-        </p>
-        <p
-          class="text-highlighted flex flex-wrap items-center gap-x-[clamp(1rem,2vw,2rem)] gap-y-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
+        </span>
+        <span
+          class="text-highlighted flex min-w-0 flex-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
         >
           <LiveViewSpeakerName
             :turn="speakers.current"
             badge-size="xl"
             :tooltip="false"
+            truncate
           />
-          <!-- Ticks every second: only in the browser. -->
-          <ClientOnly>
-            <span
-              v-if="speakers.current.startedAt"
-              class="text-muted inline-flex items-center gap-[0.3em] font-semibold"
-            >
-              <UIcon
-                :name="
-                  speakers.current.limitSeconds
-                    ? 'i-lucide-hourglass'
-                    : 'i-lucide-timer'
-                "
-                class="size-[0.9em] shrink-0"
-                aria-hidden="true"
-              />
-              <SessionSpeakerTimer
-                :started-at="speakers.current.startedAt"
-                :limit-seconds="speakers.current.limitSeconds"
-              />
-            </span>
-          </ClientOnly>
-        </p>
+        </span>
+        <!-- Ticks every second: only in the browser. -->
+        <ClientOnly>
+          <span
+            v-if="speakers.current.startedAt"
+            class="text-muted inline-flex shrink-0 items-center gap-[0.3em] text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-semibold"
+          >
+            <UIcon
+              :name="
+                speakers.current.limitSeconds
+                  ? 'i-lucide-hourglass'
+                  : 'i-lucide-timer'
+              "
+              class="size-[0.9em] shrink-0"
+              aria-hidden="true"
+            />
+            <SessionSpeakerTimer
+              :started-at="speakers.current.startedAt"
+              :limit-seconds="speakers.current.limitSeconds"
+              reserve
+            />
+          </span>
+        </ClientOnly>
       </div>
 
-      <div v-if="speakers.next.length > 0" class="min-w-0 flex-1">
-        <p class="text-muted text-[clamp(1rem,1.4vw,1.5rem)] font-medium">
-          {{ t("liveView.speakers.next") }}
-        </p>
-        <ol
-          class="flex flex-wrap items-center gap-x-[clamp(1rem,2vw,2rem)] gap-y-1 text-[clamp(1.125rem,1.8vw,2rem)] font-semibold"
+      <div
+        v-if="speakers.next.length > 0"
+        class="relative flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)] leading-tight"
+      >
+        <span
+          class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
         >
-          <li v-for="turn in speakers.next" :key="turn.id" class="min-w-0">
-            <LiveViewSpeakerName
-              :turn="turn"
-              badge-size="lg"
+          {{ t("liveView.speakers.nextInline") }}
+        </span>
+        <!-- Every chip stays rendered to be measured (fitQueue); the ones
+             that do not fit go invisible behind «y N más» (`order`). -->
+        <ol
+          ref="queue"
+          class="flex min-w-0 flex-1 flex-nowrap items-center gap-x-[clamp(0.5rem,1vw,1rem)] overflow-hidden text-[clamp(1.125rem,1.6vw,1.75rem)] font-semibold"
+        >
+          <li
+            v-for="(turn, index) in speakers.next"
+            :key="turn.id"
+            data-chip
+            class="flex shrink-0"
+            :class="index < shown ? undefined : 'invisible order-2'"
+          >
+            <CommonMemberBadge
+              v-if="turn.member"
+              :member="turn.member"
+              size="lg"
               :tooltip="false"
             />
+            <span v-else class="text-default whitespace-nowrap">
+              {{ turn.speaker?.trim() || t("liveView.speakers.unnamed") }}
+            </span>
           </li>
           <li
-            v-if="speakers.more > 0"
-            class="text-muted text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+            v-if="hiddenCount > 0"
+            class="text-muted order-1 shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
           >
             {{
-              t(
-                "liveView.speakers.more",
-                { count: speakers.more },
-                speakers.more,
-              )
+              t("liveView.speakers.more", { count: hiddenCount }, hiddenCount)
             }}
           </li>
         </ol>
+        <!-- The widest «y N más» it may say, to leave room for it. -->
+        <span
+          ref="moreProbe"
+          class="invisible absolute start-0 top-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
+          aria-hidden="true"
+        >
+          {{
+            t("liveView.speakers.more", { count: waitingTotal }, waitingTotal)
+          }}
+        </span>
       </div>
     </template>
   </section>

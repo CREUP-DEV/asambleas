@@ -100,6 +100,13 @@ const props = defineProps<{
    * `open` while the assembly takes notes (convened, in session).
    */
   speakers?: { note: boolean; open: boolean };
+  /**
+   * «Mis notas» for a reader without the sheet's key to edit (user's
+   * decision of 2026-11-21): the account's general private notes on the
+   * row's documents or amendment, written here. `documentPath` is a
+   * document's page, where its notes on the text are.
+   */
+  ownNotes?: { documentPath: (slug: string) => string } | null;
 }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{
@@ -128,6 +135,8 @@ const emit = defineEmits<{
    * notice of its unsaved observations.
    */
   reopen: [target: RowPanelTarget];
+  /** A note of «Mis notas» on a document was written, changed or deleted. */
+  notesChanged: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -717,7 +726,9 @@ function historyDetail(
     :title="title"
     :description="
       target?.kind === 'amendment'
-        ? t('controlSheet.panel.amendmentTitle')
+        ? target.row.awaitsAnswer
+          ? t('controlSheet.answer.panelDescription')
+          : t('controlSheet.panel.amendmentTitle')
         : t('controlSheet.panel.itemTitle')
     "
     :ui="{ content: 'max-w-full sm:max-w-lg', body: 'p-4 sm:p-5' }"
@@ -802,8 +813,46 @@ function historyDetail(
           :row="target.row"
           :document="document ?? null"
           :api-base="apiBase"
+          :amendments="results?.amendments ?? []"
+          :final-voted="results?.finalVoted ?? false"
           @saved="(amendment) => emit('positionSaved', amendment)"
         />
+
+        <!-- «Mis notas»: the reader's own notes on the amendment -->
+        <AmendmentNotes
+          v-if="target.kind === 'amendment' && ownNotes"
+          :amendment="target.row.amendment"
+          :amendments-url="`${apiBase}/documents/${encodeURIComponent(target.row.amendment.documentId)}/amendments`"
+        />
+
+        <!-- «Mis notas»: the reader's own general notes on each document -->
+        <section
+          v-if="
+            target.kind === 'item' && ownNotes && target.row.documents.length
+          "
+          class="flex flex-col gap-3"
+          aria-labelledby="control-sheet-own-notes"
+        >
+          <div>
+            <h3
+              id="control-sheet-own-notes"
+              class="text-highlighted text-sm font-semibold"
+            >
+              {{ t("notes.title") }}
+            </h3>
+            <p class="text-muted text-xs">
+              {{ t("controlSheet.ownNotes.hint") }}
+            </p>
+          </div>
+          <ControlSheetDocumentNotes
+            v-for="entry in target.row.documents"
+            :key="entry.id"
+            :document-id="entry.id"
+            :title="target.row.documents.length > 1 ? entry.title : null"
+            :document-path="ownNotes.documentPath(entry.slug)"
+            @changed="emit('notesChanged')"
+          />
+        </section>
 
         <!-- Votes on the item -->
         <ControlSheetItemVotes

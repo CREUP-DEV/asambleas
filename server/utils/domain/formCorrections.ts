@@ -5,9 +5,26 @@ import {
   documentFormCorrections,
   documents,
   documentVersions,
+  passageWordings,
 } from "../../db/schema";
+import {
+  consolidateApproved,
+  passageKey,
+} from "~~/shared/utils/content/passages";
+import {
+  pendingPassagesOf,
+  storedPendingPassages,
+  type ConciliationPassage,
+  type PendingPassage,
+} from "~~/shared/utils/content/pendingPassages";
+import { approvedRows, loadPassageWordings, wordingInputs } from "./wordings";
 import { assertOptimisticLock } from "../optimisticLock";
-import { canManageDocuments, canModerate, type Actor } from "./actor";
+import {
+  canCorrectForm,
+  canManageDocuments,
+  canModerate,
+  type Actor,
+} from "./actor";
 import { recordEvent } from "./events";
 import {
   formCorrectionMode,
@@ -20,6 +37,7 @@ import {
   type PresentedDocumentRow,
 } from "./documents";
 import type {
+  ConciliationBody,
   FormCorrectionAuthor,
   FormCorrectionBody,
   FormCorrectionDecisionBody,
@@ -60,11 +78,15 @@ function fail(statusCode: number, message: string, data?: unknown): never {
 const STALE_MESSAGE =
   "El texto aprobado ha cambiado desde que lo abriste. Recarga la página";
 
+/** A correction of form while a passage is pending conciliation. */
+const PENDING_MESSAGE =
+  "Primero hay que conciliar las enmiendas pendientes del texto aprobado";
+
 /** Reads the corrections that are not applied (and their texts). */
 function seesUnapplied(actor: Actor, document: PresentedDocumentRow): boolean {
   return (
     canManageDocuments(actor) ||
-    canModerate(actor) ||
+    canCorrectForm(actor) ||
     isProponentSide(actor, document)
   );
 }
@@ -72,6 +94,7 @@ function seesUnapplied(actor: Actor, document: PresentedDocumentRow): boolean {
 function madeAsOf(actor: Actor): FormCorrectionAuthor {
   if (canManageDocuments(actor)) return "secretaria";
   if (canModerate(actor)) return "mesa";
+  if (canCorrectForm(actor)) return "authorized";
   return "presenter";
 }
 
@@ -120,6 +143,11 @@ export async function listFormCorrections(
     .from(documents)
     .where(eq(documents.id, ctx.document.id));
   const current = document?.consolidatedVersionId ?? null;
+  // A proposed conciliation applies while its passage is still pending,
+  // whatever other passages were conciliated since.
+  const stillPending = new Set(
+    (await pendingOf(executor, current)).map((passage) => passage.key),
+  );
   const all = await executor
     .select()
     .from(documentFormCorrections)
@@ -135,7 +163,9 @@ export async function listFormCorrections(
   const manages = canManageDocuments(actor);
   const corrections = rows.map((row): FormCorrectionDto => {
     const pending = row.status === "pending";
-    const onCurrentText = row.fromVersionId === current;
+    const onCurrentText = row.passage
+      ? stillPending.has(row.passage.key)
+      : row.fromVersionId === current;
     return {
       id: row.id,
       status: row.status,
@@ -146,6 +176,13 @@ export async function listFormCorrections(
       blocks: row.blocks,
       onCurrentText,
       decisionNote: row.decisionNote,
+      passage: row.passage
+        ? {
+            key: row.passage.key,
+            amendmentIds: row.passage.amendmentIds,
+            blockIds: row.passage.blockIds,
+          }
+        : null,
       createdAt: row.createdAt.toISOString(),
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
       updatedAt: row.updatedAt.toISOString(),
@@ -172,7 +209,13 @@ export async function listFormCorrections(
 async function applyText(
   tx: Executor,
   document: PresentedDocumentRow,
-  input: { blocks: Block[]; contentHash: string; reason: string },
+  input: {
+    blocks: Block[];
+    contentHash: string;
+    reason: string;
+    /** After a conciliation, the passages still pending (none: final). */
+    pendingPassages?: PendingPassage[];
+  },
   actor: Actor,
 ): Promise<string> {
   const [version] = await tx
@@ -183,7 +226,11 @@ async function applyText(
       kind: "consolidated",
       blocks: input.blocks,
       contentHash: input.contentHash,
-      note: input.reason,
+      note: input.reason || null,
+      pendingPassages:
+        input.pendingPassages && input.pendingPassages.length > 0
+          ? input.pendingPassages
+          : null,
       replacesVersionId: document.consolidatedVersionId,
       createdByUserId: actor.user.id,
     })
@@ -222,9 +269,15 @@ export async function createFormCorrection(
       fail(409, STALE_MESSAGE, { stale: true });
     }
     const [from] = await tx
-      .select({ contentHash: documentVersions.contentHash })
+      .select({
+        contentHash: documentVersions.contentHash,
+        pendingPassages: documentVersions.pendingPassages,
+      })
       .from(documentVersions)
       .where(eq(documentVersions.id, body.fromVersionId));
+    if (storedPendingPassages(from?.pendingPassages).length > 0) {
+      fail(409, PENDING_MESSAGE, { pendingConciliation: true });
+    }
     if (from?.contentHash === contentHash) {
       fail(422, "El texto no tiene ningún cambio", {
         reason: "no_change",
@@ -347,12 +400,28 @@ export async function decideFormCorrection(
     if (!hasApprovedText(document)) {
       fail(409, "El documento ya no tiene un texto aprobado");
     }
+    // A conciliation is a wording of its own passage over the base: other
+    // passages conciliated since leave it as it was, so it applies while
+    // its passage is still pending (conciliatedText).
+    if (row.passage) {
+      await applyConciliation(tx, ctx, document, row.passage, {
+        reason: row.reason,
+        madeAs: row.madeAs,
+        correctionId: row.id,
+        proposedByUserId: row.proposedByUserId,
+        note: body.note ?? null,
+      });
+      return;
+    }
     if (document.consolidatedVersionId !== row.fromVersionId) {
       fail(
         409,
         "Otra corrección ha cambiado el texto desde esta propuesta: corrígelo directamente con lo que proponía",
         { stale: true },
       );
+    }
+    if ((await pendingOf(tx, document.consolidatedVersionId)).length > 0) {
+      fail(409, PENDING_MESSAGE, { pendingConciliation: true });
     }
     const versionId = await applyText(
       tx,
@@ -424,6 +493,299 @@ export async function withdrawFormCorrection(
       actor,
     });
   });
+  return listFormCorrections(ctx);
+}
+
+// Conciliations ----------------------------------------------------------------
+
+/**
+ * Passages approved pending conciliation (user's decisions of 2026-11-21;
+ * shared/utils/content/pendingPassages.ts). The final vote may leave
+ * passages where approved amendments collide unworded; each one is then
+ * conciliated as a correction of form is made: directly by whoever holds
+ * document:correct_form, proposed by its presenters for the Secretaría to
+ * apply or reject. A conciliation is the passage's wording over the base
+ * (stored in `passage_wordings`, so a later rebuild keeps it) and the whole
+ * text rebuilt with it, which replaces the version in force without that
+ * passage among the pending ones. Corrections of form wait until none is
+ * pending.
+ */
+
+/** The wording a conciliation tries before it is stored. */
+const TRIAL_WORDING = "conciliation";
+
+/** The passages a consolidated version leaves pending conciliation. */
+async function pendingOf(
+  executor: Executor,
+  versionId: string | null,
+): Promise<PendingPassage[]> {
+  if (!versionId) return [];
+  const [row] = await executor
+    .select({ pending: documentVersions.pendingPassages })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, versionId));
+  return storedPendingPassages(row?.pending);
+}
+
+interface ConciliatedText {
+  blocks: Block[];
+  contentHash: string;
+  /** The passages that stay pending after it. */
+  pending: PendingPassage[];
+  passage: ConciliationPassage;
+  /** The codes of the amendments it conciliates, for the record. */
+  codes: (string | null)[];
+}
+
+/**
+ * The approved text with a pending passage worded: rebuilt from the base
+ * with the approved amendments in approval order (as the final vote built
+ * it) and every wording, the stored ones and this one. The passage must be
+ * pending in the version in force, and the wording may only change it.
+ */
+async function conciliatedText(
+  tx: Executor,
+  document: PresentedDocumentRow,
+  input: Pick<ConciliationBody, "amendmentIds" | "blockIds" | "ops">,
+): Promise<ConciliatedText> {
+  const key = passageKey(input.amendmentIds, input.blockIds);
+  const pending = await pendingOf(tx, document.consolidatedVersionId);
+  const target = pending.find((passage) => passage.key === key);
+  if (!target) {
+    fail(
+      409,
+      "Ese pasaje ya no está pendiente de conciliar. Recarga la página",
+      { code: "passage_changed" },
+    );
+  }
+  if (!document.baseVersionId) fail(409, "El documento no tiene texto base");
+  const [base] = await tx
+    .select({ blocks: documentVersions.blocks })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, document.baseVersionId));
+  if (!base) fail(409, "El documento no tiene texto base");
+  const [approved, stored] = await Promise.all([
+    approvedRows(tx, document.id),
+    loadPassageWordings(tx, document.id),
+  ]);
+  const outcome = consolidateApproved(base.blocks, approved, {
+    wordings: [
+      ...wordingInputs(stored.filter((row) => row.passageKey !== key)),
+      {
+        id: TRIAL_WORDING,
+        amendmentIds: input.amendmentIds,
+        blockIds: input.blockIds,
+        ops: input.ops,
+      },
+    ],
+  });
+  if (
+    !outcome.passages.some(
+      (passage) => passage.key === key && passage.wordingId === TRIAL_WORDING,
+    )
+  ) {
+    fail(422, "La redacción solo puede cambiar el texto de ese pasaje", {
+      code: "wording_outside",
+    });
+  }
+  const remaining = new Set(pending.map((passage) => passage.key));
+  remaining.delete(key);
+  return {
+    blocks: outcome.blocks,
+    contentHash: await hashBlocks(outcome.blocks),
+    pending: pendingPassagesOf(outcome, remaining),
+    passage: {
+      key,
+      amendmentIds: target.amendmentIds,
+      blockIds: target.blockIds,
+      ops: input.ops,
+    },
+    codes: target.amendmentIds.map(
+      (id) => approved.find((row) => row.id === id)?.code ?? null,
+    ),
+  };
+}
+
+/**
+ * Stores the passage's wording, so that rebuilding the text (the next
+ * conciliation, a new final vote after an annulment) keeps it.
+ */
+async function storeWording(
+  tx: Executor,
+  documentId: string,
+  passage: ConciliationPassage,
+  userId: string,
+  createdByUserId: string | null,
+): Promise<void> {
+  await tx
+    .insert(passageWordings)
+    .values({
+      documentId,
+      passageKey: passage.key,
+      amendmentIds: passage.amendmentIds,
+      blockIds: passage.blockIds,
+      ops: passage.ops,
+      note: null,
+      createdByUserId: createdByUserId ?? userId,
+      updatedByUserId: userId,
+    })
+    .onConflictDoUpdate({
+      target: [passageWordings.documentId, passageWordings.passageKey],
+      set: {
+        amendmentIds: passage.amendmentIds,
+        blockIds: passage.blockIds,
+        ops: passage.ops,
+        updatedByUserId: userId,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+/** The Secretaría applies a presenter's proposed conciliation. */
+async function applyConciliation(
+  tx: Executor,
+  ctx: DocumentRouteContext,
+  document: PresentedDocumentRow,
+  passage: ConciliationPassage,
+  row: {
+    reason: string;
+    madeAs: string;
+    correctionId: string;
+    proposedByUserId: string | null;
+    note: string | null;
+  },
+): Promise<void> {
+  const { actor, assembly } = ctx;
+  // Refused once its passage is no longer pending (passage_changed).
+  const text = await conciliatedText(tx, document, passage);
+  await storeWording(
+    tx,
+    document.id,
+    text.passage,
+    actor.user.id,
+    row.proposedByUserId,
+  );
+  const versionId = await applyText(
+    tx,
+    document,
+    {
+      blocks: text.blocks,
+      contentHash: text.contentHash,
+      reason: row.reason,
+      pendingPassages: text.pending,
+    },
+    actor,
+  );
+  await tx
+    .update(documentFormCorrections)
+    .set({
+      status: "applied",
+      resultVersionId: versionId,
+      decidedByUserId: actor.user.id,
+      decidedAt: new Date(),
+      decisionNote: row.note,
+    })
+    .where(eq(documentFormCorrections.id, row.correctionId));
+  await recordEvent(tx, {
+    assemblyId: assembly.id,
+    entityType: "document",
+    entityId: document.id,
+    documentId: document.id,
+    type: "passage_conciliated",
+    payload: {
+      correctionId: row.correctionId,
+      codes: text.codes,
+      reason: row.reason || null,
+      madeAs: row.madeAs,
+      versionId,
+      validated: true,
+    },
+    actor,
+  });
+}
+
+/**
+ * Conciliates a passage the final vote left pending (POST
+ * .../conciliations): applied at once with document:correct_form, waiting
+ * for the Secretaría when a presenter proposes it.
+ */
+export async function createConciliation(
+  ctx: DocumentRouteContext,
+  body: ConciliationBody,
+): Promise<FormCorrectionsDto> {
+  const { actor, assembly } = ctx;
+  if (!hasApprovedText(ctx.document)) {
+    fail(409, "El documento no tiene un texto aprobado que conciliar");
+  }
+  if (!formCorrectionMode(actor, ctx.document)) {
+    fail(403, "No puedes conciliar el texto aprobado de este documento");
+  }
+
+  await db.transaction(async (tx) => {
+    const document = await lockDocument(tx, ctx.document.id);
+    const mode = formCorrectionMode(actor, document);
+    if (!mode) {
+      fail(403, "No puedes conciliar el texto aprobado de este documento");
+    }
+    if (document.consolidatedVersionId !== body.fromVersionId) {
+      fail(409, STALE_MESSAGE, { stale: true });
+    }
+    const text = await conciliatedText(tx, document, body);
+    const direct = mode === "direct";
+    const reason = body.reason ?? "";
+    const madeAs = madeAsOf(actor);
+    if (direct) {
+      await storeWording(tx, document.id, text.passage, actor.user.id, null);
+    }
+    const resultVersionId = direct
+      ? await applyText(
+          tx,
+          document,
+          {
+            blocks: text.blocks,
+            contentHash: text.contentHash,
+            reason,
+            pendingPassages: text.pending,
+          },
+          actor,
+        )
+      : null;
+    const now = new Date();
+    const [row] = await tx
+      .insert(documentFormCorrections)
+      .values({
+        assemblyId: assembly.id,
+        documentId: document.id,
+        fromVersionId: body.fromVersionId,
+        blocks: text.blocks,
+        contentHash: text.contentHash,
+        reason,
+        status: direct ? "applied" : "pending",
+        madeAs,
+        proposedByUserId: actor.user.id,
+        resultVersionId,
+        decidedByUserId: direct ? actor.user.id : null,
+        decidedAt: direct ? now : null,
+        passage: text.passage,
+      })
+      .returning({ id: documentFormCorrections.id });
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: document.id,
+      documentId: document.id,
+      type: direct ? "passage_conciliated" : "passage_conciliation_proposed",
+      payload: {
+        correctionId: row!.id,
+        codes: text.codes,
+        reason: body.reason ?? null,
+        madeAs,
+        ...(resultVersionId ? { versionId: resultVersionId } : {}),
+      },
+      actor,
+    });
+  });
+
   return listFormCorrections(ctx);
 }
 

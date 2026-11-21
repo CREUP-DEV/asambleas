@@ -275,7 +275,13 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         "
       >
         <slot name="lead" />
-        <div class="min-w-0" :class="folded ? 'flex items-center gap-1' : ''">
+        <!-- Unfolded, the wrapper takes the title's size, so the button's
+             align-middle centres it on the title's lowercase letters
+             (vertical-align reads the parent's x-height). -->
+        <div
+          class="min-w-0"
+          :class="folded ? 'flex items-center gap-1' : 'text-xl sm:text-2xl'"
+        >
           <component
             :is="headingLevel === 1 ? 'h1' : 'h2'"
             class="text-highlighted min-w-0 font-semibold motion-safe:transition-[font-size] motion-safe:duration-300"
@@ -291,7 +297,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           <span
             v-if="detailsCard"
             class="shrink-0"
-            :class="folded ? 'flex' : 'ms-1 inline-flex align-text-bottom'"
+            :class="folded ? 'flex' : 'ms-1 inline-flex align-middle'"
           >
             <DocumentDetails :document="document" />
           </span>

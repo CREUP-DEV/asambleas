@@ -258,6 +258,15 @@ describe("activityDetails", () => {
         }),
       ),
     ).toEqual([{ type: "position", position: "accept", auto: true }]);
+    // A presenter's acceptance given by presenting the transactional.
+    expect(
+      activityDetails(
+        item({
+          action: "position_changed",
+          payload: { position: "accept", by: "proponent", reason: "proposed" },
+        }),
+      ),
+    ).toEqual([{ type: "position", position: "accept", proposed: true }]);
     expect(
       activityDetails(
         item({

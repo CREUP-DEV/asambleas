@@ -35,6 +35,11 @@ export interface PlanFacts {
     authorIds: string[];
     /** A transactional's parties (role "author") and their answers. */
     parties: { memberId: string; decision: string }[];
+    /**
+     * The member that presented a transactional (`meta.proposerMemberId`),
+     * null when the Mesa did or for any other amendment.
+     */
+    proposerMemberId?: string | null;
   } | null;
 }
 
@@ -170,12 +175,17 @@ export function noticesForEvent(
       add("submission_validated");
       add("presenter_validated", authors);
       // A member's transactional: the document's presenters answer it
-      // next, unless their own member proposed it.
-      if (amendment?.transactional) {
-        add(
-          "presenter_transactional",
-          presenters.filter((id) => !authors.includes(id)),
-        );
+      // next, unless one of them presented it, which was their answer
+      // (user's decision of 2026-11-21: one answer for the document). A
+      // presenter another member named as co-author still answers it.
+      if (
+        amendment?.transactional &&
+        !(
+          amendment.proposerMemberId &&
+          presenters.includes(amendment.proposerMemberId)
+        )
+      ) {
+        add("presenter_transactional", presenters);
       }
       break;
     case "amendment_correction_requested":

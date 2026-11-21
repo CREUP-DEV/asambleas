@@ -8,6 +8,7 @@ import type { TDocumentDefinitions } from "pdfmake/interfaces";
 import "pdfmake";
 import { z } from "zod/v4";
 import { logError, logWarn } from "../core/logger";
+import { PAGE_TAG_PREFIX, type RawPages } from "./pageMap";
 import { PDF_FUNCTIONS_SCRIPT, serializePdfDefinition } from "./pdfSerial";
 import { RALEWAY_FILES, type RalewayFile } from "./pdfmake";
 
@@ -108,6 +109,68 @@ function reply(header, body) {
   process.stdout.write(body ? Buffer.concat([head, body]) : head);
 }
 ${PDF_FUNCTIONS_SCRIPT}
+const PAGE_TAG_PREFIX = ${JSON.stringify(PAGE_TAG_PREFIX)};
+// Page tags' ids (content.ts) must not become named destinations: the PDF
+// stays the one an untagged definition gives. pdfmake's document class
+// passes every line's id to pdfkit's addNamedDestination.
+function dropTagDestinations() {
+  try {
+    const path = require("node:path");
+    const loaded = require(path.join(path.dirname(entry), "PDFDocument.js"));
+    const Document = loaded.default || loaded;
+    const parent = Object.getPrototypeOf(Document.prototype);
+    if (typeof parent.addNamedDestination !== "function") return false;
+    Document.prototype.addNamedDestination = function (name, ...rest) {
+      if (typeof name === "string" && name.startsWith(PAGE_TAG_PREFIX)) {
+        return undefined;
+      }
+      return parent.addNamedDestination.call(this, name, ...rest);
+    };
+    return true;
+  } catch {
+    return false;
+  }
+}
+// The tagged nodes of a definition pdfmake laid out, in order: each one's
+// block, first and last page (null when unknown) and whether it sits in a
+// header row. In a table's row only the first position of a node with an
+// id is right (pdfmake corrects no other), so a cell reports that one.
+function readPageTags(content, untag) {
+  const tags = [];
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const tag = node.pageTag;
+    if (untag) {
+      if (typeof node.id === "string" && node.id.startsWith(PAGE_TAG_PREFIX)) {
+        delete node.id;
+      }
+    } else if (tag && typeof tag.b === "string") {
+      const positions = Array.isArray(node.positions) ? node.positions : [];
+      let first = null;
+      let last = null;
+      for (const position of tag.cell ? positions.slice(0, 1) : positions) {
+        const page = position && position.pageNumber;
+        if (!Number.isInteger(page)) continue;
+        if (first === null || page < first) first = page;
+        if (last === null || page > last) last = page;
+      }
+      // A header row's repetitions move its first position (and a node
+      // without an id there was never put back on its page).
+      if (tag.header || (tag.cell && !node.id)) first = last = null;
+      tags.push([tag.b, first, last, tag.header ? 1 : 0]);
+    }
+    for (const key of ["stack", "ul", "ol", "columns"]) {
+      if (node[key]) visit(node[key]);
+    }
+    if (node.table && Array.isArray(node.table.body)) visit(node.table.body);
+  };
+  visit(content);
+  return tags;
+}
 process.stdin.on("data", (chunk) => input.push(chunk));
 process.stdin.on("end", () => {
   let pdfmake;
@@ -119,6 +182,7 @@ process.stdin.on("end", () => {
     return;
   }
   let lines;
+  let withPages = false;
   try {
     const bytes = Buffer.concat(input.splice(0));
     const newline = bytes.indexOf(10);
@@ -129,6 +193,7 @@ process.stdin.on("end", () => {
     pdfmake.setFonts(setup.families);
     pdfmake.setUrlAccessPolicy(() => false);
     pdfmake.setLocalAccessPolicy(() => false);
+    withPages = setup.pages === true;
     lines = bytes.subarray(newline + 1).toString("utf8").split("\\n");
     if (lines.length === 0 || lines.some((line) => line.length === 0)) {
       throw new Error("no definition");
@@ -137,8 +202,12 @@ process.stdin.on("end", () => {
     reply({ status: "invalid" });
     return;
   }
+  // Without the patch, the ids go before rendering: no page from a table's
+  // row then, but the same PDF.
+  const untag = !dropTagDestinations();
   (async () => {
     const pdfs = [];
+    const pages = [];
     for (let index = 0; index < lines.length; index += 1) {
       let definition;
       try {
@@ -149,7 +218,22 @@ process.stdin.on("end", () => {
         return;
       }
       try {
+        if (untag) readPageTags(definition.content, true);
+        // The footer is asked for every page with the page count.
+        let total = 0;
+        const footer = definition.footer;
+        if (withPages && typeof footer === "function") {
+          definition.footer = function (page, count, ...rest) {
+            total = Math.max(total, count);
+            return footer.call(this, page, count, ...rest);
+          };
+        }
         pdfs.push(await pdfmake.createPdf(definition).getBuffer());
+        if (withPages) {
+          const tags = readPageTags(definition.content, false);
+          for (const tag of tags) total = Math.max(total, tag[2] || 0);
+          pages.push({ total, tags });
+        }
       } catch (error) {
         reply({
           status: "failed",
@@ -166,6 +250,7 @@ process.stdin.on("end", () => {
         bytes: body.length,
         sizes: pdfs.map((pdf) => pdf.length),
         maxRssKb: process.resourceUsage().maxRSS,
+        ...(withPages ? { pages } : {}),
       },
       body,
     );
@@ -181,7 +266,30 @@ const renderHeaderSchema = z.object({
   index: z.number().int().min(0).optional(),
   maxRssKb: z.number().int().min(0).optional(),
   message: z.string().max(500).optional(),
+  /** With `pages`: each definition's tagged nodes (pageMap.ts). */
+  pages: z
+    .array(
+      z.object({
+        total: z.number().int().min(0),
+        tags: z.array(
+          z.tuple([
+            z.string().min(1),
+            z.number().int().min(1).nullable(),
+            z.number().int().min(1).nullable(),
+            z.union([z.literal(0), z.literal(1)]),
+          ]),
+        ),
+      }),
+    )
+    .optional(),
 });
+
+/**
+ * Room for the header line before the PDFs: a few hundred bytes, and with
+ * `pages` some 50 bytes for each block of the text (2,200 blocks for the
+ * longest text yet).
+ */
+const RENDER_HEADER_ALLOWANCE = 4 * 1024 * 1024;
 
 /**
  * The render process ran out of heap, time or room for its answer: the same
@@ -232,6 +340,7 @@ let pdfmakeEntry: string | undefined;
 function renderInput(
   definitions: readonly TDocumentDefinitions[],
   fonts: Record<RalewayFile, Buffer>,
+  pages = false,
 ): Buffer {
   const setup = {
     fonts: Object.fromEntries(
@@ -241,6 +350,7 @@ function renderInput(
       ]),
     ),
     families: { Raleway: { ...RALEWAY_FILES } },
+    ...(pages ? { pages: true } : {}),
   };
   return Buffer.from(
     [JSON.stringify(setup), ...definitions.map(serializePdfDefinition)].join(
@@ -275,8 +385,15 @@ export async function renderPdf(
 export interface PdfBatchResult {
   /** One PDF per definition, in the same order. */
   pdfs: Buffer[];
+  /**
+   * With `pages`: where each definition's tagged blocks lie (pageMap.ts),
+   * in the same order.
+   */
+  pages?: RawPages[];
   maxRssKb: number | null;
   waitedMs: number;
+  /** Set when `stillNeeded` said no once the slot was taken: no PDFs. */
+  skipped?: true;
 }
 
 /**
@@ -284,12 +401,17 @@ export interface PdfBatchResult {
  * the process starts and loads pdfmake and the fonts once. The limits apply
  * to the whole batch, so callers keep batches of short PDFs small (a few
  * dozen) and render long ones alone. One definition that fails fails the
- * batch.
+ * batch. With `pages`, it also answers where the blocks of definitions
+ * built with page tags lie (buildDocumentPdf's `pageTags`). With
+ * `stillNeeded`, asked once the slot is taken: when it answers false nothing
+ * is rendered and the result is `skipped` (what was waited for got done
+ * meanwhile, as a page map the package stored).
  */
 export async function renderPdfBatch(
   definitions: readonly TDocumentDefinitions[],
   fonts: Record<RalewayFile, Buffer>,
   limits: PdfRenderLimits = PDF_RENDER_LIMITS,
+  options: { pages?: boolean; stillNeeded?: () => Promise<boolean> } = {},
 ): Promise<PdfBatchResult> {
   if (definitions.length === 0) {
     return { pdfs: [], maxRssKb: null, waitedMs: 0 };
@@ -297,12 +419,18 @@ export async function renderPdfBatch(
   const asked = performance.now();
   return withRenderSlot(async () => {
     const waitedMs = Math.round(performance.now() - asked);
+    if (options.stillNeeded && !(await options.stillNeeded())) {
+      return { pdfs: [], maxRssKb: null, waitedMs, skipped: true };
+    }
     // Serialized once the slot is taken, so a waiting job holds no second
     // copy, and before the process starts: a definition JSON cannot carry
     // throws here, with the path of what it could not carry. The timeout
     // starts with the process, never while waiting.
-    const input = renderInput(definitions, fonts);
+    const input = renderInput(definitions, fonts, options.pages === true);
     const answer = await runRenderProcess(input, definitions.length, limits);
+    if (options.pages && answer.pages?.length !== definitions.length) {
+      throw new Error("PDF render answer has no pages");
+    }
     return { ...answer, waitedMs };
   });
 }
@@ -371,8 +499,8 @@ function runRenderProcess(
     child.stdout?.on("data", (chunk: Buffer) => {
       if (settled) return;
       received += chunk.length;
-      // The header line is a few hundred bytes at most.
-      if (received > limits.maxPdfBytes + 16_384) {
+      // The header line is small (RENDER_HEADER_ALLOWANCE).
+      if (received > limits.maxPdfBytes + RENDER_HEADER_ALLOWANCE) {
         abort(new PdfRenderLimitError("PDF too large"));
         return;
       }
@@ -396,8 +524,13 @@ function runRenderProcess(
         const body = bytes.subarray(newline + 1);
         if (header?.status === "ok" && code === 0) {
           const pdfs = splitBatch(body, header.bytes, header.sizes, count);
-          if (pdfs) resolve({ pdfs, maxRssKb: header.maxRssKb ?? null });
-          else reject(new Error("PDF render answer does not add up"));
+          if (pdfs) {
+            resolve({
+              pdfs,
+              maxRssKb: header.maxRssKb ?? null,
+              ...(header.pages ? { pages: header.pages } : {}),
+            });
+          } else reject(new Error("PDF render answer does not add up"));
         } else if (header?.status === "failed") {
           logWarn("export.render", {
             reason: header.message ?? "failed",

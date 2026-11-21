@@ -196,6 +196,7 @@ vi.mock("../domain/documents", async () => {
         rows
           .filter((row) =>
             visibility.canSeeAmendment(actor, {
+              kind: "partial",
               status: row.status,
               publishedAt: row.publishedAt,
               validatedAt: row.publishedAt,
@@ -286,6 +287,7 @@ describe("annotatedBody", () => {
     >("../domain/visibility");
     expect(
       visibility.canSeeAmendment(secretaria, {
+        kind: "partial",
         status: "withdrawn",
         publishedAt: null,
         validatedAt: null,

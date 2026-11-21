@@ -76,6 +76,16 @@ async function startExportQueue(attempts: number): Promise<PgBoss> {
     deleteAfterSeconds: 24 * 3600,
   });
 
+  // The pages of a text the package has not rendered (documentPages.ts):
+  // one job per version and layout waiting at a time, not retried (the
+  // reader asks again later).
+  await instance.createQueue(DOCUMENT_PAGES_QUEUE_NAME, {
+    policy: "stately",
+    retryLimit: 0,
+    expireInSeconds: 900,
+    deleteAfterSeconds: 24 * 3600,
+  });
+
   boss = instance;
   return boss;
 }
@@ -128,3 +138,13 @@ export const packageJobSchema = z.object({
 });
 
 export type PackageJobData = z.infer<typeof packageJobSchema>;
+
+/** Where the pages of a text's clean PDF start (documentPages.ts). */
+export const DOCUMENT_PAGES_QUEUE_NAME = "document-pages";
+
+export const documentPagesJobSchema = z.object({
+  documentId: z.string().min(1),
+  version: z.enum(["base", "consolidated"]),
+});
+
+export type DocumentPagesJobData = z.infer<typeof documentPagesJobSchema>;

@@ -11,6 +11,7 @@ import { shownVoteCounts } from "~~/shared/utils/votes";
 import type {
   AmendmentDto,
   LiveEventDto,
+  LiveVoteDecisionDto,
   LiveTally,
   LiveTallyCounts,
   MemberRef,
@@ -18,7 +19,11 @@ import type {
   SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
-import type { VoteSubject } from "~~/shared/constants/domain";
+import type {
+  LiveBlocPurpose,
+  VoteResult,
+  VoteSubject,
+} from "~~/shared/constants/domain";
 import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 import {
   isSessionReplacing,
@@ -43,6 +48,45 @@ export interface LiveSpeakers {
 
 /** Waiting turns shown by default after the one speaking. */
 export const LIVE_SPEAKERS_NEXT = 3;
+
+/**
+ * Waiting turns the projection's band may show, on one line: as many of
+ * these as fit (fittingCount), then «y N más» (user's decision of
+ * 2026-11-21).
+ */
+export const PROJECTION_SPEAKERS_MAX = 10;
+
+/**
+ * How many items of a row fit in `available` pixels, laid out in order
+ * with `gap` between them, when a trailing label (`moreWidth`, «y N más»)
+ * must follow them as soon as any of the `total` is left out: all of them
+ * when they fit and none is left out, else as many as leave room for the
+ * label. Never fewer than one, so the row is never just the label (a first
+ * item wider than the row is cut by it). Half a pixel of slack absorbs
+ * subpixel rounding.
+ */
+export function fittingCount(
+  widths: readonly number[],
+  gap: number,
+  available: number,
+  moreWidth: number,
+  total: number = widths.length,
+): number {
+  const count = widths.length;
+  if (count === 0) return 0;
+  const room = available + 0.5;
+  const ends: number[] = [];
+  let end = 0;
+  for (const [index, width] of widths.entries()) {
+    end += (index > 0 ? gap : 0) + width;
+    ends.push(end);
+  }
+  if (total <= count && ends[count - 1]! <= room) return count;
+  for (let shown = count; shown > 1; shown--) {
+    if (ends[shown - 1]! + gap + moreWidth <= room) return shown;
+  }
+  return 1;
+}
 
 function timeOf(value: string | null): number {
   if (!value) return 0;
@@ -369,15 +413,28 @@ export function liveTransactedCodes(
   return codes;
 }
 
+/**
+ * What was decided on an amendment of the bloc on screen, for its chip:
+ * approved (a bloc proposed for approval), admitted to debate or not
+ * admitted (a proposal on admission); null while undecided, and for one
+ * decided some other way (`settled`).
+ */
+export type LiveBlocOutcome = "approved" | "admitted" | "notAdmitted";
+
 /** One amendment of the bloc on screen, as the room reads it. */
 export interface LiveBlocEntry {
   id: string;
   code: string;
   /** Its main author (the first one), named by acronym on the chip. */
   author: MemberRef | null;
+  /**
+   * Decided as proposed, or the other way on admission: its chip turns
+   * green («Aprobada», «Admitida») or grey («No admitida»).
+   */
+  outcome: LiveBlocOutcome | null;
   /** Approved already: its chip turns green as the Mesa approves it. */
   approved: boolean;
-  /** Decided some other way (rejected, withdrawn, lapsed...). */
+  /** Decided some other way (rejected, withdrawn, lapsed, not admitted...). */
   settled: boolean;
   /**
    * A transactional's sources the room reads, in text order (user's
@@ -387,13 +444,33 @@ export interface LiveBlocEntry {
 }
 
 /**
+ * What an amendment of the bloc on screen came to, for its chip: whether
+ * it was approved, for a bloc proposed for approval; whether it was
+ * admitted to debate, for a proposal on admission (`purpose`, user's
+ * decision of 2026-11-21), which keeps showing it once it is approved too.
+ */
+export function liveBlocOutcome(
+  amendment: Pick<AmendmentDto, "status" | "admission">,
+  purpose: LiveBlocPurpose | null = null,
+): LiveBlocOutcome | null {
+  if (purpose === null) {
+    return amendment.status === "approved" ? "approved" : null;
+  }
+  if (amendment.status === "inadmissible") return "notAdmitted";
+  return amendment.admission === "admitted" ? "admitted" : null;
+}
+
+/**
  * The bloc on screen («Se propone aprobar en bloque», user's decision of
- * 2026-11-19) in text order, among the amendments the room can read
- * (published ones): the projection's chips and the live view's notice.
+ * 2026-11-19; or a proposal to admit late amendments or not, by its
+ * `purpose`, user's decision of 2026-11-21) in text order, among the
+ * amendments the room can read (published ones): the projection's chips
+ * and the live view's notice.
  */
 export function liveBlocEntries(
   ids: readonly string[] | null | undefined,
   list: readonly AmendmentDto[],
+  purpose: LiveBlocPurpose | null = null,
 ): LiveBlocEntry[] {
   if (!ids || ids.length === 0) return [];
   const wanted = new Set(ids);
@@ -404,14 +481,21 @@ export function liveBlocEntries(
         item.status !== "draft" &&
         item.publishedAt !== null,
     ),
-  ).map((item) => ({
-    id: item.id,
-    code: liveAmendmentCode(item),
-    author: item.authors[0] ?? null,
-    approved: item.status === "approved",
-    settled: item.status !== "approved" && item.status !== "submitted",
-    transacts: liveTransactedCodes(item, list),
-  }));
+  ).map((item) => {
+    const outcome = liveBlocOutcome(item, purpose);
+    return {
+      id: item.id,
+      code: liveAmendmentCode(item),
+      author: item.authors[0] ?? null,
+      outcome,
+      approved: item.status === "approved",
+      settled:
+        purpose === null
+          ? item.status !== "approved" && item.status !== "submitted"
+          : outcome !== "admitted" && item.status !== "submitted",
+      transacts: liveTransactedCodes(item, list),
+    };
+  });
 }
 
 /** A sentence under a row, as an i18n key and its parameters. */
@@ -582,6 +666,12 @@ export type LiveVoteSubject =
   | { kind: "agendaItem"; number: string | null; title: string }
   | { kind: "agendaItemUnknown" }
   | { kind: "decision" }
+  /**
+   * A vote on admitting amendments (user's decision of 2026-11-21): what
+   * it came to, and the codes the viewer can read; `hidden` counts the
+   * rest.
+   */
+  | { kind: "admission"; admitted: boolean; codes: string[]; hidden: number }
   | { kind: "other" };
 
 /** An agenda row as the viewer reads it: its number and title. */
@@ -599,13 +689,22 @@ export interface LiveVoteAgendaRow {
  * something else.
  */
 export function liveVoteSubject(
-  /** A recorded vote, or the secret vote being counted (LiveTally). */
-  vote: { subjectType: VoteSubject; subjectId: string | null },
+  /**
+   * A recorded vote (with its result), or the secret vote being counted
+   * (LiveTally).
+   */
+  vote: {
+    subjectType: VoteSubject;
+    subjectId: string | null;
+    result?: VoteResult;
+  },
   context: {
     amendments: readonly AmendmentDto[];
     document: { id: string; title: string; reference: string | null } | null;
     /** The viewer's agenda rows, numbered (buildSessionAgendaRows). */
     agenda?: readonly LiveVoteAgendaRow[];
+    /** What a decision vote decided (LiveStateDto.voteDecision). */
+    decision?: LiveVoteDecisionDto | null;
   },
 ): LiveVoteSubject {
   switch (vote.subjectType) {
@@ -631,16 +730,58 @@ export function liveVoteSubject(
         : { kind: "agendaItemUnknown" };
     }
     case "decision":
-      return { kind: "decision" };
+      return liveDecisionSubject(vote.result, context);
     default:
       return { kind: "other" };
   }
+}
+
+/**
+ * A decision vote names what it decided when the live state says
+ * (user's decision of 2026-11-21): admitting amendments or declaring them
+ * inadmissible says which ones, and what the vote made of them (a failed
+ * vote to admit leaves them not admitted, a failed one not to admit admits
+ * them). Any other decision, or one not known, keeps the generic heading.
+ */
+function liveDecisionSubject(
+  result: VoteResult | undefined,
+  context: {
+    amendments: readonly AmendmentDto[];
+    decision?: LiveVoteDecisionDto | null;
+  },
+): LiveVoteSubject {
+  const decision = context.decision;
+  if (
+    !result ||
+    !decision ||
+    (decision.kind !== "admit_late" && decision.kind !== "inadmission")
+  ) {
+    return { kind: "decision" };
+  }
+  const wanted = new Set(decision.subjectIds);
+  const readable = sortSessionAmendments(
+    context.amendments.filter(
+      (item) =>
+        wanted.has(item.id) &&
+        item.status !== "draft" &&
+        item.publishedAt !== null,
+    ),
+  );
+  const codes = readable.map(liveAmendmentCode).filter(Boolean);
+  return {
+    kind: "admission",
+    admitted: (decision.kind === "admit_late") === (result === "approved"),
+    codes,
+    hidden: Math.max(0, wanted.size - codes.length),
+  };
 }
 
 /** A translate function (vue-i18n's `t`), so this module stays pure. */
 export type LiveTranslate = (
   key: string,
   params?: Record<string, unknown>,
+  /** The count that picks a plural form. */
+  plural?: number,
 ) => string;
 
 /** The localized heading of a vote ("Votación de la enmienda T1"). */
@@ -671,6 +812,26 @@ export function liveVoteSubjectText(
       return t("projection.vote.agendaItemUnknown");
     case "decision":
       return t("projection.vote.decision");
+    case "admission": {
+      const total = subject.codes.length + subject.hidden;
+      const what =
+        subject.codes.length === 0
+          ? t("projection.vote.admission.amendments", { count: total }, total)
+          : subject.hidden > 0
+            ? t(
+                "projection.vote.admission.more",
+                { codes: subject.codes.join(", "), count: subject.hidden },
+                subject.hidden,
+              )
+            : subject.codes.join(", ");
+      return t(
+        subject.admitted
+          ? "projection.vote.admission.admitted"
+          : "projection.vote.admission.notAdmitted",
+        { what },
+        total,
+      );
+    }
     default:
       return t("projection.vote.other");
   }

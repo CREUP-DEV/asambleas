@@ -1,0 +1,30 @@
+/**
+ * When the documentation package is built ahead of anyone asking
+ * (service.ts), apart so the `document-pages` job (documentPages.ts) can
+ * wait for it without importing the package's service.
+ */
+
+/** Quiet time after a change before the package is built ahead of anyone asking. */
+export const PREBUILD_DELAY_MS = 2 * 60_000;
+
+/** Assemblies whose package is built ahead: those whose documentation moves. */
+export const PREBUILD_STATUSES: ReadonlySet<string> = new Set([
+  "convened",
+  "in_session",
+]);
+
+/** What the prebuild takes past its quiet time to queue and reach a text. */
+const PAGES_JOB_MARGIN_MS = 60_000;
+
+/**
+ * How long a `document-pages` job waits before it runs, in seconds (pg-boss
+ * `startAfter`), for an assembly in `status`. Where the package is built
+ * ahead, the change that moved a text's layout also schedules a prebuild
+ * that renders that PDF and stores its map anyway, so the job waits for it
+ * instead of rendering the same PDF first; it then finds the map current and
+ * does nothing. Elsewhere it runs at once (undefined).
+ */
+export function pagesJobStartAfter(status: string): number | undefined {
+  if (!PREBUILD_STATUSES.has(status)) return undefined;
+  return Math.ceil((PREBUILD_DELAY_MS + PAGES_JOB_MARGIN_MS) / 1000);
+}

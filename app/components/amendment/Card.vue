@@ -23,7 +23,8 @@ import {
  * justification.
  * A presented transactional says instead, in one line, what it waits for
  * (the main authors still to answer, or who rejected it) or which
- * amendments it replaced.
+ * amendments it replaced; while its parties or the Secretaría have it, its
+ * status «Presentada» shows too.
  *
  * Before the label, whether the account has read it (ReadMark).
  *
@@ -87,9 +88,25 @@ const isPrivate = computed(() => isAmendmentPrivate(props.amendment));
 const statusLine = computed(() => amendmentStatusLine(props.amendment));
 const showStatus = computed(
   () =>
-    !hasProgress.value &&
-    statusLine.value.type === "status" &&
-    props.amendment.status !== "submitted",
+    (!hasProgress.value &&
+      statusLine.value.type === "status" &&
+      props.amendment.status !== "submitted") ||
+    presentedTransactional.value,
+);
+/**
+ * A transactional still with its parties or the Secretaría says
+ * «Presentada» beside its label, so whoever presented it and its parties
+ * see it is there (user's decision of 2026-11-21); the progress line below
+ * says what it waits for.
+ */
+const presentedTransactional = computed(
+  () =>
+    props.amendment.kind === "transactional" &&
+    props.amendment.status === "submitted" &&
+    progress.value !== null &&
+    (progress.value.stage === "authors" ||
+      progress.value.stage === "validation" ||
+      progress.value.stage === "publication"),
 );
 /** "De forma": what the code does not say. */
 const kindLabel = computed(() =>

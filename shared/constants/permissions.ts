@@ -5,6 +5,7 @@ export const PERMISSION_KEYS = {
   ASSEMBLY_MANAGE: "assembly:manage",
   DOCUMENT_CREATE: "document:create",
   DOCUMENT_MANAGE: "document:manage",
+  DOCUMENT_CORRECT_FORM: "document:correct_form",
   AMENDMENT_CREATE: "amendment:create",
   AMENDMENT_MANAGE: "amendment:manage",
   AMENDMENT_REVIEW: "amendment:review",
@@ -34,6 +35,8 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.ASSEMBLY_MANAGE]: "permissions.descriptions.assemblyManage",
   [PERMISSION_KEYS.DOCUMENT_CREATE]: "permissions.descriptions.documentCreate",
   [PERMISSION_KEYS.DOCUMENT_MANAGE]: "permissions.descriptions.documentManage",
+  [PERMISSION_KEYS.DOCUMENT_CORRECT_FORM]:
+    "permissions.descriptions.documentCorrectForm",
   [PERMISSION_KEYS.AMENDMENT_CREATE]:
     "permissions.descriptions.amendmentCreate",
   [PERMISSION_KEYS.AMENDMENT_MANAGE]:
@@ -70,6 +73,7 @@ export const PERMISSION_ICONS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.ASSEMBLY_MANAGE]: "i-lucide-landmark",
   [PERMISSION_KEYS.DOCUMENT_CREATE]: "i-lucide-file-plus",
   [PERMISSION_KEYS.DOCUMENT_MANAGE]: "i-lucide-folder-cog",
+  [PERMISSION_KEYS.DOCUMENT_CORRECT_FORM]: "i-lucide-spell-check",
   [PERMISSION_KEYS.AMENDMENT_CREATE]: "i-lucide-file-pen-line",
   [PERMISSION_KEYS.AMENDMENT_MANAGE]: "i-lucide-file-cog",
   [PERMISSION_KEYS.AMENDMENT_REVIEW]: "i-lucide-badge-check",
@@ -110,8 +114,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   ],
   // The Coordinación del CAS; internal motions are barred by member kind.
   CAS: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
+  // The Mesa corrects approved texts in form (migration 0055 grants it to
+  // every role that moderates or manages documents).
   Moderador: [
     PERMISSION_KEYS.SESSION_MODERATE,
+    PERMISSION_KEYS.DOCUMENT_CORRECT_FORM,
     PERMISSION_KEYS.CONTROL_SHEET_VIEW,
     PERMISSION_KEYS.CONTROL_SHEET_EDIT,
     PERMISSION_KEYS.SEATING_VIEW,

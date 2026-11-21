@@ -99,6 +99,19 @@ describe("newsValue", () => {
     expect(newsValue("document_voted", { result: "rejected" })).toBe(
       "rejected",
     );
+    // Approved leaving passages pending conciliation (2026-11-21).
+    expect(
+      newsValue("document_voted", {
+        result: "approved",
+        pendingPassageKeys: ["A,B|b2"],
+      }),
+    ).toBe("approved_pending");
+    expect(
+      newsValue("document_voted", {
+        result: "approved",
+        pendingPassageKeys: [],
+      }),
+    ).toBe("approved");
     expect(
       newsValue("document_status_changed", {
         from: "published",

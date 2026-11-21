@@ -12,9 +12,11 @@ import { loadBrand, loadPdfFonts } from "../utils/export/assets";
 import { buildAssemblyPdf, buildDocumentPdf } from "../utils/export/pdfBuilder";
 import { PdfRenderLimitError, renderPdf } from "../utils/export/pdfRender";
 import {
+  DOCUMENT_PAGES_QUEUE_NAME,
   EXPORT_QUEUE_NAMES,
   EXPORT_RETRY_LIMIT,
   PACKAGE_QUEUE_NAME,
+  documentPagesJobSchema,
   assemblyExportJobSchema,
   documentExportJobSchema,
   packageJobSchema,
@@ -22,6 +24,7 @@ import {
   getExportQueue,
 } from "../utils/export/queue";
 import { buildPackage } from "../utils/export/package/build";
+import { processDocumentPagesJob } from "../utils/export/documentPages";
 import {
   packageBuildEnded,
   packageBuildProgress,
@@ -233,6 +236,29 @@ export default defineNitroPlugin(async (nitroApp) => {
       { batchSize: 1 },
       async (jobs: Job<unknown>[]) => {
         for (const job of jobs) await processPackageJob(job);
+      },
+    );
+
+    // The pages of a text the package has not rendered (documentPages.ts),
+    // one at a time; each render waits for the render slot. A failure is
+    // logged and dropped: the reader asks again later.
+    await boss.work<unknown>(
+      DOCUMENT_PAGES_QUEUE_NAME,
+      { batchSize: 1 },
+      async (jobs: Job<unknown>[]) => {
+        for (const job of jobs) {
+          const parsed = documentPagesJobSchema.safeParse(job.data);
+          if (!parsed.success) continue;
+          try {
+            await processDocumentPagesJob(parsed.data);
+          } catch (error) {
+            logWarn("document-pages.job", {
+              jobId: job.id,
+              documentId: parsed.data.documentId,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       },
     );
 

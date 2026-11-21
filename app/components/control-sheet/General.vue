@@ -13,6 +13,7 @@ import {
   type SheetRowDocument,
   type TreatedBox,
 } from "./-model";
+import { generalOwnNotes, type OwnSheetNotes } from "./-readers";
 
 /**
  * «General» of the control sheet: one row per agenda item it lists, under
@@ -57,6 +58,12 @@ const props = defineProps<{
    * any are left out): a document with some opens them in «Enmiendas».
    */
   amendmentCounts: ReadonlyMap<string, number>;
+  /**
+   * «Mis notas» for a reader without the sheet's key to edit (user's
+   * decision of 2026-11-21): the account's own notes; null when the column
+   * is not there.
+   */
+  ownNotes?: OwnSheetNotes | null;
 }>();
 const emit = defineEmits<{
   open: [row: GeneralSheetRow];
@@ -70,6 +77,17 @@ const emit = defineEmits<{
 /** How many amendments of the document «Enmiendas» lists, 0 if none. */
 const amendmentsOf = (document: SheetRowDocument) =>
   props.amendmentCounts.get(document.id) ?? 0;
+
+/**
+ * «N sin responder» beside a document the reader presents (user's decision
+ * of 2026-11-21): its amendments waiting for its presenters' answer.
+ */
+const awaitingOf = (document: SheetRowDocument | null) =>
+  document?.presenting ? document.awaitingAnswer : 0;
+
+/** «Mis notas» of the row, when the column is there. */
+const notesOf = (row: GeneralSheetRow) =>
+  props.ownNotes ? generalOwnNotes(row, props.ownNotes) : [];
 
 /** The row's box: what is on its way first, then what the sheet says. */
 function treatedOf(row: GeneralSheetRow): TreatedBox {
@@ -224,6 +242,13 @@ const itemRows = computed(() =>
             <th v-if="internal" scope="col" class="w-64 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
             </th>
+            <th
+              v-else-if="ownNotes"
+              scope="col"
+              class="w-48 px-3 py-2 font-medium"
+            >
+              {{ t("notes.title") }}
+            </th>
             <th v-else scope="col" class="w-12 px-3 py-2">
               <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
             </th>
@@ -322,6 +347,20 @@ const itemRows = computed(() =>
                   "
                   @click="emit('amendments', ownDocument(row)!)"
                 />
+                <UBadge
+                  v-if="awaitingOf(ownDocument(row))"
+                  color="warning"
+                  variant="subtle"
+                  size="xs"
+                  class="ms-2 align-middle"
+                  :label="
+                    t(
+                      'controlSheet.answer.awaiting',
+                      { count: awaitingOf(ownDocument(row)) },
+                      awaitingOf(ownDocument(row)),
+                    )
+                  "
+                />
                 <ul
                   v-if="listedDocuments(row).length > 0"
                   class="mt-1 space-y-0.5"
@@ -374,6 +413,20 @@ const itemRows = computed(() =>
                       "
                       @click="emit('amendments', document)"
                     />
+                    <UBadge
+                      v-if="awaitingOf(document)"
+                      color="warning"
+                      variant="subtle"
+                      size="xs"
+                      class="self-center"
+                      :label="
+                        t(
+                          'controlSheet.answer.awaiting',
+                          { count: awaitingOf(document) },
+                          awaitingOf(document),
+                        )
+                      "
+                    />
                   </li>
                 </ul>
               </th>
@@ -417,17 +470,27 @@ const itemRows = computed(() =>
               </td>
               <td class="px-3 py-2">
                 <div class="flex items-start justify-between gap-2">
-                  <p
-                    v-if="internal && row.sheet?.observations"
-                    class="text-default line-clamp-3 text-sm whitespace-pre-line"
+                  <div
+                    v-if="internal || ownNotes"
+                    class="min-w-0 flex-1 space-y-2"
                   >
-                    {{ row.sheet.observations }}
-                  </p>
-                  <!-- Nothing written: the cell stays empty, said only to screen
-                       readers. -->
-                  <span v-else-if="internal" class="sr-only">{{
-                    t("controlSheet.noObservations")
-                  }}</span>
+                    <p
+                      v-if="internal && row.sheet?.observations"
+                      class="text-default line-clamp-3 text-sm whitespace-pre-line"
+                    >
+                      {{ row.sheet.observations }}
+                    </p>
+                    <!-- Nothing written: the cell stays empty, said only to
+                         screen readers. -->
+                    <span v-else-if="internal" class="sr-only">{{
+                      t("controlSheet.noObservations")
+                    }}</span>
+                    <ControlSheetOwnNotes
+                      v-if="ownNotes"
+                      :lines="notesOf(row)"
+                      :clamp="internal ? 2 : 3"
+                    />
+                  </div>
                   <UButton
                     color="neutral"
                     variant="ghost"
@@ -535,6 +598,20 @@ const itemRows = computed(() =>
               "
               @click="emit('amendments', ownDocument(row)!)"
             />
+            <UBadge
+              v-if="awaitingOf(ownDocument(row))"
+              color="warning"
+              variant="subtle"
+              size="xs"
+              class="ms-2 align-middle"
+              :label="
+                t(
+                  'controlSheet.answer.awaiting',
+                  { count: awaitingOf(ownDocument(row)) },
+                  awaitingOf(ownDocument(row)),
+                )
+              "
+            />
             <ul v-if="listedDocuments(row).length > 0" class="mt-1 space-y-0.5">
               <li
                 v-for="document in listedDocuments(row)"
@@ -580,6 +657,20 @@ const itemRows = computed(() =>
                     )
                   "
                   @click="emit('amendments', document)"
+                />
+                <UBadge
+                  v-if="awaitingOf(document)"
+                  color="warning"
+                  variant="subtle"
+                  size="xs"
+                  class="self-center"
+                  :label="
+                    t(
+                      'controlSheet.answer.awaiting',
+                      { count: awaitingOf(document) },
+                      awaitingOf(document),
+                    )
+                  "
                 />
               </li>
             </ul>
@@ -652,6 +743,17 @@ const itemRows = computed(() =>
               </dt>
               <dd class="text-default line-clamp-4 text-sm whitespace-pre-line">
                 {{ row.sheet.observations }}
+              </dd>
+            </div>
+            <div
+              v-if="ownNotes && notesOf(row).length > 0"
+              class="sm:col-span-2"
+            >
+              <dt class="text-muted text-xs">
+                {{ t("notes.title") }}
+              </dt>
+              <dd>
+                <ControlSheetOwnNotes :lines="notesOf(row)" :clamp="4" />
               </dd>
             </div>
           </dl>

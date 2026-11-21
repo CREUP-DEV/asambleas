@@ -576,6 +576,11 @@ const transactedInIds = computed(() => {
   const shown = new Set(transactionalsOver.value.map((item) => item.id));
   return props.amendment.transactionalIds.filter((id) => !shown.has(id));
 });
+/** The document's presenters, main one first. */
+const documentPresenters = computed(() => [
+  ...(props.document.proponent ? [props.document.proponent] : []),
+  ...props.document.coProponents,
+]);
 /**
  * Who the history may name by id: the parties, the authors and the
  * document's presenters (the Mesa answers for the main one).
@@ -583,8 +588,7 @@ const transactedInIds = computed(() => {
 const historyMembers = computed(() => [
   ...props.amendment.acceptances.map((party) => party.member),
   ...props.amendment.authors,
-  ...(props.document.proponent ? [props.document.proponent] : []),
-  ...props.document.coProponents,
+  ...documentPresenters.value,
 ]);
 
 /** Positions, acceptances and relations do not move updatedAt: fold them in. */
@@ -926,8 +930,12 @@ async function remove(): Promise<void> {
       :document="document"
       :clashes="acceptClashes"
       :withdraws="acceptWithdraws"
+      :transactable="canTransact && transactAny"
+      :by-id="byId"
       @updated="emit('updated', $event)"
       @conflict="emit('changed')"
+      @transact="emit('transact', $event)"
+      @open="emit('select', $event)"
     />
 
     <!-- An inclusion proposed on this transactional and still open. -->
@@ -972,6 +980,7 @@ async function remove(): Promise<void> {
       :actor-member-id="member?.id ?? null"
       :sources="sources"
       :label-of="labelOf"
+      :presenters="documentPresenters"
       @updated="emit('updated', $event)"
       @conflict="emit('changed')"
     />
@@ -1164,8 +1173,12 @@ async function remove(): Promise<void> {
           :document="document"
           :clashes="acceptClashes"
           :withdraws="acceptWithdraws"
+          :transactable="canTransact && transactAny"
+          :by-id="byId"
           @updated="emit('updated', $event)"
           @conflict="emit('changed')"
+          @transact="emit('transact', $event)"
+          @open="emit('select', $event)"
         />
 
         <section v-if="overlaps.length > 0" class="flex flex-col gap-2">
@@ -1276,6 +1289,7 @@ async function remove(): Promise<void> {
           :actor-member-id="member?.id ?? null"
           :sources="sources"
           :label-of="labelOf"
+          :presenters="documentPresenters"
           @updated="emit('updated', $event)"
           @conflict="emit('changed')"
         />

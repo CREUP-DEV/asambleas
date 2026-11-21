@@ -67,6 +67,13 @@ export interface SheetRowDocument {
   majority: DocumentSummaryDto["majority"];
   /** Its amendments still undecided, which hold back the final vote. */
   undecided: number;
+  /**
+   * The reader presents it, main or co-presenter («Mis documentos»;
+   * ControlSheetDocumentDto.presenting).
+   */
+  presenting: boolean;
+  /** Of its amendments, those waiting for its presenters' answer (if so). */
+  awaitingAnswer: number;
   /** Optimistic lock token, for annulling its final vote. */
   updatedAt: string;
   /** The main presenter, as the server redacts it (offices may read "CEA"). */
@@ -198,6 +205,9 @@ export function buildGeneralRows(
       document.undecided,
     ]),
   );
+  const sheetDocuments = new Map(
+    (sheet?.documents ?? []).map((document) => [document.id, document]),
+  );
   const documentsByItem = new Map<string, SheetRowDocument[]>();
   for (const document of presented) {
     const list = documentsByItem.get(document.agendaItemId) ?? [];
@@ -210,6 +220,8 @@ export function buildGeneralRows(
       finalVote: finalVotes.get(document.id) ?? null,
       majority: document.majority,
       undecided: undecidedBy.get(document.id) ?? 0,
+      presenting: sheetDocuments.get(document.id)?.presenting ?? false,
+      awaitingAnswer: sheetDocuments.get(document.id)?.awaitingAnswer ?? 0,
       updatedAt: document.updatedAt,
       proponent: document.proponent,
       coProponents: document.coProponents,
@@ -434,6 +446,12 @@ export interface AmendmentSheetRow {
   live: boolean;
   /** Who spoke on it, each once (sheetSpeakers). */
   speakers: SheetSpeaker[];
+  /**
+   * It waits for the reader's answer as a presenter of its document
+   * (awaitsPresenterAnswer, set by the page): «Responder», «Pendiente de tu
+   * respuesta» and the filter «Por responder». Absent reads as false.
+   */
+  awaitsAnswer?: boolean;
 }
 
 /**
@@ -694,7 +712,12 @@ export function amendedDocuments(
   documents: readonly DocumentSummaryDto[],
   sheet: ControlSheetDto | null,
   ordered: readonly AgendaItemDto[],
-): (DocumentSummaryDto & { amendments: number; undecided: number })[] {
+): (DocumentSummaryDto & {
+  amendments: number;
+  undecided: number;
+  presenting: boolean;
+  awaitingAnswer: number;
+})[] {
   const counts = new Map(
     (sheet?.documents ?? []).map((document) => [document.id, document]),
   );
@@ -713,6 +736,8 @@ export function amendedDocuments(
           ...document,
           amendments: count.amendments,
           undecided: count.undecided,
+          presenting: count.presenting ?? false,
+          awaitingAnswer: count.awaitingAnswer ?? 0,
         },
       ];
     })

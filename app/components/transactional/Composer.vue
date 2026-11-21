@@ -793,7 +793,9 @@ function stepText(step: TransactionalNextStep): string {
         list: join(step.sourceIds.map((id) => props.labelOf(id))),
       });
     case "answer":
-      return t(`transactional.nextSteps.answer.${step.rule}`);
+      return step.proposed
+        ? t(`transactional.nextSteps.answer.proposed.${step.rule}`)
+        : t(`transactional.nextSteps.answer.${step.rule}`);
     default:
       return t("transactional.nextSteps.secretaria");
   }

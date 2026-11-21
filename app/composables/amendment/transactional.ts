@@ -764,10 +764,48 @@ export type TransactionalNextStep =
   | { key: "authors"; members: MemberRef[] }
   | { key: "secretaria" }
   | { key: "replaces"; sourceIds: string[] }
-  | { key: "answer"; rule: AcceptedAmendmentRule };
+  /**
+   * `proposed`: a presenter of the document presented it, and presenting it
+   * is that presenter's acceptance (user's decision of 2026-11-21).
+   */
+  | { key: "answer"; rule: AcceptedAmendmentRule; proposed?: boolean };
+
+/**
+ * Whether a presenter of the document presented this transactional
+ * (AmendmentDto.proposer.presentsDocument, decided on the server: the ids
+ * here may be the generic "CEA" of two different offices): its answer is
+ * its acceptance, given by itself once the transactional can be answered.
+ */
+export function proposedByPresenter(
+  amendment: Partial<Pick<AmendmentDto, "kind" | "proposer">>,
+): boolean {
+  return (
+    amendment.kind === "transactional" &&
+    amendment.proposer?.presentsDocument === true
+  );
+}
+
+/**
+ * Whether «Quién tiene que aceptarla» may say that the presenter that
+ * presented this open transactional accepts it by doing so: before the
+ * Secretaría validates it nobody can have answered it yet, so it is what
+ * will happen; once validated, only while the recorded answer is that
+ * acceptance (an answer changed by hand, set back to pending or hidden
+ * from the viewer says nothing).
+ */
+export function proposerAcceptanceShown(
+  amendment: Pick<AmendmentDto, "validatedAt" | "position"> &
+    Partial<Pick<AmendmentDto, "kind" | "proposer">>,
+): boolean {
+  if (!proposedByPresenter(amendment)) return false;
+  return (
+    amendment.validatedAt === null || amendment.position?.position === "accept"
+  );
+}
 
 export function transactionalNextSteps(
-  amendment: Pick<AmendmentDto, "reviewState" | "acceptances" | "sourceIds">,
+  amendment: Pick<AmendmentDto, "reviewState" | "acceptances" | "sourceIds"> &
+    Partial<Pick<AmendmentDto, "kind" | "proposer">>,
   rule: AcceptedAmendmentRule = "vote",
 ): TransactionalNextStep[] {
   const steps: TransactionalNextStep[] = [];
@@ -783,7 +821,11 @@ export function transactionalNextSteps(
     steps.push({ key: "secretaria" });
   }
   steps.push({ key: "replaces", sourceIds: [...amendment.sourceIds] });
-  steps.push({ key: "answer", rule });
+  steps.push(
+    proposedByPresenter(amendment)
+      ? { key: "answer", rule, proposed: true }
+      : { key: "answer", rule },
+  );
   return steps;
 }
 

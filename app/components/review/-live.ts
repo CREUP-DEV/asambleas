@@ -59,6 +59,9 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "document_form_correction_proposed",
   "document_form_correction_rejected",
   "document_form_correction_withdrawn",
+  // Conciliations of a passage left pending by the final vote.
+  "passage_conciliated",
+  "passage_conciliation_proposed",
 ]);
 
 /** Whether a batch of live events may have changed the review queue. */

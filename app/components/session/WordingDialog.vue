@@ -13,6 +13,7 @@ import {
 import { passageFragment } from "~~/shared/utils/content/passages";
 import { sessionWordingSeed } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import type { WordingDialogContext } from "~/composables/document/wordingDialog";
 
 /**
  * The Mesa words a passage where approved amendments collide (user's
@@ -30,8 +31,15 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * proposal or from one amendment as approved, and a line says how much of
  * each the wording keeps (passageCoverage, a word count). The changes over
  * the base, what is stored (diffPassage, like an amendment's), stay folded.
+ *
+ * Outside the console (`context`), the consolidated text page uses it to
+ * conciliate a passage the final vote left pending, or to propose its
+ * wording (user's decisions of 2026-11-21).
  */
-const session = useSessionConsoleContext();
+const props = defineProps<{ context?: WordingDialogContext }>();
+const session: WordingDialogContext =
+  props.context ?? useSessionConsoleContext();
+const purpose = computed(() => session.purpose ?? "mesa");
 const { t } = useI18n();
 
 const open = computed({
@@ -552,7 +560,7 @@ async function backToAutomatic(): Promise<void> {
         </template>
         <template v-else>
           <UButton
-            v-if="passage.wordingId"
+            v-if="passage.wordingId && purpose === 'mesa'"
             color="neutral"
             variant="ghost"
             icon="i-lucide-eraser"
@@ -571,7 +579,13 @@ async function backToAutomatic(): Promise<void> {
           <UButton
             color="primary"
             icon="i-lucide-check"
-            :label="t('session.wording.save')"
+            :label="
+              purpose === 'conciliate'
+                ? t('document.pendingConciliation.save')
+                : purpose === 'propose'
+                  ? t('document.pendingConciliation.send')
+                  : t('session.wording.save')
+            "
             :disabled="!canSave"
             :loading="Boolean(session.busy.value.wording)"
             @click="save"

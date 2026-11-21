@@ -17,7 +17,16 @@ import {
   answerableAfterDecision,
 } from "~~/shared/utils/positions";
 import { sessionPositionMenu } from "~/composables/session/sessionModel";
+import {
+  composerTakes,
+  pendingTransactionalsOver,
+  transactAnswerLeads,
+  transactComposerLocation,
+  workspaceAmendmentLocation,
+} from "~/composables/amendment/transactAnswer";
+import { useTransactAnswer } from "~/composables/amendment/useTransactAnswer";
 import type { AmendmentSheetRow } from "./-model";
+import { answerDraftAfter } from "./-drafts";
 
 /**
  * «Respuesta del proponente» in a row's side panel: who answered and what,
@@ -27,9 +36,15 @@ import type { AmendmentSheetRow } from "./-model";
  * draft, saved with the rest of the panel by its one «Guardar» (RowPanel
  * calls `save`, and reads `editable`, `dirty` and `saving`). The same answer as the document's and the console's, through the same
  * endpoint and lock (`positionUpdatedAt`), so it is recorded like any other
- * (position_changed, with who gave it). «Propone una transaccional» is not
- * offered here (it only notes the intent: the transactional is proposed
- * from the document), though an answer already given so still shows.
+ * (position_changed, with who gave it). «Propone una transaccional» is
+ * offered only where it leads to writing one (transactAnswerLeads: an
+ * amendment a transactional can combine, for a viewer who may write it;
+ * user's decision of 2026-11-21), and choosing it asks first
+ * (useTransactAnswer): «Redactar la transaccional» saves the answer and
+ * opens the document's composer with the amendment chosen (or the one
+ * already on its way), «Solo guardar la respuesta» saves it alone, and
+ * cancelling leaves the answer as it was. An answer already given so
+ * still shows, with a discreet way to the composer.
  * Nothing is offered once the document is voted; while the amendment
  * cannot be answered yet the panel says what it waits for (validation,
  * the main authors of a transactional, the assembly's admission,
@@ -45,6 +60,13 @@ const props = defineProps<{
   row: AmendmentSheetRow;
   document: DocumentSummaryDto | null;
   apiBase: string;
+  /**
+   * The document's amendments as loaded: the transactionals already on
+   * their way over this one, and what the composer would take.
+   */
+  amendments?: readonly AmendmentDto[];
+  /** The document has its final vote: nothing leads to a transactional. */
+  finalVoted?: boolean;
 }>();
 const emit = defineEmits<{ saved: [amendment: AmendmentDto] }>();
 
@@ -52,6 +74,8 @@ const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member } = useMe();
+const { assembly, sectionPath } = useCurrentAssembly();
+const transactQuestion = useTransactAnswer();
 
 const amendment = computed(() => props.row.amendment);
 const position = computed(() => props.row.position);
@@ -138,7 +162,8 @@ watch(
   },
 );
 watch(current, (value, previous) => {
-  if (!busy.value && choice.value === previous) choice.value = value;
+  if (!busy.value)
+    choice.value = answerDraftAfter(choice.value, previous, value);
 });
 
 /** Its acceptance incorporates it (always a formal one, amendmentRule). */
@@ -154,9 +179,55 @@ const incorporates = computed(
  * the text stay (not one the acceptance incorporated, which follows it).
  */
 const afterDecision = computed(() => answerableAfterDecision(amendment.value));
+
+/** The document's amendments by id, for the transactionals over this one. */
+const byId = computed(
+  () =>
+    new Map(
+      (props.amendments ?? []).map((entry) => [entry.id, entry] as const),
+    ),
+);
+/** The document in the workspace, where the composer is. */
+const documentPath = computed(() =>
+  props.document
+    ? sectionPath(`documentos/${encodeURIComponent(props.document.slug)}`)
+    : null,
+);
+/**
+ * «Propone una transaccional» leads to writing it for this viewer: the
+ * Mesa, or a presenter of the document (whom the workspace lets combine
+ * any amendment of it), over an amendment a transactional can combine.
+ */
+const transactLeads = computed(() => {
+  const document = props.document;
+  if (!document || !documentPath.value) return false;
+  return transactAnswerLeads(amendment.value, {
+    document: {
+      format: document.format,
+      status: document.status,
+      finalVoted: Boolean(props.finalVoted) || document.consolidated,
+    },
+    assemblyClosed: assembly.value?.status === "closed",
+    canDraft: amendment.value.can.moderate || !forPresenters.value,
+  });
+});
+/** The transactionals over it still on their way, as the viewer sees them. */
+const pendingTransactionals = computed(() =>
+  pendingTransactionalsOver(amendment.value, byId.value).map((entry) => ({
+    id: entry.id,
+    label: entry.code ?? t("amendment.unnumberedLabel"),
+  })),
+);
+const code = computed(
+  () => amendment.value.code ?? t("amendment.unnumberedLabel"),
+);
+
 const items = computed(() =>
   PROPONENT_POSITIONS.filter(
-    (value) => value !== "transact" || current.value === "transact",
+    (value) =>
+      value !== "transact" ||
+      current.value === "transact" ||
+      transactLeads.value,
   ).map((value) => ({
     value,
     label: t(`amendment.position.options.${value}`),
@@ -168,6 +239,9 @@ const items = computed(() =>
     disabled: value === "accept" && Boolean(menu.value?.acceptBlocked),
   })),
 );
+
+/** The amendment as the last save answered it. */
+let lastSaved: AmendmentDto | null = null;
 
 /** Saves the chosen answer; true when there was nothing to save or it saved. */
 async function save(): Promise<boolean> {
@@ -192,6 +266,7 @@ async function save(): Promise<boolean> {
         : undefined,
       icon: "i-lucide-check",
     });
+    lastSaved = updated;
     emit("saved", updated);
     return true;
   } catch (error) {
@@ -201,6 +276,71 @@ async function save(): Promise<boolean> {
   } finally {
     busy.value = false;
   }
+}
+
+/**
+ * A choice from the options. «Propone una transaccional», where it leads to
+ * writing one and is not the answer already, asks first: cancelling puts
+ * the option back as it was, «Solo guardar la respuesta» saves it, and
+ * «Redactar la transaccional» (or opening the one on its way) saves it and
+ * goes to the document's workspace in this tab (Back finds the sheet as it
+ * was left). Every other choice is a draft for «Guardar».
+ */
+async function choose(value: ProponentPosition): Promise<void> {
+  const previous = choice.value;
+  const before = current.value;
+  choice.value = value;
+  if (
+    value !== "transact" ||
+    current.value === "transact" ||
+    !transactLeads.value
+  ) {
+    return;
+  }
+  const result = await transactQuestion.ask({
+    code: code.value,
+    mesaFor: forPresenters.value ? presenter.value : null,
+    pending: pendingTransactionals.value,
+  });
+  if (result.action === "cancel") {
+    // Set after the radio took the click, so it shows the old one again;
+    // an answer given elsewhere while the question was open (which the
+    // watch on `current` left alone, the choice being «transacciona») is
+    // taken unless the reader had a draft of their own.
+    await nextTick();
+    choice.value = answerDraftAfter(previous, before, current.value);
+    return;
+  }
+  lastSaved = null;
+  if (!(await save())) return;
+  if (result.action === "save") return;
+  await goToTransactional(result.action === "open" ? result.id : null);
+}
+
+/**
+ * The composer on this amendment (null), or the transactional `openId` on
+ * its way, in the document's workspace. The composer only when the
+ * amendment as saved can still be combined: otherwise it would open empty,
+ * so it says so and stays.
+ */
+async function goToTransactional(openId: string | null): Promise<void> {
+  const path = documentPath.value;
+  if (!path) return;
+  if (openId) {
+    await navigateTo(workspaceAmendmentLocation(path, openId));
+    return;
+  }
+  const saved =
+    lastSaved?.id === amendment.value.id ? lastSaved : amendment.value;
+  if (!composerTakes(saved, byId.value)) {
+    toast.add({
+      title: t("amendment.transactAnswer.notCombinable", { code: code.value }),
+      color: "warning",
+      icon: "i-lucide-triangle-alert",
+    });
+    return;
+  }
+  await navigateTo(transactComposerLocation(path, [saved.id]));
 }
 
 defineExpose({ editable, dirty, saving: busy, save });
@@ -241,11 +381,29 @@ defineExpose({ editable, dirty, saving: busy, save });
         {{ t("amendment.position.next.decided") }}
       </p>
       <URadioGroup
-        v-model="choice"
+        :model-value="choice"
         :items="items"
         :legend="t('amendment.position.label')"
-        :disabled="busy"
+        :disabled="busy || transactQuestion.asking.value"
         :ui="{ legend: 'sr-only' }"
+        @update:model-value="(value) => choose(value as ProponentPosition)"
+      />
+      <!-- Answered «transacciona» already: the way to the composer. -->
+      <UButton
+        v-if="current === 'transact' && choice === 'transact' && transactLeads"
+        color="neutral"
+        variant="link"
+        size="xs"
+        icon="i-lucide-git-merge"
+        class="px-0"
+        :label="
+          pendingTransactionals[0]
+            ? t('amendment.transactAnswer.openPending', {
+                code: pendingTransactionals[0].label,
+              })
+            : t('amendment.transactAnswer.draftButton')
+        "
+        @click="goToTransactional(pendingTransactionals[0]?.id ?? null)"
       />
     </template>
   </section>

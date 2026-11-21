@@ -15,6 +15,7 @@ import {
   type AmendmentSheetRow,
   type TreatedBox,
 } from "./-model";
+import { amendmentOwnNotes, type OwnSheetNotes } from "./-readers";
 
 /**
  * «Enmiendas» of the control sheet for one document: its amendments in the
@@ -58,6 +59,12 @@ const props = defineProps<{
    * may not read yet.
    */
   showPositions: boolean;
+  /**
+   * «Mis notas» for a reader without the sheet's key to edit (user's
+   * decision of 2026-11-21): the account's own notes; null when the column
+   * is not there.
+   */
+  ownNotes?: OwnSheetNotes | null;
 }>();
 const emit = defineEmits<{
   open: [row: AmendmentSheetRow];
@@ -134,6 +141,32 @@ function openLabel(amendment: AmendmentDto): string {
     { code: codeOf(amendment) },
   );
 }
+
+/**
+ * The button that opens the row: «Responder» on one waiting for the
+ * reader's answer as its document's presenter (user's decision of
+ * 2026-11-21), «Editar» or «Ver» otherwise.
+ */
+function openButtonOf(row: AmendmentSheetRow) {
+  if (row.awaitsAnswer) {
+    return {
+      icon: "i-lucide-reply",
+      label: t("controlSheet.answer.button"),
+      aria: t("controlSheet.answer.amendment", {
+        code: codeOf(row.amendment),
+      }),
+    };
+  }
+  return {
+    icon: openIcon.value,
+    label: openButton.value,
+    aria: openLabel(row.amendment),
+  };
+}
+
+/** «Mis notas» of the row, when the column is there. */
+const notesOf = (row: AmendmentSheetRow) =>
+  props.ownNotes ? amendmentOwnNotes(row.amendment.id, props.ownNotes) : [];
 
 /** «Vista previa de la enmienda UGR1», for the eye beside its code. */
 function previewLabel(amendment: AmendmentDto): string {
@@ -226,6 +259,13 @@ const columns = computed(() =>
             <th v-if="internal" scope="col" class="w-56 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
             </th>
+            <th
+              v-else-if="ownNotes"
+              scope="col"
+              class="w-48 px-3 py-2 font-medium"
+            >
+              {{ t("notes.title") }}
+            </th>
             <th v-else scope="col" class="w-12 px-3 py-2">
               <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
             </th>
@@ -281,8 +321,15 @@ const columns = computed(() =>
               />
             </td>
             <td v-if="showPositions" class="px-3 py-2 text-center">
+              <UBadge
+                v-if="row.awaitsAnswer"
+                color="warning"
+                variant="subtle"
+                size="sm"
+                :label="t('controlSheet.answer.pending')"
+              />
               <CommonStatusBadge
-                v-if="row.position"
+                v-else-if="row.position"
                 kind="position"
                 :value="row.position.position"
               />
@@ -332,19 +379,47 @@ const columns = computed(() =>
               <ControlSheetSpeakers :speakers="row.speakers" />
             </td>
             <td class="px-3 py-2">
-              <div class="flex items-start justify-between gap-2">
-                <p
-                  v-if="internal && row.sheet?.observations"
-                  class="text-default line-clamp-3 text-sm whitespace-pre-line"
+              <!-- «Responder» goes under the notes, so they keep the width. -->
+              <div
+                :class="[
+                  'flex gap-2',
+                  row.awaitsAnswer ? 'flex-col' : 'items-start justify-between',
+                ]"
+              >
+                <div
+                  v-if="internal || ownNotes"
+                  class="min-w-0 flex-1 space-y-2"
                 >
-                  {{ row.sheet.observations }}
-                </p>
-                <!-- Nothing written: the cell stays empty, said only to screen
-                     readers. -->
-                <span v-else-if="internal" class="sr-only">{{
-                  t("controlSheet.noObservations")
-                }}</span>
+                  <p
+                    v-if="internal && row.sheet?.observations"
+                    class="text-default line-clamp-3 text-sm whitespace-pre-line"
+                  >
+                    {{ row.sheet.observations }}
+                  </p>
+                  <!-- Nothing written: the cell stays empty, said only to
+                       screen readers. -->
+                  <span v-else-if="internal" class="sr-only">{{
+                    t("controlSheet.noObservations")
+                  }}</span>
+                  <ControlSheetOwnNotes
+                    v-if="ownNotes"
+                    :lines="notesOf(row)"
+                    :clamp="internal ? 2 : 3"
+                  />
+                </div>
                 <UButton
+                  v-if="row.awaitsAnswer"
+                  color="primary"
+                  variant="soft"
+                  size="xs"
+                  :icon="openButtonOf(row).icon"
+                  :label="openButtonOf(row).label"
+                  class="ms-auto shrink-0"
+                  :aria-label="openButtonOf(row).aria"
+                  @click="emit('open', row)"
+                />
+                <UButton
+                  v-else
                   color="neutral"
                   variant="ghost"
                   size="xs"
@@ -434,8 +509,15 @@ const columns = computed(() =>
                 {{ t("controlSheet.columns.position") }}
               </dt>
               <dd>
+                <UBadge
+                  v-if="row.awaitsAnswer"
+                  color="warning"
+                  variant="subtle"
+                  size="sm"
+                  :label="t('controlSheet.answer.pending')"
+                />
                 <CommonStatusBadge
-                  v-if="row.position"
+                  v-else-if="row.position"
                   kind="position"
                   :value="row.position.position"
                 />
@@ -500,14 +582,25 @@ const columns = computed(() =>
                 {{ row.sheet.observations }}
               </dd>
             </div>
+            <div
+              v-if="ownNotes && notesOf(row).length > 0"
+              class="sm:col-span-2"
+            >
+              <dt class="text-muted text-xs">
+                {{ t("notes.title") }}
+              </dt>
+              <dd>
+                <ControlSheetOwnNotes :lines="notesOf(row)" :clamp="4" />
+              </dd>
+            </div>
           </dl>
           <UButton
-            color="neutral"
-            variant="outline"
+            :color="row.awaitsAnswer ? 'primary' : 'neutral'"
+            :variant="row.awaitsAnswer ? 'soft' : 'outline'"
             size="sm"
-            :icon="openIcon"
-            :label="openButton"
-            :aria-label="openLabel(row.amendment)"
+            :icon="openButtonOf(row).icon"
+            :label="openButtonOf(row).label"
+            :aria-label="openButtonOf(row).aria"
             @click="emit('open', row)"
           />
         </UCard>

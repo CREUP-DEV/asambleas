@@ -58,6 +58,7 @@ import {
   type DecisionKind,
   type DecisionMethod,
   type DocumentStatus,
+  type AmendmentKind,
   type AmendmentStatus,
 } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -988,12 +989,15 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "notCast",
     "present",
     "unanimous",
+    "pendingPassageKeys",
   ],
   final_vote_annulled: ["result", "note"],
   document_form_corrected: ["reason", "madeAs", "validated"],
   document_form_correction_proposed: ["reason"],
   document_form_correction_rejected: ["note"],
   document_form_correction_withdrawn: [],
+  passage_conciliated: ["codes", "reason", "madeAs", "validated"],
+  passage_conciliation_proposed: ["codes", "reason"],
   passage_worded: ["codes"],
   passage_wording_removed: ["codes"],
   amendment_created: ["kind", "code"],
@@ -1057,7 +1061,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   transactional_revision_applied: ["addedCodes"],
   transactional_revision_rejected: [],
   transactional_revision_cancelled: [],
-  position_changed: ["position", "by"],
+  position_changed: ["position", "by", "reason"],
   acceptance_recorded: ["role", "decision"],
   relation_created: ["kind", "direction"],
   relation_deleted: ["kind", "direction"],
@@ -1322,6 +1326,7 @@ export interface AmendmentInfo {
   id: string;
   documentId: string;
   code: string | null;
+  kind: AmendmentKind;
   status: AmendmentStatus;
   publishedAt: Date | null;
   validatedAt: Date | null;
@@ -1567,6 +1572,7 @@ async function loadAmendmentInfo(
         id: amendments.id,
         documentId: amendments.documentId,
         code: amendments.code,
+        kind: amendments.kind,
         status: amendments.status,
         publishedAt: amendments.publishedAt,
         validatedAt: amendments.validatedAt,

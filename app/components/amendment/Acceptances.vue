@@ -3,8 +3,12 @@ import type {
   AcceptanceBody,
   AcceptanceDto,
   AmendmentDto,
+  MemberRef,
 } from "~~/shared/types/api";
-import { transactionalPartySources } from "~/composables/amendment/transactional";
+import {
+  proposerAcceptanceShown,
+  transactionalPartySources,
+} from "~/composables/amendment/transactional";
 
 /**
  * Who has to accept a transactional: the main author of each amendment it
@@ -34,8 +38,13 @@ const props = withDefaults(
     /** The amendments it combines that the viewer sees. */
     sources?: AmendmentDto[];
     labelOf?: (id: string) => string;
+    /**
+     * The document's presenters, main one first: the line that says how
+     * the presenter answers it (user's decision of 2026-11-21).
+     */
+    presenters?: MemberRef[];
   }>(),
-  { sources: () => [], labelOf: undefined },
+  { sources: () => [], labelOf: undefined, presenters: () => [] },
 );
 
 const emit = defineEmits<{
@@ -92,6 +101,50 @@ async function cancelConfirm(): Promise<void> {
 }
 
 const open = computed(() => props.amendment.status === "submitted");
+
+/**
+ * Who presented it and when (AmendmentDto.proposer; none for the Mesa's in
+ * session), and, while it is open, how the document's presenter answers
+ * it: a presenter that presented it accepts it by doing so; otherwise the
+ * main presenter answers once the Secretaría validates it, as with any
+ * amendment (not a party: user's decision of 2026-11-21).
+ */
+const proposerLine = computed(() => {
+  const proposer = props.amendment.proposer;
+  if (!proposer) return null;
+  return {
+    text: t("amendment.acceptances.presentedBy", {
+      member: proposer.member.acronym,
+    }),
+    at: proposer.at
+      ? formatDateTime(proposer.at, { locale: locale.value })
+      : null,
+  };
+});
+const presenterLine = computed<{ text: string; accepted: boolean } | null>(
+  () => {
+    if (!open.value) return null;
+    const main = props.presenters[0];
+    const proposer = props.amendment.proposer?.member;
+    // What will happen, or the acceptance it gave; never against the
+    // answer on record (proposerAcceptanceShown).
+    if (proposer && proposerAcceptanceShown(props.amendment)) {
+      return {
+        text: t("amendment.acceptances.presenterAccepts", {
+          member: proposer.acronym,
+        }),
+        accepted: true,
+      };
+    }
+    if (!main || props.amendment.validatedAt !== null) return null;
+    return {
+      text: t("amendment.acceptances.presenterLater", {
+        member: main.acronym,
+      }),
+      accepted: false,
+    };
+  },
+);
 const acceptedCount = computed(
   () =>
     props.amendment.acceptances.filter(
@@ -292,6 +345,39 @@ async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
     <p v-if="showRule" class="text-muted text-sm">
       {{ t("amendment.acceptances.rule") }}
     </p>
+
+    <!-- Who presented it, and how the document's presenter answers it. -->
+    <ul
+      v-if="proposerLine || presenterLine"
+      class="flex flex-col gap-1 text-sm"
+    >
+      <li v-if="proposerLine" class="flex items-start gap-2">
+        <UIcon
+          name="i-lucide-send"
+          class="text-muted mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span>
+          <span class="text-default">{{ proposerLine.text }}</span>
+          <span v-if="proposerLine.at" class="text-dimmed text-xs tabular-nums">
+            · {{ proposerLine.at }}
+          </span>
+        </span>
+      </li>
+      <li v-if="presenterLine" class="flex items-start gap-2">
+        <UIcon
+          :name="
+            presenterLine.accepted
+              ? 'i-lucide-circle-check'
+              : 'i-lucide-hourglass'
+          "
+          class="mt-0.5 size-4 shrink-0"
+          :class="presenterLine.accepted ? 'text-success' : 'text-muted'"
+          aria-hidden="true"
+        />
+        <span class="text-default">{{ presenterLine.text }}</span>
+      </li>
+    </ul>
 
     <p v-if="amendment.acceptances.length === 0" class="text-muted text-sm">
       {{ t("amendment.acceptances.none") }}

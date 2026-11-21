@@ -11,7 +11,8 @@ import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
  * the members are read); every other member by its denomination. The text
  * inherits the size of its container, so the same markup serves the phone
  * view and the projection. The badge keeps the colours every member tag
- * has, also for the one who has the floor.
+ * has, also for the one who has the floor. With `truncate` it keeps to one
+ * line and cuts the name with an ellipsis (the projection's band).
  */
 const props = withDefaults(
   defineProps<{
@@ -19,13 +20,17 @@ const props = withDefaults(
     badgeSize?: "sm" | "md" | "lg" | "xl";
     /** Opens the member's card on hover; never on the projection. */
     tooltip?: boolean;
+    /** One line, the name cut with an ellipsis instead of wrapping. */
+    truncate?: boolean;
   }>(),
-  { badgeSize: "md", tooltip: true },
+  { badgeSize: "md", tooltip: true, truncate: false },
 );
 
 const { t } = useI18n();
 
 const speaker = computed(() => props.turn.speaker?.trim() || null);
+/** How a name fits: wraps by default, cut on one line with `truncate`. */
+const fit = computed(() => (props.truncate ? "truncate" : "break-words"));
 
 const directory = useMemberDirectory();
 const isCouncil = computed(() => props.turn.member?.kind === "asociado");
@@ -44,23 +49,28 @@ const university = computed(() => {
 </script>
 
 <template>
-  <span class="inline-flex max-w-full min-w-0 flex-wrap items-center gap-x-2">
+  <span
+    class="inline-flex max-w-full min-w-0 items-center gap-x-2"
+    :class="truncate ? 'flex-nowrap' : 'flex-wrap'"
+  >
     <CommonMemberBadge
       v-if="turn.member"
       :member="turn.member"
       :size="badgeSize"
       :tooltip="tooltip"
+      class="shrink-0"
     />
     <template v-if="speaker">
-      <span class="min-w-0 break-words">{{ speaker }}</span>
+      <span class="min-w-0" :class="fit">{{ speaker }}</span>
       <span
         v-if="university"
-        class="text-muted min-w-0 font-medium break-words"
+        class="text-muted min-w-0 font-medium"
+        :class="fit"
       >
         · {{ university }}
       </span>
     </template>
-    <span v-else-if="university" class="min-w-0 break-words">
+    <span v-else-if="university" class="min-w-0" :class="fit">
       {{ university }}
     </span>
     <!-- The badge already gives screen readers the member's name; a name
@@ -68,7 +78,8 @@ const university = computed(() => {
     <template v-else-if="turn.member">
       <span
         v-if="!memberNameRepeatsAcronym(turn.member)"
-        class="min-w-0 break-words"
+        class="min-w-0"
+        :class="fit"
         aria-hidden="true"
       >
         {{ turn.member.name }}

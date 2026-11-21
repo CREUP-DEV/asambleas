@@ -206,7 +206,10 @@ describe("noticesForEvent", () => {
   });
 
   it("asks the document's presenters to answer a validated transactional", () => {
-    const facts = (authorIds: string[]): Facts => ({
+    const facts = (
+      authorIds: string[],
+      proposerMemberId: string | null = authorIds[0] ?? null,
+    ): Facts => ({
       documentPresenterIds: ["m4", "m5"],
       amendment: {
         transactional: true,
@@ -214,8 +217,14 @@ describe("noticesForEvent", () => {
         validated: true,
         authorIds,
         parties: [],
+        proposerMemberId,
       },
     });
+    const told = (input: Facts) =>
+      noticesForEvent(
+        event("amendment_validated", { publish: true }),
+        input,
+      ).find((notice) => notice.kind === "presenter_transactional")?.memberIds;
     // Proposed by a party: both presenters answer it.
     expect(
       noticesForEvent(
@@ -227,13 +236,12 @@ describe("noticesForEvent", () => {
       memberIds: ["m4", "m5"],
       dedupeKey: "presenter_transactional:ev1",
     });
-    // Proposed by the presenter: only the other one is told.
-    expect(
-      noticesForEvent(
-        event("amendment_validated", { publish: true }),
-        facts(["m4"]),
-      ).find((notice) => notice.kind === "presenter_transactional")?.memberIds,
-    ).toEqual(["m5"]);
+    // Proposed by a presenter: presenting it was the document's answer
+    // (one answer for all its presenters), so nobody is asked.
+    expect(told(facts(["m4"]))).toBeUndefined();
+    expect(told(facts(["m5", "m2"]))).toBeUndefined();
+    // A presenter a party named as co-author did not present it: asked.
+    expect(told(facts(["m2", "m4"], "m2"))).toEqual(["m4", "m5"]);
     // An ordinary amendment, or the Mesa's own transactional: nothing.
     expect(
       kinds(

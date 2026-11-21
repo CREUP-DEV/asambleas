@@ -13,6 +13,7 @@ export * from "./readMarks";
 export * from "./documentNotes";
 export * from "./amendmentNotes";
 export * from "./documentViews";
+export * from "./documentPageMaps";
 export * from "./auditLog";
 export * from "./notifications";
 export * from "./controlSheet";

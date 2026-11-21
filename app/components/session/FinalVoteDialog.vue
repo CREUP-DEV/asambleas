@@ -25,7 +25,10 @@ import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
  * conflicts are listed. Amendments still open block the vote, listed by
  * who has to act: the Mesa (undecided), the assembly (late ones
  * it has not agreed to treat), the main authors (transactionals they have
- * not accepted) and the Secretaría (not validated yet).
+ * not accepted) and the Secretaría (not validated yet). Passages where
+ * approved amendments collide are worded first, or left pending
+ * conciliation by an explicit choice (user's decisions of 2026-11-21,
+ * `allowPendingPassages`): the text is then approved pending conciliation.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -52,6 +55,11 @@ const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 const serverConflicts = ref<ConsolidationConflict[]>([]);
 const serverUndecided = ref<string[]>([]);
 const serverTie = ref(false);
+/**
+ * Vote leaving the passages still to word pending conciliation (user's
+ * decisions of 2026-11-21): an explicit choice, never the default.
+ */
+const leavePending = ref(false);
 /** Second step: the result is shown for a last check before recording. */
 const confirming = ref(false);
 const summary = useTemplateRef<HTMLElement>("summary");
@@ -63,6 +71,7 @@ watch(open, (isOpen) => {
   serverConflicts.value = [];
   serverUndecided.value = [];
   serverTie.value = false;
+  leavePending.value = false;
   confirming.value = false;
 });
 
@@ -138,6 +147,14 @@ const expected = computed(() =>
   sessionFinalVoteResult(vote.value, outcome.value),
 );
 const assent = computed(() => vote.value.method === "assent");
+const pendingCount = computed(() => session.pendingPassages.value.length);
+/**
+ * Passages left pending conciliation, only when chosen: a rejection needs
+ * nothing (the server refuses them only on an approval).
+ */
+const allowPending = computed(
+  () => pendingCount.value > 0 && leavePending.value,
+);
 const blocked = computed(
   () =>
     !document.value ||
@@ -145,8 +162,11 @@ const blocked = computed(
     // hide undecided amendments.
     !session.amendmentsDto.value ||
     undecided.value.length > 0 ||
-    // Where approved amendments collide, the Mesa words the passage first.
-    session.pendingPassages.value.length > 0 ||
+    // Where approved amendments collide, the Mesa words the passage first,
+    // or chooses to leave it pending conciliation.
+    (pendingCount.value > 0 &&
+      !allowPending.value &&
+      expected.value === "approved") ||
     !isSessionFinalVoteReady(vote.value, outcome.value),
 );
 
@@ -186,6 +206,7 @@ async function record(): Promise<void> {
   if (blocked.value || !confirming.value) return;
   const result = await session.finalVote({
     vote: sessionCleanVote(vote.value),
+    ...(allowPending.value ? { allowPendingPassages: true } : {}),
   });
   if (result.ok) {
     open.value = false;
@@ -268,6 +289,18 @@ async function record(): Promise<void> {
                 />
               </li>
             </ul>
+            <UCheckbox
+              v-model="leavePending"
+              class="mt-3"
+              :label="
+                t(
+                  'session.finalVote.leavePending',
+                  { count: pendingCount },
+                  pendingCount,
+                )
+              "
+              :description="t('session.finalVote.leavePendingHint')"
+            />
           </template>
         </UAlert>
         <UAlert
@@ -347,6 +380,18 @@ async function record(): Promise<void> {
           </p>
           <p v-if="!assent" class="text-muted mt-1 text-xs tabular-nums">
             {{ baseText }}
+          </p>
+          <p
+            v-if="expected === 'approved' && allowPending"
+            class="text-warning mt-1 text-xs"
+          >
+            {{
+              t(
+                "session.finalVote.pendingNote",
+                { count: pendingCount },
+                pendingCount,
+              )
+            }}
           </p>
           <p class="text-muted mt-2 text-xs">
             {{ t("session.finalVote.confirmDescription") }}

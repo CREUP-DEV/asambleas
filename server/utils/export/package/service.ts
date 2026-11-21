@@ -20,6 +20,7 @@ import {
   type PackageFilter,
 } from "./filter";
 import { loadPackageSource } from "./load";
+import { PREBUILD_DELAY_MS, PREBUILD_STATUSES } from "./prebuild";
 import {
   packageStillPublic,
   planPackage,
@@ -44,10 +45,6 @@ import {
 
 /** A plan is planned again after this long, or after a change in its assembly. */
 const PLAN_TTL_MS = 60_000;
-/** Quiet time after a change before the package is built ahead of anyone asking. */
-const PREBUILD_DELAY_MS = 2 * 60_000;
-/** Assemblies whose package is built ahead: those whose documentation moves. */
-const PREBUILD_STATUSES = new Set(["convened", "in_session"]);
 /** The language and variants built ahead; the others are built when asked. */
 const PREBUILD_LOCALE: ExportLocale = "es";
 

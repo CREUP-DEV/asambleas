@@ -167,6 +167,15 @@ export function canViewSeating(actor: Actor): boolean {
   );
 }
 
+/**
+ * Correcting the form of an approved text directly (user's decision of
+ * 2026-11-21; formCorrections.ts). The Secretaría and the Mesa hold it by
+ * default; it can be granted to anyone on its own.
+ */
+export function canCorrectForm(actor: Actor): boolean {
+  return actor.can(PERMISSION_KEYS.DOCUMENT_CORRECT_FORM);
+}
+
 /** Laying out the room and seating people. */
 export function canEditSeating(actor: Actor): boolean {
   return actor.can(PERMISSION_KEYS.SEATING_EDIT);

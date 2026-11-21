@@ -332,6 +332,11 @@ export interface GeneralSheetFilters {
   votes: VoteFilter[];
   /** Only the items the sheet has observations about (a sheet key's). */
   observations: boolean;
+  /**
+   * «Mis documentos»: only the items with a document the reader presents
+   * (ControlSheetDocumentDto.presenting; user's decision of 2026-11-21).
+   */
+  mine: boolean;
 }
 
 /**
@@ -346,6 +351,12 @@ export interface AmendmentSheetFilters {
   members: string[];
   positions: PositionLead[];
   votes: VoteFilter[];
+  /**
+   * «Por responder»: only the amendments of a document the reader presents
+   * that wait for its answer (AmendmentSheetRow.awaitsAnswer; user's
+   * decision of 2026-11-21).
+   */
+  mine: boolean;
 }
 
 export const EMPTY_GENERAL_FILTERS: GeneralSheetFilters = {
@@ -355,6 +366,7 @@ export const EMPTY_GENERAL_FILTERS: GeneralSheetFilters = {
   members: [],
   votes: [],
   observations: false,
+  mine: false,
 };
 export const EMPTY_AMENDMENT_FILTERS: AmendmentSheetFilters = {
   query: "",
@@ -364,6 +376,7 @@ export const EMPTY_AMENDMENT_FILTERS: AmendmentSheetFilters = {
   members: [],
   positions: [],
   votes: [],
+  mine: false,
 };
 
 /** The lists of «Filtros» a set of filters has, each «any» when empty. */
@@ -376,6 +389,7 @@ function filterLists(
         filters.members,
         filters.votes,
         filters.observations ? ["with"] : [],
+        filters.mine ? ["mine"] : [],
       ]
     : [
         filters.states,
@@ -383,6 +397,7 @@ function filterLists(
         filters.members,
         filters.positions,
         filters.votes,
+        filters.mine ? ["mine"] : [],
       ];
 }
 
@@ -465,6 +480,9 @@ export function generalRowMatches(
   if (filters.view === "pending" && row.outcome.treated) return false;
   if (filters.view === "treated" && !row.outcome.treated) return false;
   if (filters.observations && !row.sheet?.observations.trim()) return false;
+  if (filters.mine && !row.documents.some((document) => document.presenting)) {
+    return false;
+  }
   if (
     filters.results.length > 0 &&
     !filters.results.includes(row.outcome.result ?? "pending")
@@ -493,6 +511,7 @@ export function amendmentRowMatches(
 ): boolean {
   if (filters.view === "pending" && row.treated) return false;
   if (filters.view === "treated" && !row.treated) return false;
+  if (filters.mine && !row.awaitsAnswer) return false;
   if (filters.states.length > 0 && !filters.states.includes(row.state)) {
     return false;
   }
@@ -660,6 +679,8 @@ export const SHEET_QUERY = {
   positions: "respuesta",
   votes: "votacion",
   observations: "observaciones",
+  /** «Mis documentos» / «Por responder»: `si`. */
+  mine: "mios",
 } as const;
 
 export const SHEET_FILTER_QUERY_KEYS: readonly string[] =
@@ -848,6 +869,7 @@ export function parseGeneralSheetQuery(
       members: membersFromQuery(query[SHEET_QUERY.members]),
       votes: listFromQuery(query[SHEET_QUERY.votes], VOTE_SLUGS, VOTE_FILTERS),
       observations: firstValue(query[SHEET_QUERY.observations]) === "con",
+      mine: firstValue(query[SHEET_QUERY.mine]) === "si",
     },
   };
 }
@@ -880,6 +902,7 @@ export function parseAmendmentSheetQuery(
         POSITION_LEADS,
       ),
       votes: listFromQuery(query[SHEET_QUERY.votes], VOTE_SLUGS, VOTE_FILTERS),
+      mine: firstValue(query[SHEET_QUERY.mine]) === "si",
     },
   };
 }
@@ -945,6 +968,7 @@ export function generalSheetQuery(state: GeneralSheetState): SheetQueryPatch {
     [SHEET_QUERY.positions]: undefined,
     [SHEET_QUERY.votes]: listToQuery(filters.votes, VOTE_SLUGS, VOTE_FILTERS),
     [SHEET_QUERY.observations]: filters.observations ? "con" : undefined,
+    [SHEET_QUERY.mine]: filters.mine ? "si" : undefined,
   };
 }
 
@@ -978,6 +1002,7 @@ export function amendmentSheetQuery(
     ),
     [SHEET_QUERY.votes]: listToQuery(filters.votes, VOTE_SLUGS, VOTE_FILTERS),
     [SHEET_QUERY.observations]: undefined,
+    [SHEET_QUERY.mine]: filters.mine ? "si" : undefined,
   };
 }
 

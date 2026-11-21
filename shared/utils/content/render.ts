@@ -10,6 +10,7 @@ import type {
 } from "../../types/content";
 import { IMAGE_ASSET_PATTERN, IMAGE_URL_PREFIX } from "../../types/content";
 import { cellFillOf } from "../../constants/cellFills";
+import { withAutolinks } from "./autolink";
 import { renderFormula } from "./formula";
 import { markerOf } from "./lists";
 import { groupTables, type TableGroup } from "./tables";
@@ -114,7 +115,10 @@ function renderMarked(text: string, marks: Mark[], offset: number): string {
       if (!mark) continue;
       if (type === "link") {
         if (isSafeHref(mark.href)) {
-          piece = `<a href="${escapeHtml(mark.href.trim())}" rel="noopener noreferrer nofollow" target="_blank">${piece}</a>`;
+          // Not draggable: a drag that starts on a link selects text, as the
+          // selection bar («Hacer enmienda aquí») and the Mesa's select mode
+          // need (Firefox reads the attribute, Chrome also main.css).
+          piece = `<a href="${escapeHtml(mark.href.trim())}" rel="noopener noreferrer nofollow" target="_blank" draggable="false">${piece}</a>`;
         }
       } else if (type !== "formula") {
         const tag = MARK_TAGS[type];
@@ -332,7 +336,12 @@ export function renderBlocks(
       inner:
         block.type === "formula"
           ? renderFormula(block.text, true)
-          : renderInline(block.text, block.marks) || "<br>",
+          : renderInline(
+              block.text,
+              block.type === "image"
+                ? block.marks
+                : withAutolinks(block.text, block.marks),
+            ) || "<br>",
     })),
     options.headings,
   );
@@ -533,6 +542,33 @@ function formulaInner(
 }
 
 /**
+ * The stretches of `now` (the block's text as it reads now) that the diff
+ * and provenance modes wrap as an amended fragment: a click there picks its
+ * amendment, and an interactive view makes it a button, so no bare address
+ * is linked inside it (a link would take the click to another site and nest
+ * a link in a button). Stored links keep theirs. The clean text marks none.
+ */
+function amendedRanges(
+  block: ConsolidatedBlock,
+  now: string,
+  options: AnnotatedOptions,
+): { from: number; to: number }[] {
+  if (options.mode === "clean") return [];
+  // Provenance wraps a block formatted anew whole (see renderAnnotated).
+  if (options.mode === "provenance" && block.format && block.status === "kept")
+    return [{ from: 0, to: now.length }];
+  const ranges: { from: number; to: number }[] = [];
+  let offset = 0;
+  for (const segment of block.segments) {
+    if (segment.removed) continue;
+    const to = offset + segment.text.length;
+    if (segment.source && to > offset) ranges.push({ from: offset, to });
+    offset = to;
+  }
+  return ranges;
+}
+
+/**
  * Renders consolidated blocks in one of three modes:
  * - `diff`: insertions as <ins>, removals as <del> (styled by the diff mode),
  *   and formatting changes as their text in its new format, said in words in
@@ -552,7 +588,22 @@ export function renderAnnotated(
     let inner = "";
     const notes: string[] = [];
     const wholeBlock = block.status !== "kept";
-    for (const segment of block.segments) {
+    // Bare addresses link over the text as it reads now (the marks' own
+    // offsets); removed text and amended fragments are never linked
+    // (amendedRanges). A formula's source is not text, and an image has none.
+    const now = block.segments
+      .filter((segment) => !segment.removed)
+      .map((segment) => segment.text)
+      .join("");
+    const marks =
+      block.type === "formula" || block.type === "image"
+        ? block.marks
+        : withAutolinks(now, block.marks, amendedRanges(block, now, options));
+    // The clean text marks no segment apart, so it reads as one piece: a
+    // link an amendment cut stays one link (one tab stop), as in
+    // renderBlocks.
+    if (options.mode === "clean") inner = renderInline(now, marks);
+    for (const segment of options.mode === "clean" ? [] : block.segments) {
       if (segment.removed) {
         inner += segmentHtml(
           segment,
@@ -564,7 +615,7 @@ export function renderAnnotated(
         );
         continue;
       }
-      const text = renderInline(segment.text, block.marks, offset);
+      const text = renderInline(segment.text, marks, offset);
       offset += segment.text.length;
       inner += segmentHtml(
         segment,

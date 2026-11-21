@@ -27,8 +27,13 @@ const documents = computed(() => rows.value.flatMap((row) => row.documents));
 const votable = computed(() =>
   documents.value.filter((document) => document.voted),
 );
+// A text approved pending conciliation is not final yet (user's decisions
+// of 2026-11-21).
 const finished = computed(
-  () => votable.value.filter((document) => document.consolidated).length,
+  () =>
+    votable.value.filter(
+      (document) => document.consolidated && document.pendingConciliation === 0,
+    ).length,
 );
 
 const loading = computed(
@@ -274,7 +279,19 @@ function statusColor(row: { item: { id: string } }, treated: boolean): string {
                         )
                       }}
                     </span>
-                    <span v-if="document.consolidated" class="text-success">
+                    <span
+                      v-if="
+                        document.consolidated &&
+                        document.pendingConciliation > 0
+                      "
+                      class="text-warning"
+                    >
+                      {{ t("document.pendingConciliation.status") }}
+                    </span>
+                    <span
+                      v-else-if="document.consolidated"
+                      class="text-success"
+                    >
                       {{ t("session.agenda.final") }}
                     </span>
                     <span

@@ -339,9 +339,6 @@ function positionDetail(payload: Record<string, unknown>): string | null {
       ? t("amendment.position.answerAuto")
       : t("amendment.position.answerAutoCleared");
   }
-  if (payload.by !== "moderator") {
-    return t(`amendment.position.options.${position}`);
-  }
   const memberId = text(payload.memberId);
   const member =
     (memberId
@@ -350,6 +347,14 @@ function positionDetail(payload: Record<string, unknown>): string | null {
           return found ? memberSpokenName(found) : null;
         })() ?? genericExecutiveAcronym(memberId))
       : null) ?? t("amendment.position.thePresenter");
+  // A presenter that presented the transactional itself: that was its
+  // answer (user's decision of 2026-11-21).
+  if (payload.reason === "proposed" && position === "accept") {
+    return t("amendment.position.answerProposed", { member });
+  }
+  if (payload.by !== "moderator") {
+    return t(`amendment.position.options.${position}`);
+  }
   return t(`amendment.position.answersByMesa.${position}`, { member });
 }
 

@@ -15,6 +15,12 @@ import {
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
+import {
+  admissionPurposeOf,
+  isSessionProposalMismatch,
+  isSessionProposalOnScreen,
+  sessionAdmissionProposalPlan,
+} from "~/composables/session/admissionProposal";
 
 /**
  * A secret vote counted here announces a decision of the Mesa: the
@@ -30,7 +36,9 @@ const ADMISSION_ANNOUNCE: LiveTallyAnnounce = {
  * late amendments pending admission, an on-time amendment the Mesa finds
  * inadmissible, or an inadmissible one to re-admit after a mistake. The
  * decision is recorded with its method (Mesa, Secretaría, assent or a vote
- * with its counts) and an optional note.
+ * with its counts) and an optional note. The console in control may first
+ * put the late ones ticked on screen as a proposal (user's decision of
+ * 2026-11-21): only published ones, the others counted.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -160,8 +168,63 @@ const noteField = computed(() => {
 const blocked = computed(
   () =>
     chosen.value.length === 0 ||
+    proposalMismatch.value ||
     (method.value === "vote" && !isSessionVoteReady(vote.value, outcome.value)),
 );
+
+// The proposal on screen (user's decision of 2026-11-21) ----------------------
+
+/**
+ * What «Proyectar propuesta» puts on screen: the late amendments ticked
+ * that the room can read (published, pending admission), proposed as the
+ * decision chosen. `unpublished` counts the document's late ones pending
+ * that the Secretaría has not published yet: they cannot go on screen.
+ */
+const proposalPlan = computed(() =>
+  sessionAdmissionProposalPlan(session.amendments.value, chosen.value),
+);
+const proposalPurpose = computed(() => admissionPurposeOf(decision.value));
+/** The room already reads exactly this proposal: the button takes it off. */
+const proposalProjected = computed(() =>
+  isSessionProposalOnScreen(
+    session.roomProposal.value,
+    proposalPlan.value.ids,
+    proposalPurpose.value,
+  ),
+);
+/**
+ * The ticks touch the proposal on screen but are not exactly it, or the
+ * decision is the opposite of the one proposed: nothing is recorded until
+ * they match or are projected (isSessionProposalMismatch).
+ */
+const proposalMismatch = computed(() =>
+  isSessionProposalMismatch(
+    chosen.value,
+    decision.value,
+    session.roomProposal.value,
+    session.byId.value,
+  ),
+);
+/** The mismatch is the direction: the room reads the opposite decision. */
+const proposalOpposite = computed(
+  () =>
+    proposalMismatch.value &&
+    session.roomProposal.value !== null &&
+    session.roomProposal.value.purpose !== proposalPurpose.value,
+);
+const liveBusy = computed(() => Boolean(session.busy.value.live));
+
+async function toggleProposal(): Promise<void> {
+  if (proposalProjected.value) {
+    await session.unprojectBloc();
+    return;
+  }
+  const ids = proposalPlan.value.ids;
+  // What goes on screen is what gets decided: the ticks follow it.
+  if (await session.projectBloc(ids, proposalPurpose.value)) {
+    selected.value = [...ids];
+  }
+}
 
 async function submit(): Promise<void> {
   if (blocked.value) return;
@@ -262,6 +325,43 @@ async function submit(): Promise<void> {
               </p>
             </li>
           </ul>
+          <!-- Only published ones go on screen: the room reads nothing
+               else (user's decision of 2026-11-21). -->
+          <p
+            v-if="session.inControl.value && proposalPlan.unpublished > 0"
+            class="text-muted flex items-start gap-1.5 text-xs"
+          >
+            <UIcon
+              name="i-lucide-eye-off"
+              class="mt-px size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            {{
+              t(
+                "session.admissionProposal.unpublished",
+                { count: proposalPlan.unpublished },
+                proposalPlan.unpublished,
+              )
+            }}
+          </p>
+          <!-- The room decides what it reads: no other selection while a
+               proposal is on screen. -->
+          <p
+            v-if="proposalMismatch"
+            class="text-default flex items-start gap-1.5 text-xs"
+            role="status"
+          >
+            <UIcon
+              name="i-lucide-monitor"
+              class="text-warning mt-px size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            {{
+              proposalOpposite
+                ? t("session.admissionProposal.mismatchDecision")
+                : t("session.admissionProposal.mismatch")
+            }}
+          </p>
         </fieldset>
 
         <URadioGroup
@@ -304,6 +404,28 @@ async function submit(): Promise<void> {
     </template>
     <template #footer="{ close }">
       <div class="flex w-full flex-wrap justify-end gap-2">
+        <!-- The proposal on screen, as the bloc to approve is: the room
+             reads the codes while the Mesa takes the assent or the vote. -->
+        <UButton
+          v-if="session.inControl.value && candidates.length > 0"
+          class="me-auto"
+          color="neutral"
+          variant="outline"
+          :icon="
+            proposalProjected ? 'i-lucide-monitor-off' : 'i-lucide-monitor-up'
+          "
+          :label="
+            proposalProjected
+              ? t('session.bloc.unproject')
+              : t('session.admissionProposal.project')
+          "
+          :loading="liveBusy"
+          :disabled="
+            !proposalProjected &&
+            (proposalPlan.ids.length === 0 || !session.inSession.value)
+          "
+          @click="toggleProposal"
+        />
         <UButton
           color="neutral"
           variant="ghost"

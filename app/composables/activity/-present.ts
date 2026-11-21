@@ -154,6 +154,8 @@ export const ACTIVITY_ACTION_ICONS = {
   document_form_correction_proposed: "i-lucide-file-pen",
   document_form_correction_rejected: "i-lucide-file-x-2",
   document_form_correction_withdrawn: "i-lucide-undo-2",
+  passage_conciliated: "i-lucide-git-merge",
+  passage_conciliation_proposed: "i-lucide-git-pull-request-arrow",
   passage_worded: "i-lucide-pen-line",
   passage_wording_removed: "i-lucide-eraser",
   amendment_created: "i-lucide-file-plus",
@@ -381,8 +383,12 @@ export type ActivityDetail =
   | { type: "note"; text: string }
   | { type: "late" }
   | { type: "result"; result: string }
-  /** `auto`: the answer a formal amendment gets by itself (`by: "auto"`). */
-  | { type: "position"; position: string; auto?: boolean }
+  /**
+   * `auto`: the answer a formal amendment gets by itself (`by: "auto"`);
+   * `proposed`: a presenter's, given by presenting the transactional itself
+   * (`reason: "proposed"`).
+   */
+  | { type: "position"; position: string; auto?: boolean; proposed?: boolean }
   | { type: "acceptance"; decision: string }
   /** The kind an amendment was reclassified to ("formal" or "partial"). */
   | { type: "reclassified"; to: string }
@@ -577,8 +583,11 @@ function eventDetails(
     case "position_changed": {
       const position = oneOf(PROPONENT_POSITIONS, payload.position);
       if (!position) return [];
-      return payload.by === "auto"
-        ? [{ type: "position", position, auto: true }]
+      if (payload.by === "auto") {
+        return [{ type: "position", position, auto: true }];
+      }
+      return payload.reason === "proposed" && position === "accept"
+        ? [{ type: "position", position, proposed: true }]
         : [{ type: "position", position }];
     }
     case "acceptance_recorded": {

@@ -356,6 +356,7 @@ describe("liveMessageReaches", () => {
       PARTY_ACCOUNT,
     ];
     const base: AmendmentVisibilityContext = {
+      kind: "partial",
       status: "draft",
       publishedAt: null,
       validatedAt: null,

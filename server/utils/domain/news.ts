@@ -279,7 +279,13 @@ export function newsValue(
         ? text(payload.sourceCode)
         : null;
     case "document_voted":
-      return text(payload.result);
+      // Approved leaving passages pending conciliation (user's decisions
+      // of 2026-11-21): never news of a final text.
+      return payload.result === "approved" &&
+        Array.isArray(payload.pendingPassageKeys) &&
+        payload.pendingPassageKeys.length > 0
+        ? "approved_pending"
+        : text(payload.result);
     case "document_status_changed":
       return text(payload.to);
     default:

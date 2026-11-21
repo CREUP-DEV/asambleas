@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   changedLiveFields,
+  isLiveAdmissionProposable,
   nextLivePointer,
   normalizeBloc,
+  normalizeBlocPurpose,
   sameBloc,
   type LivePointerFields,
 } from "./liveBloc";
@@ -14,6 +16,7 @@ const empty: LivePointerFields = {
   amendmentId: null,
   amendmentBloc: null,
   amendmentBlocOptions: null,
+  amendmentBlocPurpose: null,
   voteId: null,
 };
 const onDocument: LivePointerFields = {
@@ -201,5 +204,151 @@ describe("bloc options", () => {
         amendmentBlocOptions: null,
       }),
     ).toEqual(["amendmentBlocOptions"]);
+  });
+});
+
+describe("a proposal to admit late amendments", () => {
+  const admit = (previous: LivePointerFields = onDocument) =>
+    next(previous, {
+      amendmentBloc: ["a", "b"],
+      amendmentBlocPurpose: "admit",
+    });
+
+  it("goes on screen as a bloc with its purpose", () => {
+    expect(admit()).toEqual({
+      ...onDocument,
+      amendmentBloc: ["a", "b"],
+      amendmentBlocPurpose: "admit",
+    });
+    expect(
+      next(onDocument, {
+        amendmentBloc: ["a"],
+        amendmentBlocPurpose: "inadmit",
+      }).amendmentBlocPurpose,
+    ).toBe("inadmit");
+  });
+
+  it("is one pointer: the amendment, the vote and another bloc replace it", () => {
+    const proposal = admit({ ...onDocument, amendmentId: "x" });
+    expect(proposal.amendmentId).toBeNull();
+    expect(next(proposal, { voteId: "v" })).toEqual({
+      ...onDocument,
+      voteId: "v",
+    });
+    expect(next(proposal, { amendmentId: "x" }, "doc")).toEqual({
+      ...onDocument,
+      amendmentId: "x",
+    });
+    expect(next(proposal, { documentId: "other" })).toEqual({
+      ...onDocument,
+      documentId: "other",
+    });
+    expect(next(proposal, { amendmentBloc: null })).toEqual(onDocument);
+    // The same amendments proposed for approval: no purpose left behind.
+    expect(next(proposal, { amendmentBloc: ["a", "b"] })).toEqual({
+      ...onDocument,
+      amendmentBloc: ["a", "b"],
+    });
+    // What does not touch the pointer keeps it.
+    expect(next(proposal, {})).toEqual(proposal);
+    expect(next(proposal, { documentId: "doc" })).toEqual(proposal);
+  });
+
+  it("counts a change of purpose on the same amendments", () => {
+    const proposal = admit();
+    expect(
+      changedLiveFields(proposal, {
+        ...proposal,
+        amendmentBlocPurpose: "inadmit",
+      }),
+    ).toEqual(["amendmentBlocPurpose"]);
+    expect(
+      changedLiveFields(proposal, { ...proposal, amendmentBlocPurpose: null }),
+    ).toEqual(["amendmentBlocPurpose"]);
+    expect(changedLiveFields(proposal, admit())).toEqual([]);
+  });
+
+  it("refuses a purpose without a bloc or with options", () => {
+    expect(
+      nextLivePointer(onDocument, { amendmentBlocPurpose: "admit" }, null),
+    ).toEqual({ error: "bloc_purpose" });
+    expect(
+      nextLivePointer(
+        onDocument,
+        { amendmentBloc: [], amendmentBlocPurpose: "admit" },
+        null,
+      ),
+    ).toEqual({ error: "bloc_purpose" });
+    expect(
+      nextLivePointer(
+        onDocument,
+        {
+          amendmentBloc: ["a", "b"],
+          amendmentBlocOptions: [["a"], ["b"]],
+          amendmentBlocPurpose: "inadmit",
+        },
+        null,
+      ),
+    ).toEqual({ error: "bloc_purpose" });
+    // Null is the plain bloc, with or without one.
+    expect(
+      next(onDocument, { amendmentBloc: null, amendmentBlocPurpose: null }),
+    ).toEqual(onDocument);
+  });
+
+  it("reads a stored purpose only with a bloc and no options", () => {
+    expect(normalizeBlocPurpose("admit", ["a"])).toBe("admit");
+    expect(normalizeBlocPurpose("inadmit", ["a"])).toBe("inadmit");
+    expect(normalizeBlocPurpose("admit", null)).toBeNull();
+    expect(normalizeBlocPurpose("admit", ["a"], [["a"], ["b"]])).toBeNull();
+    expect(normalizeBlocPurpose("approve", ["a"])).toBeNull();
+    expect(normalizeBlocPurpose(null, ["a"])).toBeNull();
+  });
+
+  it("takes only late, published amendments still pending admission", () => {
+    const late = {
+      late: true,
+      status: "submitted",
+      admission: "pending",
+      validatedAt: "2026-11-21T10:00:00.000Z",
+      publishedAt: "2026-11-21T10:00:00.000Z",
+    };
+    expect(isLiveAdmissionProposable(late)).toBe(true);
+    expect(isLiveAdmissionProposable({ ...late, publishedAt: null })).toBe(
+      false,
+    );
+    expect(isLiveAdmissionProposable({ ...late, validatedAt: null })).toBe(
+      false,
+    );
+    expect(isLiveAdmissionProposable({ ...late, late: false })).toBe(false);
+    expect(isLiveAdmissionProposable({ ...late, admission: "admitted" })).toBe(
+      false,
+    );
+    expect(
+      isLiveAdmissionProposable({
+        ...late,
+        status: "inadmissible",
+        admission: "inadmissible",
+      }),
+    ).toBe(false);
+  });
+
+  it("takes a purpose in PUT .../live-state", () => {
+    const id = `amendment${"1".padStart(16, "0")}`;
+    expect(
+      liveStateBodySchema.safeParse({
+        amendmentBloc: [id],
+        amendmentBlocPurpose: "admit",
+      }).success,
+    ).toBe(true);
+    expect(
+      liveStateBodySchema.safeParse({ amendmentBlocPurpose: null }).success,
+    ).toBe(true);
+    expect(
+      liveStateBodySchema.safeParse({
+        amendmentBloc: [id],
+        amendmentBlocPurpose: "approve",
+      }).success,
+    ).toBe(false);
   });
 });

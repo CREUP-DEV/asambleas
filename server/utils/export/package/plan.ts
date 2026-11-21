@@ -64,6 +64,11 @@ export interface PackageDocument {
   /** Who presents it, as the public reads it. */
   proponent: string | null;
   finalVote: ExportVote | null;
+  /**
+   * Passages its consolidated text leaves pending conciliation (user's
+   * decisions of 2026-11-21; ExportDocumentMeta.pendingConciliation).
+   */
+  pendingConciliation?: { blockId: string | null; codes: string[] }[];
   baseVersionId: string | null;
   consolidatedVersionId: string | null;
   /** The uploaded PDF's URL and its name on disk. */

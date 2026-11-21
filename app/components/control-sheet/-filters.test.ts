@@ -116,6 +116,8 @@ const rows: GeneralSheetRow[] = [
         finalVote: vote({ result: "rejected" }),
         majority: "simple",
         undecided: 0,
+        presenting: false,
+        awaitingAnswer: 0,
         updatedAt: "2026-11-19T10:00:00.000Z",
         proponent: {
           id: "m1",
@@ -377,6 +379,32 @@ describe("shownGeneralRows", () => {
     expect(find({ view: "pending" })).toEqual(["2b"]);
     expect(find({ observations: true })).toEqual(["2b"]);
     expect(find({ results: ["pending", "rejected"] })).toEqual(["2a", "2b"]);
+  });
+
+  it("«Mis documentos» keeps the items with a document the reader presents", () => {
+    const find = (list: GeneralSheetRow[]) =>
+      [...matchingGeneralIds(list, general({ mine: true }))].sort();
+    expect(find(rows)).toEqual([]);
+    const presenting = rows.map((entry) =>
+      entry.id === "2a"
+        ? {
+            ...entry,
+            documents: entry.documents.map((document) => ({
+              ...document,
+              presenting: true,
+            })),
+          }
+        : entry,
+    );
+    expect(find(presenting)).toEqual(["2a"]);
+    const query = generalSheetQuery({
+      sort: DEFAULT_GENERAL_SORT,
+      filters: general({ mine: true }),
+    });
+    expect(query).toMatchObject({ mios: "si" });
+    expect(
+      parseGeneralSheetQuery(query as Record<string, string>).filters,
+    ).toEqual(general({ mine: true }));
   });
 
   it("keeps the rows it is asked to, with their headings", () => {
@@ -654,6 +682,30 @@ describe("shownAmendmentRows", () => {
         ),
       ),
     ).toEqual(["a2", "a3"]);
+  });
+
+  it("«Por responder» keeps only what waits for the reader's answer", () => {
+    const marked = amendments.map((row) =>
+      row.amendment.id === "a2" ? { ...row, awaitsAnswer: true } : row,
+    );
+    expect(
+      amendmentIds(
+        shownAmendmentRows(
+          marked,
+          DEFAULT_AMENDMENT_SORT,
+          amendmentFilters({ mine: true }),
+        ),
+      ),
+    ).toEqual(["a2"]);
+    const query = amendmentSheetQuery({
+      sort: DEFAULT_AMENDMENT_SORT,
+      filters: amendmentFilters({ mine: true }),
+    });
+    expect(query).toMatchObject({ mios: "si" });
+    expect(
+      parseAmendmentSheetQuery(query as Record<string, string>).filters.mine,
+    ).toBe(true);
+    expect(activeFilterCount(amendmentFilters({ mine: true }))).toBe(1);
   });
 
   it("filters by type, who presents, the answer and the vote", () => {

@@ -14,6 +14,14 @@ import {
   presenterSeesValidated,
   type AmendmentPositionContext,
 } from "~/composables/amendment/workspace";
+import { proposedByPresenter } from "~/composables/amendment/transactional";
+import {
+  combinableOnTransact,
+  composerTakes,
+  pendingTransactionalsOver,
+  type TransactAnswerResult,
+} from "~/composables/amendment/transactAnswer";
+import { useTransactAnswer } from "~/composables/amendment/useTransactAnswer";
 import {
   acceptIncorporates,
   answersReserved,
@@ -62,6 +70,13 @@ import {
  * answer seen when the form opened (`positionUpdatedAt`), so two people
  * answering at once get a conflict instead of overwriting each other; live
  * updates never reset a form being filled in.
+ *
+ * Saving «Propone una transaccional» where the viewer may write it here
+ * (`transactable`) over an amendment a transactional can combine asks
+ * first (useTransactAnswer, user's decision of 2026-11-21): writing it
+ * saves the answer and opens the workspace's composer on it (`transact`),
+ * or the transactional already on its way (`open`); «Solo guardar la
+ * respuesta» only saves it; cancelling saves nothing.
  */
 const props = defineProps<{
   amendment: AmendmentDto;
@@ -80,11 +95,23 @@ const props = defineProps<{
   clashes?: string[];
   /** Labels of the pending transactionals over it. */
   withdraws?: string[];
+  /**
+   * The viewer may write a transactional over it in this workspace
+   * (canTransact): answering «Propone una transaccional» then asks whether
+   * to write it (useTransactAnswer; user's decision of 2026-11-21).
+   */
+  transactable?: boolean;
+  /** The document's amendments by id: the transactionals on their way. */
+  byId?: ReadonlyMap<string, AmendmentDto>;
 }>();
 
 const emit = defineEmits<{
   updated: [amendment: AmendmentDto];
   conflict: [];
+  /** Open the workspace's transactional composer on these amendments. */
+  transact: [ids: string[]];
+  /** Open this amendment (the transactional on its way over this one). */
+  open: [id: string];
 }>();
 
 const { t, locale } = useI18n();
@@ -305,6 +332,20 @@ const editLabel = computed(() => {
  * says so: the review panel only says it is not public yet.
  */
 const laterText = computed(() => {
+  // A presenter presented this transactional: presenting it is its
+  // acceptance, recorded once it can be answered (user's decision of
+  // 2026-11-21).
+  const proposer = props.amendment.proposer?.member;
+  if (
+    proposer &&
+    props.amendment.status === "submitted" &&
+    !props.document.finalVote &&
+    proposedByPresenter(props.amendment)
+  ) {
+    return t("amendment.position.acceptsOnProposing", {
+      member: memberSpokenName(proposer),
+    });
+  }
   if (blocker.value === "publication") {
     return t("amendment.position.blocked.publication");
   }
@@ -324,7 +365,64 @@ function cancel(): void {
   reset();
 }
 
+const transactQuestion = useTransactAnswer();
+/**
+ * «Propone una transaccional», newly chosen over an amendment a
+ * transactional can combine, for a viewer who may write it here: asked
+ * before saving (cancelling saves nothing and puts the saved answer back
+ * in the form). Null when nothing is asked.
+ */
+async function askTransact(): Promise<TransactAnswerResult | null> {
+  if (
+    position.value !== "transact" ||
+    answer.value === "transact" ||
+    !props.transactable ||
+    !combinableOnTransact(props.amendment)
+  ) {
+    return null;
+  }
+  return transactQuestion.ask({
+    code: props.amendment.code ?? t("amendment.unnumberedLabel"),
+    mesaFor: isPresenter.value ? null : presenter.value,
+    pending: pendingTransactionalsOver(
+      props.amendment,
+      props.byId ?? new Map(),
+    ).map((entry) => ({
+      id: entry.id,
+      label: entry.code ?? t("amendment.unnumberedLabel"),
+    })),
+  });
+}
+
+/** After the answer is saved: the composer, or the transactional on its way. */
+function afterTransact(
+  updated: AmendmentDto,
+  result: TransactAnswerResult | null,
+): void {
+  if (result?.action === "open") {
+    emit("open", result.id);
+  } else if (result?.action === "draft") {
+    if (composerTakes(updated, props.byId ?? new Map())) {
+      emit("transact", [updated.id]);
+    } else {
+      toast.add({
+        title: t("amendment.transactAnswer.notCombinable", {
+          code: updated.code ?? t("amendment.unnumberedLabel"),
+        }),
+        color: "warning",
+        icon: "i-lucide-triangle-alert",
+      });
+    }
+  }
+}
+
 async function save(): Promise<void> {
+  if (saving.value || transactQuestion.asking.value) return;
+  const transacting = await askTransact();
+  if (transacting?.action === "cancel") {
+    position.value = answer.value;
+    return;
+  }
   saving.value = true;
   const before = {
     status: props.amendment.status,
@@ -357,6 +455,7 @@ async function save(): Promise<void> {
       icon: "i-lucide-check",
     });
     emit("updated", updated);
+    afterTransact(updated, transacting);
   } catch (error) {
     api.notifyError(error, "amendment.position.saveFailed");
     if (api.isConflict(error)) {

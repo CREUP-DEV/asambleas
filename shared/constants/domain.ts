@@ -467,6 +467,15 @@ export const FORM_CORRECTION_STATUSES = [
 ] as const;
 export type FormCorrectionStatus = (typeof FORM_CORRECTION_STATUSES)[number];
 
+/**
+ * What a proposal on screen asks the room, besides approving its
+ * amendments (the bloc, stored as null; user's decision of 2026-11-21): to
+ * admit late amendments to debate («Se propone admitir a debate»), or not
+ * to admit them («Se propone no admitir»).
+ */
+export const LIVE_BLOC_PURPOSES = ["admit", "inadmit"] as const;
+export type LiveBlocPurpose = (typeof LIVE_BLOC_PURPOSES)[number];
+
 export const DECISION_KINDS = [
   "admit_late",
   "inadmission",

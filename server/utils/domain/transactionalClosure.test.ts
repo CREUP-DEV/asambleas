@@ -12,6 +12,7 @@ const {
   competingTransactionalIds,
   inadmissibleSourcePlan,
   latestByEntity,
+  proposedAcceptanceLockIds,
   reopenTransactionalsClosedBy,
   restoreLockIds,
   rowsAfterReopen,
@@ -351,6 +352,51 @@ describe("transactionalsToRestore", () => {
     expect(transactionalsOverIds(sourceMap, ["b", "t1"])).toEqual(["t2"]);
     expect(restoreLockIds(sourceMap, ["a"])).toEqual(["b", "t1"]);
     expect(restoreLockIds(sourceMap, ["b"])).toEqual(["a", "t1", "t2"]);
+  });
+});
+
+describe("proposedAcceptanceLockIds", () => {
+  // T1 groups A and L, T2 groups L, T3 groups A and T1, T4 groups B alone.
+  const sourceMap = buildSourceMap([
+    { transactionalId: "T1", sourceId: "A" },
+    { transactionalId: "T1", sourceId: "L" },
+    { transactionalId: "T2", sourceId: "L" },
+    { transactionalId: "T3", sourceId: "A" },
+    { transactionalId: "T3", sourceId: "T1" },
+    { transactionalId: "T4", sourceId: "B" },
+  ]);
+
+  it("locks the transactional, its parents and what competes with it", () => {
+    // T2 and T3 share a parent with T1, and T3 also groups T1 itself.
+    expect(proposedAcceptanceLockIds(sourceMap, ["T1"])).toEqual([
+      "A",
+      "L",
+      "T1",
+      "T2",
+      "T3",
+    ]);
+    expect(proposedAcceptanceLockIds(sourceMap, ["T4"])).toEqual(["B", "T4"]);
+  });
+
+  it("joins several without repeats, in id order", () => {
+    expect(proposedAcceptanceLockIds(sourceMap, ["T4", "T2"])).toEqual([
+      "B",
+      "L",
+      "T1",
+      "T2",
+      "T4",
+    ]);
+    expect(proposedAcceptanceLockIds(sourceMap, [])).toEqual([]);
+  });
+
+  it("after a parent leaves, locks only what is left", () => {
+    // L declared inadmissible: T1 goes on with A alone.
+    const after = buildSourceMap([
+      { transactionalId: "T1", sourceId: "A" },
+      { transactionalId: "T2", sourceId: "L" },
+      { transactionalId: "T3", sourceId: "A" },
+    ]);
+    expect(proposedAcceptanceLockIds(after, ["T1"])).toEqual(["A", "T1", "T3"]);
   });
 });
 

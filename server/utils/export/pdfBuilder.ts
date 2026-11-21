@@ -110,6 +110,12 @@ export interface ExportDocumentMeta {
   agendaNumbering: string | null;
   agendaTitle: string | null;
   finalVote: ExportVote | null;
+  /**
+   * Passages its approved text leaves pending conciliation (user's
+   * decisions of 2026-11-21): the codes of the amendments that collide in
+   * each and its first block in the text (null when it deletes them all).
+   */
+  pendingConciliation?: { blockId: string | null; codes: string[] }[];
 }
 
 export interface ExportAnnexRow {
@@ -553,6 +559,60 @@ function finalVoteLine(
   };
 }
 
+/** «E3 y E5», as the locale joins a list. */
+function joinCodes(codes: readonly string[], locale: ExportLocale): string {
+  return new Intl.ListFormat(EXPORT_INTL_LOCALES[locale], {
+    style: "long",
+    type: "conjunction",
+  }).format(codes);
+}
+
+/**
+ * «Aprobado pendiente de conciliar las enmiendas E3 y E5»: the text is not
+ * final while a passage waits for its wording.
+ */
+function pendingConciliationLine(
+  meta: ExportDocumentMeta,
+  locale: ExportLocale,
+  t: Translate,
+): Content | null {
+  const pending = meta.pendingConciliation ?? [];
+  if (pending.length === 0 || meta.finalVote?.result !== "approved") {
+    return null;
+  }
+  return {
+    text: t("pendingConciliation.heading", {
+      passages: pending
+        .map((passage) => joinCodes(passage.codes, locale))
+        .join("; "),
+    }),
+    style: "meta",
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 0, 0, 1],
+  };
+}
+
+/** The note that opens each pending passage in the clean text. */
+export function pendingConciliationNotes(
+  meta: ExportDocumentMeta,
+  locale: ExportLocale,
+  t: Translate,
+): Map<string, string> {
+  const notes = new Map<string, string>();
+  if (meta.finalVote?.result !== "approved") return notes;
+  for (const passage of meta.pendingConciliation ?? []) {
+    if (!passage.blockId || notes.has(passage.blockId)) continue;
+    notes.set(
+      passage.blockId,
+      t("pendingConciliation.passage", {
+        codes: joinCodes(passage.codes, locale),
+      }),
+    );
+  }
+  return notes;
+}
+
 function documentHeading(input: {
   meta: ExportDocumentMeta;
   assembly: ExportAssembly;
@@ -584,6 +644,10 @@ function documentHeading(input: {
   const vote =
     input.vote === false ? null : finalVoteLine(meta, assembly, locale, t);
   if (vote) lines.push(vote);
+  // Never as the final text while a passage waits (even when the text's
+  // own approval line says it was approved).
+  const pending = pendingConciliationLine(meta, locale, t);
+  if (pending) lines.push(pending);
   if (lines.length === 0) return [];
   // The text starts after a paragraph's worth of space.
   return [{ stack: lines, margin: [0, 0, 0, 16] }];
@@ -639,9 +703,11 @@ function cleanBody(
   blocks: Block[],
   ctx: PdfContentContext,
   t: Translate,
+  /** Notes opening the passages pending conciliation, by block id. */
+  notes?: ReadonlyMap<string, string>,
 ): Content[] {
   if (blocks.length === 0) return [{ text: t("emptyDocument"), style: "note" }];
-  return blocksToPdf(blocks, ctx);
+  return blocksToPdf(blocks, ctx, notes);
 }
 
 // Annex -------------------------------------------------------------------
@@ -808,11 +874,21 @@ export function buildDocumentPdf(
   data: DocumentExportData,
   locale: ExportLocale,
   brand?: ExportBrand,
+  /**
+   * `pageTags`: tags each block of a clean text with its id, for the pages
+   * the render process reads back (pageMap.ts); the PDF comes out the same.
+   */
+  options: { pageTags?: boolean } = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { assembly, document: meta, body } = data;
   const links = new LinkRegistry();
-  const ctx: PdfContentContext = { links, outline: {}, images: data.images };
+  const ctx: PdfContentContext = {
+    links,
+    outline: {},
+    images: data.images,
+    ...(options.pageTags ? { pageTags: new Set<string>() } : {}),
+  };
   const cover = hasCover(meta.kind);
   const draft = body.variant === "clean" && body.source === "working";
 
@@ -832,7 +908,14 @@ export function buildDocumentPdf(
   if (body.variant === "clean") {
     content.push(
       ...heading,
-      ...cleanBody(clean?.blocks ?? body.blocks, ctx, t),
+      ...cleanBody(
+        clean?.blocks ?? body.blocks,
+        ctx,
+        t,
+        body.source === "consolidated"
+          ? pendingConciliationNotes(meta, locale, t)
+          : undefined,
+      ),
       ...linksSection(links, t),
     );
   } else {
@@ -1019,6 +1102,9 @@ export function buildAssemblyPdf(
         text?.blocks ?? entry.blocks,
         { links, outline: { parentId: outlineId }, images: data.images },
         t,
+        entry.source === "consolidated"
+          ? pendingConciliationNotes(entry.meta, locale, t)
+          : undefined,
       ),
       ...linksSection(links, t),
     );

@@ -92,30 +92,67 @@ const recordOpen = computed({
   },
 });
 
+/** Passages still to word in the server's 409 (none for any other answer). */
+function pendingPassageCount(error: unknown): number {
+  if (api.errorStatus(error) !== 409) return 0;
+  const passages = sessionErrorData(error)?.pendingPassages;
+  return Array.isArray(passages) ? passages.length : 0;
+}
+
+/**
+ * The passages a refused final vote left to word, for the document whose
+ * form refused it: the form then offers to vote leaving them pending
+ * conciliation (user's decisions of 2026-11-21), an explicit choice sent
+ * with the form's own button and its current counts. Opening another
+ * document's form, or closing this one, forgets it.
+ */
+const pending = ref<{ id: string; count: number } | null>(null);
+const leavePending = ref(false);
+watch(
+  () => recording.value?.id,
+  () => {
+    pending.value = null;
+    leavePending.value = false;
+  },
+);
+
 async function submit(vote: VoteInput): Promise<void> {
   const target = recording.value;
   if (!target || busy.value) return;
   busy.value = target.id;
-  const body: FinalVoteBody = { vote: sessionCleanVote(vote), project: false };
+  const allowPending = pending.value?.id === target.id && leavePending.value;
+  const body: FinalVoteBody = {
+    vote: sessionCleanVote(vote),
+    project: false,
+    ...(allowPending ? { allowPendingPassages: true } : {}),
+  };
   try {
     const result = await api.send<DocumentDto>(
       `${documentUrl(target.id)}/final-vote`,
       { body },
     );
-    recording.value = null;
+    if (recording.value?.id === target.id) recording.value = null;
     toast.add({
       title: t("controlSheet.results.finalRecorded", { title: target.title }),
       description:
-        result.finalVote?.result === "approved"
-          ? t("controlSheet.results.voteApproved")
-          : t("controlSheet.results.voteRejected"),
+        result.finalVote?.result !== "approved"
+          ? t("controlSheet.results.voteRejected")
+          : result.pendingConciliation > 0
+            ? t("document.pendingConciliation.status")
+            : t("controlSheet.results.voteApproved"),
       color: "success",
       icon: "i-lucide-check",
     });
     emit("changed");
   } catch (error) {
     const blocker = finalVoteBlocker(error);
-    if (sessionErrorData(error)?.tie === true) {
+    const pendingCount = pendingPassageCount(error);
+    if (pendingCount > 0 && recording.value?.id === target.id) {
+      // The form stays open and says so: the Mesa may vote leaving them
+      // pending conciliation, or word them from the console first.
+      pending.value = { id: target.id, count: pendingCount };
+      leavePending.value = false;
+    } else if (sessionErrorData(error)?.tie === true) {
       toast.add({
         title: t("session.vote.tieTitle"),
         description: t("session.vote.tieRepeat"),
@@ -123,7 +160,8 @@ async function submit(vote: VoteInput): Promise<void> {
         icon: "i-lucide-scale",
       });
     } else if (blocker) {
-      recording.value = null;
+      // Closes the refused form only, never another document's opened since.
+      if (recording.value?.id === target.id) recording.value = null;
       toast.add({
         title: t("controlSheet.results.finalBlocked"),
         description: blocker,
@@ -242,7 +280,39 @@ async function annul(): Promise<void> {
       :busy="busy !== null"
       with-assent
       @submit="submit"
-    />
+    >
+      <UAlert
+        v-if="pending && pending.id === recording?.id"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-pen-line"
+        :title="t('controlSheet.results.finalBlocked')"
+      >
+        <template #description>
+          <p>
+            {{
+              t(
+                "session.preview.pendingWordings",
+                { count: pending.count },
+                pending.count,
+              )
+            }}
+          </p>
+          <UCheckbox
+            v-model="leavePending"
+            class="mt-3"
+            :label="
+              t(
+                'session.finalVote.leavePending',
+                { count: pending.count },
+                pending.count,
+              )
+            "
+            :description="t('session.finalVote.leavePendingHint')"
+          />
+        </template>
+      </UAlert>
+    </ControlSheetVoteDialog>
 
     <UModal
       v-model:open="annulOpen"

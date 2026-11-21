@@ -2,6 +2,15 @@
 import type { RouteLocationRaw } from "vue-router";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalSourceEligible } from "~/composables/amendment/transactional";
+import {
+  combinableOnTransact,
+  composerTakes,
+  pendingTransactionalsOver,
+  transactComposerLocation,
+  workspaceAmendmentLocation,
+  type TransactAnswerResult,
+} from "~/composables/amendment/transactAnswer";
+import { useTransactAnswer } from "~/composables/amendment/useTransactAnswer";
 import { presenterSeesValidated } from "~/composables/amendment/workspace";
 import {
   answersReserved,
@@ -69,8 +78,11 @@ import {
  *
  * A comment is saved with the answer. Moving on with a comment not saved
  * says so (and offers to go back), the list marks it, and leaving the page
- * asks first. After "Transaccionar", a link opens the transactional
- * composer of the workspace on that amendment (`?transaccional=<id>`).
+ * asks first. "Transaccionar", where a transactional can combine the
+ * amendment, asks first whether to write it (useTransactAnswer, user's
+ * decision of 2026-11-21): writing it saves the answer and opens the
+ * transactional composer of the workspace on that amendment
+ * (`?transaccional=<id>`); the step keeps a link to it for later.
  *
  * Each answer sends the position it saw (`positionUpdatedAt`): when someone
  * else answered meanwhile, the server refuses it, the list is refreshed and
@@ -207,6 +219,62 @@ function transactLink(amendment: AmendmentDto): RouteLocationRaw | null {
   if (!canProposeTransactional.value) return null;
   if (!transactionalSourceEligible(amendment)) return null;
   return { path: documentPath(), query: { transaccional: amendment.id } };
+}
+
+/**
+ * «Transaccionar» where it leads to writing the transactional (user's
+ * decision of 2026-11-21: the same question as the control sheet's and the
+ * workspace's answer, useTransactAnswer): asked before saving, so
+ * cancelling saves nothing; «Redactar la transaccional» (or opening the one
+ * already on its way) saves the answer and goes to the workspace's
+ * composer; «Solo guardar la respuesta» saves it and moves on. Null when
+ * nothing is asked (it leads nowhere, or it already is the answer).
+ */
+const transactQuestion = useTransactAnswer();
+async function askTransact(
+  amendment: AmendmentDto,
+): Promise<TransactAnswerResult | null> {
+  if (
+    !canProposeTransactional.value ||
+    amendment.position?.position === "transact" ||
+    !combinableOnTransact(amendment)
+  ) {
+    return null;
+  }
+  return transactQuestion.ask({
+    code: amendmentDisplayLabel(amendment) ?? t("proponentReview.noCode"),
+    mesaFor: onBehalfOf.value ? memberSpokenName(onBehalfOf.value) : null,
+    pending: pendingTransactionalsOver(amendment, list.byId.value).map(
+      (entry) => ({
+        id: entry.id,
+        label: amendmentDisplayLabel(entry) ?? t("proponentReview.noCode"),
+      }),
+    ),
+  });
+}
+
+/** After the answer is saved: the composer, or the transactional on its way. */
+async function goToTransactional(
+  updated: AmendmentDto,
+  result: TransactAnswerResult,
+): Promise<boolean> {
+  if (result.action === "open") {
+    await navigateTo(workspaceAmendmentLocation(documentPath(), result.id));
+    return true;
+  }
+  if (result.action !== "draft") return false;
+  if (!composerTakes(updated, list.byId.value)) {
+    toast.add({
+      title: t("amendment.transactAnswer.notCombinable", {
+        code: amendmentDisplayLabel(updated) ?? t("proponentReview.noCode"),
+      }),
+      color: "warning",
+      icon: "i-lucide-triangle-alert",
+    });
+    return false;
+  }
+  await navigateTo(transactComposerLocation(documentPath(), [updated.id]));
+  return true;
 }
 
 // Steps -------------------------------------------------------------------------
@@ -595,6 +663,13 @@ async function answerPosition(
 ): Promise<void> {
   const item = current.value;
   if (!item || busy.value) return;
+  const transacting =
+    answer === "transact" && !options.commentOnly
+      ? await askTransact(item.amendment)
+      : null;
+  if (transacting?.action === "cancel") return;
+  // The step may have moved meanwhile, or another answer started.
+  if (current.value?.id !== item.id || busy.value) return;
   chosenId.value = item.id;
   busy.value = { id: item.id, value: answer, commentOnly: options.commentOnly };
   const before = item.amendment;
@@ -614,12 +689,11 @@ async function answerPosition(
     }
     list.upsert(updated);
     commentDrafts.delete(item.id);
-    // "Transaccionar" moves on at once: the way to write the transactional
-    // rides on the notice (and stays on the step for later).
-    const transactTo =
-      answer === "transact" && !options.commentOnly
-        ? transactLink(updated)
-        : null;
+    // "Transaccionar" asked first where it leads to the composer: going
+    // there leaves the review (the step keeps its link for later).
+    if (transacting && (await goToTransactional(updated, transacting))) {
+      return;
+    }
     const reopened = !options.commentOnly && wasReopened(before, updated);
     toast.add({
       id: "proponent-review-saved",
@@ -631,21 +705,6 @@ async function answerPosition(
       description: reopened ? t("proponentReview.saved.reopened") : undefined,
       color: "success",
       icon: "i-lucide-check",
-      ...(transactTo
-        ? {
-            duration: 10_000,
-            actions: [
-              {
-                label: t("proponentReview.answer.proposeTransactional"),
-                color: "neutral" as const,
-                variant: "outline" as const,
-                onClick: () => {
-                  void navigateTo(transactTo);
-                },
-              },
-            ],
-          }
-        : {}),
     });
     // The answered step stays pinned until now, so its neighbour is known.
     if (!options.commentOnly && currentId.value === item.id) {

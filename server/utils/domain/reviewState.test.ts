@@ -27,6 +27,8 @@ import {
   reclassifyPositionPlan,
   reviewInadmissionCase,
   shouldAutoAcceptPosition,
+  proposingPresenterOf,
+  shouldAcceptProposedTransactional,
   POSITION_BLOCKER_MESSAGES,
   validationReopenBlocker,
   replacesSources,
@@ -1538,5 +1540,184 @@ describe("automatic answer to formal amendments", () => {
     expect(
       reclassifyPositionPlan(row, "partial", "pending", "auto", "vote"),
     ).toBeNull();
+  });
+});
+
+describe("a transactional its document's presenter presented", () => {
+  const presenterIds = ["main", null, "co"];
+
+  it("names the presenter that presented it, main or co-presenter", () => {
+    expect(
+      proposingPresenterOf({
+        kind: "transactional",
+        proposerMemberId: "main",
+        presenterIds,
+      }),
+    ).toBe("main");
+    expect(
+      proposingPresenterOf({
+        kind: "transactional",
+        proposerMemberId: "co",
+        presenterIds,
+      }),
+    ).toBe("co");
+  });
+
+  it("names nobody when an author presented it, the Mesa did, or it is no transactional", () => {
+    // An author of what it combines: the presenter answers later.
+    expect(
+      proposingPresenterOf({
+        kind: "transactional",
+        proposerMemberId: "author",
+        presenterIds,
+      }),
+    ).toBeNull();
+    // The Mesa in session stores no proposer.
+    for (const proposerMemberId of [undefined, null]) {
+      expect(
+        proposingPresenterOf({
+          kind: "transactional",
+          proposerMemberId,
+          presenterIds,
+        }),
+      ).toBeNull();
+    }
+    expect(
+      proposingPresenterOf({
+        kind: "partial",
+        proposerMemberId: "main",
+        presenterIds,
+      }),
+    ).toBeNull();
+  });
+
+  const answerable = {
+    kind: "transactional" as const,
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    publishedAt: at,
+    approvalMethod: null,
+    authorsApproval: "accepted" as const,
+  };
+  const input = {
+    proposingPresenterId: "main",
+    position: null,
+    answeredBefore: false,
+    sourcesAwaitAdmission: false,
+  };
+
+  it("accepts it once answerable when nobody answered it", () => {
+    expect(shouldAcceptProposedTransactional(answerable, input, "vote")).toBe(
+      true,
+    );
+    expect(
+      shouldAcceptProposedTransactional(
+        answerable,
+        { ...input, position: "pending" },
+        "incorporate",
+      ),
+    ).toBe(true);
+  });
+
+  it("never when someone else presented it, or it is no transactional", () => {
+    expect(
+      shouldAcceptProposedTransactional(
+        answerable,
+        { ...input, proposingPresenterId: null },
+        "vote",
+      ),
+    ).toBe(false);
+    expect(
+      shouldAcceptProposedTransactional(
+        { ...answerable, kind: "partial" },
+        input,
+        "vote",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps any answer given, also one set back to pending", () => {
+    for (const position of ["accept", "reject", "transact"] as const) {
+      expect(
+        shouldAcceptProposedTransactional(
+          answerable,
+          { ...input, position },
+          "vote",
+        ),
+      ).toBe(false);
+    }
+    expect(
+      shouldAcceptProposedTransactional(
+        answerable,
+        { ...input, position: "pending", answeredBefore: true },
+        "vote",
+      ),
+    ).toBe(false);
+  });
+
+  it("waits for its parties, the Secretaría and the publication", () => {
+    for (const authorsApproval of ["pending", "rejected"] as const) {
+      expect(
+        shouldAcceptProposedTransactional(
+          { ...answerable, authorsApproval },
+          input,
+          "vote",
+        ),
+      ).toBe(false);
+    }
+    expect(
+      shouldAcceptProposedTransactional(
+        {
+          ...answerable,
+          validatedAt: null,
+          publishedAt: null,
+          admission: "pending",
+        },
+        input,
+        "vote",
+      ),
+    ).toBe(false);
+    expect(
+      shouldAcceptProposedTransactional(
+        { ...answerable, publishedAt: null },
+        input,
+        "vote",
+      ),
+    ).toBe(false);
+    // An office of the CEA reads it once validated.
+    expect(
+      shouldAcceptProposedTransactional(
+        { ...answerable, publishedAt: null, presenterSeesValidated: true },
+        input,
+        "vote",
+      ),
+    ).toBe(true);
+  });
+
+  it("under incorporate, waits while a parent awaits the assembly's admission", () => {
+    const waiting = { ...input, sourcesAwaitAdmission: true };
+    expect(
+      shouldAcceptProposedTransactional(answerable, waiting, "incorporate"),
+    ).toBe(false);
+    // Under vote the acceptance incorporates nothing: it is recorded.
+    expect(shouldAcceptProposedTransactional(answerable, waiting, "vote")).toBe(
+      true,
+    );
+  });
+
+  it("never once decided or after the final vote", () => {
+    for (const status of ["withdrawn", "approved", "transacted"] as const) {
+      expect(
+        shouldAcceptProposedTransactional(
+          { ...answerable, status },
+          input,
+          "vote",
+        ),
+      ).toBe(false);
+    }
+    expect(
+      shouldAcceptProposedTransactional(answerable, input, "vote", true),
+    ).toBe(false);
   });
 });

@@ -41,6 +41,7 @@ import { isSafeHref } from "../../../shared/utils/content/render";
 import { formulaRuns } from "../../../shared/utils/content/formula";
 import { formulaSvg } from "./formulaSvg";
 import { constantLayout } from "./pdfSerial";
+import { PAGE_TAG_PREFIX, type PageTag } from "./pageMap";
 
 /**
  * Converts structured content (blocks, or consolidated blocks with
@@ -166,6 +167,56 @@ export interface PdfContentContext {
   outline?: OutlineState;
   /** The images the text shows, by asset id (loaded with the export data). */
   images?: Record<string, ExportImage>;
+  /**
+   * Tags each block's node with its id (PageTag), so the render process can
+   * say on which page each block lies (pageMap.ts). Only for one document's
+   * clean text: block ids are unique within a version alone. Holds the
+   * ids tagged so far, so a block id met twice is tagged once (pdfmake
+   * refuses a repeated id).
+   */
+  pageTags?: Set<string>;
+  /** Set inside a table's cells: which kind of row (tagNode). */
+  tableRow?: "header" | "body";
+}
+
+/** pdfmake's node of a block's text: the cell of a framed heading's table. */
+function pageTagLeaf(node: Content): Record<string, unknown> | null {
+  if (typeof node !== "object" || node === null || Array.isArray(node)) {
+    return null;
+  }
+  const table = (node as Partial<ContentTable>).table;
+  if (table) {
+    const inner = table.body[0]?.[0];
+    return typeof inner === "object" && inner !== null
+      ? (inner as Record<string, unknown>)
+      : null;
+  }
+  return node as unknown as Record<string, unknown>;
+}
+
+/**
+ * Tags `node`, the block `item`'s own node, with its block id (PageTag).
+ * A text gets an id too (outside a header row, whose repetitions would
+ * move it), unless it has one already: a heading's bookmark id serves.
+ */
+function tagNode<T extends Content>(
+  node: T,
+  item: Item,
+  ctx: PdfContentContext,
+): T {
+  if (!ctx.pageTags || !item.blockId) return node;
+  if (ctx.pageTags.has(item.blockId)) return node;
+  const leaf = pageTagLeaf(node);
+  if (!leaf) return node;
+  ctx.pageTags.add(item.blockId);
+  const tag: PageTag = { b: item.blockId };
+  if (ctx.tableRow) tag.cell = 1;
+  if (ctx.tableRow === "header") tag.header = 1;
+  leaf.pageTag = tag;
+  if ("text" in leaf && !leaf.id && ctx.tableRow !== "header") {
+    leaf.id = `${PAGE_TAG_PREFIX}${item.blockId}`;
+  }
+  return node;
 }
 
 export interface AnnotatedContext extends PdfContentContext {
@@ -389,6 +440,8 @@ interface Item {
   formula?: { source: string; changed: boolean };
   /** Whether the item takes a number in an ordered list (deleted ones do not). */
   countable: boolean;
+  /** The block it shows, for page tags (PdfContentContext.pageTags). */
+  blockId?: string;
 }
 
 type ListKind = "ol" | "ul";
@@ -647,12 +700,15 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         }
       }
       const look = cellLook(cell.cell);
+      const cellCtx: PdfContentContext = ctx.pageTags
+        ? { ...ctx, tableRow: r < grid.headerRows ? "header" : "body" }
+        : ctx;
       const nodes = look.color
         ? assembleFlow(
             cell.blocks.map((item) => onFill(item, look.color!)),
-            ctx,
+            cellCtx,
           ).map((node) => headingOnFill(node, look.color!))
-        : assembleFlow(cell.blocks, ctx);
+        : assembleFlow(cell.blocks, cellCtx);
       // Blocks in a cell sit close together, the last one flush, in the
       // table's type (their own style would set the body's).
       const stack = nodes.map((node, index) =>
@@ -844,7 +900,7 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
   for (const item of items) {
     if (item.shape.type !== "list_item") {
       stack.length = 0;
-      output.push(blockNode(item, ctx));
+      output.push(tagNode(blockNode(item, ctx), item, ctx));
       continue;
     }
 
@@ -898,7 +954,7 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
         element.listType = "none";
       }
     }
-    top.items.push(element);
+    top.items.push(tagNode(element, item, ctx));
   }
   return output;
 }
@@ -909,12 +965,30 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
 export function blocksToPdf(
   blocks: Block[],
   ctx: PdfContentContext,
+  /**
+   * A note to open a block with, by block id: «Pendiente de conciliar E3 y
+   * E5» before a passage approved pending conciliation.
+   */
+  notes?: ReadonlyMap<string, string>,
 ): Content[] {
   return assemble(
     blocks.map((block) => ({
       shape: block,
-      inlines: markedInlines(block.text, block.marks, 0, ctx),
+      inlines: [
+        ...(notes?.has(block.id)
+          ? [
+              {
+                text: `[${notes.get(block.id)}] `,
+                style: "formatNote",
+                color: CREUP_RED,
+                bold: true,
+              } satisfies Inline,
+            ]
+          : []),
+        ...markedInlines(block.text, block.marks, 0, ctx),
+      ],
       countable: true,
+      blockId: block.id,
       ...(block.type === "formula"
         ? { formula: { source: block.text, changed: false } }
         : {}),

@@ -21,6 +21,7 @@ import {
   liveAmendmentState,
   liveAmendmentStats,
   liveBlocEntries,
+  liveBlocOutcome,
   livePositionLine,
   liveReplacedBy,
   liveSpeakers,
@@ -942,6 +943,7 @@ describe("a bloc on screen (2026-11-19)", () => {
         id: "e3",
         code: "E3",
         author: null,
+        outcome: "approved",
         approved: true,
         settled: false,
         transacts: [],
@@ -950,6 +952,7 @@ describe("a bloc on screen (2026-11-19)", () => {
         id: "e5",
         code: "E5",
         author: ugr,
+        outcome: null,
         approved: false,
         settled: false,
         transacts: [],
@@ -958,6 +961,7 @@ describe("a bloc on screen (2026-11-19)", () => {
         id: "e9",
         code: "E9",
         author: null,
+        outcome: null,
         approved: false,
         settled: true,
         transacts: [],
@@ -986,6 +990,175 @@ describe("a bloc on screen (2026-11-19)", () => {
     expect(liveBlocEntries(["e7", "gone"], list)).toEqual([]);
     expect(liveBlocEntries([], list)).toEqual([]);
     expect(liveBlocEntries(undefined, list)).toEqual([]);
+  });
+});
+
+describe("a proposal on admission on screen (2026-11-21)", () => {
+  const late = (id: string, over: Partial<AmendmentDto> = {}) =>
+    amendment(id, {
+      code: id.toUpperCase(),
+      late: true,
+      admission: "pending",
+      ...over,
+    });
+  const list = [
+    late("uclm2", { positionKey: 2 }),
+    late("uclm1", { positionKey: 1, admission: "admitted" }),
+    late("uclm3", {
+      positionKey: 3,
+      admission: "inadmissible",
+      status: "inadmissible",
+    }),
+    late("uclm4", { positionKey: 4, publishedAt: null }),
+    // Admitted and approved since: still «Admitida» on the proposal.
+    late("uclm5", {
+      positionKey: 5,
+      admission: "admitted",
+      status: "approved",
+    }),
+  ];
+
+  it("shows each one admitted, not admitted or still pending", () => {
+    const entries = liveBlocEntries(
+      ["uclm1", "uclm2", "uclm3", "uclm4", "uclm5"],
+      list,
+      "admit",
+    );
+    expect(
+      entries.map((entry) => [entry.code, entry.outcome, entry.settled]),
+    ).toEqual([
+      ["UCLM1", "admitted", false],
+      ["UCLM2", null, false],
+      ["UCLM3", "notAdmitted", true],
+      ["UCLM5", "admitted", false],
+    ]);
+    // A proposal not to admit reads the same outcomes.
+    expect(
+      liveBlocEntries(["uclm1", "uclm3"], list, "inadmit").map(
+        (entry) => entry.outcome,
+      ),
+    ).toEqual(["admitted", "notAdmitted"]);
+  });
+
+  it("never reads an admission as an approval, nor the reverse", () => {
+    expect(
+      liveBlocOutcome({ status: "submitted", admission: "admitted" }),
+    ).toBe(null);
+    expect(
+      liveBlocOutcome({ status: "approved", admission: "admitted" }, "admit"),
+    ).toBe("admitted");
+    expect(
+      liveBlocOutcome({ status: "withdrawn", admission: "pending" }, "admit"),
+    ).toBeNull();
+  });
+});
+
+describe("a decision vote names what it decided (2026-11-21)", () => {
+  const list = [
+    amendment("u2", { code: "UCLM2", positionKey: 2, late: true }),
+    amendment("u1", { code: "UCLM1", positionKey: 1, late: true }),
+    amendment("u3", { code: "UCLM3", positionKey: 3, publishedAt: null }),
+  ];
+  const decisionVote = (result: "approved" | "rejected") =>
+    vote({ subjectType: "decision", subjectId: "dec", result });
+  const context = (
+    kind: "admit_late" | "inadmission" | "other",
+    ids: string[],
+  ) => ({
+    amendments: list,
+    document: null,
+    decision: { kind, subjectIds: ids },
+  });
+
+  it("says what came of admitting them, both ways", () => {
+    expect(
+      liveVoteSubject(
+        decisionVote("approved"),
+        context("admit_late", ["u2", "u1"]),
+      ),
+    ).toEqual({
+      kind: "admission",
+      admitted: true,
+      codes: ["UCLM1", "UCLM2"],
+      hidden: 0,
+    });
+    // A failed vote to admit leaves them not admitted.
+    expect(
+      liveVoteSubject(decisionVote("rejected"), context("admit_late", ["u1"])),
+    ).toMatchObject({ kind: "admission", admitted: false });
+    // Declaring them inadmissible: the other way round.
+    expect(
+      liveVoteSubject(decisionVote("approved"), context("inadmission", ["u1"])),
+    ).toMatchObject({ kind: "admission", admitted: false });
+    expect(
+      liveVoteSubject(decisionVote("rejected"), context("inadmission", ["u1"])),
+    ).toMatchObject({ kind: "admission", admitted: true });
+  });
+
+  it("counts what the viewer cannot read, and keeps other decisions generic", () => {
+    expect(
+      liveVoteSubject(
+        decisionVote("rejected"),
+        context("admit_late", ["u1", "u3"]),
+      ),
+    ).toEqual({
+      kind: "admission",
+      admitted: false,
+      codes: ["UCLM1"],
+      hidden: 1,
+    });
+    expect(
+      liveVoteSubject(decisionVote("approved"), context("other", ["u1"])),
+    ).toEqual({ kind: "decision" });
+    expect(
+      liveVoteSubject(decisionVote("approved"), {
+        amendments: list,
+        document: null,
+      }),
+    ).toEqual({ kind: "decision" });
+    // A count in progress has no result yet.
+    expect(
+      liveVoteSubject(
+        { subjectType: "decision", subjectId: null },
+        context("admit_late", ["u1"]),
+      ),
+    ).toEqual({ kind: "decision" });
+  });
+
+  it("words the heading with the codes, or a count", () => {
+    const t = (
+      key: string,
+      params?: Record<string, unknown>,
+      plural?: number,
+    ) =>
+      `${key}${plural === undefined ? "" : `[${plural}]`}${params ? JSON.stringify(params) : ""}`;
+    expect(
+      liveVoteSubjectText(
+        {
+          kind: "admission",
+          admitted: true,
+          codes: ["UCLM1", "UCLM2"],
+          hidden: 0,
+        },
+        t,
+      ),
+    ).toBe('projection.vote.admission.admitted[2]{"what":"UCLM1, UCLM2"}');
+    expect(
+      liveVoteSubjectText(
+        { kind: "admission", admitted: false, codes: [], hidden: 3 },
+        t,
+      ),
+    ).toBe(
+      'projection.vote.admission.notAdmitted[3]{"what":"projection.vote.admission.amendments[3]{\\"count\\":3}"}',
+    );
+    expect(
+      liveVoteSubjectText(
+        { kind: "admission", admitted: true, codes: ["UCLM1"], hidden: 2 },
+        t,
+      ),
+    ).toBe(
+      'projection.vote.admission.admitted[3]{"what":"projection.vote.admission.more[2]{\\"codes\\":\\"UCLM1\\",\\"count\\":2}"}',
+    );
   });
 });
 

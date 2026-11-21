@@ -15,7 +15,12 @@ import {
   visibleAcronym,
 } from "../../domain/visibility";
 import { publicExportActor } from "../actor";
-import { documentMeta, loadPublishedAgenda, loadVotes } from "../buildData";
+import {
+  documentMeta,
+  loadPendingConciliation,
+  loadPublishedAgenda,
+  loadVotes,
+} from "../buildData";
 import { amendmentCode } from "../mapping";
 import type {
   PackageAmendment,
@@ -87,11 +92,19 @@ export async function loadPackageSource(
   const structuredIds = documentRows
     .filter((document) => document.format === "structured")
     .map((document) => document.id);
-  const [finalVotes, coProponents, visibleAmendments] = await Promise.all([
-    loadVotes(documentRows.map((document) => document.finalVoteId)),
-    loadCoProponents(documentRows.map((document) => document.id)),
-    loadVisibleAmendmentIds(reader, structuredIds),
-  ]);
+  const [finalVotes, coProponents, visibleAmendments, pendingConciliation] =
+    await Promise.all([
+      loadVotes(documentRows.map((document) => document.finalVoteId)),
+      loadCoProponents(documentRows.map((document) => document.id)),
+      loadVisibleAmendmentIds(reader, structuredIds),
+      loadPendingConciliation(
+        documentRows.map((document) =>
+          document.format === "structured"
+            ? document.consolidatedVersionId
+            : null,
+        ),
+      ),
+    ]);
   const { byDocument: amendmentsByDocument, authors } =
     await loadPackageAmendments([...visibleAmendments]);
 
@@ -115,6 +128,9 @@ export async function loadPackageSource(
       format: document.format,
       proponent: meta.proponent,
       finalVote: meta.finalVote,
+      pendingConciliation: document.consolidatedVersionId
+        ? (pendingConciliation.get(document.consolidatedVersionId) ?? [])
+        : [],
       baseVersionId: document.baseVersionId,
       consolidatedVersionId: document.consolidatedVersionId,
       fileUrl: document.format === "file" ? document.fileUrl : null,

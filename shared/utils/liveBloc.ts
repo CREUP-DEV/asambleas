@@ -1,10 +1,13 @@
+import { LIVE_BLOC_PURPOSES, type LiveBlocPurpose } from "../constants/domain";
 import type { LiveStateBody } from "../types/api";
 
 /**
  * A bloc on screen (user's decision of 2026-11-19): amendments of the
  * document on screen the Mesa proposes to approve together. It takes the
  * place of the amendment and the vote on screen, and they take its place:
- * the live state points at one of the three at most.
+ * the live state points at one of the three at most. A purpose (user's
+ * decision of 2026-11-21) makes the same bloc a proposal to admit late
+ * amendments to debate or not, rather than a second pointer.
  */
 
 /** What the live state points at, as the server stores it. */
@@ -20,6 +23,12 @@ export interface LivePointerFields {
    * null for a bloc proposed for approval, and always without a bloc.
    */
   amendmentBlocOptions: string[][] | null;
+  /**
+   * What the bloc proposes (user's decision of 2026-11-21): null to approve
+   * it, and always without a bloc; `admit` or `inadmit` for late amendments
+   * pending admission. Never with options.
+   */
+  amendmentBlocPurpose: LiveBlocPurpose | null;
   voteId: string | null;
 }
 
@@ -55,6 +64,43 @@ export function normalizeBlocOptions(
   return options.map((ids) => [...ids]);
 }
 
+/**
+ * A bloc's purpose as stored: one of LIVE_BLOC_PURPOSES with a bloc and no
+ * options, else null (to approve it, or no bloc at all).
+ */
+export function normalizeBlocPurpose(
+  purpose: string | null | undefined,
+  bloc: readonly string[] | null,
+  options: readonly (readonly string[])[] | null = null,
+): LiveBlocPurpose | null {
+  if (!bloc || options) return null;
+  return (LIVE_BLOC_PURPOSES as readonly string[]).includes(purpose ?? "")
+    ? (purpose as LiveBlocPurpose)
+    : null;
+}
+
+/**
+ * Whether an amendment may go on screen in a proposal to admit it or not
+ * (user's decision of 2026-11-21): late, presented, validated and
+ * published, and still waiting for that decision. The room reads only what
+ * is published, so the Secretaría publishes the rest first.
+ */
+export function isLiveAdmissionProposable(amendment: {
+  late: boolean;
+  status: string;
+  admission: string;
+  validatedAt: Date | string | null;
+  publishedAt: Date | string | null;
+}): boolean {
+  return (
+    amendment.late &&
+    amendment.status === "submitted" &&
+    amendment.admission === "pending" &&
+    amendment.validatedAt !== null &&
+    amendment.publishedAt !== null
+  );
+}
+
 /** Whether two sets of options are the same, option by option. */
 function sameOptions(
   a: readonly (readonly string[])[] | null,
@@ -73,6 +119,7 @@ export const LIVE_POINTER_KEYS = [
   "amendmentId",
   "amendmentBloc",
   "amendmentBlocOptions",
+  "amendmentBlocPurpose",
   "voteId",
 ] as const satisfies readonly (keyof LivePointerFields)[];
 
@@ -94,7 +141,7 @@ export function changedLiveFields(
 }
 
 export type LivePointerError =
-  "bloc_with_pointer" | "foreign_document" | "bloc_options";
+  "bloc_with_pointer" | "foreign_document" | "bloc_options" | "bloc_purpose";
 
 /**
  * What a PUT .../live-state body points at next, once the server has
@@ -110,7 +157,10 @@ export type LivePointerError =
  *   one (unless the body sends them);
  * - a bloc sent with options puts them on screen with it, which must split
  *   exactly its amendments (`bloc_options`); a bloc sent without them, or
- *   taken off, takes them off.
+ *   taken off, takes them off;
+ * - a bloc sent with a purpose (admit, inadmit) proposes that instead of
+ *   approving it; a purpose never comes with options nor without a bloc
+ *   (`bloc_purpose`), and a bloc sent without one, or taken off, has none.
  * The agenda item of a new document is the server's to fill.
  */
 export function nextLivePointer(
@@ -122,6 +172,7 @@ export function nextLivePointer(
     | "amendmentId"
     | "amendmentBloc"
     | "amendmentBlocOptions"
+    | "amendmentBlocPurpose"
     | "voteId"
   >,
   owner: string | null,
@@ -129,6 +180,12 @@ export function nextLivePointer(
   const blocOn = (body.amendmentBloc?.length ?? 0) > 0;
   if (blocOn && (body.amendmentId || body.voteId)) {
     return { error: "bloc_with_pointer" };
+  }
+  if (
+    body.amendmentBlocPurpose &&
+    (!blocOn || (body.amendmentBlocOptions?.length ?? 0) > 0)
+  ) {
+    return { error: "bloc_purpose" };
   }
   const next: LivePointerFields = { ...previous };
   for (const key of [
@@ -151,6 +208,7 @@ export function nextLivePointer(
     ) {
       return { error: "bloc_options" };
     }
+    next.amendmentBlocPurpose = body.amendmentBlocPurpose ?? null;
   }
   if (owner !== null) {
     if (body.documentId === undefined) next.documentId = owner;
@@ -165,6 +223,9 @@ export function nextLivePointer(
     if (body.amendmentId === undefined) next.amendmentId = null;
     if (body.amendmentBloc === undefined) next.amendmentBloc = null;
   }
-  if (next.amendmentBloc === null) next.amendmentBlocOptions = null;
+  if (next.amendmentBloc === null) {
+    next.amendmentBlocOptions = null;
+    next.amendmentBlocPurpose = null;
+  }
   return { next };
 }

@@ -957,6 +957,8 @@ const ALLOWED_ATTRIBUTES = new Set([
   "href",
   "rel",
   "target",
+  // Links: a drag that starts on one selects text.
+  "draggable",
   "aria-hidden",
   "start",
   "data-marker",

@@ -114,7 +114,10 @@ html {
   scroll-behavior: smooth;
   /* Raleway defaults to old-style figures, where "80.ª" reads as "8o.ª" and
      references such as "POS 001/2026" look like letters. A feature setting
-     (not font-variant-numeric) keeps lining figures under tabular-nums too. */
+     (not font-variant-numeric) keeps lining figures under tabular-nums too.
+     Raleway has no tabular figures (`tnum`), so tabular-nums changes
+     nothing with it: a number that ticks goes through CommonTabularDigits,
+     which puts each digit in a cell of one width. */
   font-feature-settings: "lnum";
 }
 
@@ -392,11 +395,16 @@ html {
 }
 
 @layer components {
+  /* A run that cannot fit its line (a long code or reference) breaks
+     where it must instead of spilling past the column; ordinary words
+     still break only at spaces. `break-word` leaves the text's
+     min-content width alone, so tables keep their columns. */
   .rich-text {
     max-width: none;
     font-family: var(--user-content-font);
     font-size: 1.0625rem;
     line-height: 1.85;
+    overflow-wrap: break-word;
   }
 
   .rich-text > * {
@@ -802,12 +810,18 @@ html {
 
   /* A long address (a bibliography's URL) breaks anywhere rather than
      widening its column: in the console's debate column it made the whole
-     column scroll sideways. */
+     column scroll sideways, and on the projection the whole page (17.13 of
+     the 80.ª AGO, 2026-11-21). Bare addresses typed as text are links too
+     (render.ts links them when drawn), so they break the same way. A drag
+     that starts on a link selects text instead of dragging the link (the
+     selection bar and the Mesa's select mode; render.ts also sets
+     draggable="false"). */
   .rich-text a {
     color: var(--ui-primary);
     text-decoration: underline;
     text-underline-offset: 0.18em;
     overflow-wrap: anywhere;
+    -webkit-user-drag: none;
   }
 
   /* Document and amendment content outside .rich-text (the editor). */
@@ -1046,6 +1060,34 @@ html {
     );
   }
 
+  /*
+   * A passage approved pending conciliation (user's decisions of
+   * 2026-11-21): a warning bar in the margin and a pale tint, its first
+   * block opening with «Pendiente de conciliar E3 y E5».
+   */
+  .cx-pending {
+    border-radius: 0.25rem;
+    background-color: color-mix(in oklab, var(--ui-warning) 8%, transparent);
+    box-shadow:
+      -0.375rem 0 0 0 color-mix(in oklab, var(--ui-warning) 8%, transparent),
+      -0.625rem 0 0 0 var(--ui-warning);
+  }
+
+  .cx-pending-start::before {
+    content: attr(data-pending-label);
+    display: block;
+    margin-bottom: 0.125rem;
+    color: color-mix(
+      in oklab,
+      var(--ui-warning) 65%,
+      var(--ui-text-highlighted)
+    );
+    font-size: 0.75em;
+    font-weight: 600;
+    font-style: normal;
+    text-decoration: none;
+  }
+
   /* Selected blocks: a tint plus a bar in the margin, without shifting text. */
   .cx-selected {
     border-radius: 0.25rem;
@@ -1201,6 +1243,65 @@ html {
     outline: 2px solid var(--ui-primary);
     outline-offset: 1px;
     border-radius: 4px;
+  }
+
+  /*
+   * The pages of the text's PDF (ContentView `pages`): «pág. N» at the
+   * inline end of the block where a page starts, over a hairline across
+   * the text (none when the page starts inside the block). Only from md
+   * up: on a phone the text runs on, and the bar's «Página X de N» stays.
+   */
+  .cx-pages {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    .cx-has-pages {
+      padding-inline-end: 3.75rem;
+    }
+
+    .cx-pages {
+      display: block;
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+  }
+
+  /* A row as wide as the text, at the top of the block. */
+  .cx-page-mark {
+    position: absolute;
+    inset-inline: 0;
+    height: 0;
+  }
+
+  .cx-page-mark::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -0.375rem;
+    inset-inline: 0 3.75rem;
+    border-block-start: 1px dashed var(--ui-border-accented);
+  }
+
+  .cx-page-mark--inside::before {
+    content: none;
+  }
+
+  .cx-page-mark-label {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    display: flex;
+    align-items: center;
+    height: 1.5rem;
+    color: var(--ui-text-dimmed);
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: auto;
+    cursor: default;
   }
 
   .motion-card {

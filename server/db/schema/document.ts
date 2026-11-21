@@ -18,6 +18,10 @@ import { agendaItems } from "./agendaItem";
 import { members } from "./member";
 import { amendments } from "./amendment";
 import type { Block } from "../../../shared/types/content";
+import type {
+  ConciliationPassage,
+  PendingPassage,
+} from "../../../shared/utils/content/pendingPassages";
 import {
   ACCEPTED_AMENDMENT_RULES,
   DOCUMENT_FORMATS,
@@ -286,6 +290,13 @@ export const documentVersions = pgTable(
       (): AnyPgColumn => documentVersions.id,
       { onDelete: "set null" },
     ),
+    /**
+     * A consolidated version approved pending conciliation (user's
+     * decisions of 2026-11-21; shared/utils/content/pendingPassages.ts):
+     * the passages where approved amendments still collide, carrying the
+     * automatic proposal. Null or empty: the text is final.
+     */
+    pendingPassages: jsonb("pending_passages").$type<PendingPassage[]>(),
     createdByUserId: text("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -337,7 +348,7 @@ export const documentFormCorrections = pgTable(
     status: formCorrectionStatusEnum("status").notNull().default("pending"),
     /** Who made it, as the record names them: the office, or a presenter. */
     madeAs: text("made_as")
-      .$type<"secretaria" | "mesa" | "presenter">()
+      .$type<"secretaria" | "mesa" | "authorized" | "presenter">()
       .notNull(),
     proposedByUserId: text("proposed_by_user_id").references(() => users.id, {
       onDelete: "set null",
@@ -351,6 +362,12 @@ export const documentFormCorrections = pgTable(
     }),
     decidedAt: timestamp("decided_at", { withTimezone: true, mode: "date" }),
     decisionNote: text("decision_note"),
+    /**
+     * A conciliation of a passage left pending by the final vote (user's
+     * decisions of 2026-11-21): its wording over the base. `blocks` is then
+     * the whole text rebuilt with it. Null for a correction of form.
+     */
+    passage: jsonb("passage").$type<ConciliationPassage>(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

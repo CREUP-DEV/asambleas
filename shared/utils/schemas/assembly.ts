@@ -4,6 +4,7 @@ import type { AssemblyType } from "../../constants/assemblyTypes";
 import {
   ASSEMBLY_STATUSES,
   DOCUMENT_KINDS,
+  LIVE_BLOC_PURPOSES,
   MAJORITIES,
   MILESTONE_KEYS,
   VOTE_METHODS,
@@ -232,6 +233,9 @@ export const liveStateBodySchema = z.object({
     .max(10)
     .nullable()
     .optional(),
+  // What the bloc proposes besides approving it (nextLivePointer checks it
+  // comes with a bloc and without options).
+  amendmentBlocPurpose: z.enum(LIVE_BLOC_PURPOSES).nullable().optional(),
   voteId: assemblyEntityId.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
   speakersVisible: z.boolean().optional(),

@@ -196,9 +196,11 @@ const awaitingValidation = computed(
         >
           <p class="text-highlighted font-semibold">
             {{
-              finalVote.result === "approved"
-                ? t("session.preview.finalApproved")
-                : t("session.preview.finalRejected")
+              finalVote.result !== "approved"
+                ? t("session.preview.finalRejected")
+                : (session.document.value?.pendingConciliation ?? 0) > 0
+                  ? t("session.preview.finalApprovedPending")
+                  : t("session.preview.finalApproved")
             }}
           </p>
           <p class="text-default text-sm tabular-nums">

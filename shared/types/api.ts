@@ -22,6 +22,7 @@ import type {
   DocumentKind,
   DocumentStatus,
   FormCorrectionStatus,
+  LiveBlocPurpose,
   Majority,
   MemberKind,
   MemberSource,
@@ -383,8 +384,10 @@ export interface ReviewQueueDto {
   amendments: ReviewQueueAmendmentDto[];
   /**
    * Documents whose presenters proposed corrections of form to the
-   * approved text that wait for the Secretaría (document:manage), with how
-   * many; empty for anyone else.
+   * approved text, or conciliations of a passage the final vote left
+   * pending (user's decisions of 2026-11-21), that wait for the Secretaría
+   * (document:manage), with how many of both («Texto aprobado»); empty for
+   * anyone else.
    */
   formCorrections: {
     document: { id: string; slug: string; title: string };
@@ -831,7 +834,25 @@ export interface DocumentSummaryDto {
   correctionRequestedAt: IsoDate | null;
   /** Final text approved and stored. */
   consolidated: boolean;
+  /**
+   * Passages of the approved text still pending conciliation (user's
+   * decisions of 2026-11-21): while above 0 the text reads «Aprobado ·
+   * pendiente de conciliar», never as the final text.
+   */
+  pendingConciliation: number;
   updatedAt: IsoDate;
+}
+
+/**
+ * A passage the final vote left pending conciliation
+ * (shared/utils/content/pendingPassages.ts): the approved amendments that
+ * collide there, its base blocks and its blocks in the stored text.
+ */
+export interface PendingPassageDto {
+  key: string;
+  amendmentIds: string[];
+  blockIds: string[];
+  textBlockIds: string[];
 }
 
 export interface VersionDto {
@@ -846,7 +867,46 @@ export interface VersionDto {
    */
   replacesVersionId: string | null;
   note: string | null;
+  /**
+   * A consolidated version approved pending conciliation: the passages that
+   * carry the automatic proposal until they are conciliated. Empty for a
+   * final text and for any other version.
+   */
+  pendingPassages: PendingPassageDto[];
   createdAt: IsoDate;
+}
+
+/**
+ * Where a printed page of a text's PDF starts (user's decisions of
+ * 2026-11-21): page `page` (as the footer prints it, the cover uncounted)
+ * starts at block `blockId`, or inside it when `inside` (the page breaks
+ * in the middle of that block).
+ */
+export interface PageMapStart {
+  blockId: string;
+  page: number;
+  inside: boolean;
+}
+
+/** The pages of one version's clean Spanish PDF (the package's). */
+export interface PageMapDto {
+  versionId: string;
+  /** Printed pages. */
+  total: number;
+  /** One per printed page that holds a block, in order. */
+  starts: PageMapStart[];
+}
+
+/**
+ * GET /api/assemblies/:assembly/documents/:document/pages: the pages of the
+ * text as presented and of the consolidated text, each null when there is
+ * none or it is not computed for the current text yet (`pending` then says
+ * it is on its way; a later read has it).
+ */
+export interface DocumentPagesDto {
+  base: PageMapDto | null;
+  consolidated: PageMapDto | null;
+  pending: boolean;
 }
 
 export interface DocumentCapabilities {
@@ -877,10 +937,17 @@ export interface DocumentCapabilities {
    * approved text to correct or the reader may do neither.
    */
   correctForm: "direct" | "propose" | null;
+  /**
+   * Conciliate a passage the final vote left pending (user's decisions of
+   * 2026-11-21): `direct` with document:correct_form, `propose` for its
+   * presenters; null when nothing is pending or the reader may do neither.
+   */
+  conciliate: "direct" | "propose" | null;
 }
 
 /** Who made a correction of form, as the record names them. */
-export type FormCorrectionAuthor = "secretaria" | "mesa" | "presenter";
+export type FormCorrectionAuthor =
+  "secretaria" | "mesa" | "authorized" | "presenter";
 
 /**
  * A correction of form to the approved text (GET .../form-corrections):
@@ -902,6 +969,12 @@ export interface FormCorrectionDto {
    */
   onCurrentText: boolean;
   decisionNote: string | null;
+  /**
+   * A conciliation of a passage left pending by the final vote (user's
+   * decisions of 2026-11-21): the amendments it conciliates and its base
+   * blocks. Null for a correction of form.
+   */
+  passage: { key: string; amendmentIds: string[]; blockIds: string[] } | null;
   createdAt: IsoDate;
   decidedAt: IsoDate | null;
   updatedAt: IsoDate;
@@ -923,6 +996,22 @@ export interface FormCorrectionBody {
   fromVersionId: string;
   blocks: Block[];
   reason: string;
+}
+
+/**
+ * Body of POST .../conciliations (user's decisions of 2026-11-21): the
+ * wording of a passage the final vote left pending, over the base, made on
+ * the consolidated version in force (`fromVersionId`, 409 `stale`
+ * otherwise). Applied at once with document:correct_form; a presenter's
+ * waits for the Secretaría as a correction of form does. Returns
+ * FormCorrectionsDto.
+ */
+export interface ConciliationBody {
+  fromVersionId: string;
+  amendmentIds: string[];
+  blockIds: string[];
+  ops: AmendmentOp[];
+  reason?: string | null;
 }
 
 /** Body of POST .../form-corrections/[correction]/decision. */
@@ -1304,6 +1393,24 @@ export interface AmendmentDto {
   /** Transactionals built on this amendment. */
   transactionalIds: string[];
   acceptances: AcceptanceDto[];
+  /**
+   * A transactional a member presented (never the Mesa in session): that
+   * member and when, so the card and «Quién tiene que aceptarla» say
+   * «Presentada por …». When it presents the document, presenting it was
+   * its answer (user's decision of 2026-11-21). Null otherwise, and when
+   * that member is no longer among its authors.
+   */
+  proposer?: {
+    member: MemberRef;
+    at: IsoDate | null;
+    /**
+     * That member presents the document now (main presenter or
+     * co-presenter), decided on the server with the real ids
+     * (proposingPresenterOf): `member` may read as the generic "CEA", the
+     * same as another office presenting the document.
+     */
+    presentsDocument: boolean;
+  } | null;
   /** A transactional's inclusion still open, null otherwise. */
   openRevision?: TransactionalRevisionDto | null;
   updatedAt: IsoDate;
@@ -1601,6 +1708,13 @@ export interface FinalVoteBody {
   order?: string[];
   /** As OutcomeBody.project: false leaves the projection where it is. */
   project?: boolean;
+  /**
+   * Approve the text with passages still to word (user's decisions of
+   * 2026-11-21): the version carries their automatic proposal and lists
+   * them as pending conciliation. Without it a pending passage answers 409
+   * `{ pendingPassages }`. Never together with `order`.
+   */
+  allowPendingPassages?: boolean;
 }
 
 /**
@@ -1891,6 +2005,13 @@ export interface SessionProgressDto {
   }[];
 }
 
+/** The decision a decision vote on screen recorded (LiveStateDto.voteDecision). */
+export interface LiveVoteDecisionDto {
+  kind: DecisionKind;
+  /** What it decided on: amendment ids for an admission. */
+  subjectIds: string[];
+}
+
 /** A recess the Mesa called: since when and, if it said, until when. */
 export interface LiveRecessDto {
   startedAt: IsoDate;
@@ -1913,7 +2034,22 @@ export interface LiveStateDto {
    * a bloc proposed for approval.
    */
   amendmentBlocOptions: string[][] | null;
+  /**
+   * What the bloc on screen proposes (user's decision of 2026-11-21): null
+   * to approve it (and without a bloc); `admit` or `inadmit` for late
+   * amendments the Mesa proposes to admit to debate or not to admit
+   * (published ones pending admission when put on screen). It stays on
+   * screen, each one showing what was decided, until the Mesa moves on.
+   */
+  amendmentBlocPurpose: LiveBlocPurpose | null;
   vote: VoteDto | null;
+  /**
+   * What the decision vote on screen decided (a vote with subject
+   * "decision"): the kind and the subjects of its `decisions` row, so the
+   * room reads «Admitidas a debate: UCLM1, UCLM2» instead of a generic
+   * heading. Null for any other vote, and without one.
+   */
+  voteDecision: LiveVoteDecisionDto | null;
   message: string | null;
   /** Attendees see who has the floor and who is next. */
   speakersVisible: boolean;
@@ -1960,6 +2096,13 @@ export interface LiveStateBody {
    * left out puts it on screen as a bloc proposed for approval.
    */
   amendmentBlocOptions?: string[][] | null;
+  /**
+   * What the bloc sent proposes (user's decision of 2026-11-21): null or
+   * left out to approve it; `admit` or `inadmit` for late amendments
+   * pending admission, all published (409 otherwise), never with options
+   * nor without a bloc (422).
+   */
+  amendmentBlocPurpose?: LiveBlocPurpose | null;
   voteId?: string | null;
   message?: string | null;
   speakersVisible?: boolean;
@@ -2357,6 +2500,37 @@ export interface ControlSheetDocumentDto {
   amendments: number;
   /** Of those, the ones still presented and undecided. */
   undecided: number;
+  /**
+   * The reader acts for one of its presenters, main or co-presenter
+   * (isDocumentPresenter): «Mis documentos» (user's decision of
+   * 2026-11-21). Absent reads as false.
+   */
+  presenting?: boolean;
+  /**
+   * For a document the reader presents, the amendments that wait for its
+   * presenters' answer now (presented, undecided, no answer yet and nothing
+   * holding it back: positionBlocker); 0 otherwise.
+   */
+  awaitingAnswer?: number;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/control-sheet/notes: the account's own
+ * general private notes (not anchored to a stretch of text) on what the
+ * sheet shows it, for «Mis notas» (user's decision of 2026-11-21). Keyed by
+ * the account (user id), never by member, and never part of
+ * ControlSheetDto nor of any live message. Oldest first in each list.
+ */
+export interface ControlSheetNotesDto {
+  /** Published documents the reader sees with general notes of its own. */
+  documents: {
+    documentId: string;
+    notes: DocumentNoteDto[];
+    /** Its notes anchored to the text, only counted: they open there. */
+    anchored: number;
+  }[];
+  /** Amendments past draft the reader sees with notes of its own. */
+  amendments: { amendmentId: string; notes: AmendmentNoteDto[] }[];
 }
 
 /** The main presenter's answer to one amendment, as the sheet reads it. */

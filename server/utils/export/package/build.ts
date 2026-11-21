@@ -28,7 +28,13 @@ import {
   type PackageAgendaRow,
   type PackagePdfAssembly as PdfAssembly,
 } from "../packagePdf";
-import { buildDocumentPdf, type ExportDocumentMeta } from "../pdfBuilder";
+import {
+  pendingConciliationNotes,
+  type ExportDocumentMeta,
+} from "../pdfBuilder";
+import { PAGE_MAP_LOCALE, storeDocumentPages } from "../documentPages";
+import { cleanDocumentDefinition, cleanDocumentMeta } from "./documentPdf";
+import { withBlockNotes } from "../../../../shared/utils/content/pendingPassages";
 import { renderPdfBatch } from "../pdfRender";
 import type { PackageJobData } from "../queue";
 import { loadPackageSource } from "./load";
@@ -320,13 +326,47 @@ class PieceRenderer {
       await writeAtomically(piecePath(assemblyId, first.key, "docx"), buffer);
       return;
     }
+    // A text's Spanish PDF also says where its pages start, for the web text
+    // (documentPages.ts): its blocks tagged, the PDF the same.
+    const paged =
+      piece.kind === "document" &&
+      group.length === 1 &&
+      this.locale === PAGE_MAP_LOCALE
+        ? piece
+        : null;
     const definitions: TDocumentDefinitions[] = [];
-    for (const entry of group) definitions.push(await this.definition(entry));
-    const { pdfs } = await renderPdfBatch(definitions, await loadPdfFonts());
+    let order: string[] = [];
+    if (paged) {
+      const built = await this.documentPdf(
+        paged.documentId,
+        paged.version,
+        true,
+      );
+      definitions.push(built.definition);
+      order = built.order;
+    } else {
+      for (const entry of group) definitions.push(await this.definition(entry));
+    }
+    const { pdfs, pages } = await renderPdfBatch(
+      definitions,
+      await loadPdfFonts(),
+      undefined,
+      { pages: paged !== null },
+    );
     for (const [index, entry] of group.entries()) {
       await writeAtomically(
         piecePath(assemblyId, entry.key, "pdf"),
         pdfs[index]!,
+      );
+    }
+    if (paged && pages?.[0]) {
+      await storeDocumentPages(
+        this.pdfAssembly,
+        this.document(paged.documentId),
+        paged.version,
+        this.locale,
+        order,
+        pages[0],
       );
     }
   }
@@ -352,7 +392,8 @@ class PieceRenderer {
           this.brand,
         );
       case "document":
-        return this.documentPdf(piece.documentId, piece.version);
+        return (await this.documentPdf(piece.documentId, piece.version))
+          .definition;
       case "amendment":
         return this.amendmentPdf(piece.documentId, piece.amendmentId);
       case "file":
@@ -397,40 +438,22 @@ class PieceRenderer {
     document: PackageDocument,
     version: "base" | "consolidated",
   ): ExportDocumentMeta {
-    return {
-      title: document.title,
-      reference: document.reference,
-      kind: document.kind,
-      format: document.format,
-      proponent: document.proponent,
-      fileName: null,
-      agendaNumbering: null,
-      agendaTitle: null,
-      finalVote: version === "consolidated" ? document.finalVote : null,
-    };
+    return cleanDocumentMeta(document, version);
   }
 
-  private async documentPdf(
+  /** With `pageTags`, for the pages the render reads back (documentPdf.ts). */
+  private documentPdf(
     documentId: string,
     version: "base" | "consolidated",
-  ): Promise<TDocumentDefinitions> {
-    const document = this.document(documentId);
-    const versionId =
-      version === "base"
-        ? document.baseVersionId
-        : document.consolidatedVersionId;
-    const blocks =
-      (await loadVersionBlocks([versionId!])).get(versionId!) ?? [];
-    return buildDocumentPdf(
-      {
-        assembly: this.pdfAssembly,
-        document: this.meta(document, version),
-        body: { variant: "clean", source: version, blocks },
-        generatedAt: new Date(),
-        images: await loadExportImages([document.id], blocks),
-      },
+    pageTags = false,
+  ): Promise<{ definition: TDocumentDefinitions; order: string[] }> {
+    return cleanDocumentDefinition(
+      this.pdfAssembly,
+      this.document(documentId),
+      version,
       this.locale,
       this.brand,
+      { pageTags },
     );
   }
 
@@ -439,8 +462,14 @@ class PieceRenderer {
     version: "base" | "consolidated",
   ): Promise<Buffer> {
     const document = this.document(documentId);
-    const blocks = await this.text(document, version);
     const t = createTranslator(this.locale);
+    // A passage pending conciliation opens with its note, as in the PDF.
+    const blocks = withBlockNotes(
+      await this.text(document, version),
+      version === "consolidated"
+        ? pendingConciliationNotes(this.meta(document, version), this.locale, t)
+        : new Map(),
+    );
     return buildDocumentDocx(
       {
         title: document.title || t("untitled"),

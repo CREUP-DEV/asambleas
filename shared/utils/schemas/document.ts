@@ -9,6 +9,7 @@ import { READING_BEAT_MAX_SECONDS } from "../documentViews";
 import type {
   AmendmentCorrectionBody,
   BulkDocumentsBody,
+  ConciliationBody,
   CorrectionBody,
   UndoValidationBody,
   DocumentCreateBody,
@@ -20,6 +21,7 @@ import type {
   FormCorrectionWithdrawBody,
 } from "../../types/api";
 import { BULK_DOCUMENTS_MAX } from "../agendaSubmissions";
+import { passageWordingBodySchema } from "./amendment";
 import { blocksSchema } from "./content";
 import { voteInputSchema } from "./vote";
 
@@ -168,6 +170,23 @@ export const formCorrectionSchema = z.object({
   reason: z.string().trim().min(1).max(FORM_CORRECTION_REASON_MAX_LENGTH),
 });
 
+/**
+ * Body of POST .../conciliations (ConciliationBody): the wording of a
+ * passage the final vote left pending, as the Mesa's wordings are.
+ */
+export const conciliationSchema = passageWordingBodySchema
+  .pick({ amendmentIds: true, blockIds: true, ops: true })
+  .extend({
+    fromVersionId: z.string().min(1).max(64),
+    reason: z
+      .string()
+      .trim()
+      .max(FORM_CORRECTION_REASON_MAX_LENGTH)
+      .transform((value) => value || null)
+      .nullable()
+      .optional(),
+  });
+
 /** Body of POST .../form-corrections/[correction]/decision. */
 export const formCorrectionDecisionSchema = z.object({
   decision: z.enum(["apply", "reject"]),
@@ -217,6 +236,7 @@ export const finalVoteSchema = z.object({
     })
     .optional(),
   project: z.boolean().optional(),
+  allowPendingPassages: z.boolean().optional(),
 });
 
 /** Body of DELETE .../final-vote (FinalVoteAnnulBody). An empty note is null. */
@@ -246,6 +266,7 @@ export type _DocumentSchemaChecks = [
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
   Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
   Assignable<FormCorrectionBody, z.output<typeof formCorrectionSchema>>,
+  Assignable<ConciliationBody, z.output<typeof conciliationSchema>>,
   Assignable<
     FormCorrectionDecisionBody,
     z.output<typeof formCorrectionDecisionSchema>

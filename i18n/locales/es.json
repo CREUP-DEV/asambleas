@@ -148,7 +148,11 @@
         "label": "Índice del documento",
         "progress": "Sección {current} de {total}"
       },
-      "blockHint": "Pulsa Intro para elegir este párrafo; con Mayúsculas e Intro se añade a los ya elegidos."
+      "blockHint": "Pulsa Intro para elegir este párrafo; con Mayúsculas e Intro se añade a los ya elegidos.",
+      "pageMark": "pág. {pages} | págs. {pages}",
+      "pageMarkTitle": "Página {pages} del PDF | Páginas {pages} del PDF",
+      "pageOf": "Página {page} de {total}",
+      "pageOfTitle": "La página del PDF de la documentación que estás leyendo"
     },
     "editor": {
       "bold": "Negrita",
@@ -322,6 +326,7 @@
       "assemblyManage": "Editar asambleas y cambiar estado",
       "documentCreate": "Crear y presentar documentos",
       "documentManage": "Editar, publicar y retirar cualquier documento",
+      "documentCorrectForm": "Corregir la forma de los textos aprobados: erratas y cambios de forma que sustituyen al texto consolidado",
       "amendmentCreate": "Crear y presentar enmiendas",
       "amendmentManage": "Gestionar enmiendas de otros miembros",
       "amendmentReview": "Validar y publicar enmiendas, y anotar si se admiten",
@@ -1285,6 +1290,23 @@
       "errors": {
         "debateStarted": "Ya ha empezado el debate de su punto: las respuestas son públicas y no se pueden reservar."
       }
+    },
+    "pendingConciliation": {
+      "status": "Aprobado · pendiente de conciliar",
+      "description": "El texto se aprobó con 1 pasaje donde chocan enmiendas aprobadas sin redactar. Hasta que se concilie, se lee la propuesta automática, marcada en el texto. | El texto se aprobó con {count} pasajes donde chocan enmiendas aprobadas sin redactar. Hasta que se concilien, se lee la propuesta automática, marcada en el texto.",
+      "passage": "Pendiente de conciliar {codes}",
+      "entry": "Conciliación de {codes}",
+      "conciliate": "Conciliar",
+      "propose": "Proponer redacción",
+      "save": "Conciliar el pasaje",
+      "send": "Enviar a la Secretaría",
+      "toasts": {
+        "applied": "Pasaje conciliado en el texto aprobado",
+        "proposed": "Redacción enviada a la Secretaría"
+      },
+      "errors": {
+        "save": "No se pudo conciliar el pasaje"
+      }
     }
   },
   "amendment": {
@@ -1607,6 +1629,8 @@
       },
       "answerAuto": "Aceptada automáticamente: es de forma",
       "answerAutoCleared": "Vuelve a quedar sin respuesta: ya no es de forma",
+      "answerProposed": "{member} la acepta al presentarla",
+      "answerOnProposing": "La acepta al presentarla",
       "blocked": {
         "publication": "Se podrá responder cuando Secretaría la publique.",
         "validation": "Se podrá responder cuando Secretaría la valide.",
@@ -1625,6 +1649,7 @@
       "savedReopened": "Ya no está incorporada: vuelve a estar pendiente de decisión.",
       "later": "Podrá responderla {member} más adelante.",
       "laterYou": "Podrás responderla después.",
+      "acceptsOnProposing": "La ha presentado {member}, que presenta el documento: cuenta como aceptada en cuanto se pueda responder.",
       "yourTurn": "Te toca responderla.",
       "answersByMesa": {
         "accept": "La Mesa, en nombre de {member}, la aceptó",
@@ -1649,6 +1674,9 @@
       "title": "Quién tiene que aceptarla",
       "summary": "{accepted} de {total} la han aceptado",
       "none": "Nadie tiene que aceptarla.",
+      "presentedBy": "La ha presentado {member}",
+      "presenterAccepts": "{member}, que presenta el documento, la acepta al presentarla",
+      "presenterLater": "{member}, que presenta el documento, responde cuando Secretaría la valide",
       "roles": {
         "proponent": "presenta el documento",
         "mainAuthor": "autor principal de una enmienda que sustituiría",
@@ -2076,6 +2104,20 @@
       },
       "sheetTitle": "En la hoja de control",
       "sheetEdited": "Última edición: {name}, {when}"
+    },
+    "transactAnswer": {
+      "title": "¿Redactar la transaccional?",
+      "pendingTitle": "Ya hay una transaccional en curso",
+      "answer": "Se guardará la respuesta «Propone una transaccional» a {code}.",
+      "answerMesa": "Se guardará la respuesta «Propone una transaccional» a {code} en nombre de {member}.",
+      "draft": "Luego se abrirá el documento con {code} elegida para redactar la transaccional. Si cancelas, la respuesta no cambia.",
+      "draftMesa": "Luego se abrirá el documento con {code} elegida para redactar la transaccional, que será de la Mesa. Si cancelas, la respuesta no cambia.",
+      "pending": "Sobre esta enmienda ya está en curso la transaccional {list}: puedes abrirla o redactar otra. | Sobre esta enmienda ya están en curso las transaccionales {list}: puedes abrir la primera o redactar otra.",
+      "saveOnly": "Solo guardar la respuesta",
+      "draftButton": "Redactar la transaccional",
+      "draftAnother": "Redactar otra",
+      "openPending": "Abrir {code}",
+      "notCombinable": "La respuesta se ha guardado, pero {code} ya no se puede combinar en una transaccional."
     },
     "reopenAlternatives": {
       "required": "Se decidió en una votación de varias enmiendas: reabrirla anula la votación y reabre todas sus enmiendas"
@@ -2517,7 +2559,7 @@
         },
         "presenter_transactional": {
           "title": "Transaccional a su documento",
-          "description": "Cuando la Secretaría valida una transaccional de un miembro al documento que presenta, para que la responda. No si la propuso su propio miembro."
+          "description": "Cuando la Secretaría valida una transaccional de un miembro al documento que presenta, para que la responda. No si la presentó quien presenta el documento: esa ya fue su respuesta."
         },
         "presenter_decided": {
           "title": "Resuelto",
@@ -2613,6 +2655,10 @@
         "assent": "Aprobado en la {assembly} el {date} por asentimiento.",
         "unanimous": "Aprobado en la {assembly} el {date} por unanimidad."
       },
+      "pendingConciliation": {
+        "heading": "Aprobado pendiente de conciliar las enmiendas {passages}.",
+        "passage": "Pendiente de conciliar {codes}"
+      },
       "majorities": {
         "simple": "mayoría simple",
         "absolute": "mayoría absoluta",
@@ -2656,8 +2702,8 @@
         "notApplied": "Sin incorporar: choca con {codes}",
         "notAppliedInvalid": "Sin incorporar: ya no encaja en el texto",
         "supersededBy": "Sin efecto en el texto final: lo suprimió o reescribió {codes}",
-        "worded": "Redacción fijada por la Mesa junto con {codes}",
-        "wordingPending": "Redacción pendiente de la Mesa, junto con {codes}"
+        "worded": "Redacción conciliada junto con {codes}",
+        "wordingPending": "Redacción pendiente de conciliar, junto con {codes}"
       },
       "amendmentStatuses": {
         "draft": "Borrador",
@@ -3157,6 +3203,7 @@
         "published": "Se ha publicado el documento: ya lo puede leer toda la asamblea.",
         "correction": "Secretaría te pide que corrijas el documento. Cuando lo tengas, vuelve a enviarlo.",
         "approved": "La asamblea ha aprobado el texto final del documento.",
+        "approvedPending": "La asamblea ha aprobado el documento, con pasajes pendientes de conciliar.",
         "rejected": "La asamblea ha rechazado el texto final del documento.",
         "other": "Hay cambios en el documento."
       }
@@ -3769,6 +3816,7 @@
       "madeAs": {
         "secretaria": "Secretaría",
         "mesa": "Mesa",
+        "authorized": "Persona autorizada",
         "presenter": "Quien presenta"
       },
       "decisionNote": "Nota de la Secretaría: {note}",
@@ -4061,6 +4109,7 @@
       "relationCreated": "Relación registrada",
       "transactionalCreated": "Transaccional {code} creada",
       "finalApproved": "Texto final aprobado",
+      "finalApprovedPending": "Texto aprobado, pendiente de conciliar",
       "finalRejected": "Texto final rechazado",
       "finalAnnulled": "Votación final anulada",
       "validated": "Enmienda validada y publicada | {count} enmiendas validadas y publicadas",
@@ -4177,6 +4226,21 @@
       "titleInadmit": "Declarar enmiendas inadmisibles",
       "emptyAdmit": "No hay enmiendas que se puedan admitir",
       "emptyInadmit": "No hay enmiendas que se puedan inadmitir"
+    },
+    "admissionProposal": {
+      "project": "Proyectar propuesta",
+      "unpublished": "Una enmienda fuera de plazo sin publicar no se puede proyectar: la Secretaría tiene que publicarla antes. | {count} enmiendas fuera de plazo sin publicar no se pueden proyectar: la Secretaría tiene que publicarlas antes.",
+      "onScreen": {
+        "admit": "En pantalla: se propone admitir a debate",
+        "inadmit": "En pantalla: se propone no admitir"
+      },
+      "onScreenWhat": "una propuesta de admisión de 1 enmienda | una propuesta de admisión de {count} enmiendas",
+      "decide": "Decidir admisión",
+      "mismatch": "Lo marcado no coincide con la propuesta en pantalla: proyéctalo o marca las mismas enmiendas para decidir.",
+      "mismatchDecision": "La pantalla propone la decisión contraria: proyecta esta propuesta o elige la misma decisión y las mismas enmiendas para decidir.",
+      "errors": {
+        "notPending": "Solo se proyectan enmiendas fuera de plazo publicadas y pendientes de admisión"
+      }
     },
     "relation": {
       "title": "Relaciones de {code}",
@@ -4357,6 +4421,7 @@
       "applied": "Ninguna enmienda aplicada | 1 enmienda aplicada | {count} enmiendas aplicadas",
       "empty": "El texto base está vacío",
       "finalApproved": "Texto final aprobado",
+      "finalApprovedPending": "Texto aprobado, pendiente de conciliar",
       "finalRejected": "Texto final rechazado",
       "notVoted": "Este documento no se somete a votación",
       "notPublished": "El documento no está publicado",
@@ -4376,9 +4441,12 @@
       "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
       "conflictsTitle": "Las enmiendas aprobadas no se pueden aplicar juntas",
       "conflictsHint": "Reabre o vuelve a decidir alguna de ellas antes de la votación final.",
+      "leavePending": "Votar dejando el pasaje pendiente de conciliar | Votar dejando los {count} pasajes pendientes de conciliar",
+      "leavePendingHint": "Si se aprueba, el texto lleva la propuesta automática y queda «Aprobado · pendiente de conciliar» hasta que la Mesa o la Secretaría fijen la redacción.",
       "submit": "Registrar votación final",
       "confirmTitle": "Comprueba el resultado antes de registrarlo",
       "confirmDescription": "La votación final cierra las enmiendas del documento. Si hay un error, la Mesa tendrá que anularla.",
+      "pendingNote": "Queda 1 pasaje pendiente de conciliar. | Quedan {count} pasajes pendientes de conciliar.",
       "confirm": "Confirmar y registrar",
       "annul": "Anular votación final",
       "annulTitle": "Anular la votación final",
@@ -4843,6 +4911,15 @@
       "transacts": "Transacciona:",
       "approved": "Aprobada"
     },
+    "proposal": {
+      "title": {
+        "admit": "Se propone admitir a debate",
+        "inadmit": "Se propone no admitir"
+      },
+      "late": "Presentadas fuera de plazo",
+      "admitted": "Admitida",
+      "notAdmitted": "No admitida"
+    },
     "tally": {
       "title": "Votación secreta",
       "electionTitle": "Recuento de la elección",
@@ -4875,6 +4952,7 @@
     "resultCountsSecret": "{inFavor} a favor, {against} en contra, {third} en blanco.",
     "amendmentStats": "{approved} enmiendas aprobadas · {undecided} por decidir · {total} en total",
     "finalApproved": "Texto final aprobado",
+    "finalApprovedPending": "Texto aprobado, pendiente de conciliar",
     "finalRejected": "Texto final rechazado",
     "live": "Conectado",
     "polling": "Reconectando",
@@ -4902,7 +4980,13 @@
       "agendaItem": "Votación del punto {title}",
       "agendaItemUnknown": "Votación de un punto del orden del día",
       "unanimous": "Por unanimidad",
-      "bloc": "Votación en bloque: {codes}"
+      "bloc": "Votación en bloque: {codes}",
+      "admission": {
+        "admitted": "Admitida a debate: {what} | Admitidas a debate: {what}",
+        "notAdmitted": "No admitida: {what} | No admitidas: {what}",
+        "amendments": "una enmienda | {count} enmiendas",
+        "more": "{codes} y una más | {codes} y {count} más"
+      }
     },
     "stale": "Mostrando los últimos datos recibidos",
     "sessionExpired": "Sesión caducada: vuelve a entrar",
@@ -4985,7 +5069,7 @@
       "bulkConfirmFrozen": "Sus textos quedan fijados: ya no se podrán editar y recibirán su referencia si su tipo la lleva."
     },
     "formCorrections": {
-      "title": "Correcciones de forma propuestas a textos aprobados",
+      "title": "Texto aprobado: correcciones y conciliaciones propuestas",
       "count": "{count} pendiente | {count} pendientes"
     },
     "transactionals": {
@@ -5443,6 +5527,16 @@
           "treated": "Tratadas"
         }
       },
+      "mine": {
+        "general": {
+          "label": "Mis documentos",
+          "item": "Solo los que presento"
+        },
+        "amendments": {
+          "label": "Tu respuesta",
+          "item": "Pendientes de tu respuesta"
+        }
+      },
       "button": "Filtros",
       "buttonActive": "Filtros. En uso: {count}",
       "any": "Cualquiera",
@@ -5490,6 +5584,19 @@
       "button": "Editar",
       "item": "Editar el punto {title}",
       "amendment": "Editar la enmienda {code}"
+    },
+    "answer": {
+      "button": "Responder",
+      "amendment": "Responder a la enmienda {code}",
+      "pending": "Pendiente de tu respuesta",
+      "awaiting": "{count} sin responder | {count} sin responder",
+      "panelDescription": "Tu documento: esta enmienda espera tu respuesta"
+    },
+    "ownNotes": {
+      "hint": "Solo las ve tu cuenta. Aquí están las notas sobre todo el documento.",
+      "more": "y {count} más | y {count} más",
+      "none": "Sin notas tuyas",
+      "anchored": "{count} nota sobre el texto: ábrela en el documento | {count} notas sobre el texto: ábrelas en el documento"
     },
     "results": {
       "title": "Resultado",
@@ -6080,6 +6187,7 @@
       "title": "Turno de palabra",
       "current": "Tiene la palabra",
       "next": "Después",
+      "nextInline": "Después:",
       "more": "y 1 más | y {count} más",
       "empty": "Nadie tiene la palabra ahora mismo.",
       "unnamed": "Sin nombre"
@@ -6274,10 +6382,10 @@
       "reseedConfirm": "Al cambiar las enmiendas que combinas, el texto vuelve a empezar y se pierde lo que has escrito. ¿Seguir?",
       "resetConfirm": "Se perderán tus cambios en el texto. ¿Volver al texto inicial?",
       "sent": {
-        "toast": "Transaccional enviada",
-        "title": "Transaccional {code} enviada",
+        "toast": "Transaccional presentada",
+        "title": "Transaccional {code} presentada",
         "titlePublished": "Transaccional {code} presentada",
-        "titleUnnumbered": "Transaccional enviada",
+        "titleUnnumbered": "Transaccional presentada",
         "next": "Qué pasa ahora",
         "view": "Ver la transaccional"
       },
@@ -6293,7 +6401,11 @@
       "replaces": "Sustituye a {list}.",
       "answer": {
         "incorporate": "Después responde quien presenta el documento: si la acepta, se incorpora sin votación; si no, la vota la asamblea.",
-        "vote": "Después responde quien presenta el documento y la vota la asamblea."
+        "vote": "Después responde quien presenta el documento y la vota la asamblea.",
+        "proposed": {
+          "incorporate": "Como presentas el documento, al presentarla ya la aceptas: cuando Secretaría la valide, se incorpora sin votación.",
+          "vote": "Como presentas el documento, al presentarla ya la aceptas. Después la vota la asamblea."
+        }
       }
     },
     "progress": {
@@ -6930,6 +7042,8 @@
       "document_form_correction_proposed": "Corrección de forma propuesta",
       "document_form_correction_rejected": "Corrección de forma rechazada",
       "document_form_correction_withdrawn": "Corrección de forma retirada",
+      "passage_conciliated": "Pasaje pendiente conciliado en el texto aprobado",
+      "passage_conciliation_proposed": "Redacción propuesta para un pasaje pendiente de conciliar",
       "passage_worded": "Redacción de un pasaje fijada por la Mesa",
       "passage_wording_removed": "Redacción de un pasaje quitada",
       "amendment_created": "@:amendment.history.events.amendment_created",

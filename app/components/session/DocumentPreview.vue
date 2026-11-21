@@ -11,6 +11,7 @@ import {
   type PointerState,
 } from "~/composables/session/pointerState";
 import { usePointerFade } from "~/composables/session/usePointerFade";
+import { usePendingConciliation } from "~/composables/document/pendingConciliation";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import {
   pointAt,
@@ -60,6 +61,11 @@ const blocks = computed(
     props.document.consolidatedVersion?.blocks ??
     props.document.baseVersion?.blocks ??
     [],
+);
+/** Passages approved pending conciliation (user's decisions of 2026-11-21). */
+const { marks: pendingMarksOf } = usePendingConciliation();
+const pendingMarks = computed(() =>
+  pendingMarksOf(props.document.consolidatedVersion, session.label),
 );
 
 const root = ref<HTMLElement | null>(null);
@@ -436,7 +442,11 @@ onBeforeUnmount(() => {
       class="border-default bg-default rounded-lg border p-4"
     >
       <div ref="content" class="relative">
-        <ContentView :key="document.id" :blocks="blocks" />
+        <ContentView
+          :key="document.id"
+          :blocks="blocks"
+          :pending="pendingMarks"
+        />
         <SessionPointerLayer
           :state="pointerState"
           :scope="content"

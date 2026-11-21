@@ -79,6 +79,9 @@ const ready = computed(() =>
           :headcount="context.headcount"
           :unanimity="withAssent"
         />
+        <!-- What the caller adds to the form (the final vote's choice to
+             leave passages pending conciliation). -->
+        <slot />
         <p class="text-muted text-xs">
           {{ t("controlSheet.results.notProjected") }}
         </p>

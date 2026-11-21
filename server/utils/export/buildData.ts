@@ -42,6 +42,7 @@ import {
 } from "../domain/visibility";
 import { loadExportActor, publicExportActor } from "./actor";
 import {
+  amendmentCode,
   amendmentCodes,
   buildAgendaTree,
   buildAnnexRows,
@@ -50,6 +51,7 @@ import {
   type AgendaTree,
   type AnnexAmendment,
 } from "./mapping";
+import { storedPendingPassages } from "../../../shared/utils/content/pendingPassages";
 import type {
   AssemblyDocumentEntry,
   AssemblyExportData,
@@ -160,6 +162,61 @@ export async function loadVersionBlocks(
     .from(documentVersions)
     .where(inArray(documentVersions.id, [...new Set(ids)]));
   return new Map(rows.map((row) => [row.id, row.blocks]));
+}
+
+/**
+ * The passages each consolidated version leaves pending conciliation
+ * (user's decisions of 2026-11-21), as the files name them: the codes of
+ * the approved amendments that collide there and its first block in the
+ * text. Versions whose text is final are left out.
+ */
+export async function loadPendingConciliation(
+  versionIds: (string | null | undefined)[],
+): Promise<
+  Map<string, NonNullable<ExportDocumentMeta["pendingConciliation"]>>
+> {
+  const ids = [...new Set(versionIds.filter((id): id is string => !!id))];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: documentVersions.id,
+      pending: documentVersions.pendingPassages,
+    })
+    .from(documentVersions)
+    .where(inArray(documentVersions.id, ids));
+  const pending = rows
+    .map((row) => [row.id, storedPendingPassages(row.pending)] as const)
+    .filter(([, passages]) => passages.length > 0);
+  const amendmentIds = [
+    ...new Set(
+      pending.flatMap(([, passages]) =>
+        passages.flatMap((passage) => passage.amendmentIds),
+      ),
+    ),
+  ];
+  const codes =
+    amendmentIds.length > 0
+      ? await db
+          .select({
+            id: amendments.id,
+            code: amendments.code,
+            number: amendments.number,
+          })
+          .from(amendments)
+          .where(inArray(amendments.id, amendmentIds))
+      : [];
+  const codeOf = new Map(codes.map((row) => [row.id, amendmentCode(row)]));
+  return new Map(
+    pending.map(([id, passages]) => [
+      id,
+      passages.map((passage) => ({
+        blockId: passage.textBlockIds[0] ?? null,
+        codes: passage.amendmentIds.map(
+          (amendmentId) => codeOf.get(amendmentId) ?? "?",
+        ),
+      })),
+    ]),
+  );
 }
 
 async function loadAgenda(assemblyId: string) {
@@ -359,6 +416,18 @@ export async function annotatedBody(
     consolidationInput(readable),
     { wordings: wordingInputs(wordings) },
   );
+  // The passages the final vote left pending conciliation stay pending in
+  // the annex until they are conciliated (user's decisions of 2026-11-21).
+  const stillPending = new Set<string>();
+  if (document.consolidatedVersionId) {
+    const [version] = await db
+      .select({ pending: documentVersions.pendingPassages })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, document.consolidatedVersionId));
+    for (const passage of storedPendingPassages(version?.pending)) {
+      stillPending.add(passage.key);
+    }
+  }
   return {
     variant: "annotated",
     blocks: result.annotated,
@@ -368,11 +437,16 @@ export async function annotatedBody(
       amendments: readable,
       visibleIds: visible,
       conflicts: result.conflicts,
-      // Once the text is voted nothing is pending: a passage voted before
-      // the Mesa worded passages (both touching changes applied) stays so.
+      // Once the text is voted only what it left pending conciliation is
+      // pending: a passage voted before the Mesa worded passages (both
+      // touching changes applied) stays so.
       passages:
         document.finalVoteId || document.consolidatedVersionId
-          ? result.passages.filter((passage) => passage.status === "worded")
+          ? result.passages.filter(
+              (passage) =>
+                passage.status === "worded" ||
+                (passage.status === "pending" && stillPending.has(passage.key)),
+            )
           : result.passages,
       superseded: result.superseded,
       // The order the room debated them in (inDebateOrder).
@@ -506,19 +580,27 @@ export async function buildDocumentExportData(
   if (item?.titleWithheld && !canManageDocuments(reader)) {
     agendaTitles.delete(item.id);
   }
-  const images = await loadExportImages([document.id], body.blocks);
+  const [images, pendingConciliation] = await Promise.all([
+    loadExportImages([document.id], body.blocks),
+    loadPendingConciliation([document.consolidatedVersionId]),
+  ]);
 
   return {
     images,
     assembly: toExportAssembly(assembly),
-    document: documentMeta(
-      reader,
-      document,
-      agenda,
-      agendaTitles,
-      document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
-      coProponents.get(document.id) ?? [],
-    ),
+    document: {
+      ...documentMeta(
+        reader,
+        document,
+        agenda,
+        agendaTitles,
+        document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
+        coProponents.get(document.id) ?? [],
+      ),
+      pendingConciliation: document.consolidatedVersionId
+        ? (pendingConciliation.get(document.consolidatedVersionId) ?? [])
+        : [],
+    },
     body,
     generatedAt: new Date(),
   };
@@ -604,13 +686,21 @@ export async function buildAssemblyExportData(
       ? (document.consolidatedVersionId ?? document.baseVersionId)
       : null;
 
-  const [finalVotes, versions, coProponents] = await Promise.all([
-    loadVotes(documentRows.map((document) => document.finalVoteId)),
-    loadVersionBlocks(
-      documentRows.map(versionOf).filter((id): id is string => Boolean(id)),
-    ),
-    loadCoProponents(documentRows.map((document) => document.id)),
-  ]);
+  const [finalVotes, versions, coProponents, pendingConciliation] =
+    await Promise.all([
+      loadVotes(documentRows.map((document) => document.finalVoteId)),
+      loadVersionBlocks(
+        documentRows.map(versionOf).filter((id): id is string => Boolean(id)),
+      ),
+      loadCoProponents(documentRows.map((document) => document.id)),
+      loadPendingConciliation(
+        documentRows.map((document) =>
+          document.format === "structured"
+            ? document.consolidatedVersionId
+            : null,
+        ),
+      ),
+    ]);
 
   // Written for the requester, like every PDF (managers only: real offices).
   const reader = actor;
@@ -619,14 +709,21 @@ export async function buildAssemblyExportData(
     const document = byId.get(id)!;
     const versionId = versionOf(document);
     return {
-      meta: documentMeta(
-        reader,
-        document,
-        agenda,
-        agendaTitles,
-        document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
-        coProponents.get(document.id) ?? [],
-      ),
+      meta: {
+        ...documentMeta(
+          reader,
+          document,
+          agenda,
+          agendaTitles,
+          document.finalVoteId
+            ? finalVotes.get(document.finalVoteId)
+            : undefined,
+          coProponents.get(document.id) ?? [],
+        ),
+        pendingConciliation: document.consolidatedVersionId
+          ? (pendingConciliation.get(document.consolidatedVersionId) ?? [])
+          : [],
+      },
       source:
         document.format === "file"
           ? null

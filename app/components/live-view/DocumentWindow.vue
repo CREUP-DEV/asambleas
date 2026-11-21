@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import type {
+  AmendmentDto,
   DocumentDto,
   LiveScrollAnchor,
   LiveScrollDto,
 } from "~~/shared/types/api";
+import {
+  amendmentCodeIn,
+  usePendingConciliation,
+} from "~/composables/document/pendingConciliation";
+import {
+  contentPages,
+  documentPagesTarget,
+  useDocumentPages,
+} from "~/composables/document/useDocumentPages";
 import {
   applyScrollAnchor,
   readViewAnchor,
@@ -53,6 +63,12 @@ const props = withDefaults(
     requestedId?: string | null;
     /** Not `live`: the document asked for could not be loaded. */
     failed?: boolean;
+    /**
+     * The document's amendments the reader reads: a passage approved
+     * pending conciliation names their codes (user's decisions of
+     * 2026-11-21); without them it says only that it is pending.
+     */
+    amendments?: readonly Pick<AmendmentDto, "id" | "code" | "number">[];
   }>(),
   {
     loading: false,
@@ -60,6 +76,7 @@ const props = withDefaults(
     description: undefined,
     requestedId: null,
     failed: false,
+    amendments: undefined,
   },
 );
 
@@ -116,6 +133,40 @@ const blocks = computed(
     [],
 );
 const isFile = computed(() => current.value?.format === "file");
+/** Passages approved pending conciliation, marked in the text. */
+const { marks: pendingMarksOf } = usePendingConciliation();
+const pendingMarks = computed(() =>
+  pendingMarksOf(
+    current.value?.consolidatedVersion,
+    props.amendments ? amendmentCodeIn(props.amendments) : undefined,
+  ),
+);
+
+// «pág. N» as the package's PDF of the text shown prints it (user's
+// decisions of 2026-11-21): the consolidated one once voted. Read only
+// while the window is open: it follows whatever the Mesa projects, for
+// the whole room.
+const { assembly } = useCurrentAssembly();
+const { pages: pdfPages } = useDocumentPages(() =>
+  !open.value || isFile.value
+    ? null
+    : documentPagesTarget(assembly.value?.id, current.value),
+);
+const textPages = computed(() =>
+  current.value?.consolidatedVersion
+    ? contentPages(
+        pdfPages.value?.consolidated,
+        current.value.consolidatedVersion,
+      )
+    : contentPages(pdfPages.value?.base, current.value?.baseVersion),
+);
+const textPageTotal = computed(
+  () =>
+    (current.value?.consolidatedVersion
+      ? pdfPages.value?.consolidated?.total
+      : pdfPages.value?.base?.total) ?? 0,
+);
+const textPage = ref<number | null>(null);
 
 /**
  * Following the Mesa, or left where the reader scrolled (`readerAnchor`,
@@ -252,7 +303,12 @@ useEventListener(
           </p>
         </template>
         <div v-else-if="blocks.length > 0" :key="current.id" class="live-doc">
-          <ContentView :blocks="blocks" />
+          <ContentView
+            :blocks="blocks"
+            :pending="pendingMarks"
+            :pages="textPages"
+            @page="textPage = $event"
+          />
         </div>
         <p v-else class="text-muted">
           {{ t("liveView.document.empty") }}
@@ -261,6 +317,12 @@ useEventListener(
     </template>
 
     <template #footer>
+      <!-- The PDF page being read. -->
+      <ContentPageIndicator
+        v-if="textPages"
+        :page="textPage"
+        :total="textPageTotal"
+      />
       <template v-if="live && onScreen">
         <p
           v-if="following"

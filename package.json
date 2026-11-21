@@ -61,7 +61,7 @@
     "nuxt-security": "^2.6.0",
     "nuxt-umami": "^3.2.1",
     "pdfjs-dist": "4.10.38",
-    "pdfmake": "^0.3.11",
+    "pdfmake": "0.3.13",
     "pg": "^8.23.0",
     "pg-boss": "^12.28.1",
     "sharp": "~0.34.5",

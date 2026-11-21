@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LEAVE_SAVE_WAIT_MS,
+  answerDraftAfter,
   keepMyObservations,
   keepsObservationDraft,
   newObservationDraft,
@@ -188,5 +189,27 @@ describe("settledWithin", () => {
       settledWithin(Promise.resolve(true), LEAVE_SAVE_WAIT_MS),
     ).resolves.toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("answerDraftAfter", () => {
+  it("takes an answer given elsewhere when the reader had no draft", () => {
+    expect(answerDraftAfter("pending", "pending", "accept")).toBe("accept");
+  });
+
+  it("keeps the reader's own draft over an answer given elsewhere", () => {
+    expect(answerDraftAfter("reject", "pending", "accept")).toBe("reject");
+  });
+
+  it("puts back the saved answer when the transactional question is cancelled and nothing changed", () => {
+    expect(answerDraftAfter("pending", "pending", "pending")).toBe("pending");
+  });
+
+  it("takes the answer given while the transactional question was open, so cancelling leaves nothing to save", () => {
+    // Chose «transacciona» over «pending»; the presenter accepted meanwhile.
+    const previous = "pending";
+    const before = "pending";
+    const now = "accept";
+    expect(answerDraftAfter(previous, before, now)).toBe(now);
   });
 });

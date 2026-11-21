@@ -1,6 +1,7 @@
 import {
   GENERIC_EXECUTIVE_MEMBER,
   GENERIC_EXECUTIVE_MEMBER_ID,
+  type AmendmentKind,
   type AmendmentStatus,
   type AssemblyStatus,
   type DecisionKind,
@@ -95,15 +96,17 @@ export function isDocumentProponent(
 }
 
 export interface AmendmentVisibilityContext {
+  /** A transactional reaches its document's presenters once presented. */
+  kind: AmendmentKind;
   status: AmendmentStatus;
   /** Set by the Secretaría: the amendment is visible to everyone. */
   publishedAt: Date | null;
   /** Set when the Secretaría validates it, published or not. */
   validatedAt: Date | null;
   /**
-   * Who presents the amended document (main presenter and co-presenters).
-   * No rule reads it since validated amendments stopped reaching them before
-   * publication; the loaders still pass it.
+   * Who presents the amended document (main presenter and co-presenters):
+   * they read a transactional over it from the moment it is presented
+   * (presentsTransactionalDocument); other amendments wait for publication.
    */
   documentPresenters: DocumentPresenters;
   createdByUserId: string | null;
@@ -185,6 +188,10 @@ export function isAmendmentInsider(
  *   they are the CEA (user's decision of 2026-11-17: the main presenter
  *   answers what it sees, so an office of the CEA answers once validated,
  *   everyone else once published; positionBlocker).
+ * - A transactional, though, reaches the presenters of its document from
+ *   the moment it is presented (presentsTransactionalDocument; user's
+ *   decision of 2026-11-21), withdrawn ones aside: reading only, as the
+ *   CEA reads it (no correction notes, never an insider).
  */
 export function canSeeAmendment(
   actor: Actor,
@@ -204,7 +211,30 @@ export function canSeeAmendment(
   if (amendment.publishedAt) return true;
   if (insider || seesAllPresentedAmendments(actor)) return true;
   if (seesPresentedAmendments(actor)) return true;
+  if (presentsTransactionalDocument(actor, amendment)) return true;
   return amendment.validatedAt !== null && seesValidatedAmendments(actor);
+}
+
+/**
+ * The actor presents the document a transactional amends (main presenter or
+ * co-presenter): it reads the transactional, presented and not withdrawn,
+ * before its publication (user's decision of 2026-11-21), so it sees what
+ * it will answer, or what it presented, while the parties answer.
+ * Reading only: it is no insider (correction notes, history notes).
+ */
+export function presentsTransactionalDocument(
+  actor: Actor,
+  amendment: Pick<
+    AmendmentVisibilityContext,
+    "kind" | "status" | "documentPresenters"
+  >,
+): boolean {
+  return (
+    amendment.kind === "transactional" &&
+    amendment.status !== "draft" &&
+    amendment.status !== "withdrawn" &&
+    isDocumentPresenter(actor, amendment.documentPresenters)
+  );
 }
 
 /**

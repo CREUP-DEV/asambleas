@@ -669,9 +669,18 @@ watch(debatedId, (id) => {
   }
 });
 
-/** The bloc on screen, as the room reads it (liveBlocEntries). */
+/**
+ * The bloc on screen, as the room reads it (liveBlocEntries); with a
+ * purpose, a proposal to admit late amendments or not (user's decision of
+ * 2026-11-21).
+ */
+const blocPurpose = computed(() => live.value?.amendmentBlocPurpose ?? null);
 const blocEntries = computed(() =>
-  liveBlocEntries(live.value?.amendmentBloc, amendments.value),
+  liveBlocEntries(
+    live.value?.amendmentBloc,
+    amendments.value,
+    blocPurpose.value,
+  ),
 );
 const blocApproved = computed(
   () => blocEntries.value.filter((entry) => entry.approved).length,
@@ -708,6 +717,7 @@ const voteSubjectKind = computed(() =>
         amendments: amendments.value,
         document: document.value,
         agenda: agendaRows.value,
+        decision: live.value?.voteDecision ?? null,
       })
     : null,
 );
@@ -1068,16 +1078,24 @@ watch(
         :ui="{ description: 'whitespace-pre-line text-base text-default' }"
       />
 
-      <!-- A bloc the Mesa proposes to approve together. -->
+      <!-- A bloc the Mesa proposes to approve together, or late amendments
+           it proposes to admit to debate or not. -->
       <UAlert
         v-if="blocEntries.length > 0"
         color="primary"
         variant="subtle"
         icon="i-lucide-list-checks"
-        :title="t('liveView.bloc.title')"
+        :title="
+          blocPurpose
+            ? t(`projection.proposal.title.${blocPurpose}`)
+            : t('liveView.bloc.title')
+        "
       >
         <template #description>
-          <p class="text-default tabular-nums">
+          <p v-if="blocPurpose" class="text-default">
+            {{ t("projection.proposal.late") }}
+          </p>
+          <p v-else class="text-default tabular-nums">
             {{
               t("projection.bloc.progress", {
                 approved: blocApproved,
@@ -1089,17 +1107,35 @@ watch(
             <li v-for="entry in blocEntries" :key="entry.id">
               <UBadge
                 size="lg"
-                :color="entry.approved ? 'success' : 'neutral'"
-                :variant="entry.approved ? 'subtle' : 'outline'"
-                :icon="entry.approved ? 'i-lucide-check' : undefined"
+                :color="
+                  entry.outcome === 'approved' || entry.outcome === 'admitted'
+                    ? 'success'
+                    : 'neutral'
+                "
+                :variant="
+                  entry.outcome === 'approved' || entry.outcome === 'admitted'
+                    ? 'subtle'
+                    : 'outline'
+                "
+                :icon="
+                  entry.outcome === 'approved' || entry.outcome === 'admitted'
+                    ? 'i-lucide-check'
+                    : undefined
+                "
                 :class="entry.settled ? 'opacity-60' : ''"
               >
                 <span class="font-semibold">{{ entry.code }}</span>
                 <span v-if="entry.author" class="text-muted">
                   {{ entry.author.acronym }}
                 </span>
-                <span v-if="entry.approved" class="sr-only">
+                <span v-if="entry.outcome === 'approved'" class="sr-only">
                   {{ t("projection.bloc.approved") }}
+                </span>
+                <span v-else-if="entry.outcome === 'admitted'" class="sr-only">
+                  {{ t("projection.proposal.admitted") }}
+                </span>
+                <span v-else-if="entry.outcome === 'notAdmitted'">
+                  · {{ t("projection.proposal.notAdmitted") }}
                 </span>
               </UBadge>
             </li>
@@ -1162,6 +1198,7 @@ watch(
         :loading="documentLoading"
         :scroll="mesaScroll"
         :document-path="documentPath"
+        :amendments="amendments"
       />
 
       <section

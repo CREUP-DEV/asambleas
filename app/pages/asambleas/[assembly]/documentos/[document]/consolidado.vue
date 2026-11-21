@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import type { AmendmentStatus } from "~~/shared/constants/domain";
-import { consolidateApproved } from "~~/shared/utils/content/passages";
+import type { ConciliationBody, FormCorrectionsDto } from "~~/shared/types/api";
+import type { AmendmentOp } from "~~/shared/types/content";
+import {
+  consolidateApproved,
+  type Passage,
+} from "~~/shared/utils/content/passages";
 import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import { consolidationInputs } from "~/composables/amendment/workspace";
+import {
+  sameBlocks,
+  usePendingConciliation,
+} from "~/composables/document/pendingConciliation";
+import type { WordingDialogContext } from "~/composables/document/wordingDialog";
+import {
+  contentPages,
+  documentPagesTarget,
+  useDocumentPages,
+} from "~/composables/document/useDocumentPages";
 
 /**
  * Consolidated text of a document (inside the assembly hub): the base with
@@ -54,13 +69,46 @@ const documentApi = computed(() =>
 );
 /** The editor of a correction of form is open (it shows the text itself). */
 const correcting = ref(false);
+const formCorrections = useTemplateRef<{
+  start: () => void;
+  load: () => Promise<void>;
+}>("formCorrections");
+function startCorrection(): void {
+  formCorrections.value?.start();
+  void nextTick(() =>
+    globalThis.document
+      ?.getElementById("form-corrections")
+      ?.scrollIntoView({ block: "start" }),
+  );
+}
+// Arriving from the document's «Más» menu (`?corregir`) opens the editor
+// once the text is loaded, and drops the query so a reload does not.
+const route = useRoute();
+const router = useRouter();
+watch(
+  () =>
+    route.query.corregir !== undefined &&
+    Boolean(document.value?.can.correctForm) &&
+    Boolean(document.value?.consolidatedVersion) &&
+    formCorrections.value !== null,
+  (ready) => {
+    if (!ready) return;
+    void router.replace({ query: { ...route.query, corregir: undefined } });
+    startCorrection();
+  },
+  { immediate: true, flush: "post" },
+);
 /**
  * The text in force was corrected in form after the final vote (user's
  * decisions of 2026-11-21): it is shown as stored, without the amendments'
- * marks, which belong to the voted text.
+ * marks, which belong to the voted text. A text only conciliated after the
+ * vote is still the one the approved amendments and wordings give, marks
+ * included.
  */
-const corrected = computed(() =>
-  Boolean(document.value?.consolidatedVersion?.replacesVersionId),
+const corrected = computed(
+  () =>
+    Boolean(document.value?.consolidatedVersion?.replacesVersionId) &&
+    !sameBlocks(finalText.value, consolidation.value?.blocks),
 );
 
 useHead({
@@ -87,6 +135,30 @@ const consolidation = computed(() =>
     : null,
 );
 
+// PDF pages -----------------------------------------------------------------------
+// «pág. N» as the package's PDFs print it (user's decisions of 2026-11-21):
+// the consolidated PDF's once voted (corrected and conciliated versions
+// too); before, the original's, on its own blocks.
+
+const { pages: pdfPages } = useDocumentPages(() =>
+  documentPagesTarget(assembly.value?.id, document.value),
+);
+const textPages = computed(() =>
+  finalText.value
+    ? contentPages(
+        pdfPages.value?.consolidated,
+        document.value?.consolidatedVersion,
+      )
+    : contentPages(pdfPages.value?.base, document.value?.baseVersion),
+);
+const textPageTotal = computed(
+  () =>
+    (finalText.value
+      ? pdfPages.value?.consolidated?.total
+      : pdfPages.value?.base?.total) ?? 0,
+);
+const textPage = ref<number | null>(null);
+
 /** Passages the Mesa has not worded yet, while the text is not final. */
 const pendingPassages = computed(
   () =>
@@ -94,6 +166,89 @@ const pendingPassages = computed(
       (passage) => passage.status === "pending",
     ) ?? [],
 );
+
+// Pending conciliation ---------------------------------------------------------
+// The final vote may approve the text with passages still to word (user's
+// decisions of 2026-11-21): the version carries the automatic proposal
+// there, marked in the text, until each passage is conciliated (directly
+// with document:correct_form, proposed by its presenters).
+
+const { codes: joinedCodes, marks: pendingMarksOf } = usePendingConciliation();
+const conciliation = computed(
+  () => document.value?.consolidatedVersion?.pendingPassages ?? [],
+);
+const pendingMarks = computed(() =>
+  pendingMarksOf(document.value?.consolidatedVersion, list.labelOf),
+);
+const toast = useToast();
+const api = useApi();
+const conciliating = ref<Record<string, boolean>>({});
+const wordingDialog = reactive({
+  open: false,
+  passageKey: null as string | null,
+  editing: true,
+});
+const EMPTY_CONSOLIDATION = consolidateApproved([], []);
+const wordingContext: WordingDialogContext = {
+  wordingDialog,
+  preview: computed(() => consolidation.value ?? EMPTY_CONSOLIDATION),
+  amendments: computed(() => list.amendments.value),
+  base: computed(() => base.value),
+  busy: conciliating,
+  label: (id: string) => list.labelOf(id),
+  get purpose() {
+    return document.value?.can.conciliate === "propose"
+      ? "propose"
+      : "conciliate";
+  },
+  async setWording(
+    passage: Pick<Passage, "amendmentIds" | "blockIds">,
+    ops: AmendmentOp[],
+  ): Promise<boolean> {
+    const version = document.value?.consolidatedVersion;
+    if (!version || !documentApi.value) return false;
+    const direct = document.value?.can.conciliate === "direct";
+    const body: ConciliationBody = {
+      fromVersionId: version.id,
+      amendmentIds: passage.amendmentIds,
+      blockIds: passage.blockIds,
+      ops,
+    };
+    conciliating.value = { ...conciliating.value, wording: true };
+    try {
+      await api.send<FormCorrectionsDto>(`${documentApi.value}/conciliations`, {
+        body,
+      });
+      toast.add({
+        id: "conciliation-saved",
+        title: direct
+          ? t("document.pendingConciliation.toasts.applied")
+          : t("document.pendingConciliation.toasts.proposed"),
+        color: "success",
+        icon: "i-lucide-git-merge",
+      });
+      await Promise.all([
+        refreshDocument(),
+        list.refresh(),
+        formCorrections.value?.load(),
+      ]);
+      return true;
+    } catch (error) {
+      api.notifyError(error, "document.pendingConciliation.errors.save");
+      if (api.isConflict(error)) void refreshDocument();
+      return false;
+    } finally {
+      conciliating.value = { ...conciliating.value, wording: false };
+    }
+  },
+  // Nothing to take back: a conciliation is a new version of the text.
+  removeWording: async () => false,
+};
+function openConciliation(key: string): void {
+  wordingDialog.passageKey = key;
+  wordingDialog.editing = true;
+  wordingDialog.open = true;
+}
 
 /**
  * The stored text after the final vote is authoritative. If the vote used an
@@ -257,8 +412,56 @@ watch(popoverOpen, (open) => {
           </h2>
           <AmendmentVoteSummary :vote="document.finalVote" />
         </section>
+        <!-- Approved pending conciliation (user's decisions of 2026-11-21):
+             never read as the final text; each passage is conciliated
+             here, or its wording proposed by the presenters. -->
         <UAlert
-          v-else
+          v-if="document.finalVote && conciliation.length > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-git-merge"
+          :title="t('document.pendingConciliation.status')"
+        >
+          <template #description>
+            <p>
+              {{
+                t(
+                  "document.pendingConciliation.description",
+                  { count: conciliation.length },
+                  conciliation.length,
+                )
+              }}
+            </p>
+            <ul class="mt-2 flex flex-col gap-1.5">
+              <li
+                v-for="passage in conciliation"
+                :key="passage.key"
+                class="flex flex-wrap items-center gap-2"
+              >
+                <span>{{
+                  t("document.pendingConciliation.passage", {
+                    codes: joinedCodes(passage.amendmentIds, list.labelOf),
+                  })
+                }}</span>
+                <UButton
+                  v-if="document.can.conciliate"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-git-merge"
+                  :label="
+                    document.can.conciliate === 'direct'
+                      ? t('document.pendingConciliation.conciliate')
+                      : t('document.pendingConciliation.propose')
+                  "
+                  @click="openConciliation(passage.key)"
+                />
+              </li>
+            </ul>
+          </template>
+        </UAlert>
+        <UAlert
+          v-if="!document.finalVote"
           color="info"
           variant="subtle"
           icon="i-lucide-hourglass"
@@ -338,6 +541,19 @@ watch(popoverOpen, (open) => {
             >
               {{ t("workspace.consolidatedView.text") }}
             </h2>
+            <UButton
+              v-if="document.can.correctForm && document.consolidatedVersion"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-spell-check"
+              :label="
+                document.can.correctForm === 'direct'
+                  ? t('workspace.formCorrections.edit')
+                  : t('workspace.formCorrections.propose')
+              "
+              @click="startCorrection"
+            />
             <p
               v-if="
                 !corrected &&
@@ -350,6 +566,12 @@ watch(popoverOpen, (open) => {
             </p>
           </div>
 
+          <!-- The PDF page being read, kept in view as the text scrolls. -->
+          <ContentPageIndicator
+            :page="textPage"
+            :total="textPageTotal"
+            floating
+          />
           <template v-if="corrected && finalText">
             <UAlert
               color="neutral"
@@ -358,7 +580,12 @@ watch(popoverOpen, (open) => {
               class="mb-4"
               :title="t('workspace.formCorrections.correctedText')"
             />
-            <ContentView :blocks="finalText" />
+            <ContentView
+              :blocks="finalText"
+              :pending="pendingMarks"
+              :pages="textPages"
+              @page="textPage = $event"
+            />
           </template>
           <template v-else-if="provenanceMatches">
             <div
@@ -370,8 +597,11 @@ watch(popoverOpen, (open) => {
                 mode="provenance"
                 :label="list.shortLabelOf"
                 :focus="popoverOpen ? popoverAmendmentId : null"
+                :pending="pendingMarks"
+                :pages="textPages"
                 interactive
                 @amendment-click="onFragmentClick"
+                @page="textPage = $event"
               />
             </div>
           </template>
@@ -383,17 +613,28 @@ watch(popoverOpen, (open) => {
               class="mb-4"
               :title="t('workspace.consolidatedView.storedOnly')"
             />
-            <ContentView :blocks="finalText" />
+            <ContentView
+              :blocks="finalText"
+              :pending="pendingMarks"
+              :pages="textPages"
+              @page="textPage = $event"
+            />
           </template>
         </section>
 
         <!-- Corrections of form after the final vote. -->
         <DocumentFormCorrections
           v-if="document.finalVote && document.consolidatedVersion"
+          ref="formCorrections"
           v-model:editing="correcting"
           :document="document"
           :document-api="documentApi"
+          :label-of="list.labelOf"
           @changed="refreshDocument"
+        />
+        <SessionWordingDialog
+          v-if="document.can.conciliate"
+          :context="wordingContext"
         />
 
         <UPopover

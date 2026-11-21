@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { turnClock } from "./turnClock";
+import { turnClock, turnClockReserve } from "./turnClock";
 
 describe("turnClock", () => {
   it("counts the time spoken without a limit", () => {
@@ -25,5 +25,28 @@ describe("turnClock", () => {
       overtime: true,
       remaining: -12,
     });
+  });
+});
+
+describe("turnClockReserve", () => {
+  it("reserves two digits of minutes without a limit", () => {
+    expect(turnClockReserve(null)).toBe("00:00");
+    expect(turnClockReserve(0)).toBe("00:00");
+  });
+
+  it("reserves the limit's shape, signed, with a limit", () => {
+    expect(turnClockReserve(180)).toBe("+0:00");
+    expect(turnClockReserve(600)).toBe("+00:00");
+    expect(turnClockReserve(3600)).toBe("+0:00:00");
+  });
+
+  it("is never narrower than the countdown nor the time over below the limit", () => {
+    const shape = (text: string) => text.replace(/\d/g, "0");
+    const reserve = turnClockReserve(180);
+    for (const elapsed of [0, 59, 180, 181, 359]) {
+      expect(shape(turnClock(elapsed, 180).text).length).toBeLessThanOrEqual(
+        reserve.length,
+      );
+    }
   });
 });

@@ -281,6 +281,32 @@ export function restoreLockIds(
   return [...result].sort();
 }
 
+/**
+ * What accepting the transactionals `ids` for the presenter that presented
+ * them locks (acceptProposedTransactionals), in the same ordered pass: each
+ * of them, every amendment it groups and the other transactionals over
+ * those and over it, which its acceptance closes under "incorporate". In id
+ * order, without repeats.
+ */
+export function proposedAcceptanceLockIds(
+  sourceMap: ReadonlyMap<string, readonly string[]>,
+  ids: readonly string[],
+): string[] {
+  const result = new Set<string>();
+  for (const id of ids) {
+    const parents = sourceMap.get(id) ?? [];
+    result.add(id);
+    for (const parent of parents) result.add(parent);
+    for (const other of competingTransactionalIds(sourceMap, id, [
+      id,
+      ...parents,
+    ])) {
+      result.add(other);
+    }
+  }
+  return [...result].sort();
+}
+
 /** What transactionalsToRestore reads of a locked amendment row. */
 export interface RestoreRow {
   status: AmendmentStatus;

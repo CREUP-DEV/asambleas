@@ -79,9 +79,11 @@ import {
 } from "~~/shared/utils/sessionGate";
 import {
   changedLiveFields,
+  isLiveAdmissionProposable,
   nextLivePointer,
   normalizeBloc,
   normalizeBlocOptions,
+  normalizeBlocPurpose,
   type LivePointerFields,
 } from "~~/shared/utils/liveBloc";
 import { loadCalendarRules } from "./calendarRules";
@@ -891,7 +893,9 @@ const EMPTY_LIVE_STATE: LiveStateDto = {
   amendmentId: null,
   amendmentBloc: [],
   amendmentBlocOptions: null,
+  amendmentBlocPurpose: null,
   vote: null,
+  voteDecision: null,
   message: null,
   speakersVisible: false,
   recess: null,
@@ -904,7 +908,13 @@ export async function loadLiveStateDto(
   executor: Executor = db,
 ): Promise<LiveStateDto> {
   const [row] = await executor
-    .select({ state: liveState, vote: votes })
+    .select({
+      state: liveState,
+      vote: votes,
+      // What a decision vote decided (user's decision of 2026-11-21): the
+      // room names it instead of «una decisión de la Mesa».
+      decision: { kind: decisions.kind, subjectIds: decisions.subjectIds },
+    })
     .from(liveState)
     .leftJoin(
       votes,
@@ -913,18 +923,37 @@ export async function loadLiveStateDto(
         eq(votes.assemblyId, liveState.assemblyId),
       ),
     )
+    .leftJoin(
+      decisions,
+      and(
+        eq(votes.subjectType, "decision"),
+        eq(decisions.id, votes.subjectId),
+        eq(decisions.assemblyId, liveState.assemblyId),
+      ),
+    )
     .where(eq(liveState.assemblyId, assemblyId));
   if (!row) return { ...EMPTY_LIVE_STATE };
+  const bloc = normalizeBloc(row.state.amendmentBloc);
+  const options = normalizeBlocOptions(row.state.amendmentBlocOptions, bloc);
   return {
     agendaItemId: row.state.agendaItemId,
     documentId: row.state.documentId,
     amendmentId: row.state.amendmentId,
     amendmentBloc: row.state.amendmentBloc ?? [],
-    amendmentBlocOptions: normalizeBlocOptions(
-      row.state.amendmentBlocOptions,
-      normalizeBloc(row.state.amendmentBloc),
+    amendmentBlocOptions: options,
+    amendmentBlocPurpose: normalizeBlocPurpose(
+      row.state.amendmentBlocPurpose,
+      bloc,
+      options,
     ),
     vote: row.vote ? toVoteDto(row.vote) : null,
+    voteDecision:
+      row.vote && row.decision?.kind
+        ? {
+            kind: row.decision.kind,
+            subjectIds: [...(row.decision.subjectIds ?? [])],
+          }
+        : null,
     message: row.state.message,
     speakersVisible: row.state.speakersVisible,
     recess: row.state.recessStartedAt
@@ -1001,7 +1030,10 @@ function sameMoment(a: Date | null, b: Date | null): boolean {
  * (`amendmentBloc`, user's decision of 2026-11-19) is published amendments
  * of one document, which it selects like an amendment; the bloc and the
  * amendment or the vote on screen take each other's place
- * (nextLivePointer in shared/utils/liveBloc.ts).
+ * (nextLivePointer in shared/utils/liveBloc.ts). With a purpose
+ * (`amendmentBlocPurpose`, user's decision of 2026-11-21) the bloc proposes
+ * to admit late amendments or not, and each must still be pending
+ * admission (isLiveAdmissionProposable).
  * `speakersVisible` shows attendees who has the floor and who is next; a
  * change of it also records `speakers_visibility_changed` (entityType
  * "speakers"), so clients that follow the speakers refetch them.
@@ -1035,6 +1067,14 @@ export async function updateLiveState(
       amendmentBlocOptions: normalizeBlocOptions(
         current?.amendmentBlocOptions,
         normalizeBloc(current?.amendmentBloc),
+      ),
+      amendmentBlocPurpose: normalizeBlocPurpose(
+        current?.amendmentBlocPurpose,
+        normalizeBloc(current?.amendmentBloc),
+        normalizeBlocOptions(
+          current?.amendmentBlocOptions,
+          normalizeBloc(current?.amendmentBloc),
+        ),
       ),
       voteId: current?.voteId ?? null,
       message: current?.message ?? null,
@@ -1100,6 +1140,10 @@ export async function updateLiveState(
         .select({
           documentId: amendments.documentId,
           publishedAt: amendments.publishedAt,
+          late: amendments.late,
+          status: amendments.status,
+          admission: amendments.admission,
+          validatedAt: amendments.validatedAt,
         })
         .from(amendments)
         .innerJoin(documents, eq(documents.id, amendments.documentId))
@@ -1121,6 +1165,18 @@ export async function updateLiveState(
           "La Secretaría tiene que publicar cada enmienda del bloque antes de proyectarlo",
         );
       }
+      // A proposal to admit them or not (user's decision of 2026-11-21):
+      // late amendments still waiting for that decision.
+      if (
+        body.amendmentBlocPurpose &&
+        !rows.every((row) => isLiveAdmissionProposable(row))
+      ) {
+        fail(
+          409,
+          "Solo se proyecta la admisión de enmiendas fuera de plazo pendientes de decidir",
+          { messageKey: "session.admissionProposal.errors.notPending" },
+        );
+      }
       const blocDocument = rows[0]!.documentId;
       if (owner !== null && owner !== blocDocument) {
         fail(422, "La enmienda no pertenece al documento indicado");
@@ -1135,7 +1191,9 @@ export async function updateLiveState(
           ? "Un bloque no se proyecta junto a una enmienda o una votación"
           : pointer.error === "bloc_options"
             ? "Las opciones tienen que repartir exactamente las enmiendas del bloque"
-            : "La enmienda no pertenece al documento indicado",
+            : pointer.error === "bloc_purpose"
+              ? "Una propuesta de admisión se proyecta con sus enmiendas y sin opciones"
+              : "La enmienda no pertenece al documento indicado",
       );
     }
     const next: LiveStateFields = {
@@ -1230,6 +1288,9 @@ export async function updateLiveState(
         amendmentBloc: next.amendmentBloc,
         ...(next.amendmentBlocOptions
           ? { amendmentBlocOptions: next.amendmentBlocOptions }
+          : {}),
+        ...(next.amendmentBlocPurpose
+          ? { amendmentBlocPurpose: next.amendmentBlocPurpose }
           : {}),
         voteId: next.voteId,
         speakersVisible: next.speakersVisible,
