@@ -152,7 +152,8 @@
       "pageMark": "p. {pages} | pp. {pages}",
       "pageMarkTitle": "Page {pages} of the PDF | Pages {pages} of the PDF",
       "pageOf": "Page {page} of {total}",
-      "pageOfTitle": "The page of the documentation PDF you are reading"
+      "pageOfTitle": "The page of the documentation PDF you are reading",
+      "pageBubble": "{page} of {total}"
     },
     "editor": {
       "bold": "Bold",

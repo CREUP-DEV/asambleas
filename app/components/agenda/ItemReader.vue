@@ -448,6 +448,7 @@ function pick(slug: unknown): void {
           <!-- The account's private notes on it -->
           <DocumentNotes
             ref="notes"
+            size="sm"
             :notes-url="`${apiBase}/documents/${current.id}/notes`"
             :blocks="blocks"
             :root="() => textView?.root ?? null"

@@ -19,6 +19,8 @@ export type ContentViewMode = "plain" | "diff" | "provenance" | "clean";
 export interface ContentPages {
   starts: PageMapStart[];
   order?: string[];
+  /** Printed pages, for the bubble beside the scrollbar. */
+  total?: number;
 }
 
 /** A heading of the rendered text, for its index (ContentOutline). */
@@ -455,6 +457,10 @@ function pageAtReadingLine(): number | null {
 
 function updatePage(): void {
   pageFrame = 0;
+  if (bubbleDue) {
+    bubbleDue = false;
+    placeBubble();
+  }
   const page = pageAtReadingLine();
   if (page === currentPage.value) return;
   currentPage.value = page;
@@ -464,6 +470,52 @@ function updatePage(): void {
 function schedulePage(): void {
   if (pageFrame || !hasPages.value) return;
   pageFrame = requestAnimationFrame(updatePage);
+}
+
+// The page beside the scrollbar, as Google Docs shows it (user's decision
+// of 2026-11-21): while the text scrolls, a bubble «3 de 37» follows the
+// scrollbar's thumb at the end edge of what scrolls, and fades a moment
+// after it stops. Visual only: the text's bar says the page to screen
+// readers (ContentPageIndicator).
+
+const bubble = reactive({ visible: false, top: 0, right: 0 });
+let bubbleTimer: ReturnType<typeof setTimeout> | undefined;
+let bubbleDue = false;
+
+function placeBubble(): void {
+  const root = contentEl.value;
+  if (!root || !props.pages?.total) return;
+  const parent = scrollParent(root);
+  const scroller = parent ?? document.scrollingElement;
+  if (!scroller) return;
+  const range = scroller.scrollHeight - scroller.clientHeight;
+  if (range <= 0) return;
+  const box = parent
+    ? parent.getBoundingClientRect()
+    : { top: 0, right: window.innerWidth, height: window.innerHeight };
+  // The thumb's share of the track, kept clear of both ends.
+  const travel = Math.max(0, box.height - 56);
+  bubble.top = box.top + 12 + (scroller.scrollTop / range) * travel;
+  bubble.right = Math.max(0, window.innerWidth - box.right) + 20;
+  bubble.visible = true;
+  clearTimeout(bubbleTimer);
+  bubbleTimer = setTimeout(() => {
+    bubble.visible = false;
+  }, 1200);
+}
+
+/** A scroll that moves this text: its own pane's, or the page's. */
+function onScroll(event: Event): void {
+  const target = event.target;
+  const root = contentEl.value;
+  if (
+    root &&
+    (target === document ||
+      (target instanceof Element && target.contains(root)))
+  ) {
+    bubbleDue = true;
+  }
+  schedulePage();
 }
 
 useResizeObserver(contentEl, scheduleLayout);
@@ -498,7 +550,7 @@ onMounted(() => {
   // Web fonts change line heights once they load.
   void document.fonts?.ready.then(scheduleLayout);
   // Any scroll that may move the text (the page's or a pane's).
-  window.addEventListener("scroll", schedulePage, {
+  window.addEventListener("scroll", onScroll, {
     capture: true,
     passive: true,
   });
@@ -507,7 +559,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (layoutFrame) cancelAnimationFrame(layoutFrame);
   if (pageFrame) cancelAnimationFrame(pageFrame);
-  window.removeEventListener("scroll", schedulePage, { capture: true });
+  window.removeEventListener("scroll", onScroll, { capture: true });
+  clearTimeout(bubbleTimer);
 });
 
 // Events --------------------------------------------------------------------------
@@ -731,5 +784,30 @@ defineExpose({
     <slot v-else name="empty">
       <p class="text-muted text-sm">{{ t("common.content.empty") }}</p>
     </slot>
+    <ClientOnly>
+      <Teleport to="body">
+        <Transition
+          enter-from-class="opacity-0"
+          leave-to-class="opacity-0"
+          enter-active-class="motion-safe:transition-opacity motion-safe:duration-150"
+          leave-active-class="motion-safe:transition-opacity motion-safe:duration-300"
+        >
+          <div
+            v-if="bubble.visible && currentPage !== null && pages?.total"
+            class="bg-inverted text-inverted pointer-events-none fixed z-50 rounded-md px-2.5 py-1 text-sm font-medium whitespace-nowrap shadow-md"
+            :style="{ top: `${bubble.top}px`, right: `${bubble.right}px` }"
+            aria-hidden="true"
+            data-testid="page-bubble"
+          >
+            {{
+              t("common.content.pageBubble", {
+                page: currentPage,
+                total: pages.total,
+              })
+            }}
+          </div>
+        </Transition>
+      </Teleport>
+    </ClientOnly>
   </div>
 </template>

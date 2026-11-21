@@ -47,8 +47,10 @@ const props = withDefaults(
     blocks?: Block[];
     /** The rendered published text, for the marks; null when not on show. */
     root?: () => HTMLElement | null;
+    /** The size of the buttons beside it in the header. */
+    size?: "sm" | "md";
   }>(),
-  { blocks: () => [], root: undefined },
+  { blocks: () => [], root: undefined, size: "md" },
 );
 
 const emit = defineEmits<{
@@ -439,7 +441,7 @@ defineExpose({ annotate, available });
 <template>
   <span v-if="available" class="inline-flex" data-testid="document-notes">
     <UButton
-      size="sm"
+      :size="size"
       color="neutral"
       variant="outline"
       icon="i-lucide-sticky-note"

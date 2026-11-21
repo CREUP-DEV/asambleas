@@ -173,5 +173,6 @@ export function contentPages(
   return {
     starts: map.starts,
     order: version.blocks.map((block) => block.id),
+    total: map.total,
   };
 }
