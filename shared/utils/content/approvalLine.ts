@@ -83,7 +83,8 @@ export interface ApprovalFill {
   };
 }
 
-const ASSEMBLY_NAMES: Record<AssemblyType, string> = {
+/** Each type's full name, as document content writes it (always Spanish). */
+export const ASSEMBLY_NAMES: Record<AssemblyType, string> = {
   AGO: "Asamblea General Ordinaria",
   AGE: "Asamblea General Extraordinaria",
   AGET: "Asamblea General Extraordinaria Telemática",

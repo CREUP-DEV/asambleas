@@ -154,6 +154,7 @@ export const ACTIVITY_ACTION_ICONS = {
   document_form_correction_proposed: "i-lucide-file-pen",
   document_form_correction_rejected: "i-lucide-file-x-2",
   document_form_correction_withdrawn: "i-lucide-undo-2",
+  agreements_record_corrected: "i-lucide-scroll-text",
   passage_conciliated: "i-lucide-git-merge",
   passage_conciliation_proposed: "i-lucide-git-pull-request-arrow",
   passage_worded: "i-lucide-pen-line",

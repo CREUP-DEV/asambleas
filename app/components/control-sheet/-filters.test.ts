@@ -75,7 +75,6 @@ const row = (over: Partial<GeneralSheetRow>): GeneralSheetRow => ({
   itemVotes: [],
   votedThroughDocuments: false,
   takesOwnVote: true,
-  ownListed: false,
   ...over,
 });
 

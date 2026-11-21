@@ -4,6 +4,7 @@
  */
 import type { AssemblyType } from "../constants/assemblyTypes";
 import type { AttendanceMark, QuorumThreshold } from "../utils/headcount";
+import type { AgreementsRecord } from "../utils/agreementsRecord";
 import type {
   AcceptanceDecision,
   AcceptanceRole,
@@ -1083,6 +1084,44 @@ export interface DocumentCreateBody {
   blocks?: Block[];
   /** Managers only: internal deadline for an expected document. */
   dueAt?: IsoDate | null;
+}
+
+/**
+ * The acta de acuerdos as the Secretaría's panel reads it (GET, POST and
+ * PUT .../agreements-record): the record worded now from the votes and the
+ * corrections (shared/utils/agreementsRecord.ts), and its document once
+ * created.
+ */
+export interface AgreementsRecordDto {
+  document: {
+    id: string;
+    slug: string;
+    title: string;
+    agendaItemId: string;
+    status: DocumentStatus;
+    /** Its own final vote settled it: the votes no longer change it. */
+    frozen: boolean;
+  } | null;
+  record: AgreementsRecord;
+  /** The lock of each saved correction, by key. */
+  locks: Record<string, IsoDate>;
+}
+
+/** Body of POST .../agreements-record: the item it is read and voted in. */
+export interface AgreementsRecordCreateBody {
+  agendaItemId: string;
+}
+
+/**
+ * Body of PUT .../agreements-record/texts: one correction. Null `text` and
+ * `omitted` false take it back. `updatedAt` is the correction's lock (null
+ * when there was none).
+ */
+export interface AgreementRecordTextBody {
+  key: string;
+  text: string | null;
+  omitted: boolean;
+  updatedAt: IsoDate | null;
 }
 
 /**

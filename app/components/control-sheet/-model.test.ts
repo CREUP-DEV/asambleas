@@ -111,7 +111,7 @@ describe("buildGeneralRows", () => {
     item({ id: "2b", parentId: "2", order: 1, title: "RES 2" }),
   ];
 
-  it("numbers over the whole agenda and shows parents as headings", () => {
+  it("numbers over the whole agenda and lists every item", () => {
     const rows = buildGeneralRows(
       items,
       [document({ id: "d1", agendaItemId: "2b" })],
@@ -123,10 +123,12 @@ describe("buildGeneralRows", () => {
       "2b",
     );
     expect(rows.map((row) => [row.number, row.kind, row.live])).toEqual([
-      ["2", "heading", false],
+      ["1", "item", false],
+      ["2", "item", false],
+      ["2.1", "item", false],
       ["2.2", "item", true],
     ]);
-    expect(rows[1]!.outcome).toEqual({
+    expect(rows[3]!.outcome).toEqual({
       result: "approved",
       treated: true,
       byVote: true,
@@ -167,14 +169,16 @@ describe("buildGeneralRows", () => {
       }),
       null,
     );
-    expect(rows.map((row) => row.id)).toEqual(["2", "2a"]);
-    expect(rows[1]!.speakers).toEqual([{ label: "CEUAM", names: ["Ana"] }]);
-    expect(rows[1]!.outcome.result).toBe("not_applicable");
+    expect(rows.map((row) => row.id)).toEqual(["1", "2", "2a", "2b"]);
+    // The draft is no document of its row.
+    expect(rows[0]!.documents).toEqual([]);
+    expect(rows[2]!.speakers).toEqual([{ label: "CEUAM", names: ["Ana"] }]);
+    expect(rows[2]!.outcome.result).toBe("not_applicable");
   });
 });
 
 describe("listed items", () => {
-  it("adds items without documents the sheet lists, with their notes", () => {
+  it("lists items without documents, with their notes", () => {
     const rows = buildGeneralRows(
       [item({ id: "1", order: 0 }), item({ id: "2", order: 1 })],
       [],
@@ -199,6 +203,7 @@ describe("listed items", () => {
     );
     expect(rows.map((row) => [row.id, row.outcome.result])).toEqual([
       ["1", "lapsed"],
+      ["2", null],
     ]);
     expect(rows[0]!.outcome.treated).toBe(true);
   });
@@ -220,10 +225,9 @@ describe("item votes", () => {
       sheet(),
       null,
     );
-    expect(rows.map((row) => row.id)).toEqual(["1"]);
+    expect(rows.map((row) => row.id)).toEqual(["1", "2"]);
     expect(rows[0]).toMatchObject({
       voted: true,
-      ownListed: true,
       takesOwnVote: true,
       votedThroughDocuments: false,
       outcome: { result: null, treated: false, byVote: false },
@@ -298,8 +302,8 @@ describe("item votes", () => {
       }),
       null,
     );
-    // Voided, it no longer lists the item.
-    expect(rows).toEqual([]);
+    // Voided, it gives the item no result.
+    expect(rows[0]!.outcome.result).toBeNull();
     const listed = buildGeneralRows(
       [item({ id: "1", voted: true })],
       [],
@@ -364,6 +368,7 @@ describe("item votes", () => {
     expect(
       rows.map((row) => [row.id, row.index, row.ancestorIds, row.parent]),
     ).toEqual([
+      ["1", 0, [], null],
       ["2", 1, [], null],
       ["2a", 2, ["2"], { number: "2", title: "Resoluciones" }],
     ]);
@@ -570,8 +575,9 @@ describe("treated controls", () => {
       }),
       null,
     );
-    // «2» is on the sheet by «Se vota el punto»; «1» is not listed at all.
+    // «2» waits for its vote («Se vota el punto»); «1» was marked.
     expect(rows.map((row) => [row.id, row.outcome.treated])).toEqual([
+      ["1", true],
       ["2", false],
     ]);
     const voted = buildGeneralRows(

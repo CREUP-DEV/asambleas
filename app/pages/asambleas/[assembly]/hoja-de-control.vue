@@ -97,11 +97,7 @@ import type { PackagePreset } from "~/components/export/-packageFilters";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
-import {
-  buildAgendaTree,
-  flattenAgendaTree,
-  numberedAgendaTitle,
-} from "~/utils/agendaTree";
+import { numberedAgendaTitle } from "~/utils/agendaTree";
 import { positionsArePublic } from "~~/shared/utils/positions";
 import {
   debateMoved,
@@ -1487,63 +1483,6 @@ function onPanelTreated(value: boolean): void {
   }
 }
 
-// Adding an item without documents ------------------------------------------------
-
-const addOpen = ref(false);
-const addChoice = ref<string | undefined>(undefined);
-const adding = ref(false);
-/**
- * The items «Añadir punto» offers: those not on the sheet yet as a row of
- * their own (by their documents, by hand, or by their own vote or «Se vota
- * el punto»).
- */
-const addItems = computed(() => {
-  const onSheet = new Set(
-    generalRows.value.filter((row) => row.kind === "item").map((row) => row.id),
-  );
-  return flattenAgendaTree(buildAgendaTree(items.value))
-    .filter((node) => !onSheet.has(node.item.id))
-    .map((node) => ({
-      value: node.item.id,
-      label: numberedAgendaTitle(
-        node.number,
-        node.item.title,
-        t("agenda.unlisted.inText"),
-      ),
-    }));
-});
-
-async function addItem(): Promise<void> {
-  const id = addChoice.value;
-  if (!id || adding.value) return;
-  adding.value = true;
-  const current = sheet.value?.itemRows.find((row) => row.agendaItemId === id);
-  try {
-    const row = await api.send<ControlSheetItemRowDto>(
-      `${apiBase.value}/control-sheet/items/${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        body: {
-          listed: { value: true, updatedAt: current?.listedUpdatedAt ?? null },
-        },
-      },
-    );
-    onItemSaved(row);
-    addOpen.value = false;
-    addChoice.value = undefined;
-    toast.add({
-      title: t("controlSheet.add.added"),
-      color: "success",
-      icon: "i-lucide-check",
-    });
-  } catch (error) {
-    api.notifyError(error, "controlSheet.add.failed");
-    refreshSheet();
-  } finally {
-    adding.value = false;
-  }
-}
-
 /** Where the chosen document hangs in the agenda, root first. */
 const selectedTrail = computed<AgendaTrailStep[]>(() =>
   selectedDocument.value
@@ -2469,15 +2408,6 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             @preview="openDocumentPreview"
           />
         </template>
-        <div v-if="canEdit">
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-list-plus"
-            :label="t('controlSheet.add.button')"
-            @click="addOpen = true"
-          />
-        </div>
       </template>
 
       <template v-else-if="tab === 'amendments'">
@@ -2761,43 +2691,5 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       :show-position="showPositions"
       :document-path="previewDocumentPath"
     />
-
-    <UModal
-      v-model:open="addOpen"
-      :title="t('controlSheet.add.title')"
-      :description="t('controlSheet.add.description')"
-    >
-      <template #body>
-        <p v-if="addItems.length === 0" class="text-muted text-sm">
-          {{ t("controlSheet.add.none") }}
-        </p>
-        <UFormField v-else :label="t('controlSheet.add.label')">
-          <USelectMenu
-            v-model="addChoice"
-            :items="addItems"
-            value-key="value"
-            :placeholder="t('controlSheet.add.placeholder')"
-            class="w-full"
-          />
-        </UFormField>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton
-            color="neutral"
-            variant="outline"
-            :label="t('common.cancel')"
-            @click="addOpen = false"
-          />
-          <UButton
-            icon="i-lucide-list-plus"
-            :label="t('controlSheet.add.confirm')"
-            :loading="adding"
-            :disabled="!addChoice"
-            @click="addItem"
-          />
-        </div>
-      </template>
-    </UModal>
   </div>
 </template>

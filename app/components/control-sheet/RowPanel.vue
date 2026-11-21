@@ -633,32 +633,6 @@ watch(
 );
 
 const canWriteResult = computed(() => props.can.moderate);
-/**
- * Taking an item added by hand off the sheet; not while «Se vota el punto»
- * or a vote on it in force keeps it there anyway.
- */
-const showUnlist = computed(
-  () =>
-    props.target?.kind === "item" &&
-    props.target.row.documents.length === 0 &&
-    !props.target.row.ownListed &&
-    itemRow.value?.listed === true &&
-    props.can.edit,
-);
-
-async function unlist(): Promise<void> {
-  // What could not be saved stays in sight, with the row still listed.
-  if (dirty.value && !(await saveObservations())) return;
-  const done = await saveField("listed", {
-    listed: {
-      value: false,
-      updatedAt: itemRow.value?.listedUpdatedAt ?? null,
-    },
-  });
-  // The item leaves the sheet: so does its panel.
-  if (done) open.value = false;
-}
-
 // History --------------------------------------------------------------------
 
 const historyOpen = ref(false);
@@ -1025,22 +999,6 @@ function historyDetail(
             :label="t('controlSheet.panel.save')"
             :loading="anySaving"
             @click="saveAll"
-          />
-        </div>
-
-        <!-- Listed by hand -->
-        <div v-if="showUnlist && can.internal" class="space-y-1">
-          <p class="text-muted text-xs">
-            {{ t("controlSheet.panel.listedHint") }}
-          </p>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-list-x"
-            :label="t('controlSheet.panel.unlist')"
-            :loading="busy === 'listed'"
-            @click="unlist"
           />
         </div>
 

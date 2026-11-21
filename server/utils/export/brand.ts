@@ -127,11 +127,16 @@ export function watermarkSvg(label: string, font: Font): string {
   );
 }
 
+/** Room the label leaves below it, above the bottom of the page. */
+const BAND_LABEL_BOTTOM = 40;
+
 /**
  * The band as SVG, with its label written bottom to top in white Raleway
  * Bold 14 pt, ending just below the rounded top. The label is drawn as glyph
  * outlines: pdfmake's SVG text cannot reach fonts registered in its virtual
- * file system. Without `font` the band has no label.
+ * file system. Without `font` the band has no label. A label too long for
+ * the template's band (the association's full name, on the acta de
+ * acuerdos) makes it start higher, as CREUP's record does, never smaller.
  */
 export function bandSvg(
   label: string,
@@ -143,19 +148,24 @@ export function bandSvg(
   width: number;
   height: number;
 } {
-  const height = PAGE_HEIGHT - BAND.y;
+  let top: number = BAND.y;
   let text = "";
   if (font) {
     const outline = textOutline(font, label, 14);
+    top = Math.min(
+      BAND.y,
+      PAGE_HEIGHT - (outline.width + 11 + BAND_LABEL_BOTTOM),
+    );
     // Rotated a quarter turn back, the baseline runs up the band 21.5 pt
     // from its left edge, and the label ends 11 pt below its top.
     text = `<path transform="translate(21.5 11) rotate(-90) translate(${(-outline.width).toFixed(2)} 0)" fill="#ffffff" d="${outline.d}"/>`;
   }
+  const height = PAGE_HEIGHT - top;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${BAND.width}" height="${height.toFixed(2)}" viewBox="0 0 ${BAND.width} ${height.toFixed(2)}">` +
     // Taller than the page, so only the top corners show rounded.
     `<rect x="0" y="0" width="${BAND.width}" height="${(height + 8).toFixed(2)}" rx="4" ry="4" fill="${BRAND_RED}"/>` +
     text +
     `</svg>`;
-  return { svg, x: BAND.x, y: BAND.y, width: BAND.width, height };
+  return { svg, x: BAND.x, y: top, width: BAND.width, height };
 }

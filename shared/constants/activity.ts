@@ -372,6 +372,8 @@ export const EVENT_TYPES = [
   "document_form_correction_proposed",
   "document_form_correction_rejected",
   "document_form_correction_withdrawn",
+  // The Secretaría's corrections to the acta de acuerdos.
+  "agreements_record_corrected",
   "passage_conciliated",
   "passage_conciliation_proposed",
   "passage_worded",
@@ -558,6 +560,7 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   document_form_correction_proposed: "document",
   document_form_correction_rejected: "document",
   document_form_correction_withdrawn: "document",
+  agreements_record_corrected: "document",
   passage_conciliated: "document",
   passage_conciliation_proposed: "document",
   passage_worded: "document",

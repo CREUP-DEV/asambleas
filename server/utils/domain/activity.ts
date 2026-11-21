@@ -996,6 +996,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   document_form_correction_proposed: ["reason"],
   document_form_correction_rejected: ["note"],
   document_form_correction_withdrawn: [],
+  agreements_record_corrected: ["key"],
   passage_conciliated: ["codes", "reason", "madeAs", "validated"],
   passage_conciliation_proposed: ["codes", "reason"],
   passage_worded: ["codes"],

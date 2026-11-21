@@ -15,6 +15,7 @@ export const ASSEMBLY_SECTION_SEGMENTS = {
   documents: "documentos",
   validation: "validacion",
   tracking: "seguimiento",
+  agreements: "acta-de-acuerdos",
   calendar: "calendario",
   convocation: "convocatoria",
   session: "sesion",
@@ -49,6 +50,9 @@ export const ASSEMBLY_SECTION_DEFS: readonly AssemblySectionDef[] = [
   { key: "convocation", group: "assembly", icon: "i-lucide-scroll-text" },
   { key: "validation", group: "secretariat", icon: "i-lucide-inbox" },
   { key: "tracking", group: "secretariat", icon: "i-lucide-list-checks" },
+  // The acta de acuerdos, worded from the votes (user's decision of
+  // 2026-11-21): the Secretaría creates and corrects it.
+  { key: "agreements", group: "secretariat", icon: "i-lucide-file-check-2" },
   { key: "settings", group: "secretariat", icon: "i-lucide-settings" },
   { key: "session", group: "mesa", icon: "i-lucide-gavel" },
   // Everyone reads it (user's decision of 2026-11-19): whoever has no
@@ -88,6 +92,7 @@ function isVisible(
     case "validation":
       return access.validateDocuments || access.reviewAmendments;
     case "tracking":
+    case "agreements":
       return access.validateDocuments;
     case "settings":
       return access.manage;
@@ -113,6 +118,7 @@ export function visibleAssemblySections(
 const STAFF_SECTIONS: ReadonlySet<AssemblySectionKey> = new Set([
   "validation",
   "tracking",
+  "agreements",
   "settings",
   "session",
 ]);

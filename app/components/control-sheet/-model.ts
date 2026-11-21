@@ -37,7 +37,6 @@ import {
   itemTakesOwnVote,
   itemOutcome,
   latestItemVote,
-  ownVoteItemIds,
   sheetSpeakers,
   type ItemOutcome,
   type SheetItemOwn,
@@ -146,11 +145,6 @@ export interface GeneralSheetRow {
    * container), whose documents are voted in their own sub-items.
    */
   takesOwnVote: boolean;
-  /**
-   * On the sheet by its own vote: «Se vota el punto», or a vote on it in
-   * force (ownVoteItemIds), so taking it off by hand changes nothing.
-   */
-  ownListed: boolean;
 }
 
 /** The votes on agenda items by item, each list oldest first. */
@@ -266,16 +260,7 @@ export function buildGeneralRows(
             .map((vote) => vote.subjectId),
         ),
       );
-  const ownListed = ownVoteItemIds(items, itemVotes);
-  const listed = new Set(ownListed);
-  for (const row of sheet?.itemRows ?? []) {
-    if (row.listed) listed.add(row.agendaItemId);
-  }
-  const rows = controlSheetRows(
-    nodes.map((node) => node.item),
-    presented,
-    listed,
-  );
+  const rows = controlSheetRows(nodes.map((node) => node.item));
   const indexById = new Map(nodes.map((node, index) => [node.item.id, index]));
   return rows.map(({ item, kind }) => {
     const node = nodeById.get(item.id)!;
@@ -334,7 +319,6 @@ export function buildGeneralRows(
         item,
         allDocumentsByItem.get(item.id) ?? [],
       ),
-      ownListed: ownListed.has(item.id),
     };
   });
 }

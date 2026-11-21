@@ -21,6 +21,7 @@ import type {
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
 import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
+import { CREUP_LEGAL } from "../../../shared/utils/agreementsRecord";
 import { thirdCount, voteTextKey } from "../../../shared/utils/votes";
 import {
   BRAND_RED,
@@ -116,6 +117,12 @@ export interface ExportDocumentMeta {
    * each and its first block in the text (null when it deletes them all).
    */
   pendingConciliation?: { blockId: string | null; codes: string[] }[];
+  /**
+   * A text the platform writes itself (`documents.generated`): the acta de
+   * acuerdos carries its own approval as its last agreement and the
+   * association's name down the band, as CREUP's record does.
+   */
+  generated?: "agreements_record" | null;
 }
 
 export interface ExportAnnexRow {
@@ -903,7 +910,7 @@ export function buildDocumentPdf(
     locale,
     t,
     title: !cover,
-    vote: !clean?.filled,
+    vote: !clean?.filled && !meta.generated,
   });
   if (body.variant === "clean") {
     content.push(
@@ -953,7 +960,10 @@ export function buildDocumentPdf(
     title: documentHeaderRight(meta),
     content,
     brand,
-    bandLabel: t(`band.${bandLabelKey(meta.kind)}`),
+    // The record is content: the association's name, in Spanish always.
+    bandLabel: meta.generated
+      ? CREUP_LEGAL.name
+      : t(`band.${bandLabelKey(meta.kind)}`),
     cover,
     watermark: draft ? t("watermarkDraft") : undefined,
   });

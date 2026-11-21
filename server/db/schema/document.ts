@@ -139,6 +139,13 @@ export const documents = pgTable(
     finalVoteId: text("final_vote_id"),
     fileUrl: text("file_url"),
     fileName: text("file_name"),
+    /**
+     * A document the platform writes itself: `agreements_record`, the acta
+     * de acuerdos (shared/utils/agreementsRecord.ts), one per assembly, kept
+     * in step with the votes until its own final vote. Null for every
+     * document someone presents.
+     */
+    generated: text("generated").$type<"agreements_record">(),
     carriedFromDocumentId: text("carried_from_document_id").references(
       (): AnyPgColumn => documents.id,
       { onDelete: "set null" },
@@ -178,6 +185,9 @@ export const documents = pgTable(
     index("idx_documents_agenda_item_id").on(table.agendaItemId),
     index("idx_documents_status").on(table.status),
     index("idx_documents_proponent").on(table.proponentMemberId),
+    uniqueIndex("documents_generated_unique")
+      .on(table.assemblyId, table.generated)
+      .where(sql`${table.generated} is not null`),
   ],
 );
 

@@ -373,27 +373,15 @@ describe("controlSheetRows", () => {
     { id: "3", parentId: null },
   ];
 
-  it("lists items with documents under their parents as headings", () => {
+  it("lists every item, with or without documents or votes", () => {
     expect(
-      controlSheetRows(items, [{ agendaItemId: "2.2" }]).map((row) => [
-        row.item.id,
-        row.kind,
-      ]),
-    ).toEqual([
-      ["2", "heading"],
-      ["2.2", "item"],
-    ]);
-  });
-
-  it("adds the items listed by hand", () => {
-    expect(
-      controlSheetRows(items, [], new Set(["1", "2"])).map((row) => [
-        row.item.id,
-        row.kind,
-      ]),
+      controlSheetRows(items).map((row) => [row.item.id, row.kind]),
     ).toEqual([
       ["1", "item"],
       ["2", "item"],
+      ["2.1", "item"],
+      ["2.2", "item"],
+      ["3", "item"],
     ]);
   });
 });

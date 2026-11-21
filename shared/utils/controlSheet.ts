@@ -315,45 +315,24 @@ export interface SheetItem {
   parentId: string | null;
 }
 
-/** A row of the sheet's «General»: an item it lists, or one above them. */
+/** A row of the sheet's «General»: one agenda item. */
 export interface ControlSheetRow<T extends SheetItem> {
   item: T;
-  /**
-   * `item`: a row of its own. `heading`: an item above listed ones, shown so
-   * they read under their parent («14. Resoluciones»).
-   */
-  kind: "item" | "heading";
+  /** Every item is a row of its own (user's decision of 2026-11-21). */
+  kind: "item";
 }
 
 /**
- * The rows of «General», in the order of `ordered` (the agenda in reading
- * order): every item with a document the reader sees, every item in
- * `extraIds` (listed by hand, or with votes of its own), and above them the
- * items they hang from, as headings.
+ * The rows of «General»: every agenda item the reader gets, in the order of
+ * `ordered` (the agenda in reading order), with or without documents or
+ * votes, so the sheet shows who spoke on each and whether it was treated
+ * (user's decision of 2026-11-21; before, only items with documents, votes
+ * or added by hand, the others as headings).
  */
 export function controlSheetRows<T extends SheetItem>(
   ordered: readonly T[],
-  documents: readonly { agendaItemId: string }[],
-  extraIds: ReadonlySet<string> = new Set(),
 ): ControlSheetRow<T>[] {
-  const byId = new Map(ordered.map((item) => [item.id, item]));
-  const listed = new Set<string>(extraIds);
-  for (const document of documents) listed.add(document.agendaItemId);
-  const headings = new Set<string>();
-  for (const id of listed) {
-    const seen = new Set<string>([id]);
-    let parentId = byId.get(id)?.parentId ?? null;
-    while (parentId && !seen.has(parentId)) {
-      seen.add(parentId);
-      if (!listed.has(parentId)) headings.add(parentId);
-      parentId = byId.get(parentId)?.parentId ?? null;
-    }
-  }
-  return ordered.flatMap((item): ControlSheetRow<T>[] => {
-    if (listed.has(item.id)) return [{ item, kind: "item" }];
-    if (headings.has(item.id)) return [{ item, kind: "heading" }];
-    return [];
-  });
+  return ordered.map((item) => ({ item, kind: "item" }));
 }
 
 /** One member or person in «Intervinientes». */

@@ -67,6 +67,7 @@ describe("visibleAssemblySections", () => {
       "convocation",
       "validation",
       "tracking",
+      "agreements",
       "settings",
       "session",
       "controlSheet",
@@ -125,7 +126,7 @@ describe("groupAssemblySections", () => {
         "assembly",
         ["overview", "live", "agenda", "documents", "calendar", "convocation"],
       ],
-      ["secretariat", ["validation", "tracking", "settings"]],
+      ["secretariat", ["validation", "tracking", "agreements", "settings"]],
       ["mesa", ["session", "controlSheet", "seating", "projection"]],
     ]);
   });

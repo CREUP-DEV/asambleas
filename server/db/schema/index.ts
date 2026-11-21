@@ -18,3 +18,4 @@ export * from "./auditLog";
 export * from "./notifications";
 export * from "./controlSheet";
 export * from "./seating";
+export * from "./agreementsRecord";

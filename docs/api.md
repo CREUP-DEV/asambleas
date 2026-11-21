@@ -1889,6 +1889,27 @@ starts) says whether attendees see who has the floor and who is next.
 (`entityType: "speakers"`, `{ visible }`), so clients that follow the
 speakers refetch them.
 
+## Agreements record
+
+The acta de acuerdos (user's decisions of 2026-11-21): the record the
+platform words from the votes, in the format of the 79.ª AGO's record
+(`shared/utils/agreementsRecord.ts`), kept as a published `minutes` text of
+the item where it is read and voted (`documents.generated =
+'agreements_record'`, one per assembly) and written again a quiet spell
+after every change of the assembly (`server/plugins/agreements-record.ts`),
+until its own final vote: an approving one adds, once, the agreement that
+approves the record (a consolidated version replacing the voted one).
+Corrections are kept apart (`agreement_record_texts`), so they survive.
+
+| Method | Path                                                 | Who               | Notes                                                                                                                            |
+| ------ | ---------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/agreements-record`       | `document:manage` | `AgreementsRecordDto`: the record as it reads now, its document once created, the lock of each correction.                       |
+| POST   | `/api/assemblies/[assembly]/agreements-record`       | `document:manage` | `AgreementsRecordCreateBody`. Creates and publishes it under the item; 409 when the assembly has one.                            |
+| PUT    | `/api/assemblies/[assembly]/agreements-record/texts` | `document:manage` | `AgreementRecordTextBody`: one correction (words without the suffix, or left out); null and not omitted take it back. 409 stale. |
+
+Built only from what the public reads (published documents, listed items,
+no withheld title). Schemas: `shared/utils/schemas/agreementsRecord.ts`.
+
 ## Headcounts
 
 | Method | Path                                                | Who                | Notes                                                                                                      |

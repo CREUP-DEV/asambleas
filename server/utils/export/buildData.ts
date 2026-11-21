@@ -295,6 +295,7 @@ export function documentMeta(
     agendaNumbering: agenda.numbering.get(document.agendaItemId) ?? null,
     agendaTitle: agendaTitles.get(document.agendaItemId) ?? null,
     finalVote: finalVote ? toExportVote(finalVote) : null,
+    generated: document.generated ?? null,
   };
 }
 

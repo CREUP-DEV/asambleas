@@ -379,11 +379,12 @@ cancelling one from the sheet; notes after the assembly closes.
   selector (title and pending count) instead of one tab per document.
   A «Seguir el debate» switch (on during the session) opens the document in
   debate and marks the live row (aria-current and a ring) and scrolls to it.
-- General rows: items with documents, listed items and items with votes or
-  motions, under their parent items as headings. Numbers from
-  `numberAgendaItems` over every item before filtering; unlisted ones read
-  «Sin publicar»; withheld titles stay masked. «Añadir punto» (sheet
-  editors) lists items without documents.
+- General rows: every agenda item (user's decision of 2026-11-21, so each
+  shows its speakers and whether it was treated; before, items with
+  documents, listed items and items with votes or motions, under their
+  parent items as headings, and «Añadir punto» for the others). Numbers
+  from `numberAgendaItems` over every item before filtering; unlisted ones
+  read «Sin publicar»; withheld titles stay masked.
 - General columns: Nº, Punto (its documents as links), Proponente (the
   main presenters of its documents by acronym, each once, as the server redacts it),
   Tratado, Resultado,
