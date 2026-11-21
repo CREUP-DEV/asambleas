@@ -340,9 +340,16 @@ const itemVotePending = computed(
  * "Siguiente punto" is the main step once nothing else is left: no
  * document to debate (and no vote of the item pending) or, with one in
  * debate, no amendment, no final vote and no other document after it.
+ * «Volver a … para votarlo» is the main step whatever documents the
+ * sub-item still holds (user's decision of 2026-11-21: candidacies come
+ * with several documents nobody votes), unless an amendment or a final
+ * vote waits in it.
  */
 const nextItemPrimary = computed(() => {
   if (itemVotePending.value) return false;
+  if (nextAgenda.value?.returning) {
+    return !next.value && !finalVoteReady.value;
+  }
   if (!selectedId.value) {
     return cardDocuments.value.length === 0 || subItemsFirst.value;
   }

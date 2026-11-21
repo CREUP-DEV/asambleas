@@ -553,6 +553,18 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
   return `${documentPath(document)}/editar`;
 }
 
+/**
+ * A document's record, edited from its row in organize mode without
+ * leaving the agenda (DocumentRecordDialog; user's decision of 2026-11-21),
+ * for whoever manages documents; the agenda reads itself again once saved.
+ */
+const recordOpen = ref(false);
+const recordDocument = ref<DocumentSummaryDto | null>(null);
+function openRecord(document: DocumentSummaryDto): void {
+  recordDocument.value = document;
+  recordOpen.value = true;
+}
+
 const context: AgendaTreeContext = {
   manage,
   organizing,
@@ -575,6 +587,9 @@ const context: AgendaTreeContext = {
     void toggleSubmissions(item, value);
   },
   newDocument: openNewDocument,
+  editRecord: (document) => {
+    if (canCreateDocument.value) openRecord(document);
+  },
 };
 provide(AGENDA_TREE_CONTEXT, context);
 
@@ -769,6 +784,14 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
     </template>
 
     <p class="sr-only" aria-live="polite" role="status">{{ announcement }}</p>
+
+    <DocumentRecordDialog
+      v-if="canCreateDocument"
+      v-model:open="recordOpen"
+      :document-id="recordDocument?.id ?? null"
+      :title="recordDocument?.title ?? null"
+      @saved="refresh()"
+    />
 
     <AgendaItemFormModal
       v-model:open="formOpen"

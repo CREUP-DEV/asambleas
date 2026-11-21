@@ -35,6 +35,12 @@ export interface AgendaTreeContext {
   documentPath: (document: DocumentSummaryDto) => string;
   /** Where the presenter prepares their own draft, if they can. */
   documentEditPath: (document: DocumentSummaryDto) => string | null;
+  /**
+   * Opens a document's record in a side panel (DocumentRecordDialog), for
+   * whoever manages documents; offered in organize mode only. Absent: no
+   * such button.
+   */
+  editRecord?: (document: DocumentSummaryDto) => void;
   canMove: (itemId: string, move: AgendaMove) => boolean;
   move: (itemId: string, move: AgendaMove) => void;
   /**
@@ -358,7 +364,23 @@ const containerLabel = computed(() => {
             :to="ctx.documentPath(document)"
             :edit-to="ctx.documentEditPath(document)"
             :compact="!organizing"
-          />
+          >
+            <!-- Organize mode: the record, without leaving the agenda. -->
+            <template v-if="organizing && ctx.editRecord" #actions>
+              <UTooltip :text="t('documents.editRecord')">
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  icon="i-lucide-file-cog"
+                  :aria-label="
+                    t('documents.editRecordOf', { title: document.title })
+                  "
+                  @click="ctx.editRecord(document)"
+                />
+              </UTooltip>
+            </template>
+          </AgendaDocumentRow>
         </li>
       </ul>
     </div>

@@ -19,6 +19,9 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  * own draft) it offers the next step: prepare it, keep working on it or fix
  * it and send it again.
  *
+ * The `actions` slot puts the page's own buttons at the end of the row,
+ * above the link that covers it (the documents page: «Editar la ficha»).
+ *
  * `compact` (the agenda page) keeps only what is needed to find a document
  * and see how it stands: format icon, title, status, the amendment count in
  * words and that call to action (AgendaDocumentBadges). Presenters, the
@@ -224,6 +227,7 @@ const SENTENCE_COLORS: Record<string, string> = {
         :label="callToAction"
         :aria-label="`${callToAction}: ${document.title}`"
       />
+      <slot name="actions" />
     </div>
   </div>
 </template>

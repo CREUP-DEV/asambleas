@@ -12,10 +12,13 @@ import {
  *
  * `size="projection"` is the band at the bottom of the projection screen,
  * two lines at most (user's decision of 2026-11-21): who has the floor,
- * their name cut on one line and the clock in a slot that keeps its width
- * (SessionSpeakerTimer `reserve`); below, after «Después:», the acronyms of
- * as many waiting turns as fit on the line (fittingCount, measured after
+ * their name cut on one line; below, after «Después:», the acronyms of as
+ * many waiting turns as fit on the line (fittingCount, measured after
  * layout; the page passes up to PROJECTION_SPEAKERS_MAX), then «y N más».
+ * The clock stands to the right of both lines, as tall as the two together
+ * (user's decision of 2026-11-21), in a slot that keeps its width
+ * (SessionSpeakerTimer `reserve`): the queue's line is shorter for it, so
+ * fewer acronyms fit.
  * The heading is for screen readers only, and nothing says who has the
  * floor while nobody does (the page leaves the band out when nobody is
  * waiting either).
@@ -186,102 +189,108 @@ onBeforeUnmount(() => {
     <!-- Projection: one band, two lines at most. Nobody with the floor says
          nothing: the screen keeps that room for the document and the
          agenda. -->
-    <template v-else>
+    <div v-else class="flex min-w-0 items-center gap-x-[clamp(1rem,2vw,2rem)]">
       <div
-        v-if="speakers.current"
-        class="flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)]"
+        class="flex min-w-0 flex-1 flex-col gap-y-[clamp(0.25rem,0.4vw,0.5rem)]"
       >
-        <span
-          class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+        <div
+          v-if="speakers.current"
+          class="flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)]"
         >
-          {{ t("liveView.speakers.current") }}
-        </span>
-        <span
-          class="text-highlighted flex min-w-0 flex-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
-        >
-          <LiveViewSpeakerName
-            :turn="speakers.current"
-            badge-size="xl"
-            :tooltip="false"
-            truncate
-          />
-        </span>
-        <!-- Ticks every second: only in the browser. -->
-        <ClientOnly>
           <span
-            v-if="speakers.current.startedAt"
-            class="text-muted inline-flex shrink-0 items-center gap-[0.3em] text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-semibold"
+            class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
           >
-            <UIcon
-              :name="
-                speakers.current.limitSeconds
-                  ? 'i-lucide-hourglass'
-                  : 'i-lucide-timer'
-              "
-              class="size-[0.9em] shrink-0"
-              aria-hidden="true"
-            />
-            <SessionSpeakerTimer
-              :started-at="speakers.current.startedAt"
-              :limit-seconds="speakers.current.limitSeconds"
-              reserve
+            {{ t("liveView.speakers.current") }}
+          </span>
+          <span
+            class="text-highlighted flex min-w-0 flex-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
+          >
+            <LiveViewSpeakerName
+              :turn="speakers.current"
+              badge-size="xl"
+              :tooltip="false"
+              truncate
             />
           </span>
-        </ClientOnly>
-      </div>
+        </div>
 
-      <div
-        v-if="speakers.next.length > 0"
-        class="relative flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)] leading-tight"
-      >
-        <span
-          class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+        <div
+          v-if="speakers.next.length > 0"
+          class="relative flex min-w-0 items-center gap-x-[clamp(0.75rem,1.5vw,1.5rem)] leading-tight"
         >
-          {{ t("liveView.speakers.nextInline") }}
-        </span>
-        <!-- Every chip stays rendered to be measured (fitQueue); the ones
-             that do not fit go invisible behind «y N más» (`order`). -->
-        <ol
-          ref="queue"
-          class="flex min-w-0 flex-1 flex-nowrap items-center gap-x-[clamp(0.5rem,1vw,1rem)] overflow-hidden text-[clamp(1.125rem,1.6vw,1.75rem)] font-semibold"
-        >
-          <li
-            v-for="(turn, index) in speakers.next"
-            :key="turn.id"
-            data-chip
-            class="flex shrink-0"
-            :class="index < shown ? undefined : 'invisible order-2'"
+          <span
+            class="text-muted shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
           >
-            <CommonMemberBadge
-              v-if="turn.member"
-              :member="turn.member"
-              size="lg"
-              :tooltip="false"
-            />
-            <span v-else class="text-default whitespace-nowrap">
-              {{ turn.speaker?.trim() || t("liveView.speakers.unnamed") }}
-            </span>
-          </li>
-          <li
-            v-if="hiddenCount > 0"
-            class="text-muted order-1 shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
+            {{ t("liveView.speakers.nextInline") }}
+          </span>
+          <!-- Every chip stays rendered to be measured (fitQueue); the ones
+             that do not fit go invisible behind «y N más» (`order`). -->
+          <ol
+            ref="queue"
+            class="flex min-w-0 flex-1 flex-nowrap items-center gap-x-[clamp(0.5rem,1vw,1rem)] overflow-hidden text-[clamp(1.125rem,1.6vw,1.75rem)] font-semibold"
+          >
+            <li
+              v-for="(turn, index) in speakers.next"
+              :key="turn.id"
+              data-chip
+              class="flex shrink-0"
+              :class="index < shown ? undefined : 'invisible order-2'"
+            >
+              <CommonMemberBadge
+                v-if="turn.member"
+                :member="turn.member"
+                size="lg"
+                :tooltip="false"
+              />
+              <span v-else class="text-default whitespace-nowrap">
+                {{ turn.speaker?.trim() || t("liveView.speakers.unnamed") }}
+              </span>
+            </li>
+            <li
+              v-if="hiddenCount > 0"
+              class="text-muted order-1 shrink-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
+            >
+              {{
+                t("liveView.speakers.more", { count: hiddenCount }, hiddenCount)
+              }}
+            </li>
+          </ol>
+          <!-- The widest «y N más» it may say, to leave room for it. -->
+          <span
+            ref="moreProbe"
+            class="invisible absolute start-0 top-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
+            aria-hidden="true"
           >
             {{
-              t("liveView.speakers.more", { count: hiddenCount }, hiddenCount)
+              t("liveView.speakers.more", { count: waitingTotal }, waitingTotal)
             }}
-          </li>
-        </ol>
-        <!-- The widest «y N más» it may say, to leave room for it. -->
-        <span
-          ref="moreProbe"
-          class="invisible absolute start-0 top-0 text-[clamp(1rem,1.4vw,1.5rem)] font-medium whitespace-nowrap"
-          aria-hidden="true"
-        >
-          {{
-            t("liveView.speakers.more", { count: waitingTotal }, waitingTotal)
-          }}
-        </span>
+          </span>
+        </div>
       </div>
-    </template>
+
+      <!-- The clock, beside both lines and as tall as they are. Ticks every
+           second: only in the browser. -->
+      <ClientOnly>
+        <span
+          v-if="speakers.current?.startedAt"
+          class="border-primary/30 text-muted inline-flex shrink-0 items-center gap-[0.25em] self-stretch border-s-2 ps-[clamp(1rem,2vw,2rem)] text-[clamp(2.75rem,5.2vw,6rem)] leading-none font-semibold"
+        >
+          <UIcon
+            :name="
+              speakers.current.limitSeconds
+                ? 'i-lucide-hourglass'
+                : 'i-lucide-timer'
+            "
+            class="size-[0.75em] shrink-0"
+            aria-hidden="true"
+          />
+          <SessionSpeakerTimer
+            :started-at="speakers.current.startedAt"
+            :limit-seconds="speakers.current.limitSeconds"
+            reserve
+          />
+        </span>
+      </ClientOnly>
+    </div>
   </section>
 </template>

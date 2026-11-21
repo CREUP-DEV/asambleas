@@ -28,6 +28,11 @@ import {
  * por leer" keeps the documents the account has not marked as read, or that
  * have amendments it has not read. "Descargar documentación" offers the
  * package of everything published, as the overview and the agenda do.
+ *
+ * Whoever manages documents edits a document's record (title, kind,
+ * presenters, rules…) from its row, «Editar la ficha», in a side panel
+ * (DocumentRecordDialog; user's decision of 2026-11-21) without opening
+ * the document; the list reads itself again once saved.
  */
 
 const { t } = useI18n();
@@ -189,6 +194,15 @@ function resetFilters() {
   kind.value = "all";
   onlyMine.value = false;
   onlyLeft.value = false;
+}
+
+/** Whoever manages documents edits their record from the list. */
+const canEditRecords = computed(() => me.can(PERMISSION_KEYS.DOCUMENT_MANAGE));
+const recordOpen = ref(false);
+const recordDocument = ref<DocumentSummaryDto | null>(null);
+function openRecord(document: DocumentSummaryDto): void {
+  recordDocument.value = document;
+  recordOpen.value = true;
 }
 
 function documentPath(document: DocumentSummaryDto): string {
@@ -379,8 +393,31 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           :document="document"
           :to="documentPath(document)"
           :edit-to="documentEditPath(document)"
-        />
+        >
+          <template v-if="canEditRecords" #actions>
+            <UTooltip :text="t('documents.editRecord')">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-file-cog"
+                :aria-label="
+                  t('documents.editRecordOf', { title: document.title })
+                "
+                @click="openRecord(document)"
+              />
+            </UTooltip>
+          </template>
+        </AgendaDocumentRow>
       </section>
     </div>
+
+    <DocumentRecordDialog
+      v-if="canEditRecords"
+      v-model:open="recordOpen"
+      :document-id="recordDocument?.id ?? null"
+      :title="recordDocument?.title ?? null"
+      @saved="refresh()"
+    />
   </div>
 </template>
