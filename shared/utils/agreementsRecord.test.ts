@@ -268,6 +268,35 @@ describe("agreementsRecord on the 80.ª AGO", () => {
     ]);
   });
 
+  it("names the candidacy a «Sí» elected in a yes-or-no election", () => {
+    const input = ago80();
+    input.documents = input.documents.map((entry) =>
+      entry.id === id("programa") ? { ...entry, voted: false } : entry,
+    );
+    input.itemVotes = [
+      ...input.itemVotes,
+      itemVote("eleccionce", counted(0, 0, 0), {
+        candidates: ["Sí"],
+        elected: [0],
+      }),
+    ];
+    expect(printed(input).at(-1)).toBe(
+      "9. Se elige como Comisión Ejecutiva a la candidatura «EL VALOR DE ESTAR UNIDOS».",
+    );
+  });
+
+  it("gives nothing when a yes-or-no election elects «No»", () => {
+    const input = ago80();
+    input.itemVotes = [
+      ...input.itemVotes,
+      itemVote("eleccionce", counted(0, 0, 0), {
+        candidates: ["No"],
+        elected: [0],
+      }),
+    ];
+    expect(printed(input)).toHaveLength(8);
+  });
+
   it("gives nothing for an election that elected nobody yet", () => {
     const input = ago80();
     input.itemVotes = [

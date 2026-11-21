@@ -476,14 +476,47 @@ function minutesAgreement(
 }
 
 /** The agreement of a vote on an item itself, or null while it gives none. */
+/** A candidate that is the answer of a yes-or-no vote, not a name. */
+const YES_NO_CANDIDATE = /^(?:s[ií]|no|a\s+favor|en\s+contra)$/i;
+
+/** «Candidatura: X» as the candidacy's name, X. */
+const CANDIDACY_TITLE_PREFIX = /^\s*candidaturas?\s*[:.\-–—]\s*/i;
+
+/**
+ * The candidacies of an election item: its sub-items holding a candidacy,
+ * by their titles without «Candidatura:», as the Mesa's console names them.
+ */
+function itemCandidacies(
+  item: RecordItem,
+  subtree: readonly RecordItem[],
+  documentsByItem: ReadonlyMap<string, RecordDocument[]>,
+): string[] {
+  return subtree
+    .filter(
+      (child) =>
+        child.parentId === item.id &&
+        (documentsByItem.get(child.id) ?? []).some(
+          (document) => document.kind === "candidacy",
+        ),
+    )
+    .map((child) => child.title.replace(CANDIDACY_TITLE_PREFIX, "").trim())
+    .filter(Boolean);
+}
+
 function itemVoteAgreement(
   item: RecordItem,
   vote: RecordItemVote,
+  candidacyNames: readonly string[] = [],
 ): DraftAgreement | null {
   if (vote.election) {
-    const names = vote.election.elected
+    let names = vote.election.elected
       .map((index) => vote.election!.candidates[index])
       .filter((name): name is string => Boolean(name?.trim()));
+    // A single candidacy voted «Sí» or «No»: «Sí» elects that candidacy.
+    if (names.some((name) => YES_NO_CANDIDATE.test(name.trim()))) {
+      const yes = names.length === 1 && /^s[ií]$/i.test(names[0]!.trim());
+      names = yes && candidacyNames.length === 1 ? [candidacyNames[0]!] : [];
+    }
     if (names.length === 0) return null;
     const as = electedAs(item.title);
     return {
@@ -527,7 +560,13 @@ function rootAgreements(
     const voted = documents.filter(isItemVotedDocument);
     if (voted.length === 0) {
       const vote = latestItemVote(votesByItem.get(item.id) ?? []);
-      const agreement = vote ? itemVoteAgreement(item, vote) : null;
+      const agreement = vote
+        ? itemVoteAgreement(
+            item,
+            vote,
+            itemCandidacies(item, subtree, documentsByItem),
+          )
+        : null;
       if (agreement) out.push(agreement);
       continue;
     }
