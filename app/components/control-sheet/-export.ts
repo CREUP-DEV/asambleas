@@ -1,7 +1,14 @@
 import type { VoteDto } from "~~/shared/types/api";
 import { isUnanimousVote } from "~~/shared/utils/controlSheet";
 import { shownVoteCounts } from "~~/shared/utils/votes";
-import type { XlsxSheet, XlsxWorkbook } from "~~/shared/utils/xlsx";
+import type {
+  XlsxCell,
+  XlsxCellStyle,
+  XlsxColumn,
+  XlsxSheet,
+  XlsxWorkbook,
+} from "~~/shared/utils/xlsx";
+import type { ControlSheetResult } from "~~/shared/utils/controlSheet";
 import {
   amendmentNoVoteKey,
   amendmentSheetKind,
@@ -40,6 +47,68 @@ export interface ControlSheetExportInput {
   internal: boolean;
   general: GeneralSheetRow[];
   documents: ControlSheetExportDocument[];
+}
+
+/** CREUP's burgundy, for the «General» tab; grey for the documents'. */
+const TAB_GENERAL = "7B1E22";
+const TAB_DOCUMENT = "8C8C8C";
+
+/** The colour of a result of «General», as its badge has it. */
+export function resultCellStyle(
+  result: ControlSheetResult | null,
+): XlsxCellStyle {
+  switch (result) {
+    case "approved":
+    case "approved_unanimous":
+      return "success";
+    case "rejected":
+      return "danger";
+    case "mixed":
+      return "info";
+    case null:
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+/**
+ * The colour of an amendment's state, as its badge in «Enmiendas» has it
+ * (LIVE_STATE_COLORS, with pending amber and lapsed grey).
+ */
+export function amendmentStateCellStyle(
+  state: AmendmentSheetRow["state"],
+): XlsxCellStyle {
+  switch (state) {
+    case "approved":
+    case "incorporated":
+      return "success";
+    case "rejected":
+    case "inadmissible":
+      return "danger";
+    case "pending":
+    case "late":
+      return "warning";
+    case "debating":
+    case "transacted":
+      return "info";
+    default:
+      return "neutral";
+  }
+}
+
+/** The colour of a presenter's answer. */
+export function positionCellStyle(position: string | null): XlsxCellStyle {
+  switch (position) {
+    case "accept":
+      return "success";
+    case "reject":
+      return "danger";
+    case "transact":
+      return "info";
+    default:
+      return "neutral";
+  }
 }
 
 export function useControlSheetExport() {
@@ -135,13 +204,17 @@ export function useControlSheetExport() {
   }
 
   function generalSheet(input: ControlSheetExportInput, lines: string[]) {
-    const columns = [
-      { header: t("controlSheet.columns.number"), width: 7 },
-      { header: t("controlSheet.columns.item"), width: 48 },
+    const columns: XlsxColumn[] = [
+      { header: t("controlSheet.columns.number"), width: 7, style: "strong" },
+      { header: t("controlSheet.columns.item"), width: 48, style: "strong" },
       { header: t("controlSheet.export.documents"), width: 42 },
-      { header: t("controlSheet.columns.proponent"), width: 16 },
-      { header: t("controlSheet.columns.treated"), width: 12 },
-      { header: t("controlSheet.columns.result"), width: 18 },
+      {
+        header: t("controlSheet.columns.proponent"),
+        width: 16,
+        style: "center",
+      },
+      { header: t("controlSheet.columns.treated"), width: 13 },
+      { header: t("controlSheet.columns.result"), width: 20 },
       { header: t("controlSheet.columns.votes"), width: 36 },
     ];
     if (input.internal) {
@@ -151,15 +224,22 @@ export function useControlSheetExport() {
       });
     }
     const rows = input.general.map((row) => {
-      const values = [
+      const treated = itemTreatedControl(row).treated;
+      const values: XlsxCell[] = [
         row.number ?? t("agenda.unlisted.label"),
         row.title,
         row.documents.map((document) => document.title).join("\n"),
         proponents(row),
-        itemTreatedControl(row).treated
-          ? t("controlSheet.export.treatedItem")
-          : t("controlSheet.export.untreated"),
-        t(`controlSheet.result.${row.outcome.result ?? "pending"}`),
+        {
+          text: treated
+            ? t("controlSheet.export.treatedItem")
+            : t("controlSheet.export.untreated"),
+          style: treated ? "success" : "neutral",
+        },
+        {
+          text: t(`controlSheet.result.${row.outcome.result ?? "pending"}`),
+          style: resultCellStyle(row.outcome.result),
+        },
         generalVotes(row),
       ];
       if (input.internal) values.push(row.sheet?.observations ?? "");
@@ -170,6 +250,7 @@ export function useControlSheetExport() {
       lines,
       columns,
       rows,
+      tabColor: TAB_GENERAL,
     } satisfies XlsxSheet;
   }
 
@@ -185,16 +266,16 @@ export function useControlSheetExport() {
     document: ControlSheetExportDocument,
     exported: string,
   ): XlsxSheet {
-    const columns = [
-      { header: t("controlSheet.columns.code"), width: 14 },
-      { header: t("controlSheet.columns.authors"), width: 22 },
-      { header: t("controlSheet.columns.kind"), width: 13 },
+    const columns: XlsxColumn[] = [
+      { header: t("controlSheet.columns.code"), width: 14, style: "strong" },
+      { header: t("controlSheet.columns.authors"), width: 22, style: "center" },
+      { header: t("controlSheet.columns.kind"), width: 14, style: "center" },
     ];
     if (document.showPositions) {
       columns.push({ header: t("controlSheet.columns.position"), width: 22 });
     }
     columns.push(
-      { header: t("controlSheet.columns.treated"), width: 12 },
+      { header: t("controlSheet.columns.treated"), width: 13 },
       { header: t("controlSheet.columns.result"), width: 30 },
       { header: t("controlSheet.columns.vote"), width: 34 },
     );
@@ -217,7 +298,7 @@ export function useControlSheetExport() {
         .filter((author) => author !== undefined)
         .map((author) => author.acronym)
         .join(", ");
-      const values = [
+      const values: XlsxCell[] = [
         amendment.code ?? t("amendment.unnumberedLabel"),
         authors,
         t(`controlSheet.kind.${amendmentSheetKind(amendment)}`),
@@ -225,22 +306,32 @@ export function useControlSheetExport() {
       if (document.showPositions) {
         values.push(
           row.awaitsAnswer
-            ? t("controlSheet.answer.pending")
+            ? { text: t("controlSheet.answer.pending"), style: "warning" }
             : row.position
-              ? t(`common.status.position.${row.position.position}`)
-              : t("controlSheet.positionNone"),
+              ? {
+                  text: t(`common.status.position.${row.position.position}`),
+                  style: positionCellStyle(row.position.position),
+                }
+              : { text: t("controlSheet.positionNone"), style: "neutral" },
         );
       }
+      const treated = amendmentTreatedControl(row).treated;
       values.push(
-        amendmentTreatedControl(row).treated
-          ? t("controlSheet.export.treatedAmendment")
-          : t("controlSheet.export.untreated"),
-        [
-          t(`liveView.state.${row.state}.label`),
-          row.note ? t(row.note.key, row.note.params ?? {}) : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        {
+          text: treated
+            ? t("controlSheet.export.treatedAmendment")
+            : t("controlSheet.export.untreated"),
+          style: treated ? "success" : "neutral",
+        },
+        {
+          text: [
+            t(`liveView.state.${row.state}.label`),
+            row.note ? t(row.note.key, row.note.params ?? {}) : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          style: amendmentStateCellStyle(row.state),
+        },
         amendmentVote(row),
       );
       if (input.internal) values.push(row.sheet?.observations ?? "");
@@ -254,6 +345,7 @@ export function useControlSheetExport() {
       lines: [document.title, ...(item ? [item] : []), exported],
       columns,
       rows,
+      tabColor: TAB_DOCUMENT,
     };
   }
 

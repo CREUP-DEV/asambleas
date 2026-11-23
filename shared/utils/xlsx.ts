@@ -1,26 +1,48 @@
 /**
  * A small Excel (.xlsx) writer: the XML parts of a workbook of text sheets,
  * for the caller to zip (app/utils/xlsxDownload.ts, with JSZip). Each sheet
- * has some lines above its table (a title, when it was exported), a header
- * row frozen and filterable, and rows of text wrapped at the top of their
- * cells. Strings go inline (no shared strings table) and are escaped, with
- * the control characters XML cannot carry dropped. Pure, so it is tested
- * without a browser.
+ * has some lines above its table (a large title, then smaller lines such as
+ * when it was exported), a header row in CREUP's burgundy, frozen and
+ * filterable, and rows of text wrapped at the top of their cells, banded,
+ * with thin borders; a cell may carry a status colour, as the platform's
+ * badges do (a pale fill and dark text). Strings go inline (no shared
+ * strings table) and are escaped, with the control characters XML cannot
+ * carry dropped. Pure, so it is tested without a browser.
  */
+
+/** How a cell looks: plain, centred, bold, or a status colour. */
+export const XLSX_CELL_STYLES = [
+  "text",
+  "center",
+  "strong",
+  "success",
+  "danger",
+  "warning",
+  "neutral",
+  "info",
+] as const;
+export type XlsxCellStyle = (typeof XLSX_CELL_STYLES)[number];
+
+/** A cell: its text, with the column's look, or its own. */
+export type XlsxCell = string | { text: string; style: XlsxCellStyle };
 
 export interface XlsxColumn {
   header: string;
   /** Width in characters. */
   width: number;
+  /** How its cells look unless a cell says otherwise; `text` by default. */
+  style?: "text" | "center" | "strong";
 }
 
 export interface XlsxSheet {
   /** The tab's name; made valid and unique by xlsxSheetNames. */
   name: string;
-  /** Lines above the table, the first one in bold. */
+  /** Lines above the table: the first one a large title. */
   lines: string[];
   columns: XlsxColumn[];
-  rows: string[][];
+  rows: XlsxCell[][];
+  /** The tab's colour, as RRGGBB. */
+  tabColor?: string;
 }
 
 export interface XlsxWorkbook {
@@ -83,8 +105,37 @@ export function xlsxSheetNames(names: readonly string[]): string[] {
   });
 }
 
-/** Style ids in styles.xml. */
-const STYLE = { text: 1, header: 2, title: 3, line: 4 } as const;
+/** Style ids in styles.xml (cellXfs). */
+const STYLE = {
+  text: 1,
+  header: 2,
+  title: 3,
+  line: 4,
+  textBand: 5,
+  center: 6,
+  centerBand: 7,
+  strong: 8,
+  strongBand: 9,
+  success: 10,
+  danger: 11,
+  warning: 12,
+  neutral: 13,
+  info: 14,
+} as const;
+
+/** The style id of a body cell, banded on every other row. */
+function bodyStyle(style: XlsxCellStyle, banded: boolean): number {
+  switch (style) {
+    case "text":
+      return banded ? STYLE.textBand : STYLE.text;
+    case "center":
+      return banded ? STYLE.centerBand : STYLE.center;
+    case "strong":
+      return banded ? STYLE.strongBand : STYLE.strong;
+    default:
+      return STYLE[style];
+  }
+}
 
 function cell(ref: string, text: string, style: number): string {
   if (!text) return `<c r="${ref}" s="${style}"/>`;
@@ -96,34 +147,40 @@ function sheetXml(sheet: XlsxSheet): string {
   let row = 0;
   sheet.lines.forEach((line, index) => {
     row++;
-    out.push(
-      `<row r="${row}">${cell(`A${row}`, line, index === 0 ? STYLE.title : STYLE.line)}</row>`,
-    );
+    const first = index === 0;
+    const height = first ? ` ht="26" customHeight="1"` : "";
+    const style = first ? STYLE.title : STYLE.line;
+    out.push(`<row r="${row}"${height}>${cell(`A${row}`, line, style)}</row>`);
   });
   if (sheet.lines.length > 0) row++; // A blank row before the table.
   const headerRow = row + 1;
   row = headerRow;
   out.push(
-    `<row r="${row}">${sheet.columns
+    `<row r="${row}" ht="30" customHeight="1">${sheet.columns
       .map((column, index) =>
         cell(`${columnLetters(index)}${row}`, column.header, STYLE.header),
       )
       .join("")}</row>`,
   );
-  for (const values of sheet.rows) {
+  sheet.rows.forEach((values, rowIndex) => {
     row++;
+    const banded = rowIndex % 2 === 1;
     out.push(
       `<row r="${row}">${sheet.columns
-        .map((_, index) =>
-          cell(
+        .map((column, index) => {
+          const value = values[index] ?? "";
+          const text = typeof value === "string" ? value : value.text;
+          const style =
+            typeof value === "string" ? (column.style ?? "text") : value.style;
+          return cell(
             `${columnLetters(index)}${row}`,
-            values[index] ?? "",
-            STYLE.text,
-          ),
-        )
+            text,
+            bodyStyle(style, banded),
+          );
+        })
         .join("")}</row>`,
     );
-  }
+  });
   const lastColumn = columnLetters(Math.max(0, sheet.columns.length - 1));
   const cols = sheet.columns
     .map(
@@ -131,42 +188,103 @@ function sheetXml(sheet: XlsxSheet): string {
         `<col min="${index + 1}" max="${index + 1}" width="${column.width}" customWidth="1"/>`,
     )
     .join("");
+  const tabColor = /^[0-9A-Fa-f]{6}$/.test(sheet.tabColor ?? "")
+    ? `<tabColor rgb="FF${sheet.tabColor!.toUpperCase()}"/>`
+    : "";
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    `<sheetPr>${tabColor}<pageSetUpPr fitToPage="1"/></sheetPr>` +
+    `<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
     `<sheetFormatPr defaultRowHeight="15"/>` +
     (cols ? `<cols>${cols}</cols>` : "") +
     `<sheetData>${out.join("")}</sheetData>` +
     (sheet.rows.length > 0 && sheet.columns.length > 0
       ? `<autoFilter ref="A${headerRow}:${lastColumn}${row}"/>`
       : "") +
-    `<pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>` +
-    `<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/>` +
+    `<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>` +
+    `<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>` +
+    `<headerFooter><oddFooter>&amp;L&amp;8&amp;A&amp;R&amp;8&amp;P / &amp;N</oddFooter></headerFooter>` +
     `</worksheet>`
   );
 }
 
+/** A font: its size, colour and look (bold, italic). */
+function font(size: number, color: string, look = ""): string {
+  return `<font>${look}<sz val="${size}"/><color rgb="FF${color}"/><name val="Calibri"/><family val="2"/></font>`;
+}
+
+function solid(color: string): string {
+  return `<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
+}
+
+/** One cell format of cellXfs. */
+function xf(
+  fontId: number,
+  fillId: number,
+  borderId: number,
+  align: string,
+): string {
+  return `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">${align}</xf>`;
+}
+
+const TOP = `<alignment vertical="top" wrapText="1"/>`;
+const TOP_CENTER = `<alignment horizontal="center" vertical="top" wrapText="1"/>`;
+
+/**
+ * Fonts: 0 normal, 1 header (white bold), 2 title (burgundy, large), 3 line
+ * (grey italic), 4 strong, 5-9 the status colours (bold). Fills: 2 the
+ * header's burgundy, 3 the band, 4-8 the status tints. Borders: 1 thin,
+ * light grey all round.
+ */
 const STYLES_XML =
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
   `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-  `<fonts count="4">` +
-  `<font><sz val="11"/><name val="Calibri"/></font>` +
-  `<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>` +
-  `<font><b/><sz val="13"/><color rgb="FF7B1E22"/><name val="Calibri"/></font>` +
-  `<font><i/><sz val="10"/><color rgb="FF555555"/><name val="Calibri"/></font>` +
+  `<fonts count="10">` +
+  font(11, "1F1F1F") +
+  font(11, "FFFFFF", "<b/>") +
+  font(18, "7B1E22", "<b/>") +
+  font(10, "6B6B6B", "<i/>") +
+  font(11, "1F1F1F", "<b/>") +
+  font(11, "1E6B34", "<b/>") +
+  font(11, "A3262A", "<b/>") +
+  font(11, "8A5A00", "<b/>") +
+  font(11, "4A4A4A", "<b/>") +
+  font(11, "1F4E8C", "<b/>") +
   `</fonts>` +
-  `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
-  `<fill><patternFill patternType="solid"><fgColor rgb="FF7B1E22"/><bgColor indexed="64"/></patternFill></fill></fills>` +
+  `<fills count="9"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
+  solid("7B1E22") +
+  solid("FAF5F5") +
+  solid("E3F3E7") +
+  solid("FBE4E4") +
+  solid("FFF1CF") +
+  solid("EDEDED") +
+  solid("E2ECF8") +
+  `</fills>` +
   `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>` +
-  `<border><left/><right/><top/><bottom style="thin"><color rgb="FFD0D0D0"/></bottom><diagonal/></border></borders>` +
+  `<border><left style="thin"><color rgb="FFDDDDDD"/></left><right style="thin"><color rgb="FFDDDDDD"/></right><top style="thin"><color rgb="FFDDDDDD"/></top><bottom style="thin"><color rgb="FFDDDDDD"/></bottom><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  `<cellXfs count="5">` +
+  `<cellXfs count="15">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
-  `<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
-  `<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>` +
-  `<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
-  `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+  xf(0, 0, 1, TOP) +
+  xf(
+    1,
+    2,
+    1,
+    `<alignment horizontal="center" vertical="center" wrapText="1"/>`,
+  ) +
+  xf(2, 0, 0, `<alignment vertical="center"/>`) +
+  xf(3, 0, 0, `<alignment vertical="center"/>`) +
+  xf(0, 3, 1, TOP) +
+  xf(0, 0, 1, TOP_CENTER) +
+  xf(0, 3, 1, TOP_CENTER) +
+  xf(4, 0, 1, TOP) +
+  xf(4, 3, 1, TOP) +
+  xf(5, 4, 1, TOP_CENTER) +
+  xf(6, 5, 1, TOP_CENTER) +
+  xf(7, 6, 1, TOP_CENTER) +
+  xf(8, 7, 1, TOP_CENTER) +
+  xf(9, 8, 1, TOP_CENTER) +
   `</cellXfs>` +
   `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
   `</styleSheet>`;

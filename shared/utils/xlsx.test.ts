@@ -94,6 +94,36 @@ describe("xlsx", () => {
     expect(parts["xl/worksheets/sheet2.xml"]).not.toContain("autoFilter");
   });
 
+  it("bands the rows, colours the status cells and the tab", () => {
+    const parts = xlsxParts(
+      book({
+        sheets: [
+          {
+            name: "General",
+            lines: [],
+            tabColor: "7b1e22",
+            columns: [
+              { header: "Nº", width: 7, style: "strong" },
+              { header: "Resultado", width: 20 },
+            ],
+            rows: [
+              ["1.", { text: "Aprobado", style: "success" }],
+              ["2.", "Pendiente"],
+            ],
+          },
+        ],
+      }),
+    );
+    const sheet = parts["xl/worksheets/sheet1.xml"]!;
+    expect(sheet).toContain('<tabColor rgb="FF7B1E22"/>');
+    // Row 2: the column's bold style; row 3, banded.
+    expect(sheet).toContain('<c r="A2" s="8" t="inlineStr">');
+    expect(sheet).toContain('<c r="B2" s="10" t="inlineStr">');
+    expect(sheet).toContain('<c r="A3" s="9" t="inlineStr">');
+    expect(sheet).toContain('<c r="B3" s="5" t="inlineStr">');
+    expect(parts["xl/styles.xml"]).toContain('<cellXfs count="15">');
+  });
+
   it("zips into a package JSZip reads back", async () => {
     const zip = new JSZip();
     for (const [path, content] of Object.entries(xlsxParts(book()))) {
