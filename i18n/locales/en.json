@@ -5390,6 +5390,10 @@
       "vote": "By vote"
     },
     "document": {
+      "previous": "Previous document: {title}",
+      "previousNone": "This is the first document with amendments",
+      "next": "Next document: {title}",
+      "nextNone": "This is the last document with amendments",
       "label": "Document",
       "search": "Search for a document",
       "undecided": "{count} pending | {count} pending",

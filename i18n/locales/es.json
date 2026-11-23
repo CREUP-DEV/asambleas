@@ -5390,6 +5390,10 @@
       "vote": "Por votación"
     },
     "document": {
+      "previous": "Documento anterior: {title}",
+      "previousNone": "Es el primer documento con enmiendas",
+      "next": "Documento siguiente: {title}",
+      "nextNone": "Es el último documento con enmiendas",
       "label": "Documento",
       "search": "Buscar un documento",
       "undecided": "{count} pendiente | {count} pendientes",

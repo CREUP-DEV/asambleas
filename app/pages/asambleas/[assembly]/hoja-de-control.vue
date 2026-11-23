@@ -437,6 +437,21 @@ const selectedDocumentId = computed<string | undefined>({
   },
 });
 
+/**
+ * The documents before and after the chosen one, in agenda order, for the
+ * buttons beside the selector (user's decision of 2026-11-23).
+ */
+const documentNeighbours = computed(() => {
+  const list = documentOptions.value;
+  const index = list.findIndex(
+    (entry) => entry.id === selectedDocument.value?.id,
+  );
+  return {
+    previous: index > 0 ? list[index - 1]! : null,
+    next: index >= 0 && index < list.length - 1 ? list[index + 1]! : null,
+  };
+});
+
 // Amendments of the chosen document ---------------------------------------------
 
 const amendmentsUrl = computed(() =>
@@ -1571,13 +1586,20 @@ function trailLabel(step: AgendaTrailStep): string {
 }
 
 /** «N enmiendas» of a document in «General»: its amendments here. */
+/**
+ * Opens «Enmiendas» on a document from its row of «General» as a new entry
+ * of the history (user's decision of 2026-11-23): where «General» was is
+ * written into its own entry first (saveReturn), so Back brings the reader
+ * there again (restoreOnBack).
+ */
 function openDocumentAmendments(document: SheetRowDocument): void {
   const option = documentOptions.value.find(
     (entry) => entry.id === document.id,
   );
   if (!option) return;
+  saveReturn();
   leaveDebateFor(option.id);
-  void router.replace({
+  void router.push({
     query: {
       ...route.query,
       ...tabQuery("amendments"),
@@ -2192,6 +2214,37 @@ onBeforeRouteLeave(saveReturn);
 if (import.meta.client) useEventListener(window, "pagehide", saveReturn);
 
 /**
+ * Back or Forward within the sheet (from «Enmiendas» opened on a row of
+ * «General»): once the route follows the browser's entry, the list goes
+ * back to where that entry says it was left (saveReturn).
+ */
+let popped = false;
+if (import.meta.client) {
+  useEventListener(window, "popstate", () => {
+    popped = true;
+  });
+  const stopAfterEach = router.afterEach(() => {
+    if (!popped) return;
+    popped = false;
+    const id = assembly.value?.id;
+    if (!id) return;
+    void nextTick(() => {
+      const saved = readSheetReturn(
+        window.history.state,
+        id,
+        SHEET_FILTER_QUERY_KEYS,
+      );
+      if (!saved) return;
+      holdFollow = true;
+      restoreScroll(saved, () => {
+        holdFollow = false;
+      });
+    });
+  });
+  onScopeDispose(stopAfterEach);
+}
+
+/**
  * Puts the list back where it was: the saved scroll first, then, once laid
  * out, the saved row where it was under the tabs. Given up as soon as the
  * reader scrolls.
@@ -2530,6 +2583,65 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               "
               @click="openDocumentPreview(selectedDocument)"
             />
+            <!-- The documents before and after, without opening the list. -->
+            <div v-if="documentOptions.length > 1" class="flex gap-1">
+              <UTooltip
+                :text="
+                  documentNeighbours.previous
+                    ? t('controlSheet.document.previous', {
+                        title: documentNeighbours.previous.title,
+                      })
+                    : t('controlSheet.document.previousNone')
+                "
+              >
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-chevron-left"
+                  :disabled="!documentNeighbours.previous"
+                  :aria-label="
+                    documentNeighbours.previous
+                      ? t('controlSheet.document.previous', {
+                          title: documentNeighbours.previous.title,
+                        })
+                      : t('controlSheet.document.previousNone')
+                  "
+                  data-testid="sheet-document-previous"
+                  @click="
+                    documentNeighbours.previous &&
+                    (selectedDocumentId = documentNeighbours.previous.id)
+                  "
+                />
+              </UTooltip>
+              <UTooltip
+                :text="
+                  documentNeighbours.next
+                    ? t('controlSheet.document.next', {
+                        title: documentNeighbours.next.title,
+                      })
+                    : t('controlSheet.document.nextNone')
+                "
+              >
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-chevron-right"
+                  :disabled="!documentNeighbours.next"
+                  :aria-label="
+                    documentNeighbours.next
+                      ? t('controlSheet.document.next', {
+                          title: documentNeighbours.next.title,
+                        })
+                      : t('controlSheet.document.nextNone')
+                  "
+                  data-testid="sheet-document-next"
+                  @click="
+                    documentNeighbours.next &&
+                    (selectedDocumentId = documentNeighbours.next.id)
+                  "
+                />
+              </UTooltip>
+            </div>
           </div>
           <!--
               Where the document is in the agenda, and who answers its
