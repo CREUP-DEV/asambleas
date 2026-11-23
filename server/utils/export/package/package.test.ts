@@ -195,7 +195,11 @@ function source(overrides: Partial<PackageSource> = {}): PackageSource {
 
 describe("planPackage", () => {
   it("lays out the convocatoria, the agenda and a folder per item with documents", () => {
-    const plan = planPackage(source(), { locale: "es", editable: false }, t);
+    const plan = planPackage(
+      source(),
+      { locale: "es", editable: false, justified: true },
+      t,
+    );
     expect(plan.root).toBe("Documentación 80.ª AGO");
     expect(plan.entries.map((entry) => entry.path)).toEqual([
       "Documentación 80.ª AGO/00 Convocatoria.pdf",
@@ -238,7 +242,7 @@ describe("planPackage", () => {
           }),
         ],
       },
-      { locale: "es", editable: true },
+      { locale: "es", editable: true, justified: true },
       t,
     );
     expect(plan.entries[0]!.piece).toEqual({ kind: "file", stored: "a.pdf" });
@@ -272,7 +276,11 @@ describe("planPackage", () => {
         document({ consolidatedVersionId: "v-cons", finalVote: vote }),
       ],
     });
-    const plan = planPackage(voted, { locale: "es", editable: true }, t);
+    const plan = planPackage(
+      voted,
+      { locale: "es", editable: true, justified: true },
+      t,
+    );
     const files = plan.entries
       .map((entry) => entry.path.split("/").pop())
       .filter((name) => name?.startsWith("RES 4"));
@@ -283,7 +291,11 @@ describe("planPackage", () => {
       "RES 4 Resolución sobre becas (texto consolidado).docx",
     ]);
     // The text as presented does not change when the vote is recorded.
-    const before = planPackage(source(), { locale: "es", editable: true }, t);
+    const before = planPackage(
+      source(),
+      { locale: "es", editable: true, justified: true },
+      t,
+    );
     const key = (plan: typeof before, name: string) =>
       plan.entries.find((entry) => entry.path.endsWith(name))!.key;
     expect(key(plan, "RES 4 Resolución sobre becas.pdf")).toBe(
@@ -292,7 +304,11 @@ describe("planPackage", () => {
   });
 
   it("keeps every other piece's key when one amendment changes", () => {
-    const before = planPackage(source(), { locale: "es", editable: false }, t);
+    const before = planPackage(
+      source(),
+      { locale: "es", editable: false, justified: true },
+      t,
+    );
     const after = planPackage(
       source({
         documents: [
@@ -303,7 +319,7 @@ describe("planPackage", () => {
           }),
         ],
       }),
-      { locale: "es", editable: false },
+      { locale: "es", editable: false, justified: true },
       t,
     );
     expect(after.fingerprint).not.toBe(before.fingerprint);
@@ -326,7 +342,7 @@ describe("planPackage", () => {
           }),
         ],
       }),
-      { locale: "es", editable: false },
+      { locale: "es", editable: false, justified: true },
       t,
     );
     const folders = plan.entries
@@ -339,13 +355,21 @@ describe("planPackage", () => {
   });
 
   it("depends on the language and the variant", () => {
-    const es = planPackage(source(), { locale: "es", editable: false }, t);
+    const es = planPackage(
+      source(),
+      { locale: "es", editable: false, justified: true },
+      t,
+    );
     const en = planPackage(
       source(),
-      { locale: "en", editable: false },
+      { locale: "en", editable: false, justified: true },
       createTranslator("en"),
     );
-    const editable = planPackage(source(), { locale: "es", editable: true }, t);
+    const editable = planPackage(
+      source(),
+      { locale: "es", editable: true, justified: true },
+      t,
+    );
     expect(
       new Set([es.fingerprint, en.fingerprint, editable.fingerprint]).size,
     ).toBe(3);
@@ -385,7 +409,11 @@ describe("filterPackagePlan", () => {
       }),
     ],
   });
-  const whole = planPackage(two, { locale: "es", editable: false }, t);
+  const whole = planPackage(
+    two,
+    { locale: "es", editable: false, justified: true },
+    t,
+  );
   const part = (filter: Partial<PackageFilter>) =>
     filterPackagePlan(whole, two, { ...FULL_PACKAGE_FILTER, ...filter });
 
@@ -507,7 +535,7 @@ describe("filterPackagePlan", () => {
 describe("packageStillPublic", () => {
   const shown = planPackage(
     source(),
-    { locale: "es", editable: false },
+    { locale: "es", editable: false, justified: true },
     t,
   ).includes;
 
@@ -518,7 +546,7 @@ describe("packageStillPublic", () => {
           document({ amendments: [amendment(), amendment({ id: "am9" })] }),
         ],
       }),
-      { locale: "es", editable: false },
+      { locale: "es", editable: false, justified: true },
       t,
     ).includes;
     expect(packageStillPublic(shown, now)).toBe(true);
@@ -526,8 +554,11 @@ describe("packageStillPublic", () => {
 
   it("never once a document or an amendment is gone or a text was replaced", () => {
     const plan = (documents: PackageDocument[]) =>
-      planPackage(source({ documents }), { locale: "es", editable: false }, t)
-        .includes;
+      planPackage(
+        source({ documents }),
+        { locale: "es", editable: false, justified: true },
+        t,
+      ).includes;
     expect(packageStillPublic(shown, plan([]))).toBe(false);
     expect(
       packageStillPublic(shown, plan([document({ amendments: [] })])),

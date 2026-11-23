@@ -10,12 +10,13 @@ import { parseDocumentBody } from "../../domain/documents";
 import { resolveAssembly } from "../../domain/resolvers";
 import { isFullPackageFilter, type PackageFilter } from "./filter";
 import { rememberedPackageFilter } from "./service";
+import type { PackageFormat } from "./storage";
 
 export interface PackageRequest {
   actor: Actor;
   assemblyId: string;
   locale: "es" | "en";
-  editable: boolean;
+  format: PackageFormat;
   /** A part of the package; null for the whole of it. */
   filter: PackageFilter | null;
 }
@@ -37,7 +38,7 @@ export async function resolvePackageRequest(
     getRouterParam(event, "assembly"),
   );
   if (body !== undefined) {
-    const { locale, editable, selection } = parseDocumentBody(
+    const { locale, editable, justified, selection } = parseDocumentBody(
       assemblyPackageRequestSchema,
       body ?? {},
     );
@@ -45,11 +46,11 @@ export async function resolvePackageRequest(
       actor,
       assemblyId: assembly.id,
       locale,
-      editable,
+      format: { editable, justified },
       filter: selection ? partFilter(selection) : null,
     };
   }
-  const { locale, editable, filter } = parseDocumentBody(
+  const { locale, editable, justified, filter } = parseDocumentBody(
     assemblyPackageQuerySchema,
     getQuery(event),
   );
@@ -68,7 +69,7 @@ export async function resolvePackageRequest(
     actor,
     assemblyId: assembly.id,
     locale,
-    editable,
+    format: { editable, justified },
     filter: remembered,
   };
 }

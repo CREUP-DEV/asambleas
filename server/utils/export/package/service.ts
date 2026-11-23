@@ -33,6 +33,7 @@ import {
   fileExists,
   packageVariant,
   readPackageState,
+  type PackageFormat,
   type PackageState,
 } from "./storage";
 
@@ -63,9 +64,9 @@ const IGNORED_ENTITIES = new Set([
 export function packageKey(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): string {
-  return `${assemblyId}:${locale}:${packageVariant(editable)}`;
+  return `${assemblyId}:${locale}:${packageVariant(format)}`;
 }
 
 interface CachedSource {
@@ -111,15 +112,15 @@ async function currentSource(
 async function currentPlanned(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<{ plan: PackagePlan; source: PackageSource } | null> {
   const source = await currentSource(assemblyId);
   if (!source) return null;
-  const key = packageKey(assemblyId, locale, editable);
+  const key = packageKey(assemblyId, locale, format);
   const cached = plans.get(key);
   if (cached?.source === source) return cached;
   const planned = {
-    plan: planPackage(source, { locale, editable }, createTranslator(locale)),
+    plan: planPackage(source, { locale, ...format }, createTranslator(locale)),
     source,
   };
   plans.set(key, planned);
@@ -129,9 +130,9 @@ async function currentPlanned(
 async function currentPlan(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<PackagePlan | null> {
-  return (await currentPlanned(assemblyId, locale, editable))?.plan ?? null;
+  return (await currentPlanned(assemblyId, locale, format))?.plan ?? null;
 }
 
 /** A change in the assembly: plans are read again, and a build ahead waits. */
@@ -163,8 +164,12 @@ async function prebuild(assemblyId: string): Promise<void> {
     .from(assemblies)
     .where(eq(assemblies.id, assemblyId));
   if (!row || !PREBUILD_STATUSES.has(row.status)) return;
+  // Justified only: the default; text aligned to the left is built when asked.
   for (const editable of [false, true]) {
-    await queueBuild(assemblyId, PREBUILD_LOCALE, editable);
+    await queueBuild(assemblyId, PREBUILD_LOCALE, {
+      editable,
+      justified: true,
+    });
   }
 }
 
@@ -177,14 +182,14 @@ export function stopPackagePrebuilds(): void {
 async function queueBuild(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<void> {
-  const key = packageKey(assemblyId, locale, editable);
+  const key = packageKey(assemblyId, locale, format);
   const boss = await getExportQueue();
   // Null when one already waits for its turn (the queue's stately policy).
   await boss.send(
     PACKAGE_QUEUE_NAME,
-    { assemblyId, locale, editable },
+    { assemblyId, locale, ...format },
     { singletonKey: key },
   );
   queued.set(key, Date.now());
@@ -235,13 +240,13 @@ export function packageBuildEnded(
 async function servableState(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
   plan: PackagePlan,
 ): Promise<{ state: PackageState; current: boolean } | null> {
   const state = await readPackageState(
     assemblyId,
     locale,
-    packageVariant(editable),
+    packageVariant(format),
   );
   if (!state) return null;
   if (
@@ -258,12 +263,12 @@ async function servableState(
 export async function packageStatus(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<AssemblyPackageStatusDto | null> {
-  const plan = await currentPlan(assemblyId, locale, editable);
+  const plan = await currentPlan(assemblyId, locale, format);
   if (!plan) return null;
-  const key = packageKey(assemblyId, locale, editable);
-  const servable = await servableState(assemblyId, locale, editable, plan);
+  const key = packageKey(assemblyId, locale, format);
+  const servable = await servableState(assemblyId, locale, format, plan);
   const running = progress.get(key);
   const file = servable
     ? {
@@ -291,15 +296,15 @@ export async function packageStatus(
 export async function requestPackage(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<AssemblyPackageStatusDto | null> {
-  const status = await packageStatus(assemblyId, locale, editable);
+  const status = await packageStatus(assemblyId, locale, format);
   if (!status || status.status === "ready" || status.status === "building") {
     return status;
   }
-  failures.delete(packageKey(assemblyId, locale, editable));
+  failures.delete(packageKey(assemblyId, locale, format));
   try {
-    await queueBuild(assemblyId, locale, editable);
+    await queueBuild(assemblyId, locale, format);
   } catch (error) {
     logWarn("package.request", {
       assemblyId,
@@ -307,23 +312,23 @@ export async function requestPackage(
     });
     throw error;
   }
-  return packageStatus(assemblyId, locale, editable);
+  return packageStatus(assemblyId, locale, format);
 }
 
 /** The file to send, or null when nothing may be handed out now. */
 export async function packageDownload(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<{
   path: string;
   filename: string;
   bytes: number;
   fingerprint: string;
 } | null> {
-  const plan = await currentPlan(assemblyId, locale, editable);
+  const plan = await currentPlan(assemblyId, locale, format);
   if (!plan) return null;
-  const servable = await servableState(assemblyId, locale, editable, plan);
+  const servable = await servableState(assemblyId, locale, format, plan);
   if (!servable) return null;
   return {
     path: join(assemblyPackageDir(assemblyId), servable.state.zipFile),
@@ -383,10 +388,10 @@ export function rememberedPackageFilter(
 async function currentPart(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
   filter: PackageFilter,
 ) {
-  const planned = await currentPlanned(assemblyId, locale, editable);
+  const planned = await currentPlanned(assemblyId, locale, format);
   if (!planned) return null;
   return {
     ...filterPackagePlan(planned.plan, planned.source, filter),
@@ -398,10 +403,10 @@ async function currentPart(
 export async function packagePartStatus(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
   filter: PackageFilter,
 ): Promise<AssemblyPackageStatusDto | null> {
-  const part = await currentPart(assemblyId, locale, editable, filter);
+  const part = await currentPart(assemblyId, locale, format, filter);
   if (!part) return null;
   const summary = {
     key: packageFilterKey(filter),
@@ -431,7 +436,7 @@ export async function packagePartStatus(
   // Some piece is still to be rendered: the whole package's build does it.
   // A whole package ready without it (a piece gone from disk) reads as
   // failed, so the dialog offers to try again.
-  const whole = await packageStatus(assemblyId, locale, editable);
+  const whole = await packageStatus(assemblyId, locale, format);
   return {
     status:
       whole?.status === "building" || whole?.status === "failed"
@@ -449,14 +454,14 @@ export async function packagePartStatus(
 export async function requestPackagePart(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
   filter: PackageFilter,
 ): Promise<AssemblyPackageStatusDto | null> {
-  const status = await packagePartStatus(assemblyId, locale, editable, filter);
+  const status = await packagePartStatus(assemblyId, locale, format, filter);
   if (!status || status.status !== "idle") return status;
-  failures.delete(packageKey(assemblyId, locale, editable));
+  failures.delete(packageKey(assemblyId, locale, format));
   try {
-    await queueBuild(assemblyId, locale, editable);
+    await queueBuild(assemblyId, locale, format);
   } catch (error) {
     logWarn("package.request", {
       assemblyId,
@@ -464,17 +469,17 @@ export async function requestPackagePart(
     });
     throw error;
   }
-  return packagePartStatus(assemblyId, locale, editable, filter);
+  return packagePartStatus(assemblyId, locale, format, filter);
 }
 
 /** What a part's download zips, or null while it cannot be handed out. */
 export async function packagePartDownload(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
   filter: PackageFilter,
 ): Promise<{ entries: PackageEntry[]; filename: string } | null> {
-  const part = await currentPart(assemblyId, locale, editable, filter);
+  const part = await currentPart(assemblyId, locale, format, filter);
   if (!part || part.plan.entries.length === 0) return null;
   const available = await availablePackageEntries(
     assemblyId,

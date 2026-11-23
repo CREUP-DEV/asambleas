@@ -22,14 +22,10 @@ export default defineEventHandler(
       ? await packagePartStatus(
           request.assemblyId,
           request.locale,
-          request.editable,
+          request.format,
           request.filter,
         )
-      : await packageStatus(
-          request.assemblyId,
-          request.locale,
-          request.editable,
-        );
+      : await packageStatus(request.assemblyId, request.locale, request.format);
     if (!status) packageNotPublic();
     return status;
   },

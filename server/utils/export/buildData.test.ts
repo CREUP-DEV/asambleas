@@ -309,6 +309,7 @@ describe("buildDocumentExportData", () => {
     documentId: "doc",
     requestedBy: "secretaria",
     locale: "es" as const,
+    justified: true,
   };
 
   it("writes the Secretaría's annotated PDF as the Secretaría reads it", async () => {

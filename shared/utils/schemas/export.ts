@@ -13,9 +13,20 @@ export type ExportLocale = (typeof EXPORT_LOCALES)[number];
 export const EXPORT_VARIANTS = ["clean", "annotated"] as const;
 export type ExportVariant = (typeof EXPORT_VARIANTS)[number];
 
+/**
+ * Whether the text of a PDF is justified: the reader's preference
+ * (`useAccessibilityPreferences().justifiedText`), justified unless they
+ * turned it off. A query string carries it as "1"/"0" or "true"/"false".
+ */
+const justifiedFlag = z
+  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+  .default(true)
+  .transform((value) => value === true || value === "true" || value === "1");
+
 /** Body of POST /api/assemblies/[assembly]/export. */
 export const assemblyExportSchema = z.object({
   locale: z.enum(EXPORT_LOCALES).default("es"),
+  justified: justifiedFlag,
 });
 
 /** Body of POST /api/assemblies/[assembly]/documents/[document]/export. */
@@ -37,6 +48,7 @@ export const assemblyPackageSchema = z.object({
     .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
     .default(false)
     .transform((value) => value === true || value === "true" || value === "1"),
+  justified: justifiedFlag,
 });
 
 /** Query of the package's status and download: a part names its filter. */

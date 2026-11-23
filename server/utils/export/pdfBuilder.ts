@@ -21,7 +21,11 @@ import type {
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
 import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
-import { CREUP_LEGAL } from "../../../shared/utils/agreementsRecord";
+import {
+  CREUP_LEGAL,
+  RECORD_CLOSING_BLOCK_IDS,
+  RECORD_SIGNATURE_SPACER,
+} from "../../../shared/utils/agreementsRecord";
 import { thirdCount, voteTextKey } from "../../../shared/utils/votes";
 import {
   BRAND_RED,
@@ -184,6 +188,12 @@ export interface DocumentExportData {
   generatedAt: Date;
   /** The images its text shows, by asset id. */
   images?: Record<string, ExportImage>;
+  /**
+   * The acta de acuerdos only: the visible signature of whoever certifies,
+   * drawn above their name in the PDF made to be signed (agreementsSigning
+   * .ts). Without it the space stays blank.
+   */
+  signature?: ExportImage | null;
 }
 
 export interface ExportAgendaNode {
@@ -717,6 +727,60 @@ function cleanBody(
   return blocksToPdf(blocks, ctx, notes);
 }
 
+/** The height kept for the visible signature, in points. */
+const SIGNATURE_HEIGHT = 72;
+/** The widest the signature is drawn, in points. */
+const SIGNATURE_WIDTH = 200;
+const SIGNATURE_IMAGE_KEY = "record-signature";
+
+/**
+ * The acta de acuerdos' text: its agreements as any text, then its closing
+ * formula, the signature and the name and office of whoever certifies
+ * (RECORD_CLOSING_BLOCK_IDS) in one unbreakable stack, so the signature is
+ * never left alone at the top of a page nor the office cut in two. The
+ * signature is the image when there is one, else blank space of its height
+ * for the visible digital signature. The closing is short, so keeping it
+ * whole never clips anything.
+ */
+function agreementsRecordBody(
+  blocks: Block[],
+  ctx: PdfContentContext,
+  t: Translate,
+  signature: ExportImage | null | undefined,
+): Content[] {
+  const closingIds = new Set<string>(RECORD_CLOSING_BLOCK_IDS);
+  const body: Block[] = [];
+  const closing: Block[] = [];
+  for (const block of blocks) {
+    if (RECORD_SIGNATURE_SPACER.test(block.id)) continue;
+    (closingIds.has(block.id) ? closing : body).push(block);
+  }
+  const content = body.length > 0 ? blocksToPdf(body, ctx) : [];
+  if (closing.length === 0) {
+    return content.length > 0 ? content : cleanBody([], ctx, t);
+  }
+  // The closing carries no page tags: a stack moved whole to the next page
+  // would leave them on the page it was first laid on.
+  const closingCtx: PdfContentContext = { ...ctx, pageTags: undefined };
+  const [formula, ...signer] = closing;
+  const before =
+    formula?.id === "ar-closing" ? blocksToPdf([formula], closingCtx) : [];
+  const after = blocksToPdf(
+    formula?.id === "ar-closing" ? signer : closing,
+    closingCtx,
+  );
+  const mark: Content = signature
+    ? {
+        image: SIGNATURE_IMAGE_KEY,
+        fit: [SIGNATURE_WIDTH, SIGNATURE_HEIGHT],
+        alignment: "center",
+        margin: [0, 0, 0, 6],
+      }
+    : { text: "", margin: [0, 0, 0, SIGNATURE_HEIGHT + 6] };
+  content.push({ stack: [...before, mark, ...after], unbreakable: true });
+  return content;
+}
+
 // Annex -------------------------------------------------------------------
 
 function outcomeLabel(row: ExportAnnexRow, t: Translate): string {
@@ -876,6 +940,12 @@ function legendSection(t: Translate): Content[] {
 
 // Public builders ---------------------------------------------------------
 
+/** How a PDF lays its text out, from the reader's preferences. */
+export interface PdfLayoutOptions {
+  /** Running text justified (the default) or aligned to the left. */
+  justified?: boolean;
+}
+
 /** Clean or annotated export of one document. */
 export function buildDocumentPdf(
   data: DocumentExportData,
@@ -884,8 +954,9 @@ export function buildDocumentPdf(
   /**
    * `pageTags`: tags each block of a clean text with its id, for the pages
    * the render process reads back (pageMap.ts); the PDF comes out the same.
+   * `justified`: the reader's preference, justified unless false.
    */
-  options: { pageTags?: boolean } = {},
+  options: PdfLayoutOptions & { pageTags?: boolean } = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { assembly, document: meta, body } = data;
@@ -894,6 +965,7 @@ export function buildDocumentPdf(
     links,
     outline: {},
     images: data.images,
+    justify: options.justified !== false,
     ...(options.pageTags ? { pageTags: new Set<string>() } : {}),
   };
   const cover = hasCover(meta.kind);
@@ -915,14 +987,21 @@ export function buildDocumentPdf(
   if (body.variant === "clean") {
     content.push(
       ...heading,
-      ...cleanBody(
-        clean?.blocks ?? body.blocks,
-        ctx,
-        t,
-        body.source === "consolidated"
-          ? pendingConciliationNotes(meta, locale, t)
-          : undefined,
-      ),
+      ...(meta.generated === "agreements_record"
+        ? agreementsRecordBody(
+            clean?.blocks ?? body.blocks,
+            ctx,
+            t,
+            data.signature,
+          )
+        : cleanBody(
+            clean?.blocks ?? body.blocks,
+            ctx,
+            t,
+            body.source === "consolidated"
+              ? pendingConciliationNotes(meta, locale, t)
+              : undefined,
+          )),
       ...linksSection(links, t),
     );
   } else {
@@ -968,6 +1047,12 @@ export function buildDocumentPdf(
     watermark: draft ? t("watermarkDraft") : undefined,
   });
   withContentImages(definition, data.images);
+  if (data.signature && meta.generated === "agreements_record") {
+    definition.images = {
+      ...definition.images,
+      [SIGNATURE_IMAGE_KEY]: data.signature.dataUrl,
+    };
+  }
   // Keeps headings with the text that follows them.
   definition.pageBreakBefore = pdfFunction<
     NonNullable<TDocumentDefinitions["pageBreakBefore"]>
@@ -1035,6 +1120,7 @@ export function buildAssemblyPdf(
   data: AssemblyExportData,
   locale: ExportLocale,
   brand?: ExportBrand,
+  options: PdfLayoutOptions = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { assembly } = data;
@@ -1110,7 +1196,12 @@ export function buildAssemblyPdf(
     content.push(
       ...cleanBody(
         text?.blocks ?? entry.blocks,
-        { links, outline: { parentId: outlineId }, images: data.images },
+        {
+          links,
+          outline: { parentId: outlineId },
+          images: data.images,
+          justify: options.justified !== false,
+        },
         t,
         entry.source === "consolidated"
           ? pendingConciliationNotes(entry.meta, locale, t)

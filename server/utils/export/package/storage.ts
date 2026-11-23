@@ -28,10 +28,25 @@ import type { PackageIncludes } from "./plan";
  * so a reader never sees half a file.
  */
 
-export type PackageVariant = "pdf" | "editable";
+/** Which package of a language: with the Word versions, and how text aligns. */
+export interface PackageFormat {
+  /** Adds the Word version of every text. */
+  editable: boolean;
+  /** PDFs with justified text (the default) or aligned to the left. */
+  justified: boolean;
+}
 
-export function packageVariant(editable: boolean): PackageVariant {
-  return editable ? "editable" : "pdf";
+export const PACKAGE_VARIANTS = [
+  "pdf",
+  "editable",
+  "pdf-ragged",
+  "editable-ragged",
+] as const;
+export type PackageVariant = (typeof PACKAGE_VARIANTS)[number];
+
+export function packageVariant(format: PackageFormat): PackageVariant {
+  const base = format.editable ? "editable" : "pdf";
+  return format.justified ? base : `${base}-ragged`;
 }
 
 const ASSEMBLY_ID = /^[a-z0-9]{10,40}$/;
@@ -164,7 +179,7 @@ export async function sweepPackageDir(assemblyId: string): Promise<void> {
   const dir = assemblyPackageDir(assemblyId);
   const states = await Promise.all(
     (["es", "en"] as const).flatMap((locale) =>
-      (["pdf", "editable"] as const).map((variant) =>
+      PACKAGE_VARIANTS.map((variant) =>
         readPackageState(assemblyId, locale, variant),
       ),
     ),

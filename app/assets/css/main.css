@@ -405,6 +405,21 @@ html {
     font-size: 1.0625rem;
     line-height: 1.85;
     overflow-wrap: break-word;
+    /* Justified unless the reader turned it off (`content-ragged` on
+       <html>, ShellPreferences), as the PDFs are. Hyphens keep narrow
+       columns from opening wide gaps. Headings, table cells, formulas and
+       blocks aligned on purpose (`cx-align-*`) set their own. */
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  .content-ragged .rich-text {
+    text-align: start;
+    hyphens: manual;
+  }
+
+  .rich-text :is(h1, h2, h3, h4, h5, h6, .cx-heading) {
+    text-align: start;
   }
 
   .rich-text > * {

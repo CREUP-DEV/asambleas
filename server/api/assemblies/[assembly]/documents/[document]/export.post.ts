@@ -42,6 +42,7 @@ export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
       documentId: document.id,
       requestedBy: actor.user.id,
       locale: body.locale,
+      justified: body.justified,
       variant: body.variant,
     },
     filenameParts: [

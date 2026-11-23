@@ -70,7 +70,7 @@ export async function cleanDocumentDefinition(
   version: "base" | "consolidated",
   locale: ExportLocale,
   brand: ExportBrand,
-  options: { pageTags?: boolean } = {},
+  options: { pageTags?: boolean; justified?: boolean } = {},
 ): Promise<{ definition: TDocumentDefinitions; order: string[] }> {
   const versionId = cleanDocumentVersionId(document, version);
   if (!versionId) throw new Error("Package document has no such version");

@@ -110,7 +110,10 @@ async function processAssemblyExport(job: Job<unknown>) {
       buildAssemblyExportData(data),
       loadBrand(),
     ]);
-    return () => buildAssemblyPdf(exportData, data.locale, letterhead);
+    return () =>
+      buildAssemblyPdf(exportData, data.locale, letterhead, {
+        justified: data.justified,
+      });
   });
 }
 
@@ -123,7 +126,10 @@ async function processDocumentExport(job: Job<unknown>) {
       buildDocumentExportData(data),
       loadBrand(),
     ]);
-    return () => buildDocumentPdf(exportData, data.locale, letterhead);
+    return () =>
+      buildDocumentPdf(exportData, data.locale, letterhead, {
+        justified: data.justified,
+      });
   });
 }
 
@@ -179,7 +185,10 @@ async function processPackageJob(job: Job<unknown>) {
     return;
   }
   const data = parsed.data;
-  const key = packageKey(data.assemblyId, data.locale, data.editable);
+  const key = packageKey(data.assemblyId, data.locale, {
+    editable: data.editable,
+    justified: data.justified,
+  });
   packageBuildStarted(key);
   try {
     await buildPackage(data, (done, total) =>

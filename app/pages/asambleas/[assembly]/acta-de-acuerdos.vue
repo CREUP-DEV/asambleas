@@ -15,7 +15,8 @@ import type {
  * 79.ª AGO, for the Secretaría to create once under the agenda item where
  * it is read and approved, and to correct line by line. The corrections
  * are kept apart from the text, so every vote writes it again without
- * losing them; its own final vote settles it.
+ * losing them; its own final vote settles it. Once approved it is signed
+ * (AgreementsRecordSigning), and a correction then regenerates it.
  */
 
 const { t } = useI18n();
@@ -129,7 +130,9 @@ async function saveText(
       { method: "PUT", body },
     );
     toast.add({
-      title: t("agreementsRecord.saved"),
+      title: record.value?.document?.outdated
+        ? t("agreementsRecord.savedPending")
+        : t("agreementsRecord.saved"),
       color: "success",
       icon: "i-lucide-check",
     });
@@ -142,6 +145,14 @@ async function saveText(
 }
 
 const frozen = computed(() => Boolean(record.value?.document?.frozen));
+/**
+ * Corrections stay open once approved: they wait for «Regenerar» (the
+ * signing section) instead of changing the text at once. A rejected
+ * record is settled.
+ */
+const readonly = computed(
+  () => frozen.value && !record.value?.document?.approved,
+);
 const documentPath = computed(() =>
   record.value?.document
     ? sectionPath(
@@ -244,7 +255,19 @@ function letters(agreement: RecordAgreement): (string | null)[] {
           color="info"
           variant="subtle"
           icon="i-lucide-lock"
-          :title="t('agreementsRecord.frozen')"
+          :title="
+            record.document?.approved
+              ? t('agreementsRecord.frozenApproved')
+              : t('agreementsRecord.frozen')
+          "
+        />
+
+        <AgreementsRecordSigning
+          v-if="record.document"
+          :record="record"
+          :api-base="apiBase"
+          @update="record = $event"
+          @stale="refresh()"
         />
 
         <section
@@ -292,7 +315,7 @@ function letters(agreement: RecordAgreement): (string | null)[] {
               <UInput
                 v-model="headerDrafts[field.key]"
                 :placeholder="field.proposed"
-                :disabled="frozen || savingKey !== null"
+                :disabled="readonly || savingKey !== null"
                 class="w-full"
                 @keydown.enter="saveHeader(field.key)"
                 @blur="
@@ -321,7 +344,7 @@ function letters(agreement: RecordAgreement): (string | null)[] {
                 :line="agreement"
                 :label="lineLabel(agreement)"
                 :saving="savingKey === agreement.key"
-                :readonly="frozen"
+                :readonly="readonly"
                 @save="saveText(agreement.key, $event)"
               />
               <div v-if="agreement.lines.length > 0" class="space-y-2 pl-8">
@@ -331,7 +354,7 @@ function letters(agreement: RecordAgreement): (string | null)[] {
                   :line="line"
                   :label="letters(agreement)[index] ?? null"
                   :saving="savingKey === line.key"
-                  :readonly="frozen"
+                  :readonly="readonly"
                   @save="saveText(line.key, $event)"
                 />
               </div>

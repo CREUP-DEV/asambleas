@@ -68,6 +68,7 @@ import {
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import { loadSignedRecordFile } from "./agreementsSignedFile";
 import { assertSessionOpen } from "./sessionOpen";
 import { stampDebateStarted } from "./positionsPublication";
 import { stampAmendmentsProjected } from "./sessionProgress";
@@ -662,6 +663,8 @@ export interface DocumentDtoInput {
   baseVersion: VersionRow | null;
   consolidatedVersion: VersionRow | null;
   finalVote: VoteRow | null;
+  /** The acta de acuerdos' signed PDF (agreementsSigning.ts). */
+  signedFile?: DocumentDto["signedFile"];
   now?: Date;
 }
 
@@ -706,6 +709,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       document,
       isPresenter: isDocumentPresenter(actor, document),
     }),
+    signedFile: input.signedFile ?? null,
     can: documentCapabilities(
       actor,
       assembly,
@@ -1165,15 +1169,19 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
-  const [counts, anyAmendment] = await Promise.all([
+  const [counts, anyAmendment, signedFile] = await Promise.all([
     countVisibleAmendments(actor, [document.id], executor),
     hasAnyAmendment(executor, document.id),
+    document.generated === "agreements_record"
+      ? loadSignedRecordFile(document, executor)
+      : Promise.resolve(null),
   ]);
   return toDocumentDto({
     actor,
     assembly,
     document,
     milestones,
+    signedFile,
     ...redactPresenters(actor, memberRefOrNull(proponent), coProponents),
     amendmentCount: counts.get(document.id) ?? 0,
     hasAmendments: anyAmendment,

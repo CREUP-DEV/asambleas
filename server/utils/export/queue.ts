@@ -121,6 +121,8 @@ export const assemblyExportJobSchema = z.object({
    */
   impersonationId: z.string().min(1).nullish(),
   locale: z.enum(EXPORT_LOCALES),
+  /** Justified text (the reader's preference); jobs from before read true. */
+  justified: z.boolean().default(true),
 });
 
 export const documentExportJobSchema = assemblyExportJobSchema.extend({
@@ -135,6 +137,8 @@ export const packageJobSchema = z.object({
   assemblyId: z.string().min(1),
   locale: z.enum(EXPORT_LOCALES),
   editable: z.boolean(),
+  /** Justified text; jobs from before read true. */
+  justified: z.boolean().default(true),
 });
 
 export type PackageJobData = z.infer<typeof packageJobSchema>;

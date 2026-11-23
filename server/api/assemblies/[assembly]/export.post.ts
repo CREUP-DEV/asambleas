@@ -33,6 +33,7 @@ export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
       assemblyId: assembly.id,
       requestedBy: actor.user.id,
       locale: body.locale,
+      justified: body.justified,
     },
     filenameParts: [formatAssemblyLabel(assembly)],
     event,

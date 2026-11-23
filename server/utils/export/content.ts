@@ -177,6 +177,12 @@ export interface PdfContentContext {
   pageTags?: Set<string>;
   /** Set inside a table's cells: which kind of row (tagNode). */
   tableRow?: "header" | "body";
+  /**
+   * Paragraphs, list items and quotes without an alignment of their own
+   * are justified (the reader's preference, on by default). Never inside a
+   * table's cells, whose columns are too narrow for it.
+   */
+  justify?: boolean;
 }
 
 /** pdfmake's node of a block's text: the cell of a framed heading's table. */
@@ -570,6 +576,19 @@ function alignment(shape: BlockShape): Pick<ContentText, "alignment"> {
   return shape.align ? { alignment: shape.align } : {};
 }
 
+/**
+ * A running text's alignment: its own, else justified when the context asks
+ * for it (PdfContentContext.justify). Justifying spreads the spaces of the
+ * lines pdfmake has already broken, so it never moves a page break.
+ */
+function textAlignment(
+  shape: BlockShape,
+  ctx: PdfContentContext,
+): Pick<ContentText, "alignment"> {
+  if (shape.align) return { alignment: shape.align };
+  return ctx.justify ? { alignment: "justify" } : {};
+}
+
 /** The tallest an image is drawn, in points: most of a page. */
 const IMAGE_MAX_HEIGHT = 560;
 
@@ -656,7 +675,7 @@ function blockNode(item: Item, ctx: PdfContentContext): Content {
   if (item.shape.type === "image") return imageNode(item, ctx);
   if (item.shape.type === "formula") return formulaNode(item);
   const text = emptySafe(item.inlines);
-  const align = alignment(item.shape);
+  const align = textAlignment(item.shape, ctx);
   if (item.shape.type === "quote") return { text, style: "quote", ...align };
   return { text, style: "paragraph", ...align };
 }
@@ -700,9 +719,13 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         }
       }
       const look = cellLook(cell.cell);
-      const cellCtx: PdfContentContext = ctx.pageTags
-        ? { ...ctx, tableRow: r < grid.headerRows ? "header" : "body" }
-        : ctx;
+      const cellCtx: PdfContentContext = {
+        ...ctx,
+        justify: false,
+        ...(ctx.pageTags
+          ? { tableRow: r < grid.headerRows ? "header" : "body" }
+          : {}),
+      };
       const nodes = look.color
         ? assembleFlow(
             cell.blocks.map((item) => onFill(item, look.color!)),
@@ -944,7 +967,7 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
     const element: ContentText & OrderedListElementProperties = {
       text: emptySafe(item.inlines),
       style: "listItem",
-      ...alignment(item.shape),
+      ...textAlignment(item.shape, ctx),
     };
     if (top.kind === "ol") {
       if (item.countable) {

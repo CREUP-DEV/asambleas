@@ -243,3 +243,33 @@ describe("pages of a text's PDF", () => {
     RENDER_TEST_TIMEOUT,
   );
 });
+
+describe("justified text", () => {
+  it(
+    "breaks the same lines and pages as text aligned to the left",
+    async () => {
+      const blocks = fixture();
+      const build = (justified: boolean) =>
+        buildDocumentPdf(
+          {
+            assembly,
+            document: meta,
+            body: { variant: "clean", source: "base", blocks },
+            generatedAt: new Date("2026-11-21T10:00:00Z"),
+          },
+          "es",
+          brand,
+          { pageTags: true, justified },
+        );
+      const [justified, ragged] = await Promise.all([
+        renderPdfBatch([build(true)], fonts, undefined, { pages: true }),
+        renderPdfBatch([build(false)], fonts, undefined, { pages: true }),
+      ]);
+      // The PDFs differ (the spaces), the pages they lay out do not: the
+      // page maps of the web text hold for both (pageLayoutKey).
+      expect(stable(justified.pdfs[0]!)).not.toBe(stable(ragged.pdfs[0]!));
+      expect(justified.pages![0]).toEqual(ragged.pages![0]);
+    },
+    RENDER_TEST_TIMEOUT,
+  );
+});

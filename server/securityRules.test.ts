@@ -192,6 +192,8 @@ const UPLOAD_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/documents/res-4/images":
     "/api/assemblies/*/documents/*/images",
   "/api/assemblies/80-ago/convocation": "/api/assemblies/*/convocation",
+  "/api/assemblies/80-ago/agreements-record/signing/signed":
+    "/api/assemblies/*/agreements-record/signing/signed",
 };
 
 const EXPORT_RULES: Record<string, string> = {
@@ -199,6 +201,8 @@ const EXPORT_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/documents/res-4/export":
     "/api/assemblies/*/documents/*/export",
   "/api/assemblies/80-ago/package": "/api/assemblies/*/package",
+  "/api/assemblies/80-ago/agreements-record/signing":
+    "/api/assemblies/*/agreements-record/signing",
 };
 
 const PACKAGE_DOWNLOAD_RULES: Record<string, string> = {
@@ -338,6 +342,9 @@ describe("request size limits", () => {
       16_000_000,
     );
     expect(limit("/api/assemblies/80-ago/convocation")).toBe(21_000_000);
+    expect(
+      limit("/api/assemblies/80-ago/agreements-record/signing/signed"),
+    ).toBe(21_000_000);
     // A rule that only sets a rate limiter inherits the size limits.
     expect(limit("/api/assemblies/80-ago/documents/res-4/images")).toBe(
       8_000_000,

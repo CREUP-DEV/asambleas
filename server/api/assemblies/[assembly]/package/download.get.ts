@@ -46,7 +46,8 @@ export default defineEventHandler(async (event) => {
       after: {
         package: true,
         locale: request.locale,
-        editable: request.editable,
+        editable: request.format.editable,
+        justified: request.format.justified,
         part: packageFilterAudit(request.filter),
       },
     });
@@ -55,7 +56,7 @@ export default defineEventHandler(async (event) => {
     const part = await packagePartDownload(
       request.assemblyId,
       request.locale,
-      request.editable,
+      request.format,
       request.filter,
     );
     if (!part) throw notReady();
@@ -74,7 +75,7 @@ export default defineEventHandler(async (event) => {
   const file = await packageDownload(
     request.assemblyId,
     request.locale,
-    request.editable,
+    request.format,
   );
   if (!file) throw notReady();
   await audit();

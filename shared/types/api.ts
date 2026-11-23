@@ -1047,6 +1047,11 @@ export interface DocumentDto extends DocumentSummaryDto {
   consolidatedVersion: VersionDto | null;
   finalVote: VoteDto | null;
   positionsVisible: boolean;
+  /**
+   * The acta de acuerdos only: its signed PDF, once uploaded for the text in
+   * force; it leads the document and replaces the generated PDF.
+   */
+  signedFile: AgreementsRecordSignedFileDto | null;
   can: DocumentCapabilities;
 }
 
@@ -1101,10 +1106,46 @@ export interface AgreementsRecordDto {
     status: DocumentStatus;
     /** Its own final vote settled it: the votes no longer change it. */
     frozen: boolean;
+    /** Its own final vote approved it (it can be signed). */
+    approved: boolean;
+    /**
+     * Frozen, and the record as it reads now (corrections, votes) is no
+     * longer its text in force: «Regenerar» writes it as a new version.
+     */
+    outdated: boolean;
   } | null;
   record: AgreementsRecord;
   /** The lock of each saved correction, by key. */
   locks: Record<string, IsoDate>;
+  /** Its signing, once approved (null before anything was prepared). */
+  signing: AgreementsRecordSigningDto | null;
+}
+
+/**
+ * The signing of the acta de acuerdos (Secretaría only): the PDF made to
+ * sign and the signed one everyone reads.
+ */
+export interface AgreementsRecordSigningDto {
+  /** The PDF to sign, made from the text in force; null when there is none. */
+  prepared: {
+    at: IsoDate;
+    /** It shows the visible signature read from the Intranet. */
+    withImage: boolean;
+    /** Made from the text in force (not from an earlier version). */
+    current: boolean;
+  } | null;
+  /** The signed PDF, published; null until it is uploaded. */
+  signed: (AgreementsRecordSignedFileDto & { current: boolean }) | null;
+  /** The row's lock. */
+  updatedAt: IsoDate;
+}
+
+/** The signed acta de acuerdos as everyone reads it. */
+export interface AgreementsRecordSignedFileDto {
+  /** Served by /api/uploads/agreements/[filename]. */
+  url: string;
+  name: string;
+  signedAt: IsoDate;
 }
 
 /** Body of POST .../agreements-record: the item it is read and voted in. */

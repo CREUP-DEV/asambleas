@@ -12,3 +12,6 @@ drizzle/meta
 
 # Local scratch (dumps, one-off scripts; git-excluded): never block pnpm verify
 .sim77
+
+# Third-party client of AutoFirma (Gobierno de España), kept as shipped
+public/autofirma

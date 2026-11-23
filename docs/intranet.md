@@ -31,6 +31,7 @@ En local las variables pueden quedar vacías: todas las cuentas entran como
 | `GET usuarios/asociados`, `sectoriales`, `cea`, `cas`     | «Sincronizar» en Miembros (`POST /api/members/sync`) y cada día a las 05:00. Las cuatro se piden antes de escribir nada.                                                                      | `server/utils/members/sync.ts`, `roster.ts`, `schedule.ts` |
 | `GET asambleas/{type}/{number}/asistentes` y sus imágenes | Al abrir la sala o pulsar «Sincronizar» en ella, como mucho una vez por minuto y asamblea.                                                                                                    | `server/utils/seating/intranet.ts`, `images.ts`            |
 | `GET asambleas/{type}/{number}/inscritos`                 | Al abrir el formulario de recuento, como mucho una vez por minuto y asamblea.                                                                                                                 | `server/utils/domain/headcountExpected.ts`                 |
+| `GET firma-secretaria`                                    | Al preparar para firmar el acta de acuerdos (Secretaría), una vez por preparación.                                                                                                            | `server/utils/domain/agreementsSigning.ts`                 |
 
 Todas llevan `Accept: application/json` y el token, con un tiempo máximo de
 10 s. La plataforma trata cualquier respuesta que no sea un 2xx válido como
@@ -292,6 +293,24 @@ marque «Inscrito». Solo ids de cuenta: ningún dato de una persona.
 que la lista de asistentes. El mismo 404 que `asistentes`. La plataforma
 marca los consejos y sectoriales por `members.intranet_id` y las cuentas
 invitadas por `users.intranet_id`; sin la ruta, no marca a nadie.
+
+### 3.7 `GET firma-secretaria`
+
+La firma visual de la Secretaría Ejecutiva, para el acta de acuerdos: la
+imagen que sube en su perfil de la Intranet quien ocupa la cuenta que la
+administración marca como la de la Secretaría Ejecutiva (la misma que usan
+los certificados de asistencia). Es un dato personal de esa persona: se
+borra con sus datos personales.
+
+- `200`: la imagen (PNG o JPEG), con su tipo leído de los bytes y
+  `X-Content-Type-Options: nosniff`.
+- `404` `{"error":"not_found"}`: no hay cuenta marcada, no tiene firma o
+  falta el archivo.
+
+La plataforma la pide sin seguir redirecciones, con un máximo de 3 MB, la
+pasa a PNG (como mucho 800 × 320) y la dibuja solo en el PDF que prepara
+para firmar; no guarda ninguna copia. Sin ella (un 404, una Intranet sin la
+ruta o un error), el hueco de la firma queda en blanco y nada falla.
 
 ## 4. Ampliaciones posibles
 

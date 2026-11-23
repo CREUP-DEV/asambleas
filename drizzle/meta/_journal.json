@@ -428,6 +428,13 @@
       "when": 1795287904879,
       "tag": "0060_amendment_first_projected",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795447363261,
+      "tag": "0061_agreement_record_signings",
+      "breakpoints": true
     }
   ]
 }

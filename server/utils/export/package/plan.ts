@@ -26,7 +26,7 @@ import { NameRegistry, safeName, sortableNumbering } from "./names";
  * Bumped whenever a piece would come out different from the same data (a
  * template or layout change): every piece is rendered again.
  */
-export const PACKAGE_RENDERER_VERSION = 2;
+export const PACKAGE_RENDERER_VERSION = 3;
 
 /** Longest folder name taken from an agenda item's title. */
 const FOLDER_TITLE_MAX = 50;
@@ -74,6 +74,12 @@ export interface PackageDocument {
   /** The uploaded PDF's URL and its name on disk. */
   fileUrl: string | null;
   storedFile: string | null;
+  /**
+   * The acta de acuerdos' signed PDF (URL and name on disk), signing its
+   * consolidated text: it stands for that text's rendered PDF.
+   */
+  signedFileUrl?: string | null;
+  signedStoredFile?: string | null;
   /** Published amendments, by number. */
   amendments: PackageAmendment[];
 }
@@ -185,14 +191,21 @@ export interface PackageOptions {
   locale: ExportLocale;
   /** Adds the Word version of every text. */
   editable: boolean;
+  /** PDFs with justified text (the default) or aligned to the left. */
+  justified: boolean;
 }
 
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function pieceKey(locale: ExportLocale, kind: string, inputs: unknown): string {
-  return hash([PACKAGE_RENDERER_VERSION, locale, kind, inputs]).slice(0, 40);
+/**
+ * A piece's key. `layout` is its language, and for a PDF aligned to the left
+ * also says so (`es:ragged`): a justified PDF keeps the plain language, and
+ * a Word file never depends on it.
+ */
+function pieceKey(layout: string, kind: string, inputs: unknown): string {
+  return hash([PACKAGE_RENDERER_VERSION, layout, kind, inputs]).slice(0, 40);
 }
 
 function assemblyInputs(assembly: PackageAssembly) {
@@ -228,6 +241,7 @@ export function planPackage(
 ): PackagePlan {
   const { assembly } = source;
   const { locale } = options;
+  const pdfLayout = options.justified ? locale : `${locale}:ragged`;
   const root = safeName(t("package.root", { assembly: assembly.label }), 80);
   const entries: PackageEntry[] = [];
   const add = (
@@ -254,7 +268,7 @@ export function planPackage(
     add(
       `${root}/${rootNames.claim(`00 ${t("package.convocation")}`, ".pdf")}`,
       { kind: "convocation" },
-      pieceKey(locale, "convocation", {
+      pieceKey(pdfLayout, "convocation", {
         assembly: assemblyInputs(assembly),
         intro: assembly.convocationIntro,
         milestones: assembly.milestones.map((milestone) => ({
@@ -268,7 +282,7 @@ export function planPackage(
   add(
     `${root}/${rootNames.claim(`00 ${t("package.agenda")}`, ".pdf")}`,
     { kind: "agenda" },
-    pieceKey(locale, "agenda", {
+    pieceKey(pdfLayout, "agenda", {
       assembly: assemblyInputs(assembly),
       rows: rows.map(({ documents: _, ...row }) => row),
     }),
@@ -380,6 +394,19 @@ export function planPackage(
           ? ["pdf", "docx"]
           : ["pdf"];
         for (const format of formats) {
+          if (
+            format === "pdf" &&
+            entry.version === "consolidated" &&
+            document.signedStoredFile
+          ) {
+            add(
+              `${folder}/${names.claim(entry.name, ".pdf")}`,
+              { kind: "file", stored: document.signedStoredFile },
+              `file:${document.signedStoredFile}`,
+              { documentId: document.id },
+            );
+            continue;
+          }
           add(
             `${folder}/${names.claim(entry.name, `.${format}`)}`,
             {
@@ -388,11 +415,15 @@ export function planPackage(
               version: entry.version,
               format,
             },
-            pieceKey(locale, `document-${format}`, {
-              ...meta,
-              versionId: entry.versionId,
-              vote: voteInputs(entry.vote),
-            }),
+            pieceKey(
+              format === "pdf" ? pdfLayout : locale,
+              `document-${format}`,
+              {
+                ...meta,
+                versionId: entry.versionId,
+                vote: voteInputs(entry.vote),
+              },
+            ),
             { documentId: document.id },
           );
         }
@@ -401,7 +432,7 @@ export function planPackage(
         id: document.id,
         baseVersionId: document.baseVersionId,
         consolidatedVersionId: document.consolidatedVersionId,
-        fileUrl: null,
+        fileUrl: document.signedFileUrl ?? null,
       });
 
       if (document.amendments.length === 0) continue;
@@ -422,7 +453,7 @@ export function planPackage(
             documentId: document.id,
             amendmentId: amendment.id,
           },
-          pieceKey(locale, "amendment", {
+          pieceKey(pdfLayout, "amendment", {
             ...amendment,
             updatedAt: amendment.updatedAt.toISOString(),
             document: meta,
@@ -443,6 +474,7 @@ export function planPackage(
       PACKAGE_RENDERER_VERSION,
       locale,
       options.editable,
+      options.justified,
       entries.map((entry) => [entry.path, entry.key]),
     ]).slice(0, 32),
   };

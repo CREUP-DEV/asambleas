@@ -58,6 +58,7 @@ const props = withDefaults(
 const open = defineModel<boolean>("open", { default: false });
 
 const { t, locale } = useI18n();
+const { justifiedText } = useAccessibilityPreferences();
 const api = useApi();
 const packages = usePackageDownload();
 
@@ -293,6 +294,7 @@ const target = computed<PackageTarget>(() => ({
   apiBase: props.apiBase,
   locale: locale.value === "en" ? "en" : "es",
   editable: editable.value,
+  justified: justifiedText.value,
   selection: asked.value,
 }));
 /** The filters on screen are not the ones asked for yet. */

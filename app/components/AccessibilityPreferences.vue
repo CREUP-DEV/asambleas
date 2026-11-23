@@ -13,7 +13,7 @@ import {
  * shown here is exactly how diffs and text will look.
  */
 const { t } = useI18n();
-const { diffDisplayMode, contentFont, contentFontFamily } =
+const { diffDisplayMode, contentFont, contentFontFamily, justifiedText } =
   useAccessibilityPreferences();
 
 const diffModeItems = computed<RadioGroupItem[]>(() =>
@@ -28,6 +28,21 @@ const fontItems = computed<RadioGroupItem[]>(() =>
     label: t(`accessibility.font.${value}`),
   })),
 );
+
+const textAlignItems = computed<RadioGroupItem[]>(() =>
+  (["justified", "start"] as const).map((value) => ({
+    value,
+    label: t(`accessibility.textAlign.${value}`),
+  })),
+);
+const textAlignModel = computed({
+  get: () => (justifiedText.value ? "justified" : "start"),
+  set: (value: unknown) => {
+    if (value === "justified" || value === "start") {
+      justifiedText.value = value === "justified";
+    }
+  },
+});
 
 const diffModeModel = computed({
   get: () => diffDisplayMode.value,
@@ -72,6 +87,21 @@ const fontModel = computed({
       >
         {{ t("accessibility.fontPreviewText") }}
       </p>
+    </div>
+
+    <div class="space-y-3">
+      <URadioGroup
+        v-model="textAlignModel"
+        :legend="t('accessibility.textAlignLabel')"
+        :items="textAlignItems"
+      />
+      <p class="text-muted text-sm">{{ t("accessibility.textAlignHint") }}</p>
+      <!-- Follows the <html> content-ragged class, as real content does. -->
+      <div
+        class="rich-text border-default rounded border p-3 text-sm! leading-normal!"
+      >
+        <p>{{ t("accessibility.textAlignPreview") }}</p>
+      </div>
     </div>
   </div>
 </template>

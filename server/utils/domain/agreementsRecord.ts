@@ -13,6 +13,7 @@ import { agendaChildGroups } from "~~/shared/utils/agendaNumbering";
 import {
   agreementsRecord,
   agreementsRecordBlocks,
+  dropSignatureSpacers,
   type AgreementsRecord,
   type AgreementsRecordInput,
   type RecordItem,
@@ -40,6 +41,11 @@ import {
   type DocumentRow,
 } from "./documents";
 import { recordEvent, type Executor } from "./events";
+import {
+  clearSigning,
+  loadSigningDto,
+  removeSigningFiles,
+} from "./agreementsSigning";
 
 /**
  * The acta de acuerdos as a document of the platform (user's decisions of
@@ -227,7 +233,7 @@ async function loadRecordInput(
 }
 
 /** The record and its text, as they read now. */
-async function buildRecord(
+export async function buildRecord(
   assembly: AssemblyRow,
   self: DocumentRow | null,
 ): Promise<{ record: AgreementsRecord; blocks: Block[] }> {
@@ -244,7 +250,7 @@ async function buildRecord(
  * Whether the record's text no longer follows the votes: its own final vote
  * rejected it, or already gave its last version.
  */
-async function isFrozen(
+export async function isFrozen(
   executor: Executor,
   document: DocumentRow,
 ): Promise<boolean> {
@@ -377,31 +383,169 @@ export function requireRecordManager(actor: Actor): void {
   }
 }
 
+/** Whether the record's own final vote approved it. */
+export async function isApproved(
+  executor: Executor,
+  document: DocumentRow,
+): Promise<boolean> {
+  if (!document.finalVoteId || !document.consolidatedVersionId) return false;
+  const [vote] = await executor
+    .select({ result: votes.result })
+    .from(votes)
+    .where(eq(votes.id, document.finalVoteId));
+  return vote?.result === "approved";
+}
+
+/**
+ * The hash of the text in force (the consolidated one once voted), as the
+ * record words it now: the empty `ar-signature-*` paragraphs versions
+ * written before 2026-11-23 kept for the signature are left out, so such a
+ * version without corrections does not read as outdated.
+ */
+async function inForceHash(
+  executor: Executor,
+  document: DocumentRow,
+): Promise<string | null> {
+  const versionId = document.consolidatedVersionId ?? document.baseVersionId;
+  if (!versionId) return null;
+  const [version] = await executor
+    .select({
+      contentHash: documentVersions.contentHash,
+      blocks: documentVersions.blocks,
+    })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, versionId));
+  if (!version) return null;
+  return withoutSignatureSpacers(version.blocks, version.contentHash);
+}
+
+/** The hash of `blocks` without the old signature spacers. */
+async function withoutSignatureSpacers(
+  blocks: Block[],
+  contentHash: string,
+): Promise<string> {
+  const kept = dropSignatureSpacers(blocks);
+  // Through the schema, as buildRecord does: the canonical form and order
+  // of keys its hash was taken over (jsonb hands them back reordered).
+  return kept ? hashBlocks(blocksSchema.parse(kept)) : contentHash;
+}
+
 /** The record as the Secretaría's panel reads it. */
 export async function loadAgreementsRecordDto(
   assembly: AssemblyRow,
 ): Promise<AgreementsRecordDto> {
   const document = await findAgreementsRecord(assembly.id);
-  const [{ record }, textRows] = await Promise.all([
+  const [{ record, blocks }, textRows] = await Promise.all([
     buildRecord(assembly, document),
     loadTexts(assembly.id),
   ]);
+  let summary: AgreementsRecordDto["document"] = null;
+  if (document) {
+    const [frozen, approved, hash] = await Promise.all([
+      isFrozen(db, document),
+      isApproved(db, document),
+      inForceHash(db, document),
+    ]);
+    summary = {
+      id: document.id,
+      slug: document.slug,
+      title: document.title,
+      agendaItemId: document.agendaItemId,
+      status: document.status,
+      frozen,
+      approved,
+      outdated:
+        frozen &&
+        approved &&
+        hash !== null &&
+        hash !== (await hashBlocks(blocks)),
+    };
+  }
   return {
-    document: document
-      ? {
-          id: document.id,
-          slug: document.slug,
-          title: document.title,
-          agendaItemId: document.agendaItemId,
-          status: document.status,
-          frozen: await isFrozen(db, document),
-        }
-      : null,
+    document: summary,
     record,
     locks: Object.fromEntries(
       textRows.map((row) => [row.key, row.updatedAt.toISOString()]),
     ),
+    signing: document ? await loadSigningDto(document) : null,
   };
+}
+
+/** The note of a version written again after a correction. */
+const CORRECTION_NOTE = "Corrección del acta de acuerdos";
+
+/**
+ * Writes an approved record again from its corrections (user's decision of
+ * 2026-11-23: the record is regenerated with a correction): a new
+ * consolidated version replacing the one in force, as a correction of form
+ * does, and its signed PDF goes, since it signs the text before; the
+ * Secretaría prepares and signs it again. Only once frozen and approved
+ * (before, every change writes it by itself). Nothing happens when the text
+ * would be the same.
+ */
+export async function regenerateApprovedRecord(
+  actor: Actor,
+  assembly: AssemblyRow,
+): Promise<AgreementsRecordDto> {
+  requireRecordManager(actor);
+  const found = await findAgreementsRecord(assembly.id);
+  if (!found) fail(404, "La asamblea no tiene acta de acuerdos");
+  if (!(await isApproved(db, found)) || !(await isFrozen(db, found))) {
+    fail(
+      409,
+      "El acta todavía no está aprobada: hasta entonces se actualiza sola",
+    );
+  }
+  const { blocks } = await buildRecord(assembly, found);
+  const contentHash = await hashBlocks(blocks);
+
+  const removed = await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, found.id, "update");
+    if (
+      current.finalVoteId !== found.finalVoteId ||
+      current.consolidatedVersionId !== found.consolidatedVersionId
+    ) {
+      fail(
+        409,
+        "El acta ha cambiado mientras tanto. Recarga e inténtalo de nuevo",
+      );
+    }
+    if ((await inForceHash(tx, current)) === contentHash) return null;
+    const [version] = await tx
+      .insert(documentVersions)
+      .values({
+        documentId: current.id,
+        number: await nextVersionNumber(tx, current.id),
+        kind: "consolidated",
+        blocks,
+        contentHash,
+        note: CORRECTION_NOTE,
+        replacesVersionId: current.consolidatedVersionId,
+        createdByUserId: actor.user.id,
+      })
+      .returning({ id: documentVersions.id });
+    await tx
+      .update(documents)
+      .set({ consolidatedVersionId: version!.id })
+      .where(eq(documents.id, current.id));
+    const files = await clearSigning(tx, current.id);
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "agreements_record_regenerated",
+      payload: {
+        contentHash,
+        versionId: version!.id,
+        signatureRemoved: files.signed !== null,
+      },
+      actor,
+    });
+    return files;
+  });
+  if (removed) await removeSigningFiles(removed);
+  return loadAgreementsRecordDto(assembly);
 }
 
 /**

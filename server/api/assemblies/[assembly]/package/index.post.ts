@@ -43,7 +43,8 @@ export default defineEventHandler(
       after: {
         package: true,
         locale: request.locale,
-        editable: request.editable,
+        editable: request.format.editable,
+        justified: request.format.justified,
         part: packageFilterAudit(request.filter),
       },
     });
@@ -54,14 +55,14 @@ export default defineEventHandler(
         status = await requestPackagePart(
           request.assemblyId,
           request.locale,
-          request.editable,
+          request.format,
           request.filter,
         );
       } else {
         status = await requestPackage(
           request.assemblyId,
           request.locale,
-          request.editable,
+          request.format,
         );
       }
     } catch {

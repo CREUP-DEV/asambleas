@@ -55,6 +55,7 @@ const POLL_TIMEOUT_MS = 3 * 60_000;
 
 const { t, locale } = useI18n();
 const api = useApi();
+const { justifiedText } = useAccessibilityPreferences();
 const toast = useToast();
 
 const state = ref<ExportState>("idle");
@@ -180,8 +181,9 @@ async function start(): Promise<void> {
   jobStatus.value = null;
   jobId.value = null;
   try {
-    const body: Record<string, string> = {
+    const body: Record<string, string | boolean> = {
       locale: locale.value === "en" ? "en" : "es",
+      justified: justifiedText.value,
     };
     if (props.document && props.variant) body.variant = props.variant;
     const result = await api.send<{ jobId: string }>(endpoint.value, { body });

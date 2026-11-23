@@ -38,7 +38,12 @@ import {
   type ExportLocale,
   type Translate,
 } from "./labels";
-import { frame, withContentImages, type ExportAssembly } from "./pdfBuilder";
+import {
+  frame,
+  withContentImages,
+  type ExportAssembly,
+  type PdfLayoutOptions,
+} from "./pdfBuilder";
 import { constantLayout, pdfFunction } from "./pdfSerial";
 
 /**
@@ -210,6 +215,8 @@ export function buildAgendaPdf(
   data: AgendaPdfData,
   locale: ExportLocale,
   brand?: ExportBrand,
+  // The agenda has no running text to justify; taken for a uniform call.
+  _options: PdfLayoutOptions = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const app = createAppTranslator(locale);
@@ -256,6 +263,7 @@ export function buildConvocationPdf(
   data: ConvocationPdfData,
   locale: ExportLocale,
   brand?: ExportBrand,
+  options: PdfLayoutOptions = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const app = createAppTranslator(locale);
@@ -280,9 +288,11 @@ export function buildConvocationPdf(
     { text: title, style: "docTitle" },
     ...provisionalNote(assembly, app),
     ...factLines(assemblyFacts(assembly, locale, t, app)),
-    ...intro
-      .split(/\n{2,}/)
-      .map((paragraph): Content => ({ text: paragraph, style: "paragraph" })),
+    ...intro.split(/\n{2,}/).map((paragraph): Content => ({
+      text: paragraph,
+      style: "paragraph",
+      ...(options.justified !== false ? { alignment: "justify" } : {}),
+    })),
     ...barHeading(app("convocation.agendaTitle")),
     ...(data.rows.length > 0
       ? agendaRows(data.rows, t, true)
@@ -591,11 +601,17 @@ export function buildAmendmentPdf(
   data: AmendmentPdfData,
   locale: ExportLocale,
   brand?: ExportBrand,
+  options: PdfLayoutOptions = {},
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { amendment, document } = data;
   const links = new LinkRegistry();
-  const ctx: PdfContentContext = { links, outline: {}, images: data.images };
+  const ctx: PdfContentContext = {
+    links,
+    outline: {},
+    images: data.images,
+    justify: options.justified !== false,
+  };
   const title = amendment.code
     ? t("package.amendment.titleWithCode", { code: amendment.code })
     : t("package.amendment.title");
@@ -703,6 +719,7 @@ export function buildAmendmentPdf(
       ...paragraphs.map((paragraph): Content => ({
         text: paragraph,
         style: "paragraph",
+        ...(options.justified !== false ? { alignment: "justify" } : {}),
       })),
     );
   }

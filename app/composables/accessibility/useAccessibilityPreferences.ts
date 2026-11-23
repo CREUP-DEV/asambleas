@@ -5,7 +5,9 @@
  * The state lives here; `plugins/accessibility.client.ts` restores it from
  * localStorage at startup and applies it to <html> whenever it changes:
  * - `diff-color` or `diff-marks` class, read by the `.cx-*` diff styles;
- * - `--user-content-font` variable, read by `.rich-text` and `.content-font`.
+ * - `--user-content-font` variable, read by `.rich-text` and `.content-font`;
+ * - `content-ragged` class while the text is not justified, read by
+ *   `.rich-text`. The PDF exports ask for the same (`justified`).
  */
 
 export type DiffDisplayMode = "color" | "marks";
@@ -23,6 +25,7 @@ export const CONTENT_FONTS: readonly ContentFont[] = [
 
 export const DIFF_DISPLAY_MODE_STORAGE_KEY = "creup:diff-display-mode";
 export const CONTENT_FONT_STORAGE_KEY = "creup:content-font";
+export const JUSTIFIED_TEXT_STORAGE_KEY = "creup:justified-text";
 
 /** CSS value of `--user-content-font` for each content font. */
 export const CONTENT_FONT_VARIABLES: Record<ContentFont, string> = {
@@ -48,6 +51,11 @@ export const useAccessibilityPreferences = () => {
     "accessibility-content-font",
     () => "raleway",
   );
+  /** Content text justified, on screen and in the PDFs (on by default). */
+  const justifiedText = useState<boolean>(
+    "accessibility-justified-text",
+    () => true,
+  );
   const contentFontFamily = computed(
     () => CONTENT_FONT_VARIABLES[contentFont.value],
   );
@@ -55,6 +63,7 @@ export const useAccessibilityPreferences = () => {
   return {
     diffDisplayMode,
     contentFont,
+    justifiedText,
     /** CSS font-family value for previews of the chosen content font. */
     contentFontFamily,
   };

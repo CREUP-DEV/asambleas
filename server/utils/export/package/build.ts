@@ -80,13 +80,13 @@ export interface BuiltPackage {
 export async function planCurrentPackage(
   assemblyId: string,
   locale: ExportLocale,
-  editable: boolean,
+  format: PackageFormat,
 ): Promise<{ source: PackageSource; plan: PackagePlan } | null> {
   const source = await loadPackageSource(assemblyId);
   if (!source) return null;
   return {
     source,
-    plan: planPackage(source, { locale, editable }, createTranslator(locale)),
+    plan: planPackage(source, { locale, ...format }, createTranslator(locale)),
   };
 }
 
@@ -108,14 +108,13 @@ export async function buildPackage(
   onProgress: PackageProgress = () => undefined,
 ): Promise<BuiltPackage> {
   const started = performance.now();
-  const planned = await planCurrentPackage(
-    job.assemblyId,
-    job.locale,
-    job.editable,
-  );
+  const planned = await planCurrentPackage(job.assemblyId, job.locale, {
+    editable: job.editable,
+    justified: job.justified,
+  });
   if (!planned) return { status: "hidden" };
   const { source, plan } = planned;
-  const variant = packageVariant(job.editable);
+  const variant = packageVariant(job);
   const dir = assemblyPackageDir(job.assemblyId);
   const zipName = zipFileName(job.locale, variant, plan.fingerprint);
 
@@ -140,7 +139,12 @@ export async function buildPackage(
   }
   let done = 0;
   onProgress(done, missing.length);
-  const renderer = new PieceRenderer(source, job.locale, await loadBrand());
+  const renderer = new PieceRenderer(
+    source,
+    job.locale,
+    await loadBrand(),
+    job.justified,
+  );
   for (const group of renderGroups(missing)) {
     await renderer.render(job.assemblyId, group);
     done += group.length;
@@ -298,6 +302,8 @@ class PieceRenderer {
     private readonly source: PackageSource,
     private readonly locale: ExportLocale,
     private readonly brand: ExportBrand,
+    /** PDFs with justified text (PdfLayoutOptions). */
+    private readonly justified: boolean,
   ) {
     this.documents = new Map(source.documents.map((d) => [d.id, d]));
     const { assembly } = source;
@@ -331,7 +337,8 @@ class PieceRenderer {
     const paged =
       piece.kind === "document" &&
       group.length === 1 &&
-      this.locale === PAGE_MAP_LOCALE
+      this.locale === PAGE_MAP_LOCALE &&
+      this.justified
         ? piece
         : null;
     const definitions: TDocumentDefinitions[] = [];
@@ -379,6 +386,7 @@ class PieceRenderer {
           { assembly: this.pdfAssembly, rows: this.agendaRows },
           this.locale,
           this.brand,
+          { justified: this.justified },
         );
       case "convocation":
         return buildConvocationPdf(
@@ -390,6 +398,7 @@ class PieceRenderer {
           },
           this.locale,
           this.brand,
+          { justified: this.justified },
         );
       case "document":
         return (await this.documentPdf(piece.documentId, piece.version))
@@ -453,7 +462,7 @@ class PieceRenderer {
       version,
       this.locale,
       this.brand,
-      { pageTags },
+      { pageTags, justified: this.justified },
     );
   }
 
@@ -554,6 +563,7 @@ class PieceRenderer {
       },
       this.locale,
       this.brand,
+      { justified: this.justified },
     );
   }
 }

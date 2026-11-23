@@ -643,7 +643,7 @@ each sub-item `agenda_item_created`.
 | DELETE | `/api/assemblies/[assembly]/documents/[document]/form-corrections/[correction]`          | its author                                                        | `FormCorrectionWithdrawBody`. Withdraws a pending one. Returns `FormCorrectionsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/conciliations`                          | `document:correct_form` (applied at once); a presenter (proposed) | `ConciliationBody`: the wording of a passage the final vote left pending conciliation, over the base. 409 `stale` when `fromVersionId` is not the consolidated version in force, 409 `passage_changed` when the passage is not pending in it, 422 `wording_outside`. A proposal is decided or withdrawn through `form-corrections/[correction]`. Returns `FormCorrectionsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | DELETE | `/api/assemblies/[assembly]/documents/[document]/final-vote`                             | `session:moderate` or `assembly:vote_result`                      | `FinalVoteAnnulBody`. Annuls the final vote, see below. Returns `DocumentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| POST   | `/api/assemblies/[assembly]/documents/[document]/export`                                 | visible                                                           | Body `{ variant: "clean" \| "annotated", locale }`. Enqueues a PDF export and returns `{ jobId }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/export`                                 | visible                                                           | Body `{ variant: "clean" \| "annotated", locale, justified }`. Enqueues a PDF export and returns `{ jobId }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **Who can create.** Managers (`document:manage`) can always create a document,
 for any members (see presenters below) and with no content. Members with
@@ -1910,6 +1910,36 @@ Corrections are kept apart (`agreement_record_texts`), so they survive.
 Built only from what the public reads (published documents, listed items,
 no withheld title). Schemas: `shared/utils/schemas/agreementsRecord.ts`.
 
+**Regenerating and signing it** (user's decisions of 2026-11-23,
+`server/utils/domain/agreementsSigning.ts`). Once its own final vote
+approved it, the votes no longer change it, but the Secretaría still
+corrects it: `AgreementsRecordDto.document.outdated` says the corrections
+(or the votes) no longer match its text in force, and «Regenerar» writes it
+again as a new consolidated version replacing the one in force (note
+«Corrección del acta de acuerdos», event `agreements_record_regenerated`),
+which takes its signed PDF away. It is then signed: the platform renders
+the PDF to sign (the clean consolidated text, Spanish, justified) with the
+visible signature of the Secretaría Ejecutiva above the name, read from the
+Intranet at that moment (`GET {base}/firma-secretaria`, docs/intranet.md)
+and kept nowhere else; without it the space stays blank. The Secretaría
+signs it with AutoFirma from the page (PAdES over SHA-512,
+`alwaysCreateRevision`, the client in `public/autofirma`) or downloads it,
+signs it elsewhere and uploads it. A signed PDF must carry a signature
+dictionary (`/ByteRange`) and be uploaded for the version prepared, which
+must still be the one in force. Once published it leads the document
+(`DocumentDto.signedFile`, served by `GET /api/uploads/agreements/[filename]`
+to whoever sees the document, only while it signs the text in force) and
+stands for the generated PDF in the documentation package. One row per
+record in `agreement_record_signings`.
+
+| Method | Path                                                            | Who               | Notes                                                                                                                                                   |
+| ------ | --------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/assemblies/[assembly]/agreements-record/regenerate`       | `document:manage` | Writes the approved record again from its corrections; drops its signed PDF. 409 before it is approved.                                                 |
+| POST   | `/api/assemblies/[assembly]/agreements-record/signing`          | `document:manage` | Renders the PDF to sign (export rate limit); the one prepared before goes. 409 before it is approved.                                                   |
+| GET    | `/api/assemblies/[assembly]/agreements-record/signing/prepared` | `document:manage` | The PDF prepared to sign, for the text in force; 404 without one.                                                                                       |
+| POST   | `/api/assemblies/[assembly]/agreements-record/signing/signed`   | `document:manage` | Multipart `file` (PDF up to 20 MB with a digital signature, 422 without one) and `updatedAt` of the signing. Publishes it (`agreements_record_signed`). |
+| DELETE | `/api/assemblies/[assembly]/agreements-record/signing/signed`   | `document:manage` | Withdraws the signed PDF (`agreements_record_signature_removed`).                                                                                       |
+
 ## Headcounts
 
 | Method | Path                                                | Who                | Notes                                                                                                      |
@@ -2346,7 +2376,7 @@ the Mesa account reads it.
 Existing endpoints, now based on structured content:
 
 - `POST /api/assemblies/[assembly]/export` (`assembly:manage`, checked again
-  by the worker): body `{ locale }`. Enqueues the assembly dossier (cover,
+  by the worker): body `{ locale, justified }`. Enqueues the assembly dossier (cover,
   agenda and every published document) and returns `{ jobId }`. No screen
   offers it.
 - `GET /api/exports/[jobId]/status`
@@ -2369,6 +2399,14 @@ The PDF builder renders blocks:
 - "Presentado por" names the main presenter, then the co-presenters;
 - labels come from the locale files.
 
+Every PDF follows the reader's text alignment (user's decision of
+2026-11-23; «Alineación del texto» in the preferences, justified by
+default): the export bodies and the package's carry `justified` (true when
+absent), and paragraphs, list items and quotes without an alignment of
+their own are justified; never a table's cells. Justifying spreads the
+spaces of lines already broken, so it never moves a page: the page maps of
+the web text hold for both (`pdfPages.test.ts`).
+
 A consolidated text approved pending conciliation (user's decisions of
 2026-11-21) prints «Aprobado pendiente de conciliar las enmiendas E3 y E5; …»
 under the vote line and opens each pending passage with «[Pendiente de
@@ -2381,8 +2419,10 @@ junto con …».
 "Descargar documentación" (the agenda block of the overview, the agenda's
 "Más" and the documents page): a ZIP of everything the assembly has published, for any
 account that sees the assembly (not a draft: 404
-`assembly.package.notPublic`). `locale` (`es`, `en`) and `editable` (the
-Word version of every text) choose the package, in the body of the POST and
+`assembly.package.notPublic`). `locale` (`es`, `en`), `editable` (the
+Word version of every text) and `justified` (the PDFs' text, true when
+absent; only justified packages are built ahead, the others when asked)
+choose the package, in the body of the POST and
 the query of the GETs (`AssemblyPackageStatusDto`, `assemblyPackageSchema`).
 The POST's `selection` (`packageSelectionSchema`) asks for a part of it
 instead, see "Parts" below; the GETs then name it by `filter`.

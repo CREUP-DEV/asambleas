@@ -39,6 +39,7 @@ function documentExport() {
       documentId: "doc1",
       requestedBy: "target",
       locale: "es",
+      justified: true,
       variant: "annotated",
     },
     filenameParts: ["80-ago", "doc"],
@@ -101,7 +102,12 @@ describe("enqueueExport", () => {
   it("records an assembly dossier against the assembly", async () => {
     await enqueueExport({
       queueName: "assembly-export",
-      data: { assemblyId: "asm1", requestedBy: "u1", locale: "en" },
+      data: {
+        assemblyId: "asm1",
+        requestedBy: "u1",
+        locale: "en",
+        justified: true,
+      },
       filenameParts: ["80-ago"],
       event,
       actor: { user: { id: "u1" } },

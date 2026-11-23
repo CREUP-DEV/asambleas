@@ -769,10 +769,40 @@ function blockId(key: string): string {
 }
 
 /**
+ * The blocks that close the record, in order: the closing formula, the name
+ * and the office of whoever certifies. The PDF keeps them together on one
+ * page with the signature between the formula and the name (pdfBuilder.ts);
+ * versions written before 2026-11-23 also hold empty `ar-signature-*`
+ * paragraphs there, which it drops.
+ */
+export const RECORD_CLOSING_BLOCK_IDS = [
+  "ar-closing",
+  "ar-signer",
+  "ar-signer-office",
+] as const;
+
+/** The empty paragraphs older versions kept for the signature. */
+export const RECORD_SIGNATURE_SPACER = /^ar-signature-\d+$/;
+
+/**
+ * A stored version's blocks without those empty paragraphs, to compare it
+ * with the record as it reads now; null when it has none.
+ */
+export function dropSignatureSpacers<T extends { id: string }>(
+  blocks: readonly T[],
+): T[] | null {
+  if (!blocks.some((block) => RECORD_SIGNATURE_SPACER.test(block.id))) {
+    return null;
+  }
+  return blocks.filter((block) => !RECORD_SIGNATURE_SPACER.test(block.id));
+}
+
+/**
  * The record as the document's text, after CREUP's template: the
  * certification, the agreements as a numbered list (lettered lines under
- * theirs), the closing formula and room for the digital signature above
- * the name and office. The title is the document's own.
+ * theirs), the closing formula and the name and office of whoever signs;
+ * the PDF puts the signature above the name. The title is the document's
+ * own.
  */
 export function agreementsRecordBlocks(
   record: AgreementsRecord,
@@ -831,10 +861,6 @@ export function agreementsRecordBlocks(
       "ar-closing",
       "Para que conste a los efectos oportunos, a fecha de la firma digital.",
     ),
-    // Room for the visible digital signature, put on outside the platform.
-    paragraph("ar-signature-1", ""),
-    paragraph("ar-signature-2", ""),
-    paragraph("ar-signature-3", ""),
     paragraph(
       "ar-signer",
       name,

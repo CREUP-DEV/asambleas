@@ -8,7 +8,8 @@ import type { PackageSelection } from "~~/shared/utils/schemas/export";
  * and the user can go on browsing. When the package is ready (or fails)
  * and no dialog is following it, a toast says so, with the download.
  *
- * One entry per package (assembly, language, Word versions or not, and
+ * One entry per package (assembly, language, Word versions or not, text
+ * justified or not (the reader's preference), and
  * the part chosen with the dialog's filters), kept for the browser tab's
  * life. Only the browser asks and polls. A part is named afterwards by the
  * key the server answers (`status.part.key`, `?filter=`).
@@ -29,6 +30,8 @@ export interface PackageTarget {
   apiBase: string;
   locale: "es" | "en";
   editable: boolean;
+  /** PDFs with justified text (the reader's preference). */
+  justified: boolean;
   /** A part of the package; null for the whole of it. */
   selection: PackageSelection | null;
 }
@@ -60,11 +63,11 @@ function keyOf(target: PackageTarget): string {
   const part = target.selection
     ? JSON.stringify(canonicalSelection(target.selection))
     : "";
-  return `${target.apiBase}|${target.locale}|${target.editable ? 1 : 0}|${part}`;
+  return `${target.apiBase}|${target.locale}|${target.editable ? 1 : 0}|${target.justified ? 1 : 0}|${part}`;
 }
 
 function query(target: PackageTarget, filter: string | null): string {
-  const base = `locale=${target.locale}&editable=${target.editable ? "1" : "0"}`;
+  const base = `locale=${target.locale}&editable=${target.editable ? "1" : "0"}&justified=${target.justified ? "1" : "0"}`;
   return filter ? `${base}&filter=${encodeURIComponent(filter)}` : base;
 }
 
@@ -211,6 +214,7 @@ export function usePackageDownload() {
           body: {
             locale: target.locale,
             editable: target.editable,
+            justified: target.justified,
             selection: target.selection
               ? canonicalSelection(target.selection)
               : null,

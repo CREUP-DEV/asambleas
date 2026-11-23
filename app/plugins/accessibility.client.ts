@@ -5,6 +5,7 @@ import {
   DIFF_DISPLAY_MODE_STORAGE_KEY,
   isContentFont,
   isDiffDisplayMode,
+  JUSTIFIED_TEXT_STORAGE_KEY,
   useAccessibilityPreferences,
 } from "~/composables/accessibility/useAccessibilityPreferences";
 
@@ -27,16 +28,21 @@ function writeStored(key: string, value: string): void {
 /**
  * Restores the content accessibility preferences and keeps <html> in sync:
  * the diff mode class (`diff-color` / `diff-marks`) and the content font
- * variable. Without this plugin the styles default to colour mode and Raleway.
+ * variable, and `content-ragged` while the text is not justified. Without
+ * this plugin the styles default to colour mode, Raleway and justified text.
  */
 export default defineNuxtPlugin(() => {
-  const { diffDisplayMode, contentFont } = useAccessibilityPreferences();
+  const { diffDisplayMode, contentFont, justifiedText } =
+    useAccessibilityPreferences();
 
   const storedMode = readStored(DIFF_DISPLAY_MODE_STORAGE_KEY);
   if (isDiffDisplayMode(storedMode)) diffDisplayMode.value = storedMode;
 
   const storedFont = readStored(CONTENT_FONT_STORAGE_KEY);
   if (isContentFont(storedFont)) contentFont.value = storedFont;
+
+  const storedJustified = readStored(JUSTIFIED_TEXT_STORAGE_KEY);
+  if (storedJustified === "false") justifiedText.value = false;
 
   const root = document.documentElement;
 
@@ -60,6 +66,15 @@ export default defineNuxtPlugin(() => {
       );
       root.dataset.contentFont = font;
       writeStored(CONTENT_FONT_STORAGE_KEY, font);
+    },
+    { immediate: true },
+  );
+
+  watch(
+    justifiedText,
+    (justified) => {
+      root.classList.toggle("content-ragged", !justified);
+      writeStored(JUSTIFIED_TEXT_STORAGE_KEY, String(justified));
     },
     { immediate: true },
   );

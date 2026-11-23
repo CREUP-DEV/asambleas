@@ -586,6 +586,112 @@ describe("blocksToPdf", () => {
   });
 });
 
+describe("justified text", () => {
+  const blocks: Block[] = [
+    p("a", "Un párrafo."),
+    { ...p("b", "Centrado."), align: "center" },
+    {
+      id: "c",
+      type: "list_item",
+      list: "bullet",
+      level: 0,
+      text: "Un elemento.",
+      marks: [],
+    },
+    { ...p("t1", "Celda"), cell: { table: "t", row: "r1", cell: "c1" } },
+  ];
+
+  it("justifies running text without an alignment of its own", () => {
+    const nodes = blocksToPdf(blocks, {
+      links: new LinkRegistry(),
+      justify: true,
+    });
+    expect((nodes[0] as ContentText).alignment).toBe("justify");
+    // Aligned on purpose: kept.
+    expect((nodes[1] as ContentText).alignment).toBe("center");
+    const list = nodes[2] as ContentUnorderedList;
+    expect((list.ul[0] as ContentText).alignment).toBe("justify");
+    // A table's cells, too narrow for it, are never justified.
+    expect(JSON.stringify(nodes[3])).not.toContain("justify");
+  });
+
+  it("aligns it to the left when the reader turned it off", () => {
+    const nodes = blocksToPdf(blocks, {
+      links: new LinkRegistry(),
+      justify: false,
+    });
+    expect((nodes[0] as ContentText).alignment).toBeUndefined();
+    expect(JSON.stringify(nodes)).not.toContain("justify");
+  });
+});
+
+describe("acta de acuerdos", () => {
+  const recordMeta: ExportDocumentMeta = {
+    ...meta,
+    kind: "minutes",
+    generated: "agreements_record",
+    finalVote: null,
+  };
+  const closing: Block[] = [
+    p("ar-opening", "Por medio de la presente..."),
+    p(
+      "ar-closing",
+      "Para que conste a los efectos oportunos, a fecha de la firma digital.",
+    ),
+    // Versions written before 2026-11-23 kept the space as empty paragraphs.
+    p("ar-signature-1", ""),
+    p("ar-signature-2", ""),
+    { ...p("ar-signer", "Nombre Apellido"), align: "center" },
+    {
+      ...p("ar-signer-office", "Secretaría Ejecutiva de la ..."),
+      align: "center",
+    },
+  ];
+  const build = (signature?: DocumentExportData["signature"]) =>
+    buildDocumentPdf(
+      {
+        assembly,
+        document: recordMeta,
+        body: { variant: "clean", source: "base", blocks: closing },
+        generatedAt: new Date("2026-11-23T10:00:00Z"),
+        signature,
+      },
+      "es",
+    );
+  const closingStack = (definition: ReturnType<typeof build>) =>
+    (definition.content as Content[]).find(
+      (node) =>
+        typeof node === "object" &&
+        node !== null &&
+        "unbreakable" in node &&
+        node.unbreakable === true,
+    ) as { stack: Content[] } | undefined;
+
+  it("keeps the closing, the signature, the name and the office together", () => {
+    const stack = closingStack(build());
+    expect(stack).toBeDefined();
+    const text = JSON.stringify(stack);
+    expect(text).toContain("a fecha de la firma digital");
+    expect(text).toContain("Nombre Apellido");
+    expect(text).toContain("Secretaría Ejecutiva");
+    // The empty paragraphs are gone; a blank space stands for the signature.
+    expect(stack!.stack).toHaveLength(4);
+    expect(stack!.stack[1]).toMatchObject({ text: "" });
+  });
+
+  it("draws the signature above the name when there is one", () => {
+    const signature = {
+      dataUrl: "data:image/png;base64,AAAA",
+      width: 400,
+      height: 160,
+    };
+    const definition = build(signature);
+    const stack = closingStack(definition)!;
+    expect(stack.stack[1]).toMatchObject({ image: "record-signature" });
+    expect(definition.images?.["record-signature"]).toBe(signature.dataUrl);
+  });
+});
+
 describe("annotatedToPdf", () => {
   const { annotated } = consolidate(base, [
     { id: "a2", ops: opsB },

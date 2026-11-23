@@ -4,6 +4,6 @@ import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended"
 
 // .sim77 is local scratch (git-excluded): never block pnpm verify.
 export default withNuxt([
-  { ignores: [".sim77/"] },
+  { ignores: [".sim77/", "public/autofirma/"] },
   eslintPluginPrettierRecommended,
 ]);

@@ -143,6 +143,23 @@ const routeRules = {
       },
     },
   },
+  // The signed acta de acuerdos goes up as a PDF, like the convocatoria.
+  "/api/assemblies/*/agreements-record/signing/signed": {
+    security: {
+      rateLimiter: UPLOAD_RATE_LIMIT,
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 21_000_000,
+      },
+    },
+  },
+  // Preparing the acta de acuerdos to sign renders its PDF: the exports'
+  // bucket.
+  "/api/assemblies/*/agreements-record/signing": {
+    security: {
+      rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
   "/api/assemblies/*/export": {
     security: {
       rateLimiter: EXPORT_RATE_LIMIT,
@@ -311,10 +328,22 @@ export default defineNuxtConfig({
         // loaded from Google.
         "img-src": ["'self'", "data:", "blob:"],
         "font-src": ["'self'", "data:"],
-        "connect-src": ["'self'", ...(umamiOrigin ? [umamiOrigin] : [])],
+        // AutoFirma (the acta de acuerdos, signed by the Secretaría from its
+        // page) answers on the signer's own machine: its client script
+        // talks to it over a WebSocket or HTTPS on 127.0.0.1, on a port it
+        // picks. Allowed on every page: a client-side navigation keeps the
+        // CSP of the page the app was loaded on.
+        "connect-src": [
+          "'self'",
+          "https://127.0.0.1:*",
+          "wss://127.0.0.1:*",
+          ...(umamiOrigin ? [umamiOrigin] : []),
+        ],
         // Nothing is framed: PDFs are drawn in the page (DocumentPdfPages).
-        // Only Nuxt DevTools, in development, frames a page of our own.
-        "frame-src": isDev ? ["'self'"] : ["'none'"],
+        // The one frame is AutoFirma's launcher, an `afirma:` link its
+        // client script opens in a hidden iframe. Only Nuxt DevTools, in
+        // development, frames a page of our own.
+        "frame-src": isDev ? ["'self'", "afirma:"] : ["afirma:"],
         // pdf.js draws every PDF in a worker of our own origin
         // (DocumentPdfPages).
         "worker-src": ["'self'", "blob:"],

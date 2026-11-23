@@ -174,7 +174,7 @@ interface TransactionalState {
   reviseId?: string;
 }
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const route = useRoute();
@@ -411,6 +411,9 @@ interface MoreItem {
   description?: string;
   icon?: string;
   to?: string;
+  /** A file served by the API, opened in a tab of its own. */
+  external?: boolean;
+  target?: "_blank";
   disabled?: boolean;
   onSelect?: () => void;
 }
@@ -516,7 +519,17 @@ const moreItems = computed<MoreItem[][]>(() => {
       to: `${documentPath("consolidado")}?corregir`,
     });
   }
-  if (canExportClean.value) {
+  // The signed acta de acuerdos stands for its generated PDF.
+  const signedFile = document.value?.signedFile;
+  if (signedFile) {
+    text.push({
+      label: t("workspace.export.signedRecord"),
+      icon: "i-lucide-file-signature",
+      to: signedFile.url,
+      external: true,
+      target: "_blank",
+    });
+  } else if (canExportClean.value) {
     text.push({
       label: t("workspace.export.clean"),
       icon: "i-lucide-file-text",
@@ -1885,6 +1898,24 @@ const filteredBlockLabel = computed(() =>
               class="max-lg:hidden"
               :label="t('workspace.text.openPdfTab')"
               data-testid="document-open-pdf"
+            />
+            <!-- The signed acta de acuerdos, once published: it leads. -->
+            <UButton
+              v-if="document.signedFile"
+              :to="document.signedFile.url"
+              external
+              target="_blank"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-file-signature"
+              :label="t('workspace.text.openSignedRecord')"
+              :title="
+                t('workspace.text.signedRecordAt', {
+                  date: formatDate(document.signedFile.signedAt, {
+                    locale,
+                  }),
+                })
+              "
             />
             <!-- Asked for from "Más"; it shows only once the PDF is on its
                  way, and then offers the download. -->

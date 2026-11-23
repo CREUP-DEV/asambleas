@@ -6,6 +6,10 @@ import { formatAssemblyLabel } from "../../../../shared/utils/slug";
 import { agendaChildGroups } from "../../../../shared/utils/agendaNumbering";
 import { loadVisibleAmendmentIds, storedPdfName } from "../../domain/documents";
 import { convocationStoredName } from "../../domain/convocation";
+import {
+  loadSignedRecordFile,
+  signedRecordStoredName,
+} from "../../domain/agreementsSignedFile";
 import type { StoredAmendmentMeta } from "../../domain/amendments";
 import type { MemberKind } from "../../../../shared/constants/domain";
 import { loadCoProponents } from "../../domain/presenters";
@@ -107,6 +111,13 @@ export async function loadPackageSource(
     ]);
   const { byDocument: amendmentsByDocument, authors } =
     await loadPackageAmendments([...visibleAmendments]);
+  // The acta de acuerdos once signed: its signed PDF stands for its own.
+  const signedRecords = new Map<string, string>();
+  for (const document of documentRows) {
+    if (document.generated !== "agreements_record") continue;
+    const signed = await loadSignedRecordFile(document);
+    if (signed) signedRecords.set(document.id, signed.url);
+  }
 
   const byId = new Map(documentRows.map((document) => [document.id, document]));
   const documents: PackageDocument[] = agenda.documentOrder.map((id) => {
@@ -136,6 +147,8 @@ export async function loadPackageSource(
       fileUrl: document.format === "file" ? document.fileUrl : null,
       storedFile:
         document.format === "file" ? storedPdfName(document.fileUrl) : null,
+      signedFileUrl: signedRecords.get(document.id) ?? null,
+      signedStoredFile: signedRecordStoredName(signedRecords.get(document.id)),
       amendments:
         document.format === "structured"
           ? (amendmentsByDocument.get(document.id) ?? [])
