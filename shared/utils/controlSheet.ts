@@ -7,7 +7,6 @@
 
 import type {
   AmendmentStatus,
-  ApprovalMethod,
   ControlSheetManualResult,
   DocumentStatus,
   VoteMethod,
@@ -282,31 +281,20 @@ export function itemOutcome(
 /** What an amendment needs for the sheet to say whether it was treated. */
 export interface SheetAmendment {
   status: AmendmentStatus;
-  approvalMethod: ApprovalMethod | null;
-  decidedAt: string | null;
+  /** The Mesa has put it on screen in session (amendments.firstProjectedAt). */
+  projected: boolean;
 }
 
 /**
- * Whether the Mesa settled the amendment during the session: decided once
- * the assembly went into session, by a vote, by assent, as a matter of form,
- * withdrawn, lapsed, replaced or not admitted. One its presenter
- * incorporated, or one settled before the session, is marked by hand.
+ * Whether an amendment counts as treated by itself (user's decision of
+ * 2026-11-21): every amendment past draft that is no longer pending
+ * (decided, incorporated, withdrawn, lapsed, transacted, not admitted),
+ * whenever that happened, and a pending one once the Mesa has put it on
+ * screen. Only a pending amendment never projected is not.
  */
-export function amendmentTreatedInSession(
-  amendment: SheetAmendment,
-  sessionStartedAt: string | null,
-): boolean {
-  if (!sessionStartedAt || !amendment.decidedAt) return false;
-  if (amendment.status === "draft" || amendment.status === "submitted") {
-    return false;
-  }
-  if (
-    amendment.status === "approved" &&
-    amendment.approvalMethod === "proponent"
-  ) {
-    return false;
-  }
-  return Date.parse(amendment.decidedAt) >= Date.parse(sessionStartedAt);
+export function amendmentAutoTreated(amendment: SheetAmendment): boolean {
+  if (amendment.status === "draft") return false;
+  return amendment.status !== "submitted" || amendment.projected;
 }
 
 /** An agenda item as the sheet lists it. */

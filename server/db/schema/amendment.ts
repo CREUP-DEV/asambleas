@@ -144,6 +144,16 @@ export const amendments = pgTable(
     outcomeVoteId: text("outcome_vote_id"),
     outcomeNote: text("outcome_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true, mode: "date" }),
+    /**
+     * The first time the Mesa put it on screen in session, alone or in a
+     * bloc (stampAmendmentsProjected; never cleared). The control sheet
+     * reads a pending amendment treated once projected (user's decision of
+     * 2026-11-21). Like documents.firstProjectedAt, in no DTO's updatedAt.
+     */
+    firstProjectedAt: timestamp("first_projected_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

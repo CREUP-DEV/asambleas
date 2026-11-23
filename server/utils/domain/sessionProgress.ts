@@ -9,6 +9,7 @@ import {
 import { db } from "../../db";
 import {
   agendaItems,
+  amendments,
   controlSheetItems,
   documents,
   liveState,
@@ -58,6 +59,31 @@ export async function stampProjected(
     })
     .where(
       and(eq(documents.id, documentId), isNull(documents.firstProjectedAt)),
+    );
+}
+
+/**
+ * Stamps the first time amendments go on screen in session, alone or in a
+ * bloc (user's decision of 2026-11-21): the control sheet reads a pending
+ * amendment treated once projected. As for documents, `updatedAt` stays,
+ * so no open form goes stale.
+ */
+export async function stampAmendmentsProjected(
+  tx: Executor,
+  amendmentIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = [
+    ...new Set(amendmentIds.filter((id): id is string => Boolean(id))),
+  ];
+  if (ids.length === 0) return;
+  await tx
+    .update(amendments)
+    .set({
+      firstProjectedAt: sql`now()`,
+      updatedAt: sql`${amendments.updatedAt}`,
+    })
+    .where(
+      and(inArray(amendments.id, ids), isNull(amendments.firstProjectedAt)),
     );
 }
 

@@ -508,7 +508,7 @@ const presentsAny = computed(
 const amendmentRows = computed(() => {
   const rows = buildAmendmentRows(
     amendmentsData.value?.amendments ?? [],
-    sheet.value?.sessionStartedAt ?? null,
+    new Set(sheet.value?.projectedAmendmentIds ?? []),
     live.value?.amendmentId ?? null,
     sheet.value?.amendmentRows ?? [],
     sheet.value?.positions ?? [],
@@ -549,7 +549,7 @@ async function exportExcel(): Promise<void> {
       );
       let rows = buildAmendmentRows(
         dto.amendments,
-        sheet.value?.sessionStartedAt ?? null,
+        new Set(sheet.value?.projectedAmendmentIds ?? []),
         live.value?.amendmentId ?? null,
         sheet.value?.amendmentRows ?? [],
         sheet.value?.positions ?? [],

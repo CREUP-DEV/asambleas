@@ -30,7 +30,7 @@ import {
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
 import {
-  amendmentTreatedInSession,
+  amendmentAutoTreated,
   isSettledManualResult,
 } from "~~/shared/utils/controlSheet";
 import {
@@ -345,14 +345,12 @@ export function sheetTreatedIds(input: {
   amendments: readonly {
     id: string;
     status: LoadedAmendment["status"];
-    approvalMethod: LoadedAmendment["approvalMethod"];
-    decidedAt: Date | null;
+    firstProjectedAt: Date | null;
   }[];
   amendmentRows: readonly Pick<
     AmendmentSheetRow,
     "amendmentId" | "treatedAt"
   >[];
-  sessionStartedAt: Date | null;
 }): ControlSheetDto["treated"] {
   const itemIds = input.itemRows
     .filter(
@@ -367,19 +365,14 @@ export function sheetTreatedIds(input: {
       .filter((row) => row.treatedAt !== null)
       .map((row) => row.amendmentId),
   );
-  const startedAt = input.sessionStartedAt?.toISOString() ?? null;
   const amendmentIds = input.amendments
     .filter(
       (row) =>
         marked.has(row.id) ||
-        amendmentTreatedInSession(
-          {
-            status: row.status,
-            approvalMethod: row.approvalMethod,
-            decidedAt: row.decidedAt?.toISOString() ?? null,
-          },
-          startedAt,
-        ),
+        amendmentAutoTreated({
+          status: row.status,
+          projected: row.firstProjectedAt !== null,
+        }),
     )
     .map((row) => row.id)
     .sort();
@@ -401,8 +394,7 @@ export async function loadControlSheet(
 
   const [visibleDocuments, sessionStartedAt] = await Promise.all([
     loadVisibleDocuments(actor, assembly.id),
-    // Everyone's: the amendments settled since then count as treated
-    // (`treated`), though only a sheet key reads the moment itself.
+    // Only a sheet key reads the moment the session began.
     loadSessionStartedAt(assembly.id),
   ]);
   const finalVoteIds = visibleDocuments
@@ -511,10 +503,13 @@ export async function loadControlSheet(
     awaiting: progress.awaiting,
     amendments: visibleRows,
     amendmentRows: amendmentSheet,
-    sessionStartedAt,
   });
 
   return {
+    projectedAmendmentIds: visibleRows
+      .filter((row) => row.firstProjectedAt !== null)
+      .map((row) => row.id)
+      .sort(),
     sessionStartedAt: internal
       ? (sessionStartedAt?.toISOString() ?? null)
       : null,

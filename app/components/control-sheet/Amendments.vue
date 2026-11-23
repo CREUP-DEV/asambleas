@@ -10,6 +10,7 @@ import {
   type SheetSort,
 } from "./-filters";
 import {
+  amendmentNoVoteKey,
   amendmentSheetKind,
   amendmentTreatedControl,
   type AmendmentSheetRow,
@@ -177,12 +178,10 @@ function codeOf(amendment: AmendmentDto): string {
   return amendment.code ?? t("amendment.unnumberedLabel");
 }
 
-/** How it got into the text when no vote was recorded. */
+/** «Votación» without a vote recorded: «No aplica» or how it was approved. */
 function approvalWithoutVote(amendment: AmendmentDto): string | null {
-  if (amendment.outcomeVote || amendment.status !== "approved") return null;
-  return amendment.approvalMethod
-    ? t(`controlSheet.approval.${amendment.approvalMethod}`)
-    : null;
+  const key = amendmentNoVoteKey(amendment);
+  return key ? t(key) : null;
 }
 
 const count = computed(() => props.rows.length);

@@ -2586,6 +2586,12 @@ export interface ControlSheetPositionDto {
  */
 export interface ControlSheetDto {
   /**
+   * The amendments the reader sees that the Mesa has put on screen in
+   * session (amendments.firstProjectedAt): a pending one counts as treated
+   * once there (amendmentAutoTreated).
+   */
+  projectedAmendmentIds: string[];
+  /**
    * When the assembly first went into session; null before. An amendment
    * the Mesa settles from then on counts as treated.
    */
@@ -2616,7 +2622,8 @@ export interface ControlSheetDto {
    * noted «Retirado» or «Decaído», never one still waiting for a vote
    * (itemsAwaitingVote over the whole agenda); what their votes treat the
    * client reads from the votes. `amendmentIds`: amendments the reader sees
-   * the Mesa marked or settled in session (amendmentTreatedInSession).
+   * the Mesa marked, or that count as treated by themselves
+   * (amendmentAutoTreated: no longer pending, or projected).
    */
   treated: { itemIds: string[]; amendmentIds: string[] };
   /**

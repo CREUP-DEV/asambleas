@@ -3,6 +3,7 @@ import { isUnanimousVote } from "~~/shared/utils/controlSheet";
 import { shownVoteCounts } from "~~/shared/utils/votes";
 import type { XlsxSheet, XlsxWorkbook } from "~~/shared/utils/xlsx";
 import {
+  amendmentNoVoteKey,
   amendmentSheetKind,
   amendmentTreatedControl,
   itemTreatedControl,
@@ -175,10 +176,8 @@ export function useControlSheetExport() {
   function amendmentVote(row: AmendmentSheetRow): string {
     const { amendment } = row;
     if (amendment.outcomeVote) return voteText(amendment.outcomeVote);
-    if (amendment.status === "approved" && amendment.approvalMethod) {
-      return t(`controlSheet.approval.${amendment.approvalMethod}`);
-    }
-    return t("controlSheet.noVote");
+    const key = amendmentNoVoteKey(amendment);
+    return key ? t(key) : t("controlSheet.noVote");
   }
 
   function amendmentSheet(

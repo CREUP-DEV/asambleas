@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  amendmentTreatedInSession,
+  amendmentAutoTreated,
   controlSheetRows,
   isUnanimousVote,
   itemDocumentsOutcome,
@@ -309,58 +309,30 @@ describe("the item's own vote", () => {
   });
 });
 
-describe("amendmentTreatedInSession", () => {
-  const start = "2026-11-20T09:00:00.000Z";
-  it("counts what the Mesa settled once the session began", () => {
-    expect(
-      amendmentTreatedInSession(
-        {
-          status: "rejected",
-          approvalMethod: null,
-          decidedAt: "2026-11-20T10:00:00.000Z",
-        },
-        start,
-      ),
-    ).toBe(true);
-    expect(
-      amendmentTreatedInSession(
-        {
-          status: "withdrawn",
-          approvalMethod: null,
-          decidedAt: "2026-11-19T10:00:00.000Z",
-        },
-        start,
-      ),
-    ).toBe(false);
+describe("amendmentAutoTreated", () => {
+  it("counts every amendment no longer pending, whenever it was settled", () => {
+    for (const status of [
+      "approved",
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "transacted",
+      "inadmissible",
+    ] as const) {
+      expect(amendmentAutoTreated({ status, projected: false })).toBe(true);
+    }
   });
 
-  it("leaves out incorporations, undecided ones and the time before", () => {
+  it("counts a pending amendment only once it was on screen", () => {
     expect(
-      amendmentTreatedInSession(
-        {
-          status: "approved",
-          approvalMethod: "proponent",
-          decidedAt: "2026-11-20T10:00:00.000Z",
-        },
-        start,
-      ),
+      amendmentAutoTreated({ status: "submitted", projected: false }),
     ).toBe(false);
-    expect(
-      amendmentTreatedInSession(
-        { status: "submitted", approvalMethod: null, decidedAt: null },
-        start,
-      ),
-    ).toBe(false);
-    expect(
-      amendmentTreatedInSession(
-        {
-          status: "approved",
-          approvalMethod: "vote",
-          decidedAt: "2026-11-20T10:00:00.000Z",
-        },
-        null,
-      ),
-    ).toBe(false);
+    expect(amendmentAutoTreated({ status: "submitted", projected: true })).toBe(
+      true,
+    );
+    expect(amendmentAutoTreated({ status: "draft", projected: true })).toBe(
+      false,
+    );
   });
 });
 

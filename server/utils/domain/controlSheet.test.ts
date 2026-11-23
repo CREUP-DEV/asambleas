@@ -303,14 +303,12 @@ describe("sheetTreatedIds", () => {
     id: string,
     over: Partial<{
       status: LoadedAmendment["status"];
-      approvalMethod: LoadedAmendment["approvalMethod"];
-      decidedAt: Date | null;
+      firstProjectedAt: Date | null;
     }> = {},
   ) => ({
     id,
     status: "submitted" as LoadedAmendment["status"],
-    approvalMethod: null as LoadedAmendment["approvalMethod"],
-    decidedAt: null as Date | null,
+    firstProjectedAt: null as Date | null,
     ...over,
   });
 
@@ -325,38 +323,27 @@ describe("sheetTreatedIds", () => {
       awaiting: new Set(["i4"]),
       amendments: [],
       amendmentRows: [],
-      sessionStartedAt: null,
     });
     expect(result).toEqual({ itemIds: ["i1", "i2"], amendmentIds: [] });
   });
 
-  it("treats an amendment marked or settled in session", () => {
+  it("treats an amendment marked, settled, or pending once projected", () => {
     const result = sheetTreatedIds({
       itemRows: [],
       awaiting: new Set(),
       amendments: [
-        amendment("a1", {
-          status: "rejected",
-          decidedAt: new Date("2026-05-01T11:00:00.000Z"),
-        }),
-        amendment("a2", {
-          status: "rejected",
-          decidedAt: new Date("2026-04-30T11:00:00.000Z"),
-        }),
-        amendment("a3", {
-          status: "approved",
-          approvalMethod: "proponent",
-          decidedAt: new Date("2026-04-30T11:00:00.000Z"),
-        }),
-        amendment("a4"),
+        amendment("a1", { status: "rejected" }),
+        amendment("a2", { status: "approved" }),
+        amendment("a3"),
+        amendment("a4", { firstProjectedAt: STARTED }),
+        amendment("a5"),
       ],
       amendmentRows: [
         { amendmentId: "a3", treatedAt: STARTED },
-        { amendmentId: "a4", treatedAt: null },
+        { amendmentId: "a5", treatedAt: null },
       ],
-      sessionStartedAt: STARTED,
     });
-    expect(result.amendmentIds).toEqual(["a1", "a3"]);
+    expect(result.amendmentIds).toEqual(["a1", "a2", "a3", "a4"]);
   });
 });
 

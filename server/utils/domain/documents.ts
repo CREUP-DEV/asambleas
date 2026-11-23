@@ -70,6 +70,7 @@ import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
 import { assertSessionOpen } from "./sessionOpen";
 import { stampDebateStarted } from "./positionsPublication";
+import { stampAmendmentsProjected } from "./sessionProgress";
 import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import {
@@ -2727,6 +2728,11 @@ async function writeLiveState(
     payload: { changed, ...next },
     actor,
   });
+  // As in updateLiveState: an amendment put on screen is marked projected.
+  await stampAmendmentsProjected(tx, [
+    next.amendmentId,
+    ...(next.amendmentBloc ?? []),
+  ]);
   // As in updateLiveState: what goes into debate makes its answers public.
   if (changed.includes("agendaItemId") || changed.includes("documentId")) {
     await stampDebateStarted(tx, {

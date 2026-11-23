@@ -30,7 +30,7 @@ import type {
   VoteDto,
 } from "~~/shared/types/api";
 import {
-  amendmentTreatedInSession,
+  amendmentAutoTreated,
   controlSheetRows,
   itemDocumentsOutcome,
   itemHasVotedDocuments,
@@ -455,10 +455,36 @@ export function newerPosition(
     : sheet;
 }
 
+/** Approvals a rule makes without any vote: incorporated, formal. */
+const APPROVED_WITHOUT_VOTE: ReadonlySet<string> = new Set([
+  "proponent",
+  "formal",
+]);
+
+/**
+ * What «Votación» says of an amendment with no vote recorded, as an i18n
+ * key: «No aplica» when a rule put it in the text without a vote (its
+ * presenter's acceptance, a formal one; user's decision of 2026-11-21),
+ * how it was approved otherwise (by assent); null for «Sin votar».
+ */
+export function amendmentNoVoteKey(
+  amendment: Pick<AmendmentDto, "outcomeVote" | "status" | "approvalMethod">,
+): string | null {
+  if (amendment.outcomeVote || amendment.status !== "approved") return null;
+  if (!amendment.approvalMethod) return null;
+  return APPROVED_WITHOUT_VOTE.has(amendment.approvalMethod)
+    ? "controlSheet.result.not_applicable"
+    : `controlSheet.approval.${amendment.approvalMethod}`;
+}
+
 /** The amendments of a document past draft, in the console's order. */
 export function buildAmendmentRows(
   list: readonly AmendmentDto[],
-  sessionStartedAt: string | null,
+  /**
+   * The amendments the Mesa has put on screen
+   * (ControlSheetDto.projectedAmendmentIds): a pending one counts as treated.
+   */
+  projectedIds: ReadonlySet<string>,
   liveAmendmentId: string | null,
   sheetRows: readonly ControlSheetAmendmentRowDto[] = [],
   positions: readonly ControlSheetPositionDto[] = [],
@@ -506,16 +532,20 @@ export function buildAmendmentRows(
       current: amendment.id === liveAmendmentId,
     }));
   return rows.map((row) => {
-    const autoTreated = amendmentTreatedInSession(
-      row.amendment,
-      sessionStartedAt,
-    );
+    const autoTreated = amendmentAutoTreated({
+      status: row.amendment.status,
+      projected: projectedIds.has(row.amendment.id),
+    });
     const sheet = notes.get(row.amendment.id) ?? null;
     return {
       amendment: row.amendment,
       state: row.state,
-      // «Fuera de plazo» says it all: the live view's sentence is left out.
-      note: row.state === "late" ? null : liveAmendmentNote(row, rows),
+      // «Fuera de plazo» and «Incorporada» say it all (user's decision of
+      // 2026-11-21): the live view's sentence is left out.
+      note:
+        row.state === "late" || row.state === "incorporated"
+          ? null
+          : liveAmendmentNote(row, rows),
       treated:
         autoTreated ||
         (sheet ? sheet.treated !== null : treatedIds.has(row.amendment.id)),

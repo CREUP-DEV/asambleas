@@ -42,7 +42,11 @@ import {
 } from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { stampDebateStarted } from "./positionsPublication";
-import { markPresentedTreated, stampProjected } from "./sessionProgress";
+import {
+  markPresentedTreated,
+  stampAmendmentsProjected,
+  stampProjected,
+} from "./sessionProgress";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
 import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
@@ -1316,6 +1320,10 @@ export async function updateLiveState(
       if (next.documentId && next.documentId !== previous.documentId) {
         await stampProjected(tx, next.documentId);
       }
+      await stampAmendmentsProjected(tx, [
+        next.amendmentId,
+        ...(next.amendmentBloc ?? []),
+      ]);
       if (
         next.agendaItemId !== previous.agendaItemId ||
         next.documentId !== previous.documentId

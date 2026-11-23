@@ -89,6 +89,7 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
 });
 
 const sheet = (over: Partial<ControlSheetDto> = {}): ControlSheetDto => ({
+  projectedAmendmentIds: [],
   sessionStartedAt: null,
   documents: [],
   turns: [],
@@ -707,7 +708,7 @@ describe("buildAmendmentRows", () => {
         amendment({ id: "a2", positionKey: 1, position: answer("reject") }),
         amendment({ id: "a3", positionKey: 2 }),
       ],
-      null,
+      new Set<string>(),
       null,
       [],
       [{ amendmentId: "a1", position: answer("accept") }],
@@ -726,7 +727,7 @@ describe("buildAmendmentRows", () => {
   it("prefers the sheet's answer when both carry one", () => {
     const [row] = buildAmendmentRows(
       [amendment({ id: "a1", position: answer("reject") })],
-      null,
+      new Set<string>(),
       null,
       [],
       [{ amendmentId: "a1", position: answer("accept") }],
@@ -766,7 +767,7 @@ describe("buildAmendmentRows", () => {
         amendment({ id: "a1", positionKey: 0 }),
         amendment({ id: "a2", positionKey: 1 }),
       ],
-      null,
+      new Set<string>(),
       null,
       [],
       [],
@@ -785,7 +786,7 @@ describe("buildAmendmentRows", () => {
   it("leaves out the live view's sentence for one out of time", () => {
     const [row] = buildAmendmentRows(
       [amendment({ id: "a1", late: true, admission: "pending" })],
-      null,
+      new Set<string>(),
       null,
     );
     expect(row!.state).toBe("late");
@@ -1088,7 +1089,7 @@ describe("buildAmendmentRows treated", () => {
         amendment({ id: "a1", status: "approved" }),
         amendment({ id: "a2", status: "approved", positionKey: 1 }),
       ],
-      null,
+      new Set<string>(),
       null,
       [
         {
@@ -1107,11 +1108,52 @@ describe("buildAmendmentRows treated", () => {
       {},
       new Set(["a1", "a2"]),
     );
-    // A row of its own (the Mesa took its mark away) decides over the id.
+    // Settled, both count by themselves (user's decision of 2026-11-21).
     expect(rows.map((row) => [row.amendment.id, row.treated])).toEqual([
       ["a1", true],
-      ["a2", false],
+      ["a2", true],
     ]);
+  });
+
+  it("counts a pending amendment only once projected", () => {
+    const rows = buildAmendmentRows(
+      [
+        amendment({ id: "a1", status: "submitted" }),
+        amendment({ id: "a2", status: "submitted", positionKey: 1 }),
+        amendment({ id: "a3", status: "submitted", positionKey: 2 }),
+      ],
+      new Set(["a2"]),
+      null,
+      [],
+      [],
+      [],
+      {},
+      // A mark from before the rule still reads.
+      new Set(["a3"]),
+    );
+    expect(
+      rows.map((row) => [row.amendment.id, row.treated, row.autoTreated]),
+    ).toEqual([
+      ["a1", false, false],
+      ["a2", true, true],
+      ["a3", true, false],
+    ]);
+  });
+
+  it("leaves out the note under «Incorporada»", () => {
+    const [row] = buildAmendmentRows(
+      [
+        amendment({
+          id: "a1",
+          status: "approved",
+          approvalMethod: "proponent",
+        }),
+      ],
+      new Set<string>(),
+      null,
+    );
+    expect(row!.state).toBe("incorporated");
+    expect(row!.note).toBeNull();
   });
 });
 
