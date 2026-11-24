@@ -53,6 +53,24 @@ describe("an approved record written before 2026-11-23", () => {
     expect(await hash(blocksSchema.parse(kept))).toBe(await hash(now));
   });
 
+  it("reads as outdated without the signature's box", async () => {
+    const now = blocksSchema.parse(agreementsRecordBlocks(record, assembly));
+    // As it was stored on 2026-11-23: no room, name and office unboxed.
+    const before = now
+      .filter((block) => !block.id.startsWith("ar-room-"))
+      .map(({ cell: _cell, ...block }) => block);
+    expect(await hash(blocksSchema.parse(before))).not.toBe(await hash(now));
+    const signer = now.find((block) => block.id === "ar-signer")!;
+    expect(signer.cell).toMatchObject({
+      borders: { top: "thick", right: "none", bottom: "none", left: "none" },
+      tableWidth: 50,
+      tableAlign: "center",
+    });
+    expect(now.find((block) => block.id === "ar-signer-office")!.cell).toEqual(
+      signer.cell,
+    );
+  });
+
   it("leaves a version without them alone", () => {
     const now = blocksSchema.parse(agreementsRecordBlocks(record, assembly));
     expect(dropSignatureSpacers(now)).toBeNull();

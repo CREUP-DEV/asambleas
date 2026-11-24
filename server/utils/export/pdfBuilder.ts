@@ -24,6 +24,7 @@ import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
 import {
   CREUP_LEGAL,
   RECORD_CLOSING_BLOCK_IDS,
+  RECORD_SIGNATURE_ROOM_IDS,
   RECORD_SIGNATURE_SPACER,
 } from "../../../shared/utils/agreementsRecord";
 import { thirdCount, voteTextKey } from "../../../shared/utils/votes";
@@ -749,10 +750,14 @@ function agreementsRecordBody(
   signature: ExportImage | null | undefined,
 ): Content[] {
   const closingIds = new Set<string>(RECORD_CLOSING_BLOCK_IDS);
+  const roomIds = new Set<string>(RECORD_SIGNATURE_ROOM_IDS);
   const body: Block[] = [];
   const closing: Block[] = [];
   for (const block of blocks) {
-    if (RECORD_SIGNATURE_SPACER.test(block.id)) continue;
+    // The signature's own room below stands for the web text's blank lines.
+    if (RECORD_SIGNATURE_SPACER.test(block.id) || roomIds.has(block.id)) {
+      continue;
+    }
     (closingIds.has(block.id) ? closing : body).push(block);
   }
   const content = body.length > 0 ? blocksToPdf(body, ctx) : [];

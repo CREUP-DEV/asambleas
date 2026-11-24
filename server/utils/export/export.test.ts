@@ -690,6 +690,49 @@ describe("acta de acuerdos", () => {
     expect(stack.stack[1]).toMatchObject({ image: "record-signature" });
     expect(definition.images?.["record-signature"]).toBe(signature.dataUrl);
   });
+
+  it("draws the name and office in the signature's box, without the room", () => {
+    const cell = {
+      table: "ar-signature-box",
+      row: "ar-signature-row",
+      cell: "ar-signature-cell",
+      borders: { top: "thick", right: "none", bottom: "none", left: "none" },
+      tableWidth: 50,
+      tableAlign: "center",
+    } as const;
+    const definition = buildDocumentPdf(
+      {
+        assembly,
+        document: recordMeta,
+        body: {
+          variant: "clean",
+          source: "base",
+          blocks: [
+            p("ar-closing", "Para que conste a los efectos oportunos."),
+            p("ar-room-1", ""),
+            p("ar-room-2", ""),
+            { ...p("ar-signer", "Nombre Apellido"), align: "center", cell },
+            {
+              ...p("ar-signer-office", "Secretaría Ejecutiva de la ..."),
+              align: "center",
+              cell,
+            },
+          ],
+        },
+        generatedAt: new Date("2026-11-24T10:00:00Z"),
+      },
+      "es",
+    );
+    const stack = closingStack(definition)!;
+    // The formula, the signature's room and the box: no blank lines.
+    expect(stack.stack).toHaveLength(3);
+    expect(stack.stack[1]).toMatchObject({ text: "" });
+    const box = stack.stack[2] as {
+      table: { body: { border?: boolean[] }[][] };
+    };
+    expect(box.table.body[0]![0]!.border).toEqual([false, true, false, false]);
+    expect(JSON.stringify(box)).toContain("Secretaría Ejecutiva");
+  });
 });
 
 describe("annotatedToPdf", () => {

@@ -770,10 +770,12 @@ function blockId(key: string): string {
 
 /**
  * The blocks that close the record, in order: the closing formula, the name
- * and the office of whoever certifies. The PDF keeps them together on one
+ * and the office of whoever certifies, these two in the signature's box
+ * since 2026-11-24 (SIGNATURE_CELL). The PDF keeps them together on one
  * page with the signature between the formula and the name (pdfBuilder.ts);
  * versions written before 2026-11-23 also hold empty `ar-signature-*`
- * paragraphs there, which it drops.
+ * paragraphs there, and later ones the room's blank lines
+ * (RECORD_SIGNATURE_ROOM_IDS), which it drops.
  */
 export const RECORD_CLOSING_BLOCK_IDS = [
   "ar-closing",
@@ -783,6 +785,13 @@ export const RECORD_CLOSING_BLOCK_IDS = [
 
 /** The empty paragraphs older versions kept for the signature. */
 export const RECORD_SIGNATURE_SPACER = /^ar-signature-\d+$/;
+
+/**
+ * The blank lines above the signature's box since 2026-11-24, the room the
+ * web text leaves for it. The PDF leaves its own (the signature's height)
+ * and skips them; unlike the older spacers, they are part of the record.
+ */
+export const RECORD_SIGNATURE_ROOM_IDS = ["ar-room-1", "ar-room-2"] as const;
 
 /**
  * A stored version's blocks without those empty paragraphs, to compare it
@@ -861,18 +870,39 @@ export function agreementsRecordBlocks(
       "ar-closing",
       "Para que conste a los efectos oportunos, a fecha de la firma digital.",
     ),
-    paragraph(
-      "ar-signer",
-      name,
-      [{ type: "bold", from: 0, to: name.length }],
-      "center",
-    ),
-    paragraph(
-      "ar-signer-office",
-      signatureOffice,
-      [{ type: "italic", from: 0, to: signatureOffice.length }],
-      "center",
-    ),
+    ...RECORD_SIGNATURE_ROOM_IDS.map((id) => paragraph(id, "")),
+    {
+      ...paragraph(
+        "ar-signer",
+        name,
+        [{ type: "bold", from: 0, to: name.length }],
+        "center",
+      ),
+      cell: { ...SIGNATURE_CELL },
+    },
+    {
+      ...paragraph(
+        "ar-signer-office",
+        signatureOffice,
+        [{ type: "italic", from: 0, to: signatureOffice.length }],
+        "center",
+      ),
+      cell: { ...SIGNATURE_CELL },
+    },
   );
   return blocks;
 }
+
+/**
+ * The box the name and office sit in, as a Word signature is (user's
+ * decision of 2026-11-24): half the text's width, centred, its only rule a
+ * thick line above the name, where the signature goes.
+ */
+const SIGNATURE_CELL: NonNullable<Block["cell"]> = {
+  table: "ar-signature-box",
+  row: "ar-signature-row",
+  cell: "ar-signature-cell",
+  borders: { top: "thick", right: "none", bottom: "none", left: "none" },
+  tableWidth: 50,
+  tableAlign: "center",
+};
