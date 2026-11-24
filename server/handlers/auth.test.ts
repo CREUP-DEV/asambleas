@@ -1,13 +1,16 @@
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createEvent, type H3Event } from "h3";
+import { createError, createEvent, type H3Event } from "h3";
 import { ACTING_USER_HEADER_NAME } from "~~/shared/constants/security";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 
-// The admin section handler with the auth context scripted and the
-// same-origin and CSRF checks stubbed; the impersonation guards are real.
-const context = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+// The admin section handler with the auth context scripted (null: no
+// session, 401 like requireAuth) and the same-origin and CSRF checks
+// stubbed; the impersonation guards are real.
+const context = vi.hoisted(() => ({
+  value: null as Record<string, unknown> | null,
+}));
 const protection = vi.hoisted(() => ({
   assertSameOriginMutation: vi.fn(),
   ensureCsrfCookie: vi.fn(),
@@ -16,10 +19,10 @@ const protection = vi.hoisted(() => ({
 
 vi.mock("../db", () => ({ db: {} }));
 vi.mock("../utils/auth/rbac", () => ({
-  ADMIN_SECTION_PERMISSIONS: ["user:manage_roles", "role:manage_permissions"],
-  hasAnyPermission: (held: readonly string[], keys: readonly string[]) =>
-    keys.some((key) => held.includes(key)),
   attachAuthContext: vi.fn(async (event: H3Event) => {
+    if (!context.value) {
+      throw createError({ statusCode: 401, message: "No autorizado" });
+    }
     Object.assign(event.context, context.value);
   }),
 }));
@@ -78,7 +81,7 @@ function request(method: string, path: string, actingUser?: string) {
 
 describe("admin section handler", () => {
   beforeEach(() => {
-    context.value = {};
+    context.value = null;
     for (const fn of Object.values(protection)) fn.mockClear();
   });
 
@@ -91,9 +94,9 @@ describe("admin section handler", () => {
     expect(protection.assertCsrfMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("answers a stale identity with 409 before the section gate", async () => {
-    // Another tab started acting as an account that cannot open the section:
-    // this tab must reload, not show a permission error.
+  it("answers a stale identity with 409", async () => {
+    // Another tab started acting as another account: this tab must reload,
+    // not show a permission error.
     signedIn(admin, asociado, [], impersonating(asociado));
     await expect(
       handler(request("PUT", "/api/admin/users/x/role", admin.id)),
@@ -122,20 +125,30 @@ describe("admin section handler", () => {
         data: { messageKey: "admin.impersonationReadOnly" },
       });
     }
-    // Reads stay open to an account that may open the section.
+    // Reads stay open.
     await expect(
       handler(request("GET", "/api/admin/users")),
     ).resolves.toBeUndefined();
   });
 
-  it("still gates the section by the effective account's permissions", async () => {
-    signedIn(admin, asociado, [], impersonating(asociado));
+  it("filters by no permission key: each endpoint checks its own", async () => {
+    // Only stats:view: «Estadísticas» shows in the menu, so its requests
+    // must reach GET /api/admin/stats, which checks stats:view itself.
+    signedIn(asociado, asociado, [PERMISSION_KEYS.STATS_VIEW]);
     await expect(
-      handler(request("GET", "/api/admin/users")),
-    ).rejects.toMatchObject({ statusCode: 403 });
-    signedIn(asociado, asociado, []);
+      handler(request("GET", "/api/admin/stats")),
+    ).resolves.toBeUndefined();
+    // Only notification:manage, a change included.
+    signedIn(asociado, asociado, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
     await expect(
-      handler(request("PUT", "/api/admin/users/x/role", asociado.id)),
-    ).rejects.toMatchObject({ statusCode: 403 });
+      handler(request("PUT", "/api/admin/notifications", asociado.id)),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps out a request without a session", async () => {
+    await expect(
+      handler(request("GET", "/api/admin/stats")),
+    ).rejects.toMatchObject({ statusCode: 401 });
+    expect(protection.ensureCsrfCookie).not.toHaveBeenCalled();
   });
 });

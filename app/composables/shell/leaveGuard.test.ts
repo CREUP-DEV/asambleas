@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { composerRouteUpdateLeaves } from "./composerLeave";
+import { routeUpdateLeavesPage } from "./leaveGuard";
 
-describe("composerRouteUpdateLeaves", () => {
+describe("routeUpdateLeavesPage", () => {
   const doc = "/asambleas/80-ago/documentos/res-3";
 
   it("asks when another document of the assembly opens", () => {
     expect(
-      composerRouteUpdateLeaves(
+      routeUpdateLeavesPage(
         { path: "/asambleas/80-ago/documentos/res-4" },
         { path: doc },
       ),
@@ -15,12 +15,12 @@ describe("composerRouteUpdateLeaves", () => {
 
   it("never asks when only the query changes", () => {
     // `?enmienda=` replaced as an amendment opens: route.path has no query.
-    expect(composerRouteUpdateLeaves({ path: doc }, { path: doc })).toBe(false);
+    expect(routeUpdateLeavesPage({ path: doc }, { path: doc })).toBe(false);
   });
 
   it("asks when another assembly's document opens", () => {
     expect(
-      composerRouteUpdateLeaves(
+      routeUpdateLeavesPage(
         { path: "/asambleas/81-ago/documentos/res-3" },
         { path: doc },
       ),

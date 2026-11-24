@@ -201,12 +201,10 @@ function dateTime(value: string | null): string {
   return value ? formatDateTime(value, { locale: locale.value }) : "";
 }
 
-onBeforeRouteLeave(() => {
-  if (dirty.value && import.meta.client) {
-    return window.confirm(t("admin.notifications.unsavedConfirm"));
-  }
-  return true;
-});
+useLeaveGuard(
+  () => dirty.value,
+  () => t("admin.notifications.unsavedConfirm"),
+);
 </script>
 
 <template>

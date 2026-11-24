@@ -136,7 +136,7 @@ const listWanted = computed({
   set: (value: boolean) => setQuery(LIST_QUERY, value ? "1" : undefined),
 });
 
-const { confirmLeaving } = useComposerLeaveGuard(
+const { confirmLeaving } = useLeaveGuard(
   () => editor.dirty.value,
   () => t("seating.edit.leaveQuestion"),
 );

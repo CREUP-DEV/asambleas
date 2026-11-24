@@ -271,12 +271,10 @@ function discard() {
   announcement.value = t("calendar.discarded");
 }
 
-onBeforeRouteLeave(() => {
-  if (dirty.value && import.meta.client) {
-    return window.confirm(t("calendar.unsavedConfirm"));
-  }
-  return true;
-});
+useLeaveGuard(
+  () => dirty.value,
+  () => t("calendar.unsavedConfirm"),
+);
 
 const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
   `milestone-${key}-${field}`;

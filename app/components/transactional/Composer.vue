@@ -18,7 +18,7 @@ import {
   amendmentErrorReasons,
   composerMainAuthor,
 } from "~/composables/amendment/workspace";
-import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
+import { useLeaveGuard } from "~/composables/shell/useLeaveGuard";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   isLateAwaitingAdmission,
@@ -820,9 +820,7 @@ function requestClose(): void {
 }
 
 // Leaving the page, another document, "atrás", reloading: asked first.
-useComposerLeaveGuard(hasWork, () =>
-  t("transactional.composer.discardConfirm"),
-);
+useLeaveGuard(hasWork, () => t("transactional.composer.discardConfirm"));
 
 onMounted(() => {
   void nextTick(() => {

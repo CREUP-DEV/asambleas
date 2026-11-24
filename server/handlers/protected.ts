@@ -72,8 +72,8 @@ export function isStopImpersonationRequest(
 }
 
 /**
- * Authenticated, non-admin API surface. Mirrors `handlers/auth.ts` without the
- * admin gate: each endpoint enforces its own permission. Running
+ * Authenticated, non-admin API surface. Like `handlers/auth.ts`, it checks
+ * no permission key: each endpoint enforces its own. Running
  * `ensureCsrfCookie` here means any GET in the section hands out the token its
  * mutations require, so no endpoint has to issue the cookie by itself.
  *

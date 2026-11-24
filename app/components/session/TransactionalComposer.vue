@@ -351,20 +351,7 @@ function cancel(close: () => void): void {
   close();
 }
 
-onBeforeRouteLeave(() => {
-  if (!hasDraft()) return true;
-  return window.confirm(discardMessage());
-});
-
-function onBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasDraft()) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
-onMounted(() => window.addEventListener("beforeunload", onBeforeUnload));
-onBeforeUnmount(() =>
-  window.removeEventListener("beforeunload", onBeforeUnload),
-);
+useLeaveGuard(hasDraft, discardMessage);
 
 const ops = computed(() =>
   seed.value && seed.value.passage.length > 0

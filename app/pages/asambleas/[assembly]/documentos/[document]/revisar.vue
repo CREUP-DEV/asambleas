@@ -578,23 +578,10 @@ function warnIfUnsaved(toId: string | null): void {
 }
 
 // Leaving the page with comments not saved asks first, as the composers do.
-onBeforeRouteLeave(() => {
-  if (unsavedIds.value.size === 0) return true;
-  return window.confirm(t("proponentReview.unsaved.leaveConfirm"));
-});
-
-function onBeforeUnload(event: BeforeUnloadEvent): void {
-  if (unsavedIds.value.size === 0) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
-
-onMounted(() => {
-  window.addEventListener("beforeunload", onBeforeUnload);
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("beforeunload", onBeforeUnload);
-});
+useLeaveGuard(
+  () => unsavedIds.value.size > 0,
+  () => t("proponentReview.unsaved.leaveConfirm"),
+);
 
 const comment = computed({
   get: () => {

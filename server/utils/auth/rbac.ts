@@ -264,12 +264,14 @@ export async function hasPermission(
 }
 
 /**
- * Permissions that open the admin section (/api/admin): users, their roles,
- * member links and grants need user:manage_roles; roles and the permission
- * catalog need role:manage_permissions. The association's Secretaría and
- * Presidencia hold both; Admin has every key.
+ * The keys that manage access: users, their roles, member links and grants
+ * need user:manage_roles; roles and the permission catalog need
+ * role:manage_permissions. A non-Admin never takes them away from its own
+ * role (`own_role` in adminGrantViolation). They open no section by
+ * themselves: each /api/admin endpoint checks its own key. The
+ * association's Secretaría and Presidencia hold both; Admin has every key.
  */
-export const ADMIN_SECTION_PERMISSIONS: readonly PermissionKey[] = [
+export const ACCESS_MANAGEMENT_PERMISSIONS: readonly PermissionKey[] = [
   PERMISSION_KEYS.USER_MANAGE_ROLES,
   PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
 ];
@@ -385,7 +387,7 @@ export function touchesLeadershipRole(
  * - `own_account`: the grants and member link of one's own account;
  * - `own_user_role`: which role one's own account holds;
  * - `own_role`: taking user:manage_roles or role:manage_permissions
- *   (ADMIN_SECTION_PERMISSIONS) away from the role one holds. Other
+ *   (ACCESS_MANAGEMENT_PERMISSIONS) away from the role one holds. Other
  *   changes to that role follow the next rule;
  * - `not_held`: adding or removing a key the caller does not hold itself
  *   (only the keys that change count, so saving an unchanged list that
@@ -410,7 +412,7 @@ export function adminGrantViolation(input: {
     const after = new Set(input.after);
     if (
       input.ownTarget &&
-      ADMIN_SECTION_PERMISSIONS.some(
+      ACCESS_MANAGEMENT_PERMISSIONS.some(
         (key) => before.has(key) && !after.has(key),
       )
     ) {

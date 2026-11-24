@@ -273,19 +273,9 @@ async function retryRefresh(): Promise<void> {
   }
 }
 
-onBeforeRouteLeave(() => {
-  if (leaving.value || (!textDirty.value && !metadataDirty.value)) return true;
-  return window.confirm(t("document.authoring.leaveConfirm"));
-});
-
-function onBeforeUnload(event: BeforeUnloadEvent): void {
-  if (leaving.value || (!textDirty.value && !metadataDirty.value)) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
-onMounted(() => window.addEventListener("beforeunload", onBeforeUnload));
-onBeforeUnmount(() =>
-  window.removeEventListener("beforeunload", onBeforeUnload),
+useLeaveGuard(
+  () => !leaving.value && (textDirty.value || metadataDirty.value),
+  () => t("document.authoring.leaveConfirm"),
 );
 
 // Submit and publish ----------------------------------------------------------

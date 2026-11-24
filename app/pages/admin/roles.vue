@@ -299,10 +299,10 @@ function permissionLabel(key: PermissionKey): string {
   return i18nKey && te(i18nKey) ? t(i18nKey) : key;
 }
 
-onBeforeRouteLeave(() => {
-  if (!hasChanges.value || saving.value) return true;
-  return window.confirm(t("admin.roles.leaveConfirm"));
-});
+useLeaveGuard(
+  () => hasChanges.value && !saving.value,
+  () => t("admin.roles.leaveConfirm"),
+);
 </script>
 
 <template>

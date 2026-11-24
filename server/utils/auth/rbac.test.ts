@@ -9,8 +9,8 @@ vi.mock("./requireAuth", () => ({
 }));
 
 const {
+  ACCESS_MANAGEMENT_PERMISSIONS,
   ADMIN_GRANT_MESSAGES,
-  ADMIN_SECTION_PERMISSIONS,
   adminGrantViolation,
   getEffectivePermissions,
   hasAnyPermission,
@@ -19,29 +19,29 @@ const {
 } = await import("./rbac");
 
 describe("hasAnyPermission", () => {
-  it("opens the admin section with either users or roles", () => {
+  it("matches when either key is held", () => {
     expect(
       hasAnyPermission(
         [PERMISSION_KEYS.USER_MANAGE_ROLES],
-        ADMIN_SECTION_PERMISSIONS,
+        ACCESS_MANAGEMENT_PERMISSIONS,
       ),
     ).toBe(true);
     expect(
       hasAnyPermission(
         [PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS],
-        ADMIN_SECTION_PERMISSIONS,
+        ACCESS_MANAGEMENT_PERMISSIONS,
       ),
     ).toBe(true);
   });
 
-  it("keeps everyone else out", () => {
+  it("does not match when none is held", () => {
     expect(
       hasAnyPermission(
         [PERMISSION_KEYS.DOCUMENT_MANAGE, PERMISSION_KEYS.MEMBER_MANAGE],
-        ADMIN_SECTION_PERMISSIONS,
+        ACCESS_MANAGEMENT_PERMISSIONS,
       ),
     ).toBe(false);
-    expect(hasAnyPermission([], ADMIN_SECTION_PERMISSIONS)).toBe(false);
+    expect(hasAnyPermission([], ACCESS_MANAGEMENT_PERMISSIONS)).toBe(false);
   });
 });
 

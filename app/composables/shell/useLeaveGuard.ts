@@ -1,16 +1,21 @@
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
-import { composerRouteUpdateLeaves } from "./composerLeave";
+import { routeUpdateLeavesPage } from "./leaveGuard";
 
 /**
- * Asks before a composer with work in it goes away: leaving the page,
+ * Asks before a screen with unsaved work goes away: leaving the page,
  * going to another document (the same page with other params, which Nuxt
  * mounts again), "atrás", and reloading or closing the tab. A change of the
- * query alone never asks (`composerRouteUpdateLeaves`).
+ * query alone never asks (`routeUpdateLeavesPage`).
  *
- * `hasWork` says whether something typed would be lost; `question` is the
- * composer's own wording of the question.
+ * Every screen with unsaved work uses it, composers and forms alike, never
+ * its own guards (AGENTS.md). The one exception is the control sheet's
+ * `RowPanel`, which saves before it asks.
+ *
+ * `hasWork` says whether something would be lost; `question` is the
+ * screen's own wording of the question. `confirmLeaving` asks the same
+ * question for a leave the page makes by itself (`sala.vue`).
  */
-export function useComposerLeaveGuard(
+export function useLeaveGuard(
   hasWork: () => boolean,
   question: () => string,
 ): { confirmLeaving: () => boolean } {
@@ -21,7 +26,7 @@ export function useComposerLeaveGuard(
 
   onBeforeRouteLeave(confirmLeaving);
   onBeforeRouteUpdate((to, from) =>
-    composerRouteUpdateLeaves(to, from) ? confirmLeaving() : true,
+    routeUpdateLeavesPage(to, from) ? confirmLeaving() : true,
   );
 
   // Reloading or closing the tab: the browser asks, in its own words.

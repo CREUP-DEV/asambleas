@@ -466,6 +466,11 @@ onBeforeUnmount(() => {
  * them again. The saves are waited for LEAVE_SAVE_WAIT_MS at most: on a
  * connection that hangs, what is still saving counts as unsaved and the
  * question comes at once. Closing the tab asks first.
+ *
+ * The one screen that does not use `useLeaveGuard` (AGENTS.md): its guard
+ * saves before it asks and reopens a row when the user stays, which an
+ * asynchronous `hasWork` would bring into `confirmLeaving`, which `sala.vue`
+ * calls synchronously.
  */
 onBeforeRouteLeave(async () => {
   await settledWithin(
@@ -488,6 +493,7 @@ if (import.meta.client) {
   useEventListener(window, "beforeunload", (event: BeforeUnloadEvent) => {
     if (anyDirty.value || unsavedObservationIds(drafts).length > 0) {
       event.preventDefault();
+      event.returnValue = "";
     }
   });
 }

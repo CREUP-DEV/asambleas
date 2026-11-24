@@ -39,7 +39,7 @@ import {
   seedComposerFromDraft,
   type AmendmentComposerMode,
 } from "~/composables/amendment/workspace";
-import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
+import { useLeaveGuard } from "~/composables/shell/useLeaveGuard";
 
 /**
  * Presents an amendment. It takes the place of the text and the list (the
@@ -805,9 +805,7 @@ function discardAndClose(): void {
 }
 
 // Leaving the page, another document, "atrás", reloading: asked first.
-useComposerLeaveGuard(hasUnsavedChanges, () =>
-  t("amendment.composer.leave.confirm"),
-);
+useLeaveGuard(hasUnsavedChanges, () => t("amendment.composer.leave.confirm"));
 
 // Where the reader was -----------------------------------------------------------
 

@@ -1,14 +1,9 @@
-import { createError, defineEventHandler } from "h3";
-import {
-  ADMIN_SECTION_PERMISSIONS,
-  attachAuthContext,
-  hasAnyPermission,
-} from "../utils/auth/rbac";
+import { defineEventHandler } from "h3";
+import { attachAuthContext } from "../utils/auth/rbac";
 import {
   assertActingUser,
   assertNotImpersonatingMutation,
 } from "../utils/auth/impersonation";
-import type { AuthEventContext } from "../utils/auth/requireAuth";
 import {
   assertSameOriginMutation,
   ensureCsrfCookie,
@@ -16,13 +11,15 @@ import {
 } from "../utils/auth/requestProtection";
 
 /**
- * The admin section (/api/admin): authenticated users holding
- * user:manage_roles or role:manage_permissions (Admin has every key). Each
- * endpoint then checks the permission it needs, and only an Admin may give
- * or take the Admin role or change that role's permissions.
+ * The admin section (/api/admin): authenticated users only (401 without a
+ * session). It filters by no permission key: each endpoint checks the one
+ * it needs (`requireAnyPermission` or `requireAdmin` first thing; the
+ * walk in adminEndpoints.test.ts fails a handler that skips it), and only
+ * an Admin may give or take the Admin role or change that role's
+ * permissions.
  *
- * Before the section gate, so a stale tab gets the answer that makes it
- * reload rather than a 403 from the account it no longer acts as:
+ * So a stale tab gets the answer that makes it reload rather than a 403
+ * from the account it no longer acts as:
  * - unsafe requests must name the effective user in `x-acting-user` (409
  *   `auth.identityChanged`);
  * - while an Admin acts as another account the whole section is read-only
@@ -39,13 +36,6 @@ export default defineEventHandler(async (event) => {
   await attachAuthContext(event);
   assertActingUser(event);
   assertNotImpersonatingMutation(event);
-  const permissions = (event.context as AuthEventContext).permissions ?? [];
-  if (!hasAnyPermission(permissions, ADMIN_SECTION_PERMISSIONS)) {
-    throw createError({
-      statusCode: 403,
-      message: "No tienes permiso para gestionar usuarios ni roles",
-    });
-  }
   ensureCsrfCookie(event);
   assertCsrfMutation(event);
 });

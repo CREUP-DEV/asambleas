@@ -291,12 +291,10 @@ async function save() {
   }
 }
 
-onBeforeRouteLeave(() => {
-  if (dirty.value && import.meta.client) {
-    return window.confirm(t("admin.calendarRules.unsavedConfirm"));
-  }
-  return true;
-});
+useLeaveGuard(
+  () => dirty.value,
+  () => t("admin.calendarRules.unsavedConfirm"),
+);
 </script>
 
 <template>
