@@ -1901,10 +1901,13 @@ platform words from the votes, in the format of the 79.ª AGO's record
 (`shared/utils/agreementsRecord.ts`), kept as a published `minutes` text of
 the item where it is read and voted (`documents.generated =
 'agreements_record'`, one per assembly) and written again a quiet spell
-after every change of the assembly (`server/plugins/agreements-record.ts`),
+after every change of the assembly (`server/plugins/agreements-record.ts`,
+event `agreements_record_updated` on the record when its text changed),
 until its own final vote: an approving one adds, once, the agreement that
 approves the record (a consolidated version replacing the voted one).
-Corrections are kept apart (`agreement_record_texts`), so they survive.
+Corrections are kept apart (`agreement_record_texts`), so they survive;
+each is an `agreements_record_corrected` event on the record (on the
+assembly while there is no record yet).
 
 | Method | Path                                                 | Who               | Notes                                                                                                                            |
 | ------ | ---------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
