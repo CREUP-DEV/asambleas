@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   affectsDocumentDto,
+  AGENDA_UNCHANGED_DOCUMENT_TYPES,
+  AGREEMENTS_RECORD_UPDATED,
+  keepsAgendaSummary,
+  keepsAgendaTitles,
   mayChangeAssemblyData,
   SESSION_DOCUMENT_TYPES,
   shouldRefetchAgenda,
@@ -9,6 +13,25 @@ import {
 } from "./-liveFilters";
 
 const event = (entityType: string, type = "updated") => ({ entityType, type });
+
+/** Corrections of form and conciliations of an approved text. */
+const FORM_CORRECTION_TYPES = [
+  "document_form_corrected",
+  "document_form_correction_proposed",
+  "document_form_correction_rejected",
+  "document_form_correction_withdrawn",
+  "passage_conciliated",
+  "passage_conciliation_proposed",
+];
+
+/** The acta de acuerdos' own events but its writing from the votes. */
+const AGREEMENTS_RECORD_TYPES = [
+  "agreements_record_corrected",
+  "agreements_record_regenerated",
+  "agreements_record_prepared",
+  "agreements_record_signed",
+  "agreements_record_signature_removed",
+];
 
 /** An event with ids, as the stream sends it. */
 const scoped = (
@@ -90,6 +113,30 @@ describe("shouldRefetchAssembly", () => {
     ).toBe(true);
   });
 
+  it("ignores corrections of form, conciliations and the acta's events", () => {
+    for (const type of [...FORM_CORRECTION_TYPES, ...AGREEMENTS_RECORD_TYPES]) {
+      expect(SESSION_DOCUMENT_TYPES.has(type), type).toBe(true);
+      expect(shouldRefetchAssembly([event("document", type)]), type).toBe(
+        false,
+      );
+    }
+  });
+
+  it("ignores the acta written again after each vote", () => {
+    // regenerateAgreementsRecord, about 1.5 s after an item vote.
+    expect(
+      shouldRefetchAssembly([
+        scoped("document", AGREEMENTS_RECORD_UPDATED, "acta", "acta"),
+      ]),
+    ).toBe(false);
+    expect(
+      shouldRefetchAssembly([
+        scoped("vote", "vote_recorded", "v1"),
+        scoped("document", AGREEMENTS_RECORD_UPDATED, "acta", "acta"),
+      ]),
+    ).toBe(false);
+  });
+
   it("leaves the assembly alone for amendments and agenda items", () => {
     expect(shouldRefetchAssembly([event("amendment")])).toBe(false);
     expect(shouldRefetchAssembly([event("agenda_item")])).toBe(false);
@@ -155,18 +202,56 @@ describe("shouldRefetchAgenda", () => {
     }
   });
 
-  it("follows every document event, the answers' too", () => {
+  it("follows every document event that changes a summary", () => {
     // DocumentSummaryDto carries positionsPublishedAt and
-    // positionsDebateStartedAt.
+    // positionsDebateStartedAt, `consolidated`, `pendingConciliation` and
+    // `updatedAt`, the optimistic lock of the forms opened from it.
     for (const type of [
       "document_voted",
       "final_vote_annulled",
       "document_status_changed",
       "document_published",
-      ...SESSION_DOCUMENT_TYPES,
+      "document_something_new",
+      AGREEMENTS_RECORD_UPDATED,
+      ...[...SESSION_DOCUMENT_TYPES].filter(
+        (type) => !AGENDA_UNCHANGED_DOCUMENT_TYPES.has(type),
+      ),
     ]) {
       expect(shouldRefetchAgenda([event("document", type)]), type).toBe(true);
     }
+    for (const type of [
+      "document_form_corrected",
+      "passage_conciliated",
+      "agreements_record_regenerated",
+    ]) {
+      expect(shouldRefetchAgenda([event("document", type)]), type).toBe(true);
+    }
+  });
+
+  it("ignores document events that write no summary", () => {
+    for (const type of [
+      "document_form_correction_proposed",
+      "document_form_correction_rejected",
+      "document_form_correction_withdrawn",
+      "passage_conciliation_proposed",
+      "agreements_record_corrected",
+      "agreements_record_prepared",
+      "agreements_record_signed",
+      "agreements_record_signature_removed",
+    ]) {
+      expect(keepsAgendaSummary(event("document", type)), type).toBe(true);
+      expect(shouldRefetchAgenda([event("document", type)]), type).toBe(false);
+    }
+    // Only as document events.
+    expect(
+      shouldRefetchAgenda([event("assembly", "agreements_record_corrected")]),
+    ).toBe(true);
+    expect(
+      shouldRefetchAgenda([
+        event("document", "agreements_record_signed"),
+        event("document", "document_updated"),
+      ]),
+    ).toBe(true);
   });
 
   it("ignores votes, decisions, headcounts and the projection's control", () => {
@@ -300,6 +385,27 @@ describe("shouldRefetchReadMarks", () => {
     }
   });
 
+  it("ignores what changes no base version: corrections, the acta's own", () => {
+    // Marks are made on the base version and the PDF (documentRevision); a
+    // correction or a conciliation writes a consolidated version.
+    for (const type of [...FORM_CORRECTION_TYPES, ...AGREEMENTS_RECORD_TYPES]) {
+      expect(shouldRefetchReadMarks([event("document", type)]), type).toBe(
+        false,
+      );
+    }
+  });
+
+  it("ignores the acta written again: its mark leaves the base out", () => {
+    // documentRevision (user's decision of 2026-11-24).
+    expect(SESSION_DOCUMENT_TYPES.has(AGREEMENTS_RECORD_UPDATED)).toBe(true);
+    expect(
+      shouldRefetchReadMarks([
+        scoped("vote", "vote_recorded", "v1"),
+        scoped("document", AGREEMENTS_RECORD_UPDATED, "acta", "acta"),
+      ]),
+    ).toBe(false);
+  });
+
   it("ignores decisions, answers and everything else", () => {
     expect(
       shouldRefetchReadMarks([
@@ -381,6 +487,37 @@ describe("affectsDocumentDto", () => {
         affectsDocumentDto([scoped("document", type, doc, doc)], doc),
         type,
       ).toBe(true);
+    }
+  });
+
+  it("follows corrections, conciliations and the acta's own events", () => {
+    for (const type of [
+      ...FORM_CORRECTION_TYPES,
+      ...AGREEMENTS_RECORD_TYPES,
+      AGREEMENTS_RECORD_UPDATED,
+    ]) {
+      expect(
+        affectsDocumentDto([scoped("document", type, doc, doc)], doc),
+        type,
+      ).toBe(true);
+    }
+  });
+
+  it("leaves the other documents alone when the acta changes", () => {
+    // agreements_record_corrected used to be an assembly event, which every
+    // DocumentDto in the room followed.
+    for (const type of [
+      ...AGREEMENTS_RECORD_TYPES,
+      AGREEMENTS_RECORD_UPDATED,
+    ]) {
+      expect(
+        affectsDocumentDto(
+          [scoped("document", type, "acta", "acta")],
+          doc,
+          finalVote,
+        ),
+        type,
+      ).toBe(false);
     }
   });
 
@@ -476,5 +613,29 @@ describe("affectsDocumentDto", () => {
         null,
       ),
     ).toBe(true);
+  });
+});
+
+describe("keepsAgendaTitles", () => {
+  it("holds for the document events that change no title", () => {
+    for (const type of [...SESSION_DOCUMENT_TYPES, AGREEMENTS_RECORD_UPDATED]) {
+      expect(keepsAgendaTitles(event("document", type)), type).toBe(true);
+    }
+  });
+
+  it("not for other document events, nor for other entities", () => {
+    for (const type of [
+      "document_updated",
+      "document_published",
+      "document_status_changed",
+      "document_deleted",
+      "document_content_updated",
+      "document_something_new",
+    ]) {
+      expect(keepsAgendaTitles(event("document", type)), type).toBe(false);
+    }
+    expect(
+      keepsAgendaTitles(event("assembly", "agreements_record_corrected")),
+    ).toBe(false);
   });
 });

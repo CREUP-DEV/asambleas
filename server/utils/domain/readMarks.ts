@@ -44,12 +44,26 @@ interface MarkableAmendment {
   open: boolean;
 }
 
-/** What a document's mark is made on: the text and the PDF everyone reads. */
+/**
+ * What a document's mark is made on: the text and the PDF everyone reads.
+ * The acta de acuerdos is written again from the votes after each item
+ * vote, election or final vote, a new base each time until it is approved
+ * (regenerateAgreementsRecord): what changes is what the room has just
+ * voted, so its mark leaves the base out (user's decision of 2026-11-24).
+ * Opened once, it stays read; it is still left to read until then, so the
+ * room knows who has not read it before voting it. Once approved, it only
+ * gets consolidated versions, which no mark follows either.
+ */
 export function documentRevision(document: {
   baseVersionId: string | null;
   fileUrl: string | null;
+  generated: "agreements_record" | null;
 }): string {
-  return `${document.baseVersionId ?? ""}|${document.fileUrl ?? ""}`;
+  const text =
+    document.generated === "agreements_record"
+      ? document.generated
+      : (document.baseVersionId ?? "");
+  return `${text}|${document.fileUrl ?? ""}`;
 }
 
 async function loadMarkable(
@@ -62,6 +76,7 @@ async function loadMarkable(
       id: documents.id,
       baseVersionId: documents.baseVersionId,
       fileUrl: documents.fileUrl,
+      generated: documents.generated,
       proponentMemberId: documents.proponentMemberId,
     })
     .from(documents)

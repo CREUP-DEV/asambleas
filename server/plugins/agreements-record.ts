@@ -8,9 +8,9 @@ import type { LiveMessage } from "../utils/domain/events";
  * agreementsRecord.ts) in step with its votes: every committed change that
  * may touch what it says (a vote, a decision, a document, the agenda, the
  * assembly) writes it again after a quiet spell, so a burst of votes writes
- * it once. Writing it is itself a document change, which comes back here
- * and finds the text the same. One app container (as the live hub), so the
- * timers live in memory.
+ * it once. Its own writing (`agreements_record_updated`) comes back here
+ * and is skipped: it would only find the text the same. One app container
+ * (as the live hub), so the timers live in memory.
  */
 
 /** What may change an agreement. */
@@ -56,8 +56,12 @@ async function run(assemblyId: string): Promise<void> {
   }
 }
 
+/** The record's own writing, which changes no agreement. */
+const OWN_TYPE = "agreements_record_updated";
+
 function onMessage(message: LiveMessage): void {
   if (!RECORD_ENTITIES.has(message.entityType)) return;
+  if (message.type === OWN_TYPE) return;
   schedule(message.assemblyId);
 }
 

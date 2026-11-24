@@ -248,6 +248,7 @@ async function loadPublished(assemblyId: string): Promise<{
       kind: documents.kind,
       baseVersionId: documents.baseVersionId,
       fileUrl: documents.fileUrl,
+      generated: documents.generated,
       proponentMemberId: documents.proponentMemberId,
     })
     .from(documents)

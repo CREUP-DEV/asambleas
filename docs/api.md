@@ -272,10 +272,15 @@ missing grants to their existing role rows (it never removes any). Both are
 kept by role sync, like `Admin` and `Moderador`, which the Mesa's Vocalía and
 Presidencia keep (`session:moderate`).
 
-**Admin section.** `/api/admin/**` opens by permission, not by role: the
-`serverHandlers` gate (`server/handlers/auth.ts`) lets in users holding
-`user:manage_roles` or `role:manage_permissions` (Admin holds every key) and
-each endpoint checks its own:
+**Admin section.** `/api/admin/**` opens by permission, not by role. The
+`serverHandlers` gate (`server/handlers/auth.ts`) only authenticates (401
+without a session) and applies the same-origin, CSRF, `x-acting-user` and
+impersonation checks; it filters by no permission key. Each endpoint checks
+its own as its first step (`server/handlers/adminEndpoints.test.ts` fails a
+handler that does not), Admin holding every key:
+
+- the statistics need `stats:view` and the notifications
+  `notification:manage`;
 
 - users, their roles, their member links and their grants need
   `user:manage_roles`;

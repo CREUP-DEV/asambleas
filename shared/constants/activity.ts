@@ -376,6 +376,7 @@ export const EVENT_TYPES = [
   // The Secretaría's corrections to the acta de acuerdos.
   "agreements_record_corrected",
   "agreements_record_regenerated",
+  "agreements_record_updated",
   "agreements_record_prepared",
   "agreements_record_signed",
   "agreements_record_signature_removed",
@@ -568,6 +569,7 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   document_form_correction_withdrawn: "document",
   agreements_record_corrected: "document",
   agreements_record_regenerated: "document",
+  agreements_record_updated: "document",
   agreements_record_prepared: "document",
   agreements_record_signed: "document",
   agreements_record_signature_removed: "document",

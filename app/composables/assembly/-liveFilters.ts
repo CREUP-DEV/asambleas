@@ -89,15 +89,25 @@ export const READ_MARK_AMENDMENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Document events of the session itself: the main presenter's answers
- * opened to debate or published, and the Mesa's wording of a passage.
- * Neither the AssemblyDto nor the read marks read them (loadAssemblyDto,
- * loadMarkable), and `document_positions_debate_started` comes the first
- * time each document goes into debate, so they would make every device
- * fetch both again for nothing. An exclusion list: a new document event
- * keeps refetching until someone checks it. The agenda and the DocumentDto
- * still follow the answers (`positionsPublishedAt`,
- * `positionsDebateStartedAt`, `positionsVisible`).
+ * Document events of the session itself, and of a text after its final
+ * vote, that neither the AssemblyDto nor the read marks read
+ * (loadAssemblyDto: published documents and the calendar; loadMarkable:
+ * each document's base version and PDF):
+ * - the main presenter's answers opened to debate or published, and the
+ *   Mesa's wording of a passage; `document_positions_debate_started` comes
+ *   the first time each document goes into debate;
+ * - a correction of form or a conciliation of a passage, proposed, made,
+ *   rejected or withdrawn: they write `document_form_corrections` and,
+ *   when made, a consolidated version, never the base;
+ * - the acta de acuerdos written again from the votes (AGREEMENTS_RECORD_
+ *   UPDATED), its corrections (`agreement_record_texts`), its «Regenerar»
+ *   once approved (a consolidated version) and its signing
+ *   (`agreement_record_signings`).
+ * They would make every device fetch both again for nothing. An exclusion
+ * list: a new document event keeps refetching until someone checks it. The
+ * DocumentDto of that document follows them all (affectsDocumentDto), and
+ * the agenda those that change a summary (AGENDA_UNCHANGED_DOCUMENT_TYPES
+ * lists the others).
  */
 export const SESSION_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
   "document_positions_debate_started",
@@ -105,7 +115,69 @@ export const SESSION_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
   "document_positions_unpublished",
   "passage_worded",
   "passage_wording_removed",
+  "document_form_corrected",
+  "document_form_correction_proposed",
+  "document_form_correction_rejected",
+  "document_form_correction_withdrawn",
+  "passage_conciliated",
+  "passage_conciliation_proposed",
+  "agreements_record_corrected",
+  "agreements_record_regenerated",
+  "agreements_record_prepared",
+  "agreements_record_signed",
+  "agreements_record_signature_removed",
+  "agreements_record_updated",
 ]);
+
+/**
+ * The acta de acuerdos written again from the votes, a quiet spell after
+ * each item vote, election or final vote (regenerateAgreementsRecord). Not
+ * approved yet, it gets a new base version, but its read mark leaves the
+ * base out (documentRevision, user's decision of 2026-11-24), and the
+ * AssemblyDto reads nothing of it, nor Directo's and the projection's
+ * agenda any title: it is one of SESSION_DOCUMENT_TYPES. The agenda pages
+ * still refetch it: the document's `updatedAt` moves, and it is the
+ * optimistic lock of the forms opened from the summary.
+ */
+export const AGREEMENTS_RECORD_UPDATED = "agreements_record_updated";
+
+/**
+ * Document events that change no DocumentSummaryDto: they write neither
+ * the document's row (its `updatedAt`, `consolidatedVersionId`) nor what
+ * its summary counts. A correction of form or a conciliation proposed,
+ * rejected or withdrawn, the acta's corrections and its signing. One made
+ * (`document_form_corrected`, `passage_conciliated`) or the acta written
+ * again does change it.
+ */
+export const AGENDA_UNCHANGED_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
+  "document_form_correction_proposed",
+  "document_form_correction_rejected",
+  "document_form_correction_withdrawn",
+  "passage_conciliation_proposed",
+  "agreements_record_corrected",
+  "agreements_record_prepared",
+  "agreements_record_signed",
+  "agreements_record_signature_removed",
+]);
+
+/**
+ * A document event that changes no title or listing of the agenda: those
+ * SESSION_DOCUMENT_TYPES lists. Directo and the projection, which read the
+ * agenda for its titles, skip them (live-view's affectsAgenda).
+ */
+export function keepsAgendaTitles(event: LiveEventLike): boolean {
+  return (
+    event.entityType === "document" && SESSION_DOCUMENT_TYPES.has(event.type)
+  );
+}
+
+/** A document event whose summary in the agenda stays as it was. */
+export function keepsAgendaSummary(event: LiveEventLike): boolean {
+  return (
+    event.entityType === "document" &&
+    AGENDA_UNCHANGED_DOCUMENT_TYPES.has(event.type)
+  );
+}
 
 /**
  * The Mesa's wording of a passage: the amendments list shows it, the
@@ -176,8 +248,9 @@ const AGENDA_ENTITY_TYPES: ReadonlySet<string> = new Set([
 
 /**
  * Whether a batch of live events calls for refetching the agenda (items and
- * document summaries): a poll, the assembly, an agenda item or a document,
- * and of the amendments only what changes which ones are seen
+ * document summaries): a poll, the assembly, an agenda item or a document
+ * but those that change no summary (AGENDA_UNCHANGED_DOCUMENT_TYPES), and
+ * of the amendments only what changes which ones are seen
  * (AMENDMENT_LISTING_TYPES). An allow-list: votes, decisions, headcounts and
  * the projection's control change nothing in it («Se vota el punto» is the
  * item's own flag, not its vote), and they come with every vote.
@@ -187,7 +260,8 @@ export function shouldRefetchAgenda(events: readonly LiveEventLike[]): boolean {
     (event) =>
       event.type === "poll" ||
       (mayChangeAssemblyData(event) &&
-        (AGENDA_ENTITY_TYPES.has(event.entityType) ||
+        ((AGENDA_ENTITY_TYPES.has(event.entityType) &&
+          !keepsAgendaSummary(event)) ||
           (event.entityType === "amendment" &&
             AMENDMENT_LISTING_TYPES.has(event.type)))),
   );

@@ -73,7 +73,10 @@ import {
 } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
 import { followLiveState } from "../live/-liveState";
-import { affectsDocumentDto } from "../assembly/-liveFilters";
+import {
+  affectsDocumentDto,
+  keepsAgendaSummary,
+} from "../assembly/-liveFilters";
 import SessionConfirmDialog from "~/components/session/ConfirmDialog.vue";
 import {
   buildSessionAgendaRows,
@@ -1171,7 +1174,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       }
       if (
         event.entityType === "agenda_item" ||
-        event.entityType === "document"
+        (event.entityType === "document" && !keepsAgendaSummary(event))
       ) {
         agendaChanged = true;
       }

@@ -31,6 +31,7 @@ import {
   sessionTransactionalRejectors,
   sortSessionAmendments,
 } from "~/composables/session/sessionModel";
+import { keepsAgendaTitles } from "~/composables/assembly/-liveFilters";
 import { numberedAgendaTitle } from "~/utils/agendaTree";
 import { memberSpokenName, positionRecorderKey } from "~/utils/format";
 
@@ -197,16 +198,21 @@ export function isNewerScroll(
 const AGENDA_ENTITY_TYPES = new Set(["assembly", "agenda_item", "document"]);
 
 /**
- * Whether a batch of live events may have changed the agenda: a poll or a
- * change of the assembly, an agenda item or a document. Speaking turns, the
- * live state, amendments and votes never do, so the screens every attendee
- * keeps open during the session do not refetch the agenda each time the Mesa
- * gives the floor.
+ * Whether a batch of live events may have changed the agenda as Directo and
+ * the projection read it (its titles and numbering): a poll or a change of
+ * the assembly, an agenda item or a document. Speaking turns, the live
+ * state, amendments and votes never do, so the screens every attendee
+ * keeps open during the session do not refetch the agenda each time the
+ * Mesa gives the floor; nor do the document events that change no title
+ * (keepsAgendaTitles), among them the acta de acuerdos written again after
+ * each vote. The agenda pages still follow those that change a summary
+ * (shouldRefetchAgenda), so Directo marks its shared agenda behind.
  */
 export function affectsAgenda(events: readonly LiveEventDto[]): boolean {
   return events.some(
     (event) =>
-      event.type === "poll" || AGENDA_ENTITY_TYPES.has(event.entityType),
+      event.type === "poll" ||
+      (AGENDA_ENTITY_TYPES.has(event.entityType) && !keepsAgendaTitles(event)),
   );
 }
 

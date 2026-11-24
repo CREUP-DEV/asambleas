@@ -359,12 +359,17 @@ export async function regenerateAgreementsRecord(
         .where(eq(documents.id, current.id));
     }
 
+    // Its own type, not `document_content_updated`: it comes after every
+    // item vote, election and final vote, and the room's filters
+    // (app/composables/assembly/-liveFilters.ts) know it changes neither
+    // the AssemblyDto nor the titles Directo reads, so the room does not
+    // fetch them all again a second time per vote.
     await recordEvent(tx, {
       assemblyId,
       entityType: "document",
       entityId: current.id,
       documentId: current.id,
-      type: "document_content_updated",
+      type: "agreements_record_updated",
       payload: {
         contentHash,
         blockCount: blocks.length,
@@ -694,12 +699,20 @@ export async function saveAgreementRecordText(
           },
         });
     }
+    // An event of the record itself, which is all a correction changes:
+    // as one of the assembly it made the whole room fetch every DocumentDto
+    // and the AssemblyDto again (affectsDocumentDto). Before the record is
+    // created there is no document to name, and the assembly stands in.
     const document = await findAgreementsRecord(assembly.id, tx);
     await recordEvent(tx, {
       assemblyId: assembly.id,
-      entityType: "assembly",
-      entityId: assembly.id,
-      ...(document ? { documentId: document.id } : {}),
+      ...(document
+        ? {
+            entityType: "document" as const,
+            entityId: document.id,
+            documentId: document.id,
+          }
+        : { entityType: "assembly" as const, entityId: assembly.id }),
       type: "agreements_record_corrected",
       payload: {
         key: body.key,

@@ -7159,6 +7159,7 @@
       "document_form_corrected": "Correction of form to the approved text",
       "agreements_record_corrected": "Agreements record corrected",
       "agreements_record_regenerated": "Agreements record regenerated with the corrections",
+      "agreements_record_updated": "Agreements record brought up to date with the votes",
       "agreements_record_prepared": "Agreements record prepared for signing",
       "agreements_record_signed": "Signed agreements record published",
       "agreements_record_signature_removed": "Signed agreements record withdrawn",

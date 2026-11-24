@@ -283,6 +283,38 @@ describe("live speakers", () => {
       );
     }
   });
+
+  it("leaves the agenda alone when a document changes no title", () => {
+    const document = (type: string): LiveEventDto => ({
+      type,
+      entityType: "document",
+      entityId: "acta",
+      documentId: "acta",
+    });
+    // The acta written again after each item vote, its corrections and
+    // signing, corrections of form and conciliations, the answers.
+    for (const type of [
+      "agreements_record_updated",
+      "agreements_record_corrected",
+      "agreements_record_regenerated",
+      "agreements_record_signed",
+      "document_form_corrected",
+      "document_form_correction_rejected",
+      "passage_conciliated",
+      "document_positions_debate_started",
+      "passage_worded",
+    ]) {
+      expect(affectsAgenda([document(type)]), type).toBe(false);
+    }
+    for (const type of [
+      "document_updated",
+      "document_published",
+      "document_status_changed",
+      "document_content_updated",
+    ]) {
+      expect(affectsAgenda([document(type)]), type).toBe(true);
+    }
+  });
 });
 
 describe("live amendments", () => {

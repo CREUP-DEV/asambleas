@@ -157,6 +157,7 @@ export const ACTIVITY_ACTION_ICONS = {
   document_form_correction_withdrawn: "i-lucide-undo-2",
   agreements_record_corrected: "i-lucide-scroll-text",
   agreements_record_regenerated: "i-lucide-refresh-cw",
+  agreements_record_updated: "i-lucide-file-pen-line",
   agreements_record_prepared: "i-lucide-file-pen-line",
   agreements_record_signed: "i-lucide-file-signature",
   agreements_record_signature_removed: "i-lucide-file-x",

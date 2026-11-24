@@ -7159,6 +7159,7 @@
       "document_form_corrected": "Corrección de forma del texto aprobado",
       "agreements_record_corrected": "Corrección del acta de acuerdos",
       "agreements_record_regenerated": "Acta de acuerdos regenerada con las correcciones",
+      "agreements_record_updated": "Acta de acuerdos puesta al día con las votaciones",
       "agreements_record_prepared": "Acta de acuerdos preparada para firmar",
       "agreements_record_signed": "Acta de acuerdos firmada publicada",
       "agreements_record_signature_removed": "Acta de acuerdos firmada retirada",

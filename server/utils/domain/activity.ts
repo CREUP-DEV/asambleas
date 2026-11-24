@@ -999,6 +999,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   document_form_correction_withdrawn: [],
   agreements_record_corrected: ["key"],
   agreements_record_regenerated: ["signatureRemoved"],
+  agreements_record_updated: ["blockCount"],
   agreements_record_prepared: ["withImage"],
   agreements_record_signed: ["fileName", "replaced"],
   agreements_record_signature_removed: ["fileName"],
