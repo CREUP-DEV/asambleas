@@ -232,7 +232,7 @@ fill and spans). A cell's fill (`fill`) is the name of one of the seven
 colours of CREUP's palette (burgundy, blue, beige, darkGrey, lightGrey,
 green, purple), never a colour code; `shared/constants/cellFills.ts` is the
 one list of them, with the text colour the platform sets on each (white, or
-near-black on beige and light grey), and the editor's swatches, the view
+near-black on beige and light grey), and the editor's swatches («Color de la celda», beside «Bordes» in the table menu and the right-click menu), the view
 (`cx-fill-<name>`, coloured in `main.css`, which a test keeps equal to the
 list), the PDF export and the Word import all read it. The fill is only how
 the cell looks: a header cell stays its own toggle (`header`, which makes

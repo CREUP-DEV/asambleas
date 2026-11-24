@@ -288,12 +288,13 @@ function cellFillItems(
 const TABLE_WIDTHS = [100, 75, 66, 50, 33, 25];
 
 /**
- * A table's sides, width and place, for the table menu and the right-click
- * menu: each side of the cells at the cursor shown or hidden, all or none,
- * thick rules, and the table's width and place. Checked as the cells and
- * the table are; nothing outside a table.
+ * How a table looks, for the table menu and the right-click menu: the
+ * cells' colour, each side of the cells at the cursor shown or hidden, all
+ * or none, their colour and thick rules, and the table's width and place.
+ * Checked as the cells and the table are; nothing outside a table.
  */
 function tableLayoutItems(
+  fill: CellFill | "mixed" | null,
   sides: ReturnType<typeof cellSidesOf>,
   borderColor: ReturnType<typeof cellBorderColorOf>,
   layout: ReturnType<typeof tableLayoutAt>,
@@ -311,6 +312,14 @@ function tableLayoutItems(
   const widths = [...TABLE_WIDTHS];
   if (layout && !widths.includes(layout.width)) widths.push(layout.width);
   return [
+    {
+      label: t("common.editor.table.fill.label"),
+      icon: "i-lucide-paint-bucket",
+      disabled: fill === null,
+      children: cellFillItems(fill, (choice) =>
+        apply((c) => c.setCellFill(choice)),
+      ),
+    },
     {
       label: t("common.editor.table.borders.label"),
       icon: "i-lucide-square-dashed",
@@ -448,6 +457,8 @@ function tableAction(
 const tableMenu = computed(
   () =>
     ({
+      // Drawn in the toolbar's `tableMenu` slot: its colours need swatches.
+      slot: "tableMenu",
       icon: "i-lucide-table",
       trailingIcon: "i-lucide-chevron-down",
       "aria-label": t("common.editor.table.menu"),
@@ -517,6 +528,7 @@ const tableMenu = computed(
         ...(offersFill.value && inTable.value
           ? [
               tableLayoutItems(
+                cellFill.value,
                 cellSides.value,
                 cellBorder.value,
                 tableLayout.value,
@@ -527,6 +539,11 @@ const tableMenu = computed(
         [tableAction("deleteTable", "i-lucide-trash", (c) => c.deleteTable())],
       ],
     }) as EditorToolbarItem,
+);
+
+/** The table menu's entries, for its dropdown in the toolbar's slot. */
+const tableMenuItems = computed(
+  () => (tableMenu.value as { items: ContextMenuItem[][] }).items,
 );
 
 const slots = useSlots();
@@ -748,12 +765,6 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   // Amendments may change a table's text, rows and columns too.
   if (props.compact) return [marks, link, [formula], tables, history];
 
-  // The colour of the cells, as a row of swatches while in a table.
-  const fills =
-    offersFill.value && inTable.value
-      ? [[{ slot: "cellFill" } as EditorToolbarItem]]
-      : [];
-
   const structure = [
     action(
       { kind: "heading", level: 1, icon: "i-lucide-heading-2" },
@@ -800,7 +811,6 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     structure,
     [alignment],
     tables,
-    ...fills,
     marks,
     link,
     [formula],
@@ -1039,33 +1049,10 @@ function buildContextItems(): void {
               c.addColumnAfter(),
             ),
           ],
-          // Amendments compare no cell: its colour, header and span stay;
-          // a correction of form may change the colour (`tableLook`).
-          offersFill.value && props.amend
-            ? [
-                {
-                  label: t("common.editor.table.fill.label"),
-                  icon: "i-lucide-paint-bucket",
-                  children: cellFillItems(cellFillOf(instance), (fill) =>
-                    run((c) => c.setCellFill(fill)),
-                  ),
-                },
-              ]
-            : [],
+          // Amendments compare no cell: its header and span stay.
           props.amend
             ? []
             : [
-                ...(offersFill.value
-                  ? [
-                      {
-                        label: t("common.editor.table.fill.label"),
-                        icon: "i-lucide-paint-bucket",
-                        children: cellFillItems(cellFillOf(instance), (fill) =>
-                          run((c) => c.setCellFill(fill)),
-                        ),
-                      },
-                    ]
-                  : []),
                 action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
                   c.toggleHeaderRow(),
                 ),
@@ -1084,6 +1071,7 @@ function buildContextItems(): void {
               ],
           offersFill.value
             ? tableLayoutItems(
+                cellFillOf(instance),
                 cellSidesOf(instance),
                 cellBorderColorOf(instance),
                 tableLayoutAt(instance),
@@ -1551,48 +1539,30 @@ defineExpose({
             <template v-if="$slots['toolbar-end']" #toolbar-end>
               <slot name="toolbar-end" />
             </template>
-            <template #cellFill>
-              <div
-                role="group"
-                :aria-label="t('common.editor.table.fill.label')"
-                class="flex flex-wrap items-center gap-1 px-1"
+            <template #tableMenu>
+              <UDropdownMenu
+                :items="tableMenuItems"
+                :content="{ align: 'start' }"
+                :modal="false"
               >
-                <UIcon
-                  name="i-lucide-paint-bucket"
-                  class="text-muted size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <UTooltip
-                  v-for="fill in FILL_OPTIONS"
-                  :key="fill"
-                  :text="t(`common.editor.table.fill.${fill}`)"
-                >
-                  <!-- The chosen one shows a tick and a ring, not only its
-                       colour. mousedown keeps the cells selected. -->
-                  <button
-                    type="button"
-                    class="cx-fill-swatch size-6"
-                    :style="swatchStyle(fill)"
-                    :aria-label="t(`common.editor.table.fill.${fill}`)"
-                    :aria-pressed="cellFill === fill"
-                    @mousedown.prevent
-                    @click="runInTable((c) => c.setCellFill(fill))"
-                  >
-                    <UIcon
-                      v-if="cellFill === fill"
-                      name="i-lucide-check"
-                      class="size-4"
-                      aria-hidden="true"
-                    />
-                    <UIcon
-                      v-else-if="fill === 'none'"
-                      name="i-lucide-slash"
-                      class="text-muted size-4"
-                      aria-hidden="true"
-                    />
-                  </button>
+                <UTooltip :text="t('common.editor.table.menu')">
+                  <UButton
+                    icon="i-lucide-table"
+                    trailing-icon="i-lucide-chevron-down"
+                    color="neutral"
+                    variant="ghost"
+                    :size="toolbarSize"
+                    :aria-label="t('common.editor.table.menu')"
+                  />
                 </UTooltip>
-              </div>
+                <template #fill-leading="{ item }">
+                  <span
+                    aria-hidden="true"
+                    class="cx-fill-swatch size-4"
+                    :style="swatchStyle((item as { fill: CellFill }).fill)"
+                  />
+                </template>
+              </UDropdownMenu>
             </template>
             <template #link>
               <UPopover
