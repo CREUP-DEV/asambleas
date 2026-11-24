@@ -135,8 +135,12 @@ const imported = computed(() => result.value?.blocks ?? []);
 const headerLength = computed(() =>
   templateHeaderLength(imported.value, props.documentTitle),
 );
+// The blank lines that go with them are not listed nor counted.
 const headerLines = computed(() =>
-  imported.value.slice(0, headerLength.value).map((block) => block.text),
+  imported.value
+    .slice(0, headerLength.value)
+    .map((block) => block.text)
+    .filter((text) => text !== ""),
 );
 /**
  * Dropped by default, except in the Estatutos and the regulations: there the
@@ -180,8 +184,12 @@ const placeholders = computed(() => {
 });
 
 /** Paragraphs and headings: images are not counted as either. */
+// Blank lines (kept from Word) are no text.
 const textBlocks = computed(
-  () => blocks.value.filter((block) => block.type !== "image").length,
+  () =>
+    blocks.value.filter(
+      (block) => block.type !== "image" && (block.text !== "" || block.cell),
+    ).length,
 );
 const words = computed(() =>
   blocks.value.reduce(
@@ -307,8 +315,8 @@ watch(open, (isOpen) => {
               :description="
                 t(
                   'document.import.templateHeader.description',
-                  { count: headerLength },
-                  headerLength,
+                  { count: headerLines.length },
+                  headerLines.length,
                 )
               "
             />

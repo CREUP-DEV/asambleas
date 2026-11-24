@@ -15,7 +15,14 @@ import {
   markerOf,
 } from "./lists";
 import { isSafeHref } from "./render";
-import { groupTables, type TableGroup } from "./tables";
+import {
+  formatCellBorders,
+  groupTables,
+  parseCellBorders,
+  tableLayoutFields,
+  tableLayoutOf,
+  type TableGroup,
+} from "./tables";
 
 /**
  * Conversion between blocks and the ProseMirror JSON used by the TipTap
@@ -208,6 +215,10 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
       return;
     }
     const table = tableIdFor(node, "tableId");
+    const layout = tableLayoutFields(
+      node.attrs?.tableWidth,
+      node.attrs?.tableAlign,
+    );
     for (const rowNode of node.content ?? []) {
       if (rowNode.type !== "tableRow") continue;
       const row = tableIdFor(rowNode, "rowId");
@@ -226,6 +237,14 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
         const rowspan = span(cellNode.attrs?.rowspan);
         if (colspan) cell.colspan = colspan;
         if (rowspan) cell.rowspan = rowspan;
+        // The sides (CellBordersExtension), as `data-borders` writes them.
+        const borders = parseCellBorders(
+          typeof cellNode.attrs?.borders === "string"
+            ? cellNode.attrs.borders
+            : null,
+        );
+        if (borders) cell.borders = borders;
+        Object.assign(cell, layout);
         const before = blocks.length;
         walk(cellNode.content, { level: 0, quote: false, cell });
         if (blocks.length === before) blocks.push(blankCell(cell));
@@ -469,9 +488,14 @@ export function blocksToEditor(blocks: Block[]): EditorNode {
 
 /** A table, its rows and cells keeping their ids (TableIdsExtension). */
 function tableNode(table: TableGroup<Block>): EditorNode {
+  const layout = tableLayoutOf(table);
   return {
     type: "table",
-    attrs: { tableId: table.table },
+    attrs: {
+      tableId: table.table,
+      tableWidth: layout.width < 100 ? layout.width : null,
+      tableAlign: layout.width < 100 ? (layout.align ?? null) : null,
+    },
     content: table.rows.map((row) => ({
       type: "tableRow",
       attrs: { rowId: row.row },
@@ -483,6 +507,7 @@ function tableNode(table: TableGroup<Block>): EditorNode {
             cellId: cell.cell.cell,
             // Content saved before the palette (`shade`) reads as beige.
             fill: cellFillOf(cell.cell) ?? null,
+            borders: formatCellBorders(cell.cell.borders) || null,
             colspan: cell.cell.colspan ?? 1,
             rowspan: cell.cell.rowspan ?? 1,
             colwidth: null,
@@ -628,6 +653,20 @@ function tableRows(table: Element): Element[] {
 
 const rowCells = (row: Element): Element[] => childElements(row, ["td", "th"]);
 
+/**
+ * Whether a table of one column stays a table: the DOCX import gave it a
+ * width or rules of its own (tableBorders in server/utils/content/docxHtml.ts),
+ * a signature's line among them, and it holds nothing a cell cannot (a
+ * picture, a table). Any other is a box of paragraphs.
+ */
+function keepsLayout(table: Element): boolean {
+  if (table.querySelector("img, table")) return false;
+  if (table.hasAttribute("data-table-width")) return true;
+  return tableRows(table).some((row) =>
+    rowCells(row).some((cell) => cell.hasAttribute("data-borders")),
+  );
+}
+
 function joinInlines(parts: Inline[], separator: string): Inline {
   let text = "";
   const marks: Mark[] = [];
@@ -657,10 +696,13 @@ function prefixInline(prefix: string, inline: Inline): Inline {
  * Converts sanitized HTML (DOCX import, pasted content) to blocks. Works with
  * any DOM implementation: DOMParser in the browser, linkedom on the server.
  *
- * A table whose rows all have one cell is a box around content (a
- * signature, a framed note): its cells are read as if the table were not
- * there. Any other table becomes blocks marked with their cells (BlockCell),
- * header cells and spans included. A table nested in a cell becomes a
+ * A table whose rows all have one cell is a box around content (a framed
+ * note): its cells are read as if the table were not there, unless the DOCX
+ * import gave it a width or rules of its own (a signature's line,
+ * keepsLayout), which keep it a table and none of its cells a header. Any
+ * other table becomes blocks marked with their cells (BlockCell), header
+ * cells, spans, sides and the table's width and place included. A blank
+ * line the DOCX import keeps (`data-blank`) becomes an empty paragraph. A table nested in a cell becomes a
  * paragraph per row, its cells joined by " | " and the lines inside a cell
  * by line breaks, keeping their formatting and links. Each node is read
  * once.
@@ -787,7 +829,19 @@ export function htmlElementToBlocks(
           continue;
         }
         const inline = readElementInline(child);
-        if (!inline.text) continue;
+        if (!inline.text) {
+          // A blank line the DOCX import keeps (blankParagraphs in
+          // server/utils/content/docxHtml.ts): the room it leaves.
+          if (child.hasAttribute("data-blank") && !list && !quote && !inCell) {
+            blocks.push({
+              id: newId(),
+              type: "paragraph",
+              text: "",
+              marks: [],
+            });
+          }
+          continue;
+        }
         if (list) {
           const block: Block = {
             id: newId(),
@@ -853,7 +907,10 @@ export function htmlElementToBlocks(
         walk(child, list, true);
       } else if (tag === "table") {
         const rows = tableRows(child);
-        if (rows.every((row) => rowCells(row).length <= 1)) {
+        if (
+          rows.every((row) => rowCells(row).length <= 1) &&
+          (inCell || !keepsLayout(child))
+        ) {
           for (const row of rows) {
             for (const cell of rowCells(row)) walk(cell, list, quote);
           }
@@ -870,7 +927,7 @@ export function htmlElementToBlocks(
           }
           continue;
         }
-        readTable(rows);
+        readTable(child, rows);
       } else {
         walk(child, list, quote);
       }
@@ -882,8 +939,14 @@ export function htmlElementToBlocks(
    * marked with the cell (BlockCell), and a blank cell kept as an empty
    * paragraph.
    */
-  const readTable = (rows: Element[]): void => {
+  const readTable = (tableElement: Element, rows: Element[]): void => {
     const table = newTableId();
+    // A table of one column is a box, never a header.
+    const boxed = rows.every((row) => rowCells(row).length <= 1);
+    const layout = tableLayoutFields(
+      tableElement.getAttribute("data-table-width"),
+      tableElement.getAttribute("data-table-align"),
+    );
     for (const rowElement of rows) {
       const row = newTableId();
       for (const cellElement of rowCells(rowElement)) {
@@ -906,7 +969,12 @@ export function htmlElementToBlocks(
         // in bold reads as one (Word's own header rows already are).
         const marked = cellElement.getAttribute("data-header");
         if (marked === "true") cell.header = true;
-        else if (marked !== "false" && own.length > 0 && own.every(isAllBold)) {
+        else if (
+          marked !== "false" &&
+          !boxed &&
+          own.length > 0 &&
+          own.every(isAllBold)
+        ) {
           cell.header = true;
         }
         // The fill, by its name in the palette, as the DOCX import and the
@@ -919,6 +987,11 @@ export function htmlElementToBlocks(
         ) {
           cell.fill = "beige";
         }
+        const borders = parseCellBorders(
+          cellElement.getAttribute("data-borders"),
+        );
+        if (borders) cell.borders = borders;
+        Object.assign(cell, layout);
         for (const block of own) block.cell = { ...cell };
         if (blocks.length === before) {
           blocks.push({

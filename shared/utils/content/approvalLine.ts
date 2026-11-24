@@ -151,16 +151,21 @@ function wholeLineMarks(block: Block, length: number): Mark[] {
  * The text as a PDF shows it: with `fill` (the final vote approved it) the
  * unfilled approval lines among the first blocks say what was voted; without
  * it they are left out, since nothing was approved yet. Lines already filled
- * in by hand stay as they are. `filled` counts the lines written.
+ * in by hand stay as they are. `filled` counts the lines written. Blank
+ * lines (a Word import keeps them) do not count among the first blocks.
  */
 export function fillApprovalLines(
   blocks: Block[],
   fill: ApprovalFill | null,
 ): { blocks: Block[]; filled: number } {
   let filled = 0;
+  let index = 0;
   const out: Block[] = [];
-  blocks.forEach((block, index) => {
-    if (index >= APPROVAL_LINE_MAX_INDEX || !isUnfilledApprovalLine(block)) {
+  blocks.forEach((block) => {
+    const blank = block.text === "" && !block.cell && block.type !== "image";
+    const position = index;
+    if (!blank) index += 1;
+    if (position >= APPROVAL_LINE_MAX_INDEX || !isUnfilledApprovalLine(block)) {
       out.push(block);
       return;
     }

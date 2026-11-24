@@ -201,6 +201,25 @@
           "green": "Green",
           "purple": "Purple"
         },
+        "borders": {
+          "label": "Borders",
+          "top": "Top",
+          "right": "Right",
+          "bottom": "Bottom",
+          "left": "Left",
+          "all": "All borders",
+          "none": "No borders",
+          "thick": "Thick borders"
+        },
+        "layout": {
+          "width": "Table width",
+          "full": "Full width",
+          "percent": "{n}%",
+          "place": "Table position",
+          "start": "Left",
+          "center": "Centred",
+          "right": "Right"
+        },
         "toggleHeaderRow": "Header row",
         "toggleHeaderColumn": "Header column",
         "toggleHeaderCell": "Header cell",

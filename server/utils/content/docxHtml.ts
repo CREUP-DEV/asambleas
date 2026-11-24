@@ -14,10 +14,19 @@
 import { nearestCellFill } from "../../../shared/constants/cellFills";
 import { ommlToLatex, parseOmmlTree } from "./omml";
 import {
+  formatCellBorders,
+  gridEdges,
   tableGrid,
+  type CellEdge,
   type GridCell,
   type TableGroup,
 } from "../../../shared/utils/content/tables";
+import {
+  CELL_SIDES,
+  TABLE_MIN_WIDTH,
+  type CellBorders,
+  type CellSide,
+} from "../../../shared/types/content";
 
 export interface PrepareImportedHtmlOptions {
   /** The title of the document the import is for. */
@@ -254,17 +263,8 @@ const isBlankCell = (cell: Element): boolean =>
 const isHeaderCell = (cell: Element): boolean =>
   tagOf(cell) === "th" || cell.getAttribute("data-header") === "true";
 
-/**
- * Splits one table at its spacer columns (see tableGaps). Returns whether it
- * did; a table that does not clearly hold tables side by side stays whole.
- */
-function splitTable(
-  document: Document,
-  table: Element,
-  marked: Set<Element>,
-): boolean {
-  const rows = tableRows(table);
-  if (rows.length < 2) return false;
+/** A table laid on its grid, each cell's element its one "block". */
+function elementGrid(rows: Element[]) {
   const group: TableGroup<Element> = {
     table: "table",
     rows: rows.map((row, r) => ({
@@ -281,7 +281,119 @@ function splitTable(
       })),
     })),
   };
-  const grid = tableGrid(group);
+  return tableGrid(group);
+}
+
+/** "top=thick;left=none" (see bordersOf and tableSpec in docx.ts) as a map. */
+function parseSpec(text: string | null): Map<string, string> {
+  const spec = new Map<string, string>();
+  for (const part of (text ?? "").split(";")) {
+    const [key, value] = part.split("=");
+    if (key && value) spec.set(key, value);
+  }
+  return spec;
+}
+
+const edgeOf = (value: string | undefined): CellEdge | undefined =>
+  value === "none" || value === "thin" || value === "thick" ? value : undefined;
+
+/**
+ * Tables' widths, places and rules, from the hidden runs the converter
+ * writes (`span.docx-table` in a table's first cell, `span.docx-borders` in
+ * a cell, see cellFills in docx.ts). A table narrower than the text gets
+ * `data-table-width` (percent) and `data-table-align`. Each cell's sides
+ * are worked out on the table's grid as Word draws them: an outer side
+ * from the table's outer rule, an inner one from its inside rules, either
+ * replaced by the cell's own; a side two cells share, as the stronger of
+ * the two. The sides not drawn with the thin rule go to `data-borders`.
+ * A table that sets no rules of its own (a style's, which the converter
+ * does not read) keeps the thin rule everywhere. Runs before tableGaps, so
+ * the tables split off keep the rules Word drew; tables nested in a cell
+ * are left alone (htmlElementToBlocks flattens them). Every marker goes.
+ */
+function tableBorders(document: Document): void {
+  const specs = new Map<Element, Map<string, string>>();
+  for (const span of Array.from(document.querySelectorAll("span.docx-table"))) {
+    const table = span.closest("table");
+    const spec = parseSpec(span.textContent);
+    span.remove();
+    if (table && !specs.has(table)) specs.set(table, spec);
+  }
+  const own = new Map<Element, Map<string, string>>();
+  for (const span of Array.from(
+    document.querySelectorAll("span.docx-borders"),
+  )) {
+    const cell = span.closest("td, th");
+    const spec = parseSpec(span.textContent);
+    span.remove();
+    if (cell) own.set(cell, spec);
+  }
+  const tables = new Set(specs.keys());
+  for (const cell of own.keys()) {
+    const table = cell.closest("table");
+    if (table) tables.add(table);
+  }
+  for (const table of tables) {
+    if (table.parentElement?.closest("td, th")) continue;
+    const spec = specs.get(table) ?? new Map<string, string>();
+    const width = Number(spec.get("w"));
+    if (Number.isInteger(width) && width >= TABLE_MIN_WIDTH && width < 100) {
+      table.setAttribute("data-table-width", String(width));
+      const align = spec.get("a");
+      if (align === "center" || align === "right") {
+        table.setAttribute("data-table-align", align);
+      }
+    }
+    const rows = tableRows(table);
+    const grid = elementGrid(rows);
+    const declared =
+      CELL_SIDES.some((side) => spec.has(side)) ||
+      spec.has("insideH") ||
+      spec.has("insideV") ||
+      grid.rows.some((row) => row.some((cell) => own.has(cell.blocks[0]!)));
+    if (!declared) continue;
+    grid.rows.forEach((row, r) => {
+      for (const cell of row) {
+        const inner: Record<CellSide, string> = {
+          top: r === 0 ? "top" : "insideH",
+          bottom: r + cell.rowspan >= grid.rows.length ? "bottom" : "insideH",
+          left: cell.column === 0 ? "left" : "insideV",
+          right:
+            cell.column + cell.colspan >= grid.columns ? "right" : "insideV",
+        };
+        const mine = own.get(cell.blocks[0]!);
+        const borders: CellBorders = {};
+        for (const side of CELL_SIDES) {
+          const edge =
+            edgeOf(mine?.get(side)) ?? edgeOf(spec.get(inner[side])) ?? "thin";
+          if (edge !== "thin") borders[side] = edge;
+        }
+        cell.cell.borders = borders;
+      }
+    });
+    for (const [cell, edges] of gridEdges(grid)) {
+      const borders: CellBorders = {};
+      for (const side of CELL_SIDES) {
+        if (edges[side] !== "thin") borders[side] = edges[side];
+      }
+      const value = formatCellBorders(borders);
+      if (value) cell.blocks[0]!.setAttribute("data-borders", value);
+    }
+  }
+}
+
+/**
+ * Splits one table at its spacer columns (see tableGaps). Returns whether it
+ * did; a table that does not clearly hold tables side by side stays whole.
+ */
+function splitTable(
+  document: Document,
+  table: Element,
+  marked: Set<Element>,
+): boolean {
+  const rows = tableRows(table);
+  if (rows.length < 2) return false;
+  const grid = elementGrid(rows);
   const elementOf = (cell: GridCell<Element>) => cell.blocks[0]!;
   const blank = new Map<Element, boolean>();
   const isBlank = (cell: GridCell<Element>) => {
@@ -479,6 +591,36 @@ function liftImages(document: Document): void {
   }
 }
 
+/**
+ * Blank paragraphs (the converter keeps them, `ignoreEmptyParagraphs`): the
+ * room Word documents leave with blank lines, a signature's above all, stays
+ * as empty paragraphs (`data-blank`, which htmlElementToBlocks keeps). Only
+ * those among the text's own paragraphs, never at its start or end: one in
+ * a table cell, a list, a quote or a note goes, as before.
+ */
+function blankParagraphs(document: Document): void {
+  const body = document.body;
+  if (!body) return;
+  const isBlank = (element: Element) =>
+    tagOf(element) === "p" &&
+    !(element.textContent ?? "").trim() &&
+    !element.querySelector("img, [data-formula]");
+  for (const paragraph of Array.from(document.querySelectorAll("p"))) {
+    if (!isBlank(paragraph)) continue;
+    if (paragraph.parentElement === body) {
+      paragraph.setAttribute("data-blank", "");
+    } else {
+      paragraph.remove();
+    }
+  }
+  while (body.firstElementChild?.hasAttribute("data-blank")) {
+    body.firstElementChild.remove();
+  }
+  while (body.lastElementChild?.hasAttribute("data-blank")) {
+    body.lastElementChild.remove();
+  }
+}
+
 /** Replaces `element` with its content. */
 function unwrap(element: Element): void {
   element.replaceWith(...Array.from(element.childNodes));
@@ -605,7 +747,9 @@ export function prepareImportedHtml(
   // After the alignment markers are gone: a centred equation is alone.
   formulas(document, options.onFormulaDropped);
   liftImages(document);
+  blankParagraphs(document);
   cellFills(document);
+  tableBorders(document);
   if (tableGaps(document)) options.onTablesSplit?.();
   colourHeaderTables(document);
   linkUnderlines(document);

@@ -24,6 +24,11 @@ export type PdfFunctionSpec =
   /** Returns `value` whatever it is called with (table layouts). */
   | { kind: "constant"; value: string | number | boolean | null }
   /**
+   * Returns `values[i]` for the index it is called with, `fallback` past
+   * them (the width of a table's i-th rule).
+   */
+  | { kind: "byIndex"; values: number[]; fallback: number }
+  /**
    * A page's background, header or footer: `cover` on the first page when
    * `coverFirst`, `page` on the others, as fresh copies (pdfmake writes into
    * the nodes it gets). Page counts start after `firstPage` pages; a `text`
@@ -68,6 +73,8 @@ function materialize(spec: PdfFunctionSpec) {
   switch (spec.kind) {
     case "constant":
       return () => spec.value;
+    case "byIndex":
+      return (index: number) => spec.values[index] ?? spec.fallback;
     case "page":
       return (page: number, total: number) => {
         const template = spec.coverFirst && page === 1 ? spec.cover : spec.page;
@@ -197,6 +204,8 @@ function materialize(spec) {
   switch (spec.kind) {
     case "constant":
       return () => spec.value;
+    case "byIndex":
+      return (index) => spec.values[index] ?? spec.fallback;
     case "page":
       return (page, total) => {
         const template = spec.coverFirst && page === 1 ? spec.cover : spec.page;

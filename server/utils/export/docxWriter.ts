@@ -35,7 +35,13 @@ import {
 import { isSafeHref } from "../../../shared/utils/content/render";
 import { formulaRuns } from "../../../shared/utils/content/formula";
 import { formulaToDocx } from "./formulaDocx";
-import { groupTables, tableGrid } from "../../../shared/utils/content/tables";
+import {
+  gridEdges,
+  groupTables,
+  tableGrid,
+  tableLayoutOf,
+  type CellEdge,
+} from "../../../shared/utils/content/tables";
 import {
   CONTACT,
   LOGOS,
@@ -294,6 +300,14 @@ function blockParagraph(
 
 const TABLE_BORDER = { style: BorderStyle.SINGLE, size: 6, color: RED };
 
+/** A cell's side as Word draws it: hidden, the thin rule or a thick one. */
+function sideBorder(edge: CellEdge) {
+  if (edge === "none") {
+    return { style: BorderStyle.NONE, size: 0, color: "auto" };
+  }
+  return edge === "thick" ? { ...TABLE_BORDER, size: 12 } : TABLE_BORDER;
+}
+
 /** Body of the document: plain blocks, and tables as Word tables. */
 function bodyOf(
   blocks: Block[],
@@ -309,6 +323,12 @@ function bodyOf(
       continue;
     }
     const grid = tableGrid(run.table, (block) => block.text.trim() === "");
+    // A narrower table keeps its width and place; a table with sides of
+    // its own gives each cell all four, as the PDF draws them.
+    const place = tableLayoutOf(run.table);
+    const edges = grid.rows.some((row) => row.some((cell) => cell.cell.borders))
+      ? gridEdges(grid)
+      : null;
     // Word joins tables with nothing between them into one: an empty
     // paragraph keeps consecutive tables apart.
     if (children[children.length - 1] instanceof Table) {
@@ -316,7 +336,13 @@ function bodyOf(
     }
     children.push(
       new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
+        width: { size: place.width, type: WidthType.PERCENTAGE },
+        alignment:
+          place.align === "center"
+            ? AlignmentType.CENTER
+            : place.align === "right"
+              ? AlignmentType.RIGHT
+              : undefined,
         borders: {
           top: TABLE_BORDER,
           bottom: TABLE_BORDER,
@@ -342,7 +368,16 @@ function bodyOf(
                   : header
                     ? "FFFFFF"
                     : undefined;
+                const sides = edges?.get(cell);
                 return new TableCell({
+                  borders: sides
+                    ? {
+                        top: sideBorder(sides.top),
+                        right: sideBorder(sides.right),
+                        bottom: sideBorder(sides.bottom),
+                        left: sideBorder(sides.left),
+                      }
+                    : undefined,
                   columnSpan: cell.colspan > 1 ? cell.colspan : undefined,
                   rowSpan: cell.rowspan > 1 ? cell.rowspan : undefined,
                   shading: background

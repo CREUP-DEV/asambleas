@@ -2,8 +2,13 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { ContextMenuItem, EditorToolbarItem } from "@nuxt/ui";
 import type { ChainedCommands, Editor, JSONContent } from "@tiptap/core";
-import { LIST_MARKERS, IMAGE_URL_PREFIX } from "~~/shared/types/content";
-import type { Block, ListMarker } from "~~/shared/types/content";
+import {
+  CELL_SIDES,
+  LIST_MARKERS,
+  IMAGE_URL_PREFIX,
+  type Block,
+  type ListMarker,
+} from "~~/shared/types/content";
 import { formatListNumber } from "~~/shared/utils/content/lists";
 import {
   blocksToEditor,
@@ -37,6 +42,12 @@ import {
   cellFillOf,
   type CellFill,
 } from "~/utils/editor/cellFillExtension";
+import {
+  TableLayoutExtension,
+  cellSidesOf,
+  tableLayoutAt,
+} from "~/utils/editor/tableLayoutExtension";
+import type { CellEdge } from "~~/shared/utils/content/tables";
 import {
   CELL_FILLS,
   CELL_FILL_NAMES,
@@ -186,6 +197,7 @@ const extensions = [
   TableKit.configure({ table: { resizable: false, renderWrapper: true } }),
   TableIdsExtension,
   CellFillExtension,
+  TableLayoutExtension,
   BlockImageExtension,
   // Formulas, kept as their LaTeX source (formulaExtension.ts).
   FormulaBlockExtension,
@@ -207,7 +219,13 @@ const cellFill = ref<CellFill | "mixed" | null>(null);
 function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
   cellFill.value = cellFillOf(editor.value);
+  cellSides.value = cellSidesOf(editor.value);
+  tableLayout.value = tableLayoutAt(editor.value);
 }
+
+/** The sides of the cells at the cursor and the table's width and place. */
+const cellSides = ref<ReturnType<typeof cellSidesOf>>(null);
+const tableLayout = ref<ReturnType<typeof tableLayoutAt>>(null);
 
 /** The fills on offer: the palette's colours, then none. */
 const FILL_OPTIONS: CellFill[] = [...CELL_FILL_NAMES, "none"];
@@ -245,6 +263,122 @@ function cellFillItems(
     disabled: current === null,
     onSelect: () => apply(fill),
   }));
+}
+
+/** The widths a table may take from the menu, in percent of the text's. */
+const TABLE_WIDTHS = [100, 75, 66, 50, 33, 25];
+
+/**
+ * A table's sides, width and place, for the table menu and the right-click
+ * menu: each side of the cells at the cursor shown or hidden, all or none,
+ * thick rules, and the table's width and place. Checked as the cells and
+ * the table are; nothing outside a table.
+ */
+function tableLayoutItems(
+  sides: ReturnType<typeof cellSidesOf>,
+  layout: ReturnType<typeof tableLayoutAt>,
+  apply: (command: (chain: ChainedCommands) => ChainedCommands) => void,
+): ContextMenuItem[] {
+  const disabled = sides === null || layout === null;
+  const shown = (side: (typeof CELL_SIDES)[number]) =>
+    sides !== null && sides[side] !== "none" && sides[side] !== "mixed";
+  // Thick when every side shown is thick, and one is.
+  const visible = CELL_SIDES.filter(shown);
+  const thick =
+    visible.length > 0 && visible.every((side) => sides![side] === "thick");
+  const allTo = (edge: CellEdge) =>
+    Object.fromEntries(CELL_SIDES.map((side) => [side, edge]));
+  const widths = [...TABLE_WIDTHS];
+  if (layout && !widths.includes(layout.width)) widths.push(layout.width);
+  return [
+    {
+      label: t("common.editor.table.borders.label"),
+      icon: "i-lucide-square-dashed",
+      disabled,
+      children: [
+        CELL_SIDES.map((side) => ({
+          label: t(`common.editor.table.borders.${side}`),
+          type: "checkbox" as const,
+          checked: shown(side),
+          onSelect: (event: Event) => {
+            event.preventDefault();
+            apply((c) =>
+              c.setCellSides({
+                [side]: shown(side) ? "none" : thick ? "thick" : "thin",
+              }),
+            );
+          },
+        })),
+        [
+          {
+            label: t("common.editor.table.borders.all"),
+            onSelect: () =>
+              apply((c) => c.setCellSides(allTo(thick ? "thick" : "thin"))),
+          },
+          {
+            label: t("common.editor.table.borders.none"),
+            onSelect: () => apply((c) => c.setCellSides(allTo("none"))),
+          },
+        ],
+        [
+          {
+            label: t("common.editor.table.borders.thick"),
+            type: "checkbox" as const,
+            checked: thick,
+            disabled: visible.length === 0,
+            onSelect: (event: Event) => {
+              event.preventDefault();
+              apply((c) =>
+                c.setCellSides(
+                  Object.fromEntries(
+                    visible.map((side) => [side, thick ? "thin" : "thick"]),
+                  ),
+                ),
+              );
+            },
+          },
+        ],
+      ],
+    },
+    {
+      label: t("common.editor.table.layout.width"),
+      icon: "i-lucide-move-horizontal",
+      disabled,
+      children: widths.map((width) => ({
+        label:
+          width === 100
+            ? t("common.editor.table.layout.full")
+            : t("common.editor.table.layout.percent", { n: width }),
+        type: "checkbox" as const,
+        checked: layout?.width === width,
+        onSelect: () =>
+          apply((c) =>
+            c.setTableLayout({
+              width,
+              // A table made narrower is centred unless it has a place.
+              align: layout?.align ?? (width < 100 ? "center" : null),
+            }),
+          ),
+      })),
+    },
+    {
+      label: t("common.editor.table.layout.place"),
+      icon: "i-lucide-align-center-horizontal",
+      disabled: disabled || layout!.width >= 100,
+      children: (["start", "center", "right"] as const).map((place) => ({
+        label: t(`common.editor.table.layout.${place}`),
+        type: "checkbox" as const,
+        checked: (layout?.align ?? "start") === place,
+        onSelect: () =>
+          apply((c) =>
+            c.setTableLayout({
+              width: layout?.width ?? 100,
+              align: place === "start" ? null : place,
+            }),
+          ),
+      })),
+    },
+  ];
 }
 
 watch(
@@ -346,6 +480,10 @@ const tableMenu = computed(
                 ),
               ],
             ]),
+        // The sides, width and place, where the colour is offered too.
+        ...(offersFill.value && inTable.value
+          ? [tableLayoutItems(cellSides.value, tableLayout.value, runInTable)]
+          : []),
         [tableAction("deleteTable", "i-lucide-trash", (c) => c.deleteTable())],
       ],
     }) as EditorToolbarItem,
@@ -882,6 +1020,13 @@ function buildContextItems(): void {
                   c.splitCell(),
                 ),
               ],
+          offersFill.value
+            ? tableLayoutItems(
+                cellSidesOf(instance),
+                tableLayoutAt(instance),
+                run,
+              )
+            : [],
           [
             action(
               "deleteRow",

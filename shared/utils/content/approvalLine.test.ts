@@ -212,4 +212,22 @@ describe("fillApprovalLines", () => {
     ];
     expect(fillApprovalLines(late, null).blocks).toHaveLength(5);
   });
+
+  it("counts no blank line among the opening blocks", () => {
+    const spaced = [
+      p("1", "Título"),
+      p("b1", ""),
+      p("b2", ""),
+      p("b3", ""),
+      p("b4", ""),
+      p("2", "Aprobado por [MAYORÍA] en la 80.ª Asamblea General Ordinaria"),
+    ];
+    expect(fillApprovalLines(spaced, null).blocks.map((b) => b.id)).toEqual([
+      "1",
+      "b1",
+      "b2",
+      "b3",
+      "b4",
+    ]);
+  });
 });

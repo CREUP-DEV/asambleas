@@ -201,6 +201,25 @@
           "green": "Verde",
           "purple": "Morado"
         },
+        "borders": {
+          "label": "Bordes",
+          "top": "Arriba",
+          "right": "Derecha",
+          "bottom": "Abajo",
+          "left": "Izquierda",
+          "all": "Todos los bordes",
+          "none": "Sin bordes",
+          "thick": "Bordes gruesos"
+        },
+        "layout": {
+          "width": "Ancho de la tabla",
+          "full": "Todo el ancho",
+          "percent": "{n} %",
+          "place": "Posición de la tabla",
+          "start": "A la izquierda",
+          "center": "Centrada",
+          "right": "A la derecha"
+        },
         "toggleHeaderRow": "Fila de encabezado",
         "toggleHeaderColumn": "Columna de encabezado",
         "toggleHeaderCell": "Celda de encabezado",

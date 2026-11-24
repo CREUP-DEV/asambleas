@@ -20,6 +20,7 @@ import type {
 } from "~~/shared/types/api";
 import type { AmendmentInput, Block } from "~~/shared/types/content";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import { cellLayoutKey } from "~~/shared/utils/content/tables";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -317,6 +318,7 @@ function cellContent(cell: NonNullable<Block["cell"]>): unknown[] {
     cellFillOf(cell) ?? null,
     cell.colspan ?? 1,
     cell.rowspan ?? 1,
+    ...cellLayoutKey(cell),
   ];
 }
 

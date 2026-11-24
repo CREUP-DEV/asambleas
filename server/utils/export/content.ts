@@ -30,8 +30,10 @@ import {
 } from "../../../shared/constants/cellFills";
 import { markerOf } from "../../../shared/utils/content/lists";
 import {
+  gridEdges,
   groupTables,
   tableGrid,
+  tableLayoutOf,
   type GridCell,
   type TableGrid,
   type TableGroup,
@@ -40,7 +42,7 @@ import { PAGE_WIDTH, TEMPLATE_MARGINS } from "./brand";
 import { isSafeHref } from "../../../shared/utils/content/render";
 import { formulaRuns } from "../../../shared/utils/content/formula";
 import { formulaSvg } from "./formulaSvg";
-import { constantLayout } from "./pdfSerial";
+import { constantLayout, pdfFunction } from "./pdfSerial";
 import { PAGE_TAG_PREFIX, type PageTag } from "./pageMap";
 
 /**
@@ -110,6 +112,8 @@ export const CONTENT_STYLES: Record<string, Style> = {
 /** A table cell's side padding and its rules, in points. */
 const TABLE_CELL_PADDING = 5;
 const TABLE_RULE = 0.75;
+/** A thick rule (a cell's side drawn "thick", a signature's line). */
+const TABLE_THICK_RULE = 1.5;
 
 // Layouts are constants made with constantLayout, so that a definition
 // crosses into the render process (pdfSerial.ts).
@@ -699,23 +703,57 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
  * palette (cellLook), and spans laid out as a browser
  * does (tableGrid). pdfmake wants every row full, so spanned positions get
  * the empty placeholders it expects, and rows an amendment left short are
- * filled with blank cells.
+ * filled with blank cells. A table narrower than the text shares its own
+ * width among its columns and sits where it says (tableLayoutOf). Its cells'
+ * sides (BlockCell.borders) are drawn as the web view draws them
+ * (gridEdges): a hidden side is left out, and a thick one makes the whole
+ * rule it lies on thick, since pdfmake gives each rule one width.
  */
 function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
   const grid = tableGrid(table, (item) => !plainText(item.inlines).trim());
+  const place = tableLayoutOf(table);
+  const width = (TABLE_WIDTH * place.width) / 100;
+  const offset =
+    place.align === "center"
+      ? (TABLE_WIDTH - width) / 2
+      : place.align === "right"
+        ? TABLE_WIDTH - width
+        : 0;
+  // Only a table with sides of its own leaves the template's rules.
+  const edges = grid.rows.some((row) => row.some((cell) => cell.cell.borders))
+    ? gridEdges(grid)
+    : null;
+  const thickRows = new Set<number>();
+  const thickColumns = new Set<number>();
   // Wide tables (a balance sheet, landscape in Word) take a smaller type so
   // their figures and words fit their columns.
   const fontSize = tableFontSize(grid.columns);
   const body: TableCell[][] = grid.rows.map(() =>
     Array.from({ length: grid.columns }, () => ({ text: "" }) as TableCell),
   );
-  // Positions a spanning cell covers, which pdfmake wants left empty.
-  const covered = new Set<string>();
+  // Positions a spanning cell covers, which pdfmake wants left empty but
+  // with the sides of the cell that covers them.
+  const covered = new Map<string, boolean[] | undefined>();
   grid.rows.forEach((row, r) => {
     for (const cell of row) {
+      const sides = edges?.get(cell);
+      // pdfmake's order: left, top, right, bottom.
+      const border = sides
+        ? [
+            sides.left !== "none",
+            sides.top !== "none",
+            sides.right !== "none",
+            sides.bottom !== "none",
+          ]
+        : undefined;
+      if (sides?.top === "thick") thickRows.add(r);
+      if (sides?.bottom === "thick") thickRows.add(r + cell.rowspan);
+      if (sides?.left === "thick") thickColumns.add(cell.column);
+      if (sides?.right === "thick")
+        thickColumns.add(cell.column + cell.colspan);
       for (let dr = 0; dr < cell.rowspan; dr += 1) {
         for (let dc = 0; dc < cell.colspan; dc += 1) {
-          if (dr || dc) covered.add(`${r + dr}:${cell.column + dc}`);
+          if (dr || dc) covered.set(`${r + dr}:${cell.column + dc}`, border);
         }
       }
       const look = cellLook(cell.cell);
@@ -747,24 +785,52 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         stack,
         ...(cell.colspan > 1 ? { colSpan: cell.colspan } : {}),
         ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
+        ...(border ? { border } : {}),
         ...look,
       } as TableCell;
     }
   });
-  for (const key of covered) {
+  for (const [key, border] of covered) {
     const [r, c] = key.split(":").map(Number) as [number, number];
-    if (body[r]) body[r]![c] = {} as TableCell;
+    if (body[r]) body[r]![c] = (border ? { border } : {}) as TableCell;
   }
+  const rowRules = Array.from({ length: grid.rows.length + 1 }, (_, i) =>
+    thickRows.has(i) ? TABLE_THICK_RULE : TABLE_RULE,
+  );
+  const columnRules = Array.from({ length: grid.columns + 1 }, (_, i) =>
+    thickColumns.has(i) ? TABLE_THICK_RULE : TABLE_RULE,
+  );
+  const layout: CustomTableLayout =
+    thickRows.size || thickColumns.size
+      ? {
+          ...TEMPLATE_TABLE_LAYOUT,
+          hLineWidth: pdfFunction({
+            kind: "byIndex",
+            values: rowRules,
+            fallback: TABLE_RULE,
+          }),
+          vLineWidth: pdfFunction({
+            kind: "byIndex",
+            values: columnRules,
+            fallback: TABLE_RULE,
+          }),
+        }
+      : TEMPLATE_TABLE_LAYOUT;
   return {
     table: {
       headerRows: grid.headerRows,
       // A row stays on one page, as in the template.
       dontBreakRows: true,
-      widths: columnWidths(grid, fontSize),
+      widths: columnWidths(
+        grid,
+        fontSize,
+        width,
+        columnRules.reduce((sum, rule) => sum + rule, 0),
+      ),
       body,
     },
-    layout: TEMPLATE_TABLE_LAYOUT,
-    margin: [0, 0, 0, 12],
+    layout,
+    margin: [offset, 0, 0, 12],
   };
 }
 
@@ -861,6 +927,8 @@ const BOLD_CHAR_WIDTH = 6.8;
 function columnWidths(
   grid: TableGrid<Item>,
   fontSize = BODY_FONT_SIZE,
+  tableWidth = TABLE_WIDTH,
+  rules = (grid.columns + 1) * TABLE_RULE,
 ): number[] {
   const scale = fontSize / BODY_FONT_SIZE;
   const text = (cell: GridCell<Item>) =>
@@ -881,10 +949,7 @@ function columnWidths(
   const weights = longest.map((length, column) =>
     Math.max(Math.min(length, 40), word[column]!, 4),
   );
-  const available =
-    TABLE_WIDTH -
-    grid.columns * 2 * TABLE_CELL_PADDING -
-    (grid.columns + 1) * TABLE_RULE;
+  const available = tableWidth - grid.columns * 2 * TABLE_CELL_PADDING - rules;
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   const widths = weights.map((weight) => (available * weight) / total);
   const minimum = word.map((length) =>

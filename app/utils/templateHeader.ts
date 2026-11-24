@@ -101,18 +101,26 @@ export function expandsTitle(text: string, title: string): boolean {
  * header: lines that repeat the title (the first one may also spell it out
  * in full) or are the approval line, before the first line that is neither.
  * Only plain paragraphs and headings count, never list items, quotes or
- * table cells.
+ * table cells. Blank lines among them and right after them (the import
+ * keeps Word's) go with them and count toward no limit.
  */
 export function templateHeaderLength(blocks: Block[], title: string): number {
   let count = 0;
-  for (const [index, block] of blocks.slice(0, MAX_HEADER_BLOCKS).entries()) {
+  let lines = 0;
+  for (const [index, block] of blocks.entries()) {
+    if (!block.cell && block.type === "paragraph" && block.text === "") {
+      if (lines > 0) count = index + 1;
+      continue;
+    }
+    if (lines >= MAX_HEADER_BLOCKS) break;
     if (block.cell || (block.type !== "paragraph" && block.type !== "heading"))
       break;
     const isTitle =
       repeatsTitle(block.text, title) ||
-      (index === 0 && expandsTitle(block.text, title));
+      (lines === 0 && expandsTitle(block.text, title));
     if (!isTitle && !isApprovalLine(block.text)) break;
-    count++;
+    lines++;
+    count = index + 1;
   }
   return count;
 }

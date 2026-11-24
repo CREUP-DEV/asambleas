@@ -2,6 +2,7 @@
 import type { DocumentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import { cellLayoutKey } from "~~/shared/utils/content/tables";
 import { formatTime } from "~/utils/format";
 
 /**
@@ -76,6 +77,7 @@ function canonical(blocks: Block[]): string {
             cellFillOf(block.cell) ?? null,
             block.cell.colspan ?? 1,
             block.cell.rowspan ?? 1,
+            ...cellLayoutKey(block.cell),
           ]
         : null,
       block.align ?? null,

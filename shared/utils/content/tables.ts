@@ -1,4 +1,14 @@
-import type { Block, BlockCell } from "../../types/content";
+import {
+  CELL_BORDER_STYLES,
+  CELL_SIDES,
+  TABLE_MIN_WIDTH,
+  type Block,
+  type BlockAlign,
+  type BlockCell,
+  type CellBorderStyle,
+  type CellBorders,
+  type CellSide,
+} from "../../types/content";
 
 /**
  * Tables in a flat list of blocks (see BlockCell): every renderer groups
@@ -124,4 +134,189 @@ export function tableGrid<T>(
     headerRows += 1;
   }
   return { columns, rows, headerRows };
+}
+
+/** How wide a table is and where it sits (BlockCell.tableWidth). */
+export interface TableLayout {
+  /** Percent of the text's width; 100 when the table takes all of it. */
+  width: number;
+  /** Where a narrower table sits; at the start when absent. */
+  align?: BlockAlign;
+}
+
+/** A table's width and place, from its first cell (every cell has them). */
+export function tableLayoutOf<T>(table: TableGroup<T>): TableLayout {
+  const first = table.rows[0]?.cells[0]?.cell;
+  const width = first?.tableWidth;
+  if (!width || width >= 100) return { width: 100 };
+  return first.tableAlign ? { width, align: first.tableAlign } : { width };
+}
+
+/** How a side is drawn once its neighbour is counted. */
+export type CellEdge = "none" | "thin" | "thick";
+
+const EDGE_WEIGHT: Record<CellEdge, number> = { none: 0, thin: 1, thick: 2 };
+
+/** A cell's own side, before its neighbour is counted. */
+export function cellSide(cell: BlockCell, side: CellSide): CellEdge {
+  return cell.borders?.[side] ?? "thin";
+}
+
+/** The stronger of two ways to draw a side (thick, thin, none). */
+export function strongerEdge(a: CellEdge, b: CellEdge): CellEdge {
+  return EDGE_WEIGHT[a] >= EDGE_WEIGHT[b] ? a : b;
+}
+
+const OPPOSITE: Record<CellSide, CellSide> = {
+  top: "bottom",
+  right: "left",
+  bottom: "top",
+  left: "right",
+};
+
+/**
+ * How each side of each cell of a grid is drawn: a side shared with other
+ * cells as the strongest of its own and theirs (BlockCell.borders), an
+ * outer side as the cell says. For renderers that draw each cell's sides
+ * themselves (the PDF); a browser's collapsed borders do the same.
+ */
+export function gridEdges<T>(
+  grid: TableGrid<T>,
+): Map<GridCell<T>, Record<CellSide, CellEdge>> {
+  const height = grid.rows.length;
+  const at: (GridCell<T> | undefined)[][] = Array.from(
+    { length: height },
+    () => new Array<GridCell<T> | undefined>(grid.columns),
+  );
+  grid.rows.forEach((row, r) => {
+    for (const cell of row) {
+      for (let dr = 0; dr < cell.rowspan; dr += 1) {
+        for (let dc = 0; dc < cell.colspan; dc += 1) {
+          const line = at[r + dr];
+          if (line) line[cell.column + dc] = cell;
+        }
+      }
+    }
+  });
+  const edges = new Map<GridCell<T>, Record<CellSide, CellEdge>>();
+  grid.rows.forEach((row, r) => {
+    for (const cell of row) {
+      const neighbours: Record<CellSide, (GridCell<T> | undefined)[]> = {
+        top: [],
+        right: [],
+        bottom: [],
+        left: [],
+      };
+      for (let dc = 0; dc < cell.colspan; dc += 1) {
+        neighbours.top.push(at[r - 1]?.[cell.column + dc]);
+        neighbours.bottom.push(at[r + cell.rowspan]?.[cell.column + dc]);
+      }
+      for (let dr = 0; dr < cell.rowspan; dr += 1) {
+        neighbours.left.push(at[r + dr]?.[cell.column - 1]);
+        neighbours.right.push(at[r + dr]?.[cell.column + cell.colspan]);
+      }
+      const own = {} as Record<CellSide, CellEdge>;
+      for (const side of CELL_SIDES) {
+        let edge = cellSide(cell.cell, side);
+        for (const other of neighbours[side]) {
+          if (other && other !== cell) {
+            edge = strongerEdge(edge, cellSide(other.cell, OPPOSITE[side]));
+          }
+        }
+        own[side] = edge;
+      }
+      edges.set(cell, own);
+    }
+  });
+  return edges;
+}
+
+/**
+ * What a cell looks like besides its place and kind, for the comparisons
+ * that tell whether a text changed: its sides and its table's width and
+ * place, absent ones as their defaults.
+ */
+export function cellLayoutKey(cell: BlockCell): unknown[] {
+  return [
+    ...CELL_SIDES.map((side) => cell.borders?.[side] ?? null),
+    cell.tableWidth ?? 100,
+    (cell.tableWidth ?? 100) < 100 ? (cell.tableAlign ?? null) : null,
+  ];
+}
+
+/** A cell's sides as "top=thick;left=none" (`data-borders`), "" for none. */
+export function formatCellBorders(borders: CellBorders | undefined): string {
+  if (!borders) return "";
+  return CELL_SIDES.filter((side) => borders[side])
+    .map((side) => `${side}=${borders[side]}`)
+    .join(";");
+}
+
+/** `data-borders` read back: the sides it sets, undefined for none. */
+export function parseCellBorders(
+  value: string | null | undefined,
+): CellBorders | undefined {
+  const borders: CellBorders = {};
+  for (const part of (value ?? "").split(";")) {
+    const [side, style] = part.split("=");
+    if (
+      (CELL_SIDES as readonly string[]).includes(side ?? "") &&
+      (CELL_BORDER_STYLES as readonly string[]).includes(style ?? "")
+    ) {
+      borders[side as CellSide] = style as CellBorderStyle;
+    }
+  }
+  return Object.keys(borders).length > 0 ? borders : undefined;
+}
+
+/**
+ * A table's width and place as attributes give them (`data-table-width`,
+ * `data-table-align`, or the editor's table node): the cell fields to
+ * write, none for a table as wide as the text.
+ */
+export function tableLayoutFields(
+  width: unknown,
+  align: unknown,
+): Pick<BlockCell, "tableWidth" | "tableAlign"> {
+  const n = typeof width === "string" ? Number(width) : width;
+  if (
+    typeof n !== "number" ||
+    !Number.isInteger(n) ||
+    n < TABLE_MIN_WIDTH ||
+    n >= 100
+  ) {
+    return {};
+  }
+  return align === "center" || align === "right"
+    ? { tableWidth: n, tableAlign: align }
+    : { tableWidth: n };
+}
+
+/**
+ * A cell's sides as the web view and the editor name them for main.css
+ * (`data-cx-borders`, "top-thick right-none"), "" for none.
+ */
+export function cellBorderTokens(borders: CellBorders | undefined): string {
+  if (!borders) return "";
+  return CELL_SIDES.filter((side) => borders[side])
+    .map((side) => `${side}-${borders[side]}`)
+    .join(" ");
+}
+
+/**
+ * A narrower table's width and place as the web view and the editor write
+ * them for main.css: its width in a custom property, its place in
+ * `data-cx-align`. Nothing for a table as wide as the text.
+ */
+export function tableLayoutAttributes(layout: TableLayout): {
+  style?: string;
+  "data-cx-width"?: string;
+  "data-cx-align"?: string;
+} {
+  if (layout.width >= 100) return {};
+  return {
+    style: `--cx-table-width: ${Math.trunc(layout.width)}%`,
+    "data-cx-width": "",
+    ...(layout.align ? { "data-cx-align": layout.align } : {}),
+  };
 }

@@ -86,6 +86,25 @@ describe("templateHeaderLength", () => {
     expect(templateHeaderLength(blocks, title)).toBe(2);
   });
 
+  it("takes the blank lines among and right after the header", () => {
+    const blocks = [
+      paragraph("a", title),
+      paragraph("b1", ""),
+      paragraph(
+        "b",
+        "Aprobada en la [NUM] Asamblea General Ordinaria el XX/XX/XXXX",
+      ),
+      paragraph("b2", ""),
+      paragraph("b3", ""),
+      paragraph("c", "Exposición de motivos"),
+    ];
+    expect(templateHeaderLength(blocks, title)).toBe(5);
+    // Blank lines alone are no header.
+    expect(
+      templateHeaderLength([paragraph("x", ""), ...blocks.slice(5)], title),
+    ).toBe(0);
+  });
+
   it("takes a first line that spells the title out in full", () => {
     const blocks = [
       paragraph(

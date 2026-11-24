@@ -310,6 +310,10 @@ const STYLE_MAP = [
   // An unfilled cell with no top or bottom rule, for prepareImportedHtml
   // (see cellFills and tableGaps).
   "r[style-name='docx-gap'] => span.docx-gap",
+  // A cell's own borders, and a table's width, place and borders, for
+  // prepareImportedHtml (see cellFills and tableBorders).
+  "r[style-name='docx-borders'] => span.docx-borders",
+  "r[style-name='docx-table'] => span.docx-table",
   // The entries of a table of contents Word wrote without a content
   // control: the platform builds its own from the headings.
   "p[style-name='toc 1'] => !",
@@ -694,8 +698,14 @@ function cellFills(nodes, documents) {
   const first = nodes.Element.prototype.first;
   const makeCell = documents.TableCell;
   if (typeof makeCell !== "function") throw new Error("table cells not found");
+  const makeTable = documents.Table;
+  if (typeof makeTable !== "function") throw new Error("tables not found");
   let fill = null;
   let gap = false;
+  let sides = null;
+  // The tables being read, innermost last: a table's properties are read
+  // before its cells and the table is made after them.
+  const tables = [];
   nodes.Element.prototype.first = function (name) {
     if (name === "w:sdtContent" && this.name === "w:sdt" && isContents(this)) {
       return undefined;
@@ -704,26 +714,148 @@ function cellFills(nodes, documents) {
     if (name === "w:tcPr" && this.name === "w:tc") {
       fill = fillOf(found);
       gap = !fill && hidesRules(found);
+      sides = bordersOf(found && found.first("w:tcBorders"), CELL_SIDES);
+    }
+    if (name === "w:tblPr" && this.name === "w:tbl") {
+      tables.push(tableSpec(this, found));
     }
     return found;
   };
   documents.TableCell = function (children, options) {
-    const marked = fill ? { text: fill, style: "docx-cell" }
-      : gap ? { text: "gap", style: "docx-gap" } : null;
+    const marked = [];
+    if (fill) marked.push({ text: fill, style: "docx-cell" });
+    else if (gap) marked.push({ text: "gap", style: "docx-gap" });
+    if (sides) marked.push({ text: sides, style: "docx-borders" });
     fill = null;
     gap = false;
-    const index = marked
+    sides = null;
+    return makeCell(withRuns(children, marked), options);
+  };
+  documents.Table = function (children, options) {
+    const spec = tables.pop();
+    const row = children[0];
+    const cell = row && row.children && row.children[0];
+    if (!spec || !cell || !cell.children) return makeTable(children, options);
+    const withCell = Object.assign({}, cell, {
+      children: withRuns(cell.children, [{ text: spec, style: "docx-table" }]),
+    });
+    const withRow = Object.assign({}, row, {
+      children: [withCell].concat(row.children.slice(1)),
+    });
+    return makeTable([withRow].concat(children.slice(1)), options);
+  };
+  // Hidden runs put at the start of the first paragraph among children.
+  function withRuns(children, marked) {
+    const index = marked.length
       ? children.findIndex((child) => child.type === "paragraph")
       : -1;
-    if (index < 0) return makeCell(children, options);
-    const run = documents.Run([documents.Text(marked.text)], { styleName: marked.style });
+    if (index < 0) return children;
+    const runs = marked.map((mark) =>
+      documents.Run([documents.Text(mark.text)], { styleName: mark.style }));
     const paragraph = children[index];
     const withRun = children.slice();
     withRun[index] = Object.assign({}, paragraph, {
-      children: [run].concat(paragraph.children),
+      children: runs.concat(paragraph.children),
     });
-    return makeCell(withRun, options);
+    return withRun;
+  }
+}
+// The width the text takes on the page, in twentieths of a point: the
+// page's less its side margins, from the body's last section; A4 with
+// margins of 3 cm when the document says nothing.
+let textWidth = 8504;
+function readTextWidth(reader) {
+  const read = reader.readXmlFromZipFile;
+  reader.readXmlFromZipFile = function (file, part) {
+    return read.call(this, file, part).then((document) => {
+      const body = document && document.first && document.first("w:body");
+      const sections = body
+        ? body.children.filter((child) => child.name === "w:sectPr")
+        : [];
+      const section = sections[sections.length - 1];
+      if (section) {
+        const size = section.first("w:pgSz");
+        const margins = section.first("w:pgMar");
+        const page = twips(size && size.attributes["w:w"]);
+        const left = twips(margins && margins.attributes["w:left"]) || 0;
+        const right = twips(margins && margins.attributes["w:right"]) || 0;
+        if (page && page - left - right > 1000) textWidth = page - left - right;
+      }
+      return document;
+    });
   };
+}
+function twips(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+const CELL_SIDES = [["top", "w:top"], ["left", "w:left", "w:start"],
+  ["bottom", "w:bottom"], ["right", "w:right", "w:end"]];
+const TABLE_SIDES = CELL_SIDES.concat([["insideH", "w:insideH"],
+  ["insideV", "w:insideV"]]);
+// The sides a borders element sets, as "top=thick;left=none": a rule
+// hidden (none, or as white as no fill), thick (from 1.5 pt) or thin.
+// Sides it leaves out are not written; null when it sets none.
+function bordersOf(borders, sides) {
+  if (!borders) return null;
+  const out = [];
+  for (const [side, ...names] of sides) {
+    let border = null;
+    for (const name of names) border = border || borders.first(name);
+    if (!border) continue;
+    const size = parseFloat(border.attributes["w:sz"]);
+    const style = hiddenBorder(border) ? "none"
+      : Number.isFinite(size) && size >= 12 ? "thick" : "thin";
+    out.push(side + "=" + style);
+  }
+  return out.length ? out.join(";") : null;
+}
+// A table's width in percent of the text's and its place, and the borders
+// it sets, as "w=48;a=center;top=thin;...". Its width as Word stores it
+// (twentieths of a point, fiftieths of a percent or a percentage), or else
+// the sum of its columns; its place from its alignment or, without one,
+// from its indent: centred when the space left and right is about the same.
+// A table about as wide as the text says no width.
+function tableSpec(table, properties) {
+  const parts = [];
+  const width = properties && properties.first("w:tblW");
+  const type = width && width.attributes["w:type"];
+  const value = width && width.attributes["w:w"];
+  let percent = null;
+  if (type === "pct" && typeof value === "string") {
+    percent = /%$/.test(value) ? parseFloat(value) : parseFloat(value) / 50;
+  } else {
+    let twentieths = type === "dxa" ? twips(value) : null;
+    if (!twentieths) {
+      const grid = table.first("w:tblGrid");
+      const columns = grid
+        ? grid.children.filter((child) => child.name === "w:gridCol")
+        : [];
+      const sum = columns.reduce(
+        (total, column) => total + (twips(column.attributes["w:w"]) || 0), 0);
+      twentieths = sum || null;
+    }
+    if (twentieths) percent = (twentieths / textWidth) * 100;
+  }
+  if (Number.isFinite(percent) && percent > 0 && percent < 95) {
+    percent = Math.max(10, Math.round(percent));
+    parts.push("w=" + percent);
+    const jc = properties && properties.first("w:jc");
+    const align = jc && jc.attributes["w:val"];
+    let place = align === "center" ? "center"
+      : align === "right" || align === "end" ? "right" : null;
+    if (!place) {
+      const indent = properties && properties.first("w:tblInd");
+      const before = ((indent && twips(indent.attributes["w:w"])) || 0) / textWidth * 100;
+      const after = 100 - percent - before;
+      if (before > 5 && Math.abs(before - after) <= 10) place = "center";
+      else if (before > 5 && after <= 5) place = "right";
+    }
+    if (place) parts.push("a=" + place);
+  }
+  const sides = bordersOf(properties && properties.first("w:tblBorders"), TABLE_SIDES);
+  if (sides) parts.push(sides);
+  return parts.length ? parts.join(";") : null;
 }
 function isContents(sdt) {
   const properties = sdt.first("w:sdtPr");
@@ -819,6 +951,7 @@ process.stdin.on("end", () => {
       require(path.join(lib, "docx", "office-xml-reader.js")),
       require(path.join(lib, "xml", "nodes.js")),
     );
+    readTextWidth(require(path.join(lib, "docx", "office-xml-reader.js")));
     mammoth = require(entry);
     wrapNumberingReader(require(path.join(lib, "docx", "numbering-xml.js")));
     const nodes = require(path.join(lib, "xml", "nodes.js"));
@@ -865,6 +998,9 @@ process.stdin.on("end", () => {
           styleMap: options.styleMap,
           externalFileAccess: false,
           includeEmbeddedStyleMap: false,
+          // Blank lines stay: Word documents leave room with them, a
+          // signature's above all (blankParagraphs in docxHtml.ts).
+          ignoreEmptyParagraphs: false,
           transformDocument: (document) => capitals(aligned(labels(document))),
           convertImage: mammoth.images.imgElement(async (image) => {
             const index = await keepImage(image);

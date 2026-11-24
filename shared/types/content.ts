@@ -72,7 +72,36 @@ export interface BlockCell {
   /** Columns and rows the cell spans, when more than one. */
   colspan?: number;
   rowspan?: number;
+  /**
+   * The sides of the cell drawn otherwise than with the thin rule every
+   * side has by default: hidden ("none") or thicker ("thick"). A side two
+   * cells share is drawn as the stronger of the two (thick, then thin, then
+   * none), so hiding a rule takes hiding it on both.
+   */
+  borders?: CellBorders;
+  /**
+   * The table's width, in percent of the text's, when narrower than it
+   * (TABLE_MIN_WIDTH to 99), and where it then sits: at the start, centred
+   * or at the end. Every cell of a table carries the same, and readers take
+   * the first's (tableLayoutOf).
+   */
+  tableWidth?: number;
+  tableAlign?: BlockAlign;
 }
+
+/** The sides of a table cell. */
+export const CELL_SIDES = ["top", "right", "bottom", "left"] as const;
+export type CellSide = (typeof CELL_SIDES)[number];
+
+/** How a cell's side may be drawn besides the default thin rule. */
+export const CELL_BORDER_STYLES = ["none", "thick"] as const;
+export type CellBorderStyle = (typeof CELL_BORDER_STYLES)[number];
+
+/** A cell's sides that are not drawn with the thin rule. */
+export type CellBorders = Partial<Record<CellSide, CellBorderStyle>>;
+
+/** The narrowest a table may be, in percent of the text's width. */
+export const TABLE_MIN_WIDTH = 10;
 
 /**
  * An image block's picture: an image stored for the document (`asset`, the

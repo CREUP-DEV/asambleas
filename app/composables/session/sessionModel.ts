@@ -32,6 +32,7 @@ import {
   compareAmendmentCodes,
 } from "~/composables/amendment/workspace";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import { cellLayoutKey } from "~~/shared/utils/content/tables";
 import {
   answerableAfterDecision,
   rejectedByAnswer,
@@ -2100,6 +2101,7 @@ function cellContent(cell: NonNullable<Block["cell"]>): unknown[] {
     cellFillOf(cell) ?? null,
     cell.colspan ?? 1,
     cell.rowspan ?? 1,
+    ...cellLayoutKey(cell),
   ];
 }
 

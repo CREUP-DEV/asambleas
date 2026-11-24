@@ -13,7 +13,13 @@ import { cellFillOf } from "../../constants/cellFills";
 import { withAutolinks } from "./autolink";
 import { renderFormula } from "./formula";
 import { markerOf } from "./lists";
-import { groupTables, type TableGroup } from "./tables";
+import {
+  cellBorderTokens,
+  groupTables,
+  tableLayoutAttributes,
+  tableLayoutOf,
+  type TableGroup,
+} from "./tables";
 
 /**
  * HTML rendering of structured content. Text is always escaped and links are
@@ -198,7 +204,16 @@ function tableHtml(
   table: TableGroup<RenderableBlock>,
   headings: boolean,
 ): string {
-  let html = '<div class="cx-table-wrap"><table class="cx-table"><tbody>';
+  // Its width and place (main.css reads them), escaped as any attribute.
+  const layout = Object.entries(tableLayoutAttributes(tableLayoutOf(table)))
+    .map(([name, value]) => ` ${name}="${escapeHtml(value)}"`)
+    .join("");
+  // A table of one cell is a box (a signature's line), not data.
+  const box =
+    table.rows.length === 1 && table.rows[0]!.cells.length === 1
+      ? ' role="presentation"'
+      : "";
+  let html = `<div class="cx-table-wrap"><table class="cx-table"${layout}${box}><tbody>`;
   for (const row of table.rows) {
     html += "<tr>";
     for (const cell of row.cells) {
@@ -206,6 +221,9 @@ function tableHtml(
       // The fill by its name in the palette (main.css colours the class).
       const fill = cellFillOf(cell.cell);
       let attrs = fill ? ` class="cx-fill-${fill}"` : "";
+      // Its sides, from a fixed set of names (main.css draws them).
+      const borders = cellBorderTokens(cell.cell.borders);
+      if (borders) attrs += ` data-cx-borders="${borders}"`;
       if (cell.cell.colspan)
         attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
       if (cell.cell.rowspan)

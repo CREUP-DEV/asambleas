@@ -606,6 +606,89 @@ html {
     vertical-align: top;
   }
 
+  /*
+   * A table narrower than the text (`tableWidth`), at the start, centred or
+   * at the end (`tableAlign`): the view and the editor write its width in
+   * `--cx-table-width` and its place in `data-cx-align`. A signature's line
+   * is one, a centred box of half the text's width.
+   */
+  :is(.rich-text, .content-editor) table[data-cx-width] {
+    width: var(--cx-table-width, 100%);
+  }
+
+  :is(.rich-text, .content-editor) table[data-cx-align="center"] {
+    margin-inline: auto;
+  }
+
+  :is(.rich-text, .content-editor) table[data-cx-align="right"] {
+    margin-inline: auto 0;
+  }
+
+  /*
+   * A cell's sides drawn otherwise than with the thin rule (`borders`, in
+   * `data-cx-borders`): hidden, or thicker. Collapsed borders draw a side
+   * two cells share as the stronger of the two, as the PDF does.
+   */
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="top-none"]) {
+    border-top-style: none;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="right-none"]) {
+    border-right-style: none;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="bottom-none"]) {
+    border-bottom-style: none;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="left-none"]) {
+    border-left-style: none;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="top-thick"]) {
+    border-top-width: 2px;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="right-thick"]) {
+    border-right-width: 2px;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="bottom-thick"]) {
+    border-bottom-width: 2px;
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([data-cx-borders~="left-thick"]) {
+    border-left-width: 2px;
+  }
+
+  /*
+   * In the editor a hidden side shows as a faint dashed guide, so the cell
+   * can still be found and clicked; a neighbour's solid rule wins over it.
+   */
+  .content-editor :is(td, th)[data-cx-borders~="top-none"] {
+    border-top: 1px dashed var(--ui-border-accented);
+  }
+
+  .content-editor :is(td, th)[data-cx-borders~="right-none"] {
+    border-right: 1px dashed var(--ui-border-accented);
+  }
+
+  .content-editor :is(td, th)[data-cx-borders~="bottom-none"] {
+    border-bottom: 1px dashed var(--ui-border-accented);
+  }
+
+  .content-editor :is(td, th)[data-cx-borders~="left-none"] {
+    border-left: 1px dashed var(--ui-border-accented);
+  }
+
   :is(.rich-text, .content-editor) th {
     color: var(--content-heading-bar-fg);
     background-color: var(--content-heading-bar);

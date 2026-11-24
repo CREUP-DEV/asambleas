@@ -205,7 +205,7 @@ type Block = {
   list?: "bullet" | "ordered";
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
-  cell?: BlockCell; // inside a table: { table, row, cell, header?, fill?, shade? (legacy), colspan?, rowspan? }
+  cell?: BlockCell; // inside a table: { table, row, cell, header?, fill?, shade? (legacy), colspan?, rowspan?, borders?, tableWidth?, tableAlign? }
   align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
   image?: BlockImage; // image blocks: { asset, width, height, alt }; text stays ""
   text: string; // plain text
@@ -249,6 +249,28 @@ operations: a cell's text changes like any block's, and rows and columns
 are added or removed by inserting or deleting the blocks of their cells.
 The editor uses TipTap's tables with the ids kept on their nodes
 (`TableIdsExtension`), and a table menu in the toolbar.
+
+A table may be narrower than the text and sit at its start, centred or at
+its end, and each cell may draw its sides otherwise than with the thin rule
+(user's decision of 2026-11-24, for signatures above all: a centred box of
+half the text's width whose only rule is a thick line above the name). Every
+cell of the table carries its width (`tableWidth`, 10 to 99 percent of the
+text's; absent, the whole width) and place (`tableAlign`, `center` or
+`right`; absent, the start), and readers take the first cell's
+(`tableLayoutOf`). A cell's `borders` names the sides drawn otherwise:
+`none` (hidden) or `thick`; a side two cells share is drawn as the stronger
+of the two (`gridEdges`: thick, thin, none), as a browser's collapsed
+borders do, so hiding a rule takes hiding it on both, which the editor does
+(`TableLayoutExtension.setCellSides`). With every field absent a table looks
+as before, and stored content keeps its hash. The view names them in
+`--cx-table-width`, `data-cx-align` and `data-cx-borders` for `main.css`
+(the editor shows a hidden side as a faint dashed guide); the PDF leaves a
+hidden side out and makes the whole rule a thick side lies on thick, since
+pdfmake gives each rule one width; the Word export writes them as Word does.
+A table of one cell is shown as a box (`role="presentation"`). The table
+menu and the right-click menu set them («Bordes», «Ancho de la tabla»,
+«Posición de la tabla»), where the colour is offered; amendments compare no
+cell, so they never change them.
 
 The editor writes Spanish quotes as one types (`SpanishQuotesExtension`):
 a straight `"` becomes « or », and “ ” inside an open «…»; typed over a

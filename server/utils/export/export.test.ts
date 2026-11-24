@@ -1415,6 +1415,46 @@ describe("CREUP template", () => {
     expect(counters).toEqual([[1, 2], [3], [1]]);
   });
 
+  it("draws a narrower table in its place, with its cells' sides", () => {
+    const cell = {
+      table: "sig",
+      row: "r1",
+      cell: "c1",
+      borders: { top: "thick", right: "none", bottom: "none", left: "none" },
+      tableWidth: 48,
+      tableAlign: "center",
+    } as const;
+    const [node] = blocksToPdf(
+      [
+        { ...p("n", "Nombre Apellido"), cell },
+        { ...p("o", "Tesorero"), cell },
+      ],
+      { links: new LinkRegistry() },
+    ) as unknown as {
+      table: { widths: number[]; body: { border?: boolean[] }[][] };
+      layout: {
+        hLineWidth: (i: number) => number;
+        vLineWidth: (i: number) => number;
+      };
+      margin: number[];
+    }[];
+    const text = 595.28 - 85 - 85.6;
+    // Its columns, padding and rules take 48 % of the text, centred.
+    const total = node!.table.widths.reduce((sum, width) => sum + width, 0);
+    expect(total + 10 + 0.75 + 0.75).toBeCloseTo(text * 0.48, 1);
+    expect(node!.margin[0]).toBeCloseTo((text * 0.52) / 2, 1);
+    // Left, top, right, bottom: only the line above the name.
+    expect(node!.table.body[0]![0]!.border).toEqual([
+      false,
+      true,
+      false,
+      false,
+    ]);
+    expect(node!.layout.hLineWidth(0)).toBe(1.5);
+    expect(node!.layout.hLineWidth(1)).toBe(0.75);
+    expect(node!.layout.vLineWidth(0)).toBe(0.75);
+  });
+
   it("draws tables with header rows, spans and widths that fit the page", async () => {
     const at = (row: string, cell: string, extra = {}) => ({
       table: "tab1",

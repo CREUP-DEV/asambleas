@@ -3,9 +3,12 @@ import { CELL_FILL_NAMES } from "../../constants/cellFills";
 import {
   BLOCK_ALIGNMENTS,
   BLOCK_TYPES,
+  CELL_BORDER_STYLES,
+  CELL_SIDES,
   IMAGE_ASSET_PATTERN,
   LIST_MARKERS,
   MARK_TYPES,
+  TABLE_MIN_WIDTH,
 } from "../../types/content";
 import type {
   Block,
@@ -111,6 +114,17 @@ const cellSchema = z
     shade: z.boolean().optional(),
     colspan: spanSchema,
     rowspan: spanSchema,
+    borders: z
+      .object({
+        top: z.enum(CELL_BORDER_STYLES).optional(),
+        right: z.enum(CELL_BORDER_STYLES).optional(),
+        bottom: z.enum(CELL_BORDER_STYLES).optional(),
+        left: z.enum(CELL_BORDER_STYLES).optional(),
+      })
+      .optional(),
+    // 100 is the default, kept out as absent.
+    tableWidth: z.number().int().min(TABLE_MIN_WIDTH).max(100).optional(),
+    tableAlign: z.enum(BLOCK_ALIGNMENTS).optional(),
   })
   .transform((cell): BlockCell => {
     const result: BlockCell = {
@@ -123,6 +137,19 @@ const cellSchema = z
     else if (cell.shade && !cell.header) result.shade = true;
     if (cell.colspan) result.colspan = cell.colspan;
     if (cell.rowspan) result.rowspan = cell.rowspan;
+    if (cell.borders) {
+      const borders: NonNullable<BlockCell["borders"]> = {};
+      for (const side of CELL_SIDES) {
+        const style = cell.borders[side];
+        if (style) borders[side] = style;
+      }
+      if (Object.keys(borders).length > 0) result.borders = borders;
+    }
+    // A full-width table sits nowhere in particular.
+    if (cell.tableWidth !== undefined && cell.tableWidth < 100) {
+      result.tableWidth = cell.tableWidth;
+      if (cell.tableAlign) result.tableAlign = cell.tableAlign;
+    }
     return result;
   });
 
