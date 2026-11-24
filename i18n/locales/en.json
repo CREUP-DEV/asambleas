@@ -3749,6 +3749,7 @@
     "modes": {
       "label": "How to view the text",
       "original": "Original text",
+      "inForce": "Text in force",
       "amended": "With the amendment",
       "consolidated": "With what was approved",
       "compare": "Compare"

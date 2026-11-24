@@ -1048,6 +1048,11 @@ export interface DocumentDto extends DocumentSummaryDto {
   finalVote: VoteDto | null;
   positionsVisible: boolean;
   /**
+   * What wrote the text when the platform did: the acta de acuerdos, read as
+   * its version in force since nothing amends it. Null for any other.
+   */
+  generated: "agreements_record" | null;
+  /**
    * The acta de acuerdos only: its signed PDF, once uploaded for the text in
    * force; it leads the document and replaces the generated PDF.
    */

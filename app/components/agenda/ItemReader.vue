@@ -132,15 +132,28 @@ onLive((events) => {
   if (shown && stale.includes(shown)) void load(shown);
 });
 
-const blocks = computed(() => detail.value?.baseVersion?.blocks ?? []);
+/**
+ * The acta de acuerdos, never amended, reads as the version in force, which
+ * «Regenerar» and its corrections replace; any other text as presented.
+ */
+const inForce = computed(() =>
+  detail.value?.generated === "agreements_record"
+    ? (detail.value.consolidatedVersion ?? null)
+    : null,
+);
+const blocks = computed(
+  () => (inForce.value ?? detail.value?.baseVersion)?.blocks ?? [],
+);
 
-// «pág. N» of the text as presented, as the package's PDF prints it (user's
+// «pág. N» of the text shown, as the package's PDF prints it (user's
 // decisions of 2026-11-21), and the page being read.
 const { pages: pdfPages } = useDocumentPages(() =>
   documentPagesTarget(assembly.value?.id, detail.value),
 );
 const textPages = computed(() =>
-  contentPages(pdfPages.value?.base, detail.value?.baseVersion),
+  inForce.value
+    ? contentPages(pdfPages.value?.consolidated, inForce.value)
+    : contentPages(pdfPages.value?.base, detail.value?.baseVersion),
 );
 const textPage = ref<number | null>(null);
 watch(

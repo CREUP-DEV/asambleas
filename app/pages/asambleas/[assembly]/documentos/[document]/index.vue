@@ -221,6 +221,15 @@ const canAmend = computed(
 const finalText = computed(
   () => document.value?.consolidatedVersion?.blocks ?? null,
 );
+/**
+ * The acta de acuerdos is never amended: its text is the version in force,
+ * which «Regenerar» and its corrections replace, never the base frozen when
+ * it was first published (user's report of 2026-11-24). Null for any other
+ * document, and before the record has one.
+ */
+const recordInForce = computed(() =>
+  document.value?.generated === "agreements_record" ? finalText.value : null,
+);
 /** The working draft is edited on .../editar until the text is frozen. */
 const canEditDraft = computed(
   () =>
@@ -615,12 +624,17 @@ const TEXT_MODES: TextMode[] = [
   "compare",
 ];
 
-/** How to show the text, as visible tabs. */
+/**
+ * How to show the text, as visible tabs. The acta in force has only itself:
+ * nothing amends it.
+ */
 const modeItems = computed(() =>
-  TEXT_MODES.map((mode) => ({
-    label: t(`workspace.modes.${mode}`),
-    value: mode,
-  })),
+  recordInForce.value
+    ? [{ label: t("workspace.modes.inForce"), value: "original" as TextMode }]
+    : TEXT_MODES.map((mode) => ({
+        label: t(`workspace.modes.${mode}`),
+        value: mode,
+      })),
 );
 
 function onTextMode(mode: string | number): void {
@@ -1684,7 +1698,9 @@ const { pages: pdfPages } = useDocumentPages(() =>
   documentPagesTarget(assembly.value?.id, document.value),
 );
 const consolidatedPagesShown = computed(
-  () => textMode.value === "consolidated" && Boolean(finalText.value),
+  () =>
+    (textMode.value === "consolidated" && Boolean(finalText.value)) ||
+    (textMode.value === "original" && Boolean(recordInForce.value)),
 );
 const basePages = computed(() =>
   contentPages(pdfPages.value?.base, document.value?.baseVersion),
@@ -2303,10 +2319,10 @@ const filteredBlockLabel = computed(() =>
                 >
                   <ContentView
                     ref="textView"
-                    :blocks="base"
+                    :blocks="recordInForce ?? base"
                     :markers="marginMarkers ? list.markers.value : undefined"
                     :selected="originalSelected"
-                    :pages="basePages"
+                    :pages="textPages"
                     marker-buttons
                     @marker-click="onMarkerClick"
                   />

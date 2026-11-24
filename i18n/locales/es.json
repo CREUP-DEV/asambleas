@@ -3749,6 +3749,7 @@
     "modes": {
       "label": "Cómo ver el texto",
       "original": "Texto original",
+      "inForce": "Texto en vigor",
       "amended": "Con la enmienda",
       "consolidated": "Con lo aprobado",
       "compare": "Comparar"

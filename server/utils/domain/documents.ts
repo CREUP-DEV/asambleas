@@ -709,6 +709,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       document,
       isPresenter: isDocumentPresenter(actor, document),
     }),
+    generated: document.generated ?? null,
     signedFile: input.signedFile ?? null,
     can: documentCapabilities(
       actor,
