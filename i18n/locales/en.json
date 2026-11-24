@@ -3867,7 +3867,8 @@
         "save": "The correction could not be saved",
         "decide": "The correction could not be updated"
       },
-      "correctedText": "Text with corrections of form after the vote. The corrections and their changes are below."
+      "correctedText": "Text with corrections of form after the vote. The corrections and their changes are below.",
+      "tableLookOnly": "Only how the tables look changes: colour, borders, width or position. The consolidated text shows it."
     },
     "export": {
       "clean": "Clean PDF",

@@ -3867,7 +3867,8 @@
         "save": "No se pudo guardar la corrección",
         "decide": "No se pudo actualizar la corrección"
       },
-      "correctedText": "Texto con correcciones de forma posteriores a la votación. Debajo están las correcciones y sus cambios."
+      "correctedText": "Texto con correcciones de forma posteriores a la votación. Debajo están las correcciones y sus cambios.",
+      "tableLookOnly": "Solo cambia el aspecto de las tablas: color, bordes, ancho o posición. Se ve en el texto consolidado."
     },
     "export": {
       "clean": "PDF limpio",

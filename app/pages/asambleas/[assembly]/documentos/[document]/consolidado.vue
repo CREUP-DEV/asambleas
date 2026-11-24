@@ -630,6 +630,7 @@ watch(popoverOpen, (open) => {
           :document="document"
           :document-api="documentApi"
           :label-of="list.labelOf"
+          :pages="textPages"
           @changed="refreshDocument"
         />
         <SessionWordingDialog

@@ -6,6 +6,7 @@ import type {
   FormCorrectionsDto,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
+import type { ContentPages } from "~/components/content/ContentView.vue";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import { FORM_CORRECTION_REASON_MAX_LENGTH } from "~~/shared/utils/schemas/document";
 import { formatDateTime } from "~/utils/format";
@@ -35,6 +36,8 @@ const props = defineProps<{
    * here too, as «Conciliación de E3 y E5».
    */
   labelOf?: (amendmentId: string) => string;
+  /** The approved text's PDF pages, beside the editor as in the reader. */
+  pages?: ContentPages | null;
 }>();
 
 const emit = defineEmits<{ changed: [] }>();
@@ -298,7 +301,9 @@ function when(value: string | null): string {
           :key="editorKey"
           v-model="draft"
           amend
+          table-look
           outline
+          :pages="pages"
           :label="t('workspace.formCorrections.textLabel')"
         />
         <template #fallback>
@@ -497,11 +502,16 @@ function when(value: string | null): string {
           class="border-default border-t pt-3"
         >
           <ContentAmendmentDiff
+            v-if="opsOf(correction).length > 0"
             :id="correction.id"
             :base="correction.before"
             :ops="opsOf(correction)"
             :context="1"
           />
+          <!-- Only how tables look changed: the diff has no words for it. -->
+          <p v-else class="text-muted text-sm">
+            {{ t("workspace.formCorrections.tableLookOnly") }}
+          </p>
         </div>
       </li>
     </ol>

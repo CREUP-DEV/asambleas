@@ -36,7 +36,7 @@ import {
 import { NodeSelection } from "@tiptap/pm/state";
 import { IMAGE_ALT_MAX_LENGTH } from "~~/shared/utils/schemas/content";
 import { headingAtReadingLine, scrollParent } from "~/utils/outline";
-import type { OutlineEntry } from "./ContentView.vue";
+import type { ContentPages, OutlineEntry } from "./ContentView.vue";
 import {
   CellFillExtension,
   cellFillOf,
@@ -75,6 +75,17 @@ const props = withDefaults(
      * colour of a cell, header cells, merged cells).
      */
     amend?: boolean;
+    /**
+     * With `amend`, still offers how a table looks: its cells' colour and
+     * sides, and its width and place. A correction of form replaces the
+     * whole text, so it may change them (user's decision of 2026-11-24).
+     */
+    tableLook?: boolean;
+    /**
+     * The pages of the text's PDF, shown beside it as the readers show them
+     * («pág. N» and the bubble beside the scrollbar, ContentPageGutter).
+     */
+    pages?: ContentPages | null;
     autofocus?: boolean;
     editable?: boolean;
     placeholder?: string;
@@ -91,6 +102,8 @@ const props = withDefaults(
   {
     compact: false,
     amend: false,
+    tableLook: false,
+    pages: null,
     outline: false,
     uploadImage: undefined,
     autofocus: false,
@@ -232,10 +245,13 @@ const FILL_OPTIONS: CellFill[] = [...CELL_FILL_NAMES, "none"];
 
 /**
  * Amendments compare no cell, so its colour stays: neither the text of an
- * amendment (`amend`) nor the short editor of one passage (`compact`)
- * offers it.
+ * amendment (`amend`, unless a correction of form, `tableLook`) nor the
+ * short editor of one passage (`compact`) offers it, nor a table's sides,
+ * width and place.
  */
-const offersFill = computed(() => !props.amend && !props.compact);
+const offersFill = computed(
+  () => (!props.amend || props.tableLook) && !props.compact,
+);
 
 /** A swatch's own colours, from the palette; none keeps the page's. */
 function swatchStyle(fill: CellFill): Record<string, string> {
@@ -557,11 +573,21 @@ function readOutline(): void {
   if (!same) outlineItems.value = entries;
 }
 const readOutlineSoon = useDebounceFn(readOutline, 300);
+// The page marks (`pages`) are placed again a moment after each change.
+const pagesRevision = ref(0);
+const bumpPages = useDebounceFn(() => {
+  pagesRevision.value += 1;
+}, 200);
+const editorDom = computed(() =>
+  props.pages ? (editor.value?.view.dom ?? null) : null,
+);
 watch(
   editor,
   (instance, previous) => {
     previous?.off("update", readOutlineSoon);
+    previous?.off("update", bumpPages);
     instance?.on("update", readOutlineSoon);
+    instance?.on("update", bumpPages);
     void nextTick(readOutline);
   },
   { immediate: true },
@@ -989,7 +1015,19 @@ function buildContextItems(): void {
               c.addColumnAfter(),
             ),
           ],
-          // Amendments compare no cell: its colour, header and span stay.
+          // Amendments compare no cell: its colour, header and span stay;
+          // a correction of form may change the colour (`tableLook`).
+          offersFill.value && props.amend
+            ? [
+                {
+                  label: t("common.editor.table.fill.label"),
+                  icon: "i-lucide-paint-bucket",
+                  children: cellFillItems(cellFillOf(instance), (fill) =>
+                    run((c) => c.setCellFill(fill)),
+                  ),
+                },
+              ]
+            : [],
           props.amend
             ? []
             : [
@@ -1411,7 +1449,13 @@ defineExpose({
         />
       </template>
       <!-- The menu's trigger: UEditor would not pass its listener on -->
-      <div>
+      <div :class="pages ? 'cx-has-pages relative' : undefined">
+        <ContentPageGutter
+          v-if="pages"
+          :pages="pages"
+          :root="editorDom"
+          :revision="pagesRevision"
+        />
         <UEditor
           ref="editorComponent"
           v-slot="{ editor: slotEditor }"
