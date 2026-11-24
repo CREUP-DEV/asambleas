@@ -350,6 +350,7 @@ function tableBorders(document: Document): void {
       CELL_SIDES.some((side) => spec.has(side)) ||
       spec.has("insideH") ||
       spec.has("insideV") ||
+      spec.has("color") ||
       grid.rows.some((row) => row.some((cell) => own.has(cell.blocks[0]!)));
     if (!declared) continue;
     grid.rows.forEach((row, r) => {
@@ -369,6 +370,13 @@ function tableBorders(document: Document): void {
           if (edge !== "thin") borders[side] = edge;
         }
         cell.cell.borders = borders;
+        // Its rules' colour: its own, else its table's, as the palette's
+        // nearest; burgundy is the template's own.
+        const colour = mine?.get("color") ?? spec.get("color");
+        const fill = colour ? nearestCellFill(colour) : null;
+        if (fill && fill !== "burgundy") {
+          cell.blocks[0]!.setAttribute("data-border-color", fill);
+        }
       }
     });
     for (const [cell, edges] of gridEdges(grid)) {

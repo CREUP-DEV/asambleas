@@ -140,6 +140,33 @@ describe("convertDocx tables and blank lines", { timeout: 30_000 }, () => {
     ]);
   });
 
+  it("keeps a coloured rule's colour, and black as the template's", async () => {
+    const coloured = (colour: string) =>
+      tableWith(
+        `<w:tblBorders>${["top", "left", "bottom", "right"].map((side) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="${colour}"/>`).join("")}</w:tblBorders>`,
+        row(cell(p(null, colour))),
+        row(cell(p(null, "·"))),
+      );
+    const result = await convert(
+      await buildDocx(
+        coloured("1F3864") + p(null, "-") + coloured("000000") + SECTION,
+      ),
+    );
+    expect(
+      result.blocks
+        .filter((block) => block.cell)
+        .map((block) => [block.text, block.cell!.borderColor ?? null]),
+    ).toEqual([
+      ["1F3864", "blue"],
+      ["·", "blue"],
+    ]);
+    // Black is the template's: a box of one column with nothing of its own
+    // reads as paragraphs, as before.
+    expect(
+      result.blocks.find((block) => block.text === "000000")!.cell,
+    ).toBeUndefined();
+  });
+
   it("places a narrower table by its alignment or its indent", async () => {
     const box = (properties: string, text: string) =>
       tableWith(

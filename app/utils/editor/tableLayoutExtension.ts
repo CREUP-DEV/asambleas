@@ -1,4 +1,8 @@
 import { Extension, findParentNode, type Editor } from "@tiptap/core";
+import {
+  isCellFillName,
+  type CellFillName,
+} from "~~/shared/constants/cellFills";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { CellSelection, TableMap, selectionCell } from "@tiptap/pm/tables";
 import {
@@ -37,6 +41,11 @@ declare module "@tiptap/core" {
        */
       setCellSides: (sides: Partial<Record<CellSide, CellEdge>>) => ReturnType;
       /** The table's width (percent of the text's; 100 for all) and place. */
+      /**
+       * The colour of the rules of the cell at the cursor, or of every cell
+       * selected: a palette name, or null for the template's.
+       */
+      setCellBorderColor: (colour: CellFillName | null) => ReturnType;
       setTableLayout: (layout: {
         width: number;
         align?: BlockAlign | null;
@@ -133,6 +142,26 @@ export function cellSidesOf(
   return result;
 }
 
+/**
+ * The rules' colour of the cell at the cursor, or the one every cell
+ * selected shares ("burgundy", the template's, when none), else "mixed".
+ * Null outside a table.
+ */
+export function cellBorderColorOf(
+  editor: Editor | undefined,
+): CellFillName | "mixed" | null {
+  if (!editor?.isActive("table")) return null;
+  const seen = new Set(
+    targetCells(editor.state).map(({ node }): CellFillName =>
+      isCellFillName(node.attrs.borderColor)
+        ? node.attrs.borderColor
+        : "burgundy",
+    ),
+  );
+  if (seen.size === 0) return null;
+  return seen.size === 1 ? [...seen][0]! : "mixed";
+}
+
 /** The table's width and place around the cursor. Null outside a table. */
 export function tableLayoutAt(
   editor: Editor | undefined,
@@ -189,6 +218,20 @@ export const TableLayoutExtension = Extension.create({
               );
               return tokens ? { "data-cx-borders": tokens } : {};
             },
+          },
+          borderColor: {
+            default: null,
+            parseHTML: (element: HTMLElement) => {
+              const colour = element.getAttribute("data-cx-border-color");
+              return isCellFillName(colour) && colour !== "burgundy"
+                ? colour
+                : null;
+            },
+            renderHTML: (attributes: Record<string, unknown>) =>
+              isCellFillName(attributes.borderColor) &&
+              attributes.borderColor !== "burgundy"
+                ? { "data-cx-border-color": attributes.borderColor }
+                : {},
           },
         },
       },
@@ -283,6 +326,21 @@ export const TableLayoutExtension = Extension.create({
               ...node.attrs,
               borders: formatCellBorders(borders) || null,
             });
+          }
+          return true;
+        },
+      setCellBorderColor:
+        (colour) =>
+        ({ state, tr, dispatch }) => {
+          const cells = targetCells(state);
+          if (cells.length === 0) return false;
+          if (dispatch) {
+            for (const { node, pos } of cells) {
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                borderColor: colour === "burgundy" ? null : colour,
+              });
+            }
           }
           return true;
         },

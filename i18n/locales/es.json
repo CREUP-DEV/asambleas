@@ -209,6 +209,7 @@
           "left": "Izquierda",
           "all": "Todos los bordes",
           "none": "Sin bordes",
+          "color": "Color del borde",
           "thick": "Bordes gruesos"
         },
         "layout": {

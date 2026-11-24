@@ -30,7 +30,7 @@ import {
 } from "../../../shared/constants/cellFills";
 import { markerOf } from "../../../shared/utils/content/lists";
 import {
-  gridEdges,
+  gridSides,
   groupTables,
   tableGrid,
   tableLayoutOf,
@@ -719,9 +719,12 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
       : place.align === "right"
         ? TABLE_WIDTH - width
         : 0;
-  // Only a table with sides of its own leaves the template's rules.
-  const edges = grid.rows.some((row) => row.some((cell) => cell.cell.borders))
-    ? gridEdges(grid)
+  // Only a table with sides or rule colours of its own leaves the
+  // template's rules.
+  const edges = grid.rows.some((row) =>
+    row.some((cell) => cell.cell.borders || cell.cell.borderColor),
+  )
+    ? gridSides(grid)
     : null;
   const thickRows = new Set<number>();
   const thickColumns = new Set<number>();
@@ -733,27 +736,40 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
   );
   // Positions a spanning cell covers, which pdfmake wants left empty but
   // with the sides of the cell that covers them.
-  const covered = new Map<string, boolean[] | undefined>();
+  const covered = new Map<
+    string,
+    { border?: boolean[]; borderColor?: (string | undefined)[] }
+  >();
   grid.rows.forEach((row, r) => {
     for (const cell of row) {
       const sides = edges?.get(cell);
-      // pdfmake's order: left, top, right, bottom.
+      // pdfmake's order: left, top, right, bottom; a side without a colour
+      // of its own takes the template's (the layout's).
+      const order = ["left", "top", "right", "bottom"] as const;
       const border = sides
-        ? [
-            sides.left !== "none",
-            sides.top !== "none",
-            sides.right !== "none",
-            sides.bottom !== "none",
-          ]
+        ? order.map((side) => sides[side].edge !== "none")
         : undefined;
-      if (sides?.top === "thick") thickRows.add(r);
-      if (sides?.bottom === "thick") thickRows.add(r + cell.rowspan);
-      if (sides?.left === "thick") thickColumns.add(cell.column);
-      if (sides?.right === "thick")
+      const colours = sides?.[order[0]]
+        ? order.map((side) => {
+            const colour = sides[side].colour;
+            return colour ? CELL_FILLS[colour].hex : undefined;
+          })
+        : undefined;
+      const borderColor = colours?.some(Boolean) ? colours : undefined;
+      if (sides?.top.edge === "thick") thickRows.add(r);
+      if (sides?.bottom.edge === "thick") thickRows.add(r + cell.rowspan);
+      if (sides?.left.edge === "thick") thickColumns.add(cell.column);
+      if (sides?.right.edge === "thick") {
         thickColumns.add(cell.column + cell.colspan);
+      }
       for (let dr = 0; dr < cell.rowspan; dr += 1) {
         for (let dc = 0; dc < cell.colspan; dc += 1) {
-          if (dr || dc) covered.set(`${r + dr}:${cell.column + dc}`, border);
+          if (dr || dc) {
+            covered.set(`${r + dr}:${cell.column + dc}`, {
+              border,
+              borderColor,
+            });
+          }
         }
       }
       const look = cellLook(cell.cell);
@@ -786,13 +802,19 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         ...(cell.colspan > 1 ? { colSpan: cell.colspan } : {}),
         ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
         ...(border ? { border } : {}),
+        ...(borderColor ? { borderColor } : {}),
         ...look,
       } as TableCell;
     }
   });
-  for (const [key, border] of covered) {
+  for (const [key, sides] of covered) {
     const [r, c] = key.split(":").map(Number) as [number, number];
-    if (body[r]) body[r]![c] = (border ? { border } : {}) as TableCell;
+    if (body[r]) {
+      body[r]![c] = {
+        ...(sides.border ? { border: sides.border } : {}),
+        ...(sides.borderColor ? { borderColor: sides.borderColor } : {}),
+      } as TableCell;
+    }
   }
   const rowRules = Array.from({ length: grid.rows.length + 1 }, (_, i) =>
     thickRows.has(i) ? TABLE_THICK_RULE : TABLE_RULE,

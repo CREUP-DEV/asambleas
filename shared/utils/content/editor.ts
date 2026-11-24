@@ -244,6 +244,11 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
             : null,
         );
         if (borders) cell.borders = borders;
+        // Its rules' colour (TableLayoutExtension), the template's when none.
+        const borderColor = cellNode.attrs?.borderColor;
+        if (isCellFillName(borderColor) && borderColor !== "burgundy") {
+          cell.borderColor = borderColor;
+        }
         Object.assign(cell, layout);
         const before = blocks.length;
         walk(cellNode.content, { level: 0, quote: false, cell });
@@ -508,6 +513,7 @@ function tableNode(table: TableGroup<Block>): EditorNode {
             // Content saved before the palette (`shade`) reads as beige.
             fill: cellFillOf(cell.cell) ?? null,
             borders: formatCellBorders(cell.cell.borders) || null,
+            borderColor: cell.cell.borderColor ?? null,
             colspan: cell.cell.colspan ?? 1,
             rowspan: cell.cell.rowspan ?? 1,
             colwidth: null,
@@ -655,7 +661,7 @@ const rowCells = (row: Element): Element[] => childElements(row, ["td", "th"]);
 
 /**
  * Whether a table of one column stays a table: the DOCX import gave it a
- * width or rules of its own (tableBorders in server/utils/content/docxHtml.ts),
+ * width, rules or a rule colour of its own (tableBorders in server/utils/content/docxHtml.ts),
  * a signature's line among them, and it holds nothing a cell cannot (a
  * picture, a table). Any other is a box of paragraphs.
  */
@@ -663,7 +669,11 @@ function keepsLayout(table: Element): boolean {
   if (table.querySelector("img, table")) return false;
   if (table.hasAttribute("data-table-width")) return true;
   return tableRows(table).some((row) =>
-    rowCells(row).some((cell) => cell.hasAttribute("data-borders")),
+    rowCells(row).some(
+      (cell) =>
+        cell.hasAttribute("data-borders") ||
+        cell.hasAttribute("data-border-color"),
+    ),
   );
 }
 
@@ -991,6 +1001,11 @@ export function htmlElementToBlocks(
           cellElement.getAttribute("data-borders"),
         );
         if (borders) cell.borders = borders;
+        // Its rules' colour, by palette name, as the DOCX import says.
+        const borderColor = cellElement.getAttribute("data-border-color");
+        if (isCellFillName(borderColor) && borderColor !== "burgundy") {
+          cell.borderColor = borderColor;
+        }
         Object.assign(cell, layout);
         for (const block of own) block.cell = { ...cell };
         if (blocks.length === before) {

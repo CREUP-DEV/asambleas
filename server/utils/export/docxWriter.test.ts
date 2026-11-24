@@ -69,5 +69,28 @@ describe("buildDocumentDocx", () => {
     const borders = /<w:tcBorders>(.*?)<\/w:tcBorders>/.exec(xml)![1]!;
     expect(borders).toMatch(/<w:top w:val="single"[^>]*w:sz="12"/);
     expect(borders).toMatch(/<w:left w:val="none"/);
+
+    const blue = await buildDocumentDocx({
+      title: "Presupuesto",
+      assemblyLabel: "80.ª AGO",
+      pageCount: "{page} de {total}",
+      blocks: [
+        {
+          id: "b",
+          type: "paragraph",
+          text: "Azul",
+          marks: [],
+          cell: { table: "t", row: "r", cell: "c", borderColor: "blue" },
+        },
+      ],
+    });
+    const blueXml = await (
+      await JSZip.loadAsync(blue)
+    )
+      .file("word/document.xml")!
+      .async("string");
+    expect(/<w:tcBorders>(.*?)<\/w:tcBorders>/.exec(blueXml)![1]).toMatch(
+      /<w:top w:val="single" w:color="163866"/,
+    );
   });
 });

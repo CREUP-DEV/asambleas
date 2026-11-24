@@ -44,6 +44,7 @@ import {
 } from "~/utils/editor/cellFillExtension";
 import {
   TableLayoutExtension,
+  cellBorderColorOf,
   cellSidesOf,
   tableLayoutAt,
 } from "~/utils/editor/tableLayoutExtension";
@@ -233,11 +234,13 @@ function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
   cellFill.value = cellFillOf(editor.value);
   cellSides.value = cellSidesOf(editor.value);
+  cellBorder.value = cellBorderColorOf(editor.value);
   tableLayout.value = tableLayoutAt(editor.value);
 }
 
 /** The sides of the cells at the cursor and the table's width and place. */
 const cellSides = ref<ReturnType<typeof cellSidesOf>>(null);
+const cellBorder = ref<ReturnType<typeof cellBorderColorOf>>(null);
 const tableLayout = ref<ReturnType<typeof tableLayoutAt>>(null);
 
 /** The fills on offer: the palette's colours, then none. */
@@ -292,6 +295,7 @@ const TABLE_WIDTHS = [100, 75, 66, 50, 33, 25];
  */
 function tableLayoutItems(
   sides: ReturnType<typeof cellSidesOf>,
+  borderColor: ReturnType<typeof cellBorderColorOf>,
   layout: ReturnType<typeof tableLayoutAt>,
   apply: (command: (chain: ChainedCommands) => ChainedCommands) => void,
 ): ContextMenuItem[] {
@@ -337,6 +341,19 @@ function tableLayoutItems(
           },
         ],
         [
+          {
+            label: t("common.editor.table.borders.color"),
+            icon: "i-lucide-palette",
+            // The palette's colours; burgundy is the template's own.
+            children: CELL_FILL_NAMES.map((fill) => ({
+              label: t(`common.editor.table.fill.${fill}`),
+              slot: "fill" as const,
+              fill,
+              type: "checkbox" as const,
+              checked: borderColor === fill,
+              onSelect: () => apply((c) => c.setCellBorderColor(fill)),
+            })),
+          },
           {
             label: t("common.editor.table.borders.thick"),
             type: "checkbox" as const,
@@ -498,7 +515,14 @@ const tableMenu = computed(
             ]),
         // The sides, width and place, where the colour is offered too.
         ...(offersFill.value && inTable.value
-          ? [tableLayoutItems(cellSides.value, tableLayout.value, runInTable)]
+          ? [
+              tableLayoutItems(
+                cellSides.value,
+                cellBorder.value,
+                tableLayout.value,
+                runInTable,
+              ),
+            ]
           : []),
         [tableAction("deleteTable", "i-lucide-trash", (c) => c.deleteTable())],
       ],
@@ -1061,6 +1085,7 @@ function buildContextItems(): void {
           offersFill.value
             ? tableLayoutItems(
                 cellSidesOf(instance),
+                cellBorderColorOf(instance),
                 tableLayoutAt(instance),
                 run,
               )

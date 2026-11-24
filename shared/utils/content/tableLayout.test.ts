@@ -11,6 +11,7 @@ import {
   cellLayoutKey,
   formatCellBorders,
   gridEdges,
+  gridSides,
   groupTables,
   parseCellBorders,
   tableGrid,
@@ -119,6 +120,43 @@ describe("table layout", () => {
     ]);
   });
 
+  it("keeps a rule colour of the palette, the template's as none", () => {
+    const [blue, burgundy] = blocksSchema.parse([
+      block("a", "x", { ...at("a", "a"), borderColor: "blue" }),
+      block("b", "y", { ...at("b", "b"), borderColor: "burgundy" }),
+    ]);
+    expect(blue!.cell!.borderColor).toBe("blue");
+    expect(burgundy!.cell).toEqual(at("b", "b"));
+    expect(() =>
+      blocksSchema.parse([
+        block("c", "z", { ...at("c", "c"), borderColor: "#ff0000" as never }),
+      ]),
+    ).toThrow();
+    expect(
+      cellLayoutKey({ ...at("a", "a"), borderColor: "green" }),
+    ).not.toEqual(cellLayoutKey(at("a", "a")));
+  });
+
+  it("colours a shared side as the cell that wins it", () => {
+    const grid = tableGrid(
+      tableOf([
+        block("a", "a", { ...at("a", "a"), borderColor: "purple" }),
+        block("b", "b", { ...at("a", "b"), borderColor: "green" }),
+        block("c", "c", at("b", "c")),
+        block("d", "d", { ...at("b", "d"), borders: { top: "thick" } }),
+      ]),
+    );
+    const [a, b, c, d] = [...gridSides(grid).values()];
+    // Both with a colour: the cell to the left wins.
+    expect(a!.right.colour).toBe("purple");
+    expect(b!.left.colour).toBe("purple");
+    // A colour of its own over the template's.
+    expect(c!.top.colour).toBe("purple");
+    // The stronger side wins, whatever its colour.
+    expect(b!.bottom).toEqual({ edge: "thick", colour: null });
+    expect(d!.top).toEqual({ edge: "thick", colour: null });
+  });
+
   it("writes and reads sides as the DOCX import marks them", () => {
     expect(formatCellBorders({ left: "none", top: "thick" })).toBe(
       "top=thick;left=none",
@@ -196,6 +234,17 @@ describe("table layout", () => {
       '<table class="cx-table" style="--cx-table-width: 48%" data-cx-width="" data-cx-align="center" role="presentation">',
     );
     expect(html).toContain('<td data-cx-borders="top-thick right-none">');
+    const coloured = renderBlocks([
+      block("a", "1", { ...at("a", "a"), borderColor: "blue" }),
+      block("b", "2", at("a", "b")),
+    ]);
+    // Both cells say the colour of the side they share.
+    expect(coloured).toContain(
+      'style="border-top-color: var(--cx-fill-blue); border-right-color: var(--cx-fill-blue); border-bottom-color: var(--cx-fill-blue); border-left-color: var(--cx-fill-blue)"',
+    );
+    expect(coloured).toContain(
+      'style="border-left-color: var(--cx-fill-blue)"',
+    );
     // A data table says nothing of the kind.
     const plain = renderBlocks([
       block("a", "1", at("a", "a")),

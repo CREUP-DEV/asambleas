@@ -670,6 +670,35 @@ html {
   }
 
   /*
+   * The colour of a cell's rules in the editor (`borderColor`, by palette
+   * name in `data-cx-border-color`). The view writes each side's colour as
+   * the cell that wins it says (gridSides), so neighbours agree there.
+   */
+  .content-editor :is(td, th)[data-cx-border-color="blue"] {
+    border-color: var(--cx-fill-blue);
+  }
+
+  .content-editor :is(td, th)[data-cx-border-color="beige"] {
+    border-color: var(--cx-fill-beige);
+  }
+
+  .content-editor :is(td, th)[data-cx-border-color="darkGrey"] {
+    border-color: var(--cx-fill-darkGrey);
+  }
+
+  .content-editor :is(td, th)[data-cx-border-color="lightGrey"] {
+    border-color: var(--cx-fill-lightGrey);
+  }
+
+  .content-editor :is(td, th)[data-cx-border-color="green"] {
+    border-color: var(--cx-fill-green);
+  }
+
+  .content-editor :is(td, th)[data-cx-border-color="purple"] {
+    border-color: var(--cx-fill-purple);
+  }
+
+  /*
    * In the editor a hidden side shows as a faint dashed guide, so the cell
    * can still be found and clicked; a neighbour's solid rule wins over it.
    */

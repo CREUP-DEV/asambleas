@@ -794,20 +794,30 @@ const CELL_SIDES = [["top", "w:top"], ["left", "w:left", "w:start"],
 const TABLE_SIDES = CELL_SIDES.concat([["insideH", "w:insideH"],
   ["insideV", "w:insideV"]]);
 // The sides a borders element sets, as "top=thick;left=none": a rule
-// hidden (none, or as white as no fill), thick (from 1.5 pt) or thin.
-// Sides it leaves out are not written; null when it sets none.
+// hidden (none, or as white as no fill), thick (from 1.5 pt) or thin; and
+// the colour of the first rule shown in one ("color=1f3864"), unless it is
+// black or near it, which the template's own colour stands for. Sides it
+// leaves out are not written; null when it sets none.
 function bordersOf(borders, sides) {
   if (!borders) return null;
   const out = [];
+  let colour = null;
   for (const [side, ...names] of sides) {
     let border = null;
     for (const name of names) border = border || borders.first(name);
     if (!border) continue;
     const size = parseFloat(border.attributes["w:sz"]);
-    const style = hiddenBorder(border) ? "none"
+    const hidden = hiddenBorder(border);
+    const style = hidden ? "none"
       : Number.isFinite(size) && size >= 12 ? "thick" : "thin";
     out.push(side + "=" + style);
+    const value = border.attributes["w:color"];
+    const light = luminanceOf(value);
+    if (!hidden && !colour && light !== null && light >= 0.02) {
+      colour = value.toLowerCase();
+    }
   }
+  if (colour) out.push("color=" + colour);
   return out.length ? out.join(";") : null;
 }
 // A table's width in percent of the text's and its place, and the borders

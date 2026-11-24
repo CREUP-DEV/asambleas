@@ -209,6 +209,7 @@
           "left": "Left",
           "all": "All borders",
           "none": "No borders",
+          "color": "Border colour",
           "thick": "Thick borders"
         },
         "layout": {

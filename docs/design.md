@@ -205,7 +205,7 @@ type Block = {
   list?: "bullet" | "ordered";
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
-  cell?: BlockCell; // inside a table: { table, row, cell, header?, fill?, shade? (legacy), colspan?, rowspan?, borders?, tableWidth?, tableAlign? }
+  cell?: BlockCell; // inside a table: { table, row, cell, header?, fill?, shade? (legacy), colspan?, rowspan?, borders?, borderColor?, tableWidth?, tableAlign? }
   align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
   image?: BlockImage; // image blocks: { asset, width, height, alt }; text stays ""
   text: string; // plain text
@@ -267,7 +267,7 @@ as before, and stored content keeps its hash. The view names them in
 (the editor shows a hidden side as a faint dashed guide); the PDF leaves a
 hidden side out and makes the whole rule a thick side lies on thick, since
 pdfmake gives each rule one width; the Word export writes them as Word does.
-A table of one cell is shown as a box (`role="presentation"`). The table
+A cell's rules may take a colour of the palette (`borderColor`, the fills' seven names; absent, the template's burgundy, which is never stored): a side two cells share takes the colour of the one that wins it (`gridSides`: the stronger; as strong, a colour of its own over the template's, then the cell above or to the left), which the view writes on both cells' sides, the PDF in each cell's `borderColor` and the Word export in each side's colour; the editor shows the cell's own («Color del borde» in «Bordes»), and a Word import reads the first coloured rule of a cell or table, black and near it standing for the template's. A table of one cell is shown as a box (`role="presentation"`). The table
 menu and the right-click menu set them («Bordes», «Ancho de la tabla»,
 «Posición de la tabla»), where the colour is offered; amendments compare no
 cell, so they never change them.

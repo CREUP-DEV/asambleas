@@ -9,6 +9,7 @@ import {
   type CellBorders,
   type CellSide,
 } from "../../types/content";
+import type { CellFillName } from "../../constants/cellFills";
 
 /**
  * Tables in a flat list of blocks (see BlockCell): every renderer groups
@@ -174,15 +175,24 @@ const OPPOSITE: Record<CellSide, CellSide> = {
   left: "right",
 };
 
+/** How a side is drawn, and in which colour (null: the template's). */
+export interface CellSideLook {
+  edge: CellEdge;
+  colour: CellFillName | null;
+}
+
 /**
  * How each side of each cell of a grid is drawn: a side shared with other
  * cells as the strongest of its own and theirs (BlockCell.borders), an
- * outer side as the cell says. For renderers that draw each cell's sides
- * themselves (the PDF); a browser's collapsed borders do the same.
+ * outer side as the cell says, in the colour of the cell that wins it
+ * (BlockCell.borderColor: as strong, a colour of its own over the
+ * template's, then the cell above or to the left, as a browser's collapsed
+ * borders pick it). For renderers that draw each cell's sides themselves:
+ * the view, the PDF and the Word export.
  */
-export function gridEdges<T>(
+export function gridSides<T>(
   grid: TableGrid<T>,
-): Map<GridCell<T>, Record<CellSide, CellEdge>> {
+): Map<GridCell<T>, Record<CellSide, CellSideLook>> {
   const height = grid.rows.length;
   const at: (GridCell<T> | undefined)[][] = Array.from(
     { length: height },
@@ -198,7 +208,29 @@ export function gridEdges<T>(
       }
     }
   });
-  const edges = new Map<GridCell<T>, Record<CellSide, CellEdge>>();
+  const sides = new Map<GridCell<T>, Record<CellSide, CellSideLook>>();
+  const lookOf = (cell: BlockCell, side: CellSide): CellSideLook => {
+    const edge = cellSide(cell, side);
+    return {
+      edge,
+      colour: edge === "none" ? null : (cell.borderColor ?? null),
+    };
+  };
+  // Whether `other` wins a side over `current`; `before` when `other` is
+  // above or to the left.
+  const wins = (
+    other: CellSideLook,
+    current: CellSideLook,
+    before: boolean,
+  ) => {
+    const a = EDGE_WEIGHT[other.edge];
+    const b = EDGE_WEIGHT[current.edge];
+    if (a !== b) return a > b;
+    if (Boolean(other.colour) !== Boolean(current.colour)) {
+      return Boolean(other.colour);
+    }
+    return before;
+  };
   grid.rows.forEach((row, r) => {
     for (const cell of row) {
       const neighbours: Record<CellSide, (GridCell<T> | undefined)[]> = {
@@ -215,19 +247,37 @@ export function gridEdges<T>(
         neighbours.left.push(at[r + dr]?.[cell.column - 1]);
         neighbours.right.push(at[r + dr]?.[cell.column + cell.colspan]);
       }
-      const own = {} as Record<CellSide, CellEdge>;
+      const own = {} as Record<CellSide, CellSideLook>;
       for (const side of CELL_SIDES) {
-        let edge = cellSide(cell.cell, side);
+        let look = lookOf(cell.cell, side);
         for (const other of neighbours[side]) {
-          if (other && other !== cell) {
-            edge = strongerEdge(edge, cellSide(other.cell, OPPOSITE[side]));
+          if (!other || other === cell) continue;
+          const theirs = lookOf(other.cell, OPPOSITE[side]);
+          if (wins(theirs, look, side === "top" || side === "left")) {
+            look = theirs;
           }
         }
-        own[side] = edge;
+        own[side] = look;
       }
-      edges.set(cell, own);
+      sides.set(cell, own);
     }
   });
+  return sides;
+}
+
+/** How each side of each cell is drawn (gridSides), without the colours. */
+export function gridEdges<T>(
+  grid: TableGrid<T>,
+): Map<GridCell<T>, Record<CellSide, CellEdge>> {
+  const edges = new Map<GridCell<T>, Record<CellSide, CellEdge>>();
+  for (const [cell, sides] of gridSides(grid)) {
+    edges.set(cell, {
+      top: sides.top.edge,
+      right: sides.right.edge,
+      bottom: sides.bottom.edge,
+      left: sides.left.edge,
+    });
+  }
   return edges;
 }
 
@@ -239,6 +289,9 @@ export function gridEdges<T>(
 export function cellLayoutKey(cell: BlockCell): unknown[] {
   return [
     ...CELL_SIDES.map((side) => cell.borders?.[side] ?? null),
+    cell.borderColor && cell.borderColor !== "burgundy"
+      ? cell.borderColor
+      : null,
     cell.tableWidth ?? 100,
     (cell.tableWidth ?? 100) < 100 ? (cell.tableAlign ?? null) : null,
   ];

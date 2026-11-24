@@ -122,6 +122,7 @@ const cellSchema = z
         left: z.enum(CELL_BORDER_STYLES).optional(),
       })
       .optional(),
+    borderColor: z.enum(CELL_FILL_NAMES).optional(),
     // 100 is the default, kept out as absent.
     tableWidth: z.number().int().min(TABLE_MIN_WIDTH).max(100).optional(),
     tableAlign: z.enum(BLOCK_ALIGNMENTS).optional(),
@@ -144,6 +145,10 @@ const cellSchema = z
         if (style) borders[side] = style;
       }
       if (Object.keys(borders).length > 0) result.borders = borders;
+    }
+    // The template's own colour is the default.
+    if (cell.borderColor && cell.borderColor !== "burgundy") {
+      result.borderColor = cell.borderColor;
     }
     // A full-width table sits nowhere in particular.
     if (cell.tableWidth !== undefined && cell.tableWidth < 100) {

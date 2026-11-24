@@ -80,6 +80,14 @@ export interface BlockCell {
    */
   borders?: CellBorders;
   /**
+   * The colour of the cell's rules, by its name in CREUP's palette
+   * (CELL_FILLS, as `fill`), never a colour code; without it, the template's
+   * burgundy (which is why "burgundy" is never stored). A side two cells
+   * share takes the stronger one's colour; when both are as strong, a colour
+   * of its own over the template's, then the cell above or to the left.
+   */
+  borderColor?: CellFillName;
+  /**
    * The table's width, in percent of the text's, when narrower than it
    * (TABLE_MIN_WIDTH to 99), and where it then sits: at the start, centred
    * or at the end. Every cell of a table carries the same, and readers take

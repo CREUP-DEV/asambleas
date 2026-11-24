@@ -8,14 +8,20 @@ import type {
   MarkType,
   Segment,
 } from "../../types/content";
-import { IMAGE_ASSET_PATTERN, IMAGE_URL_PREFIX } from "../../types/content";
+import {
+  CELL_SIDES,
+  IMAGE_ASSET_PATTERN,
+  IMAGE_URL_PREFIX,
+} from "../../types/content";
 import { cellFillOf } from "../../constants/cellFills";
 import { withAutolinks } from "./autolink";
 import { renderFormula } from "./formula";
 import { markerOf } from "./lists";
 import {
   cellBorderTokens,
+  gridSides,
   groupTables,
+  tableGrid,
   tableLayoutAttributes,
   tableLayoutOf,
   type TableGroup,
@@ -213,6 +219,20 @@ function tableHtml(
     table.rows.length === 1 && table.rows[0]!.cells.length === 1
       ? ' role="presentation"'
       : "";
+  // The colour of each side, as the cell that wins it says (gridSides), so
+  // two cells that share it agree; by palette name only.
+  const colours = new Map<string, string>();
+  if (table.rows.some((row) => row.cells.some((c) => c.cell.borderColor))) {
+    for (const [cell, sides] of gridSides(tableGrid(table))) {
+      const style = CELL_SIDES.filter((side) => sides[side].colour)
+        .map(
+          (side) =>
+            `border-${side}-color: var(--cx-fill-${sides[side].colour})`,
+        )
+        .join("; ");
+      if (style) colours.set(cell.cell.cell, style);
+    }
+  }
   let html = `<div class="cx-table-wrap"><table class="cx-table"${layout}${box}><tbody>`;
   for (const row of table.rows) {
     html += "<tr>";
@@ -224,6 +244,8 @@ function tableHtml(
       // Its sides, from a fixed set of names (main.css draws them).
       const borders = cellBorderTokens(cell.cell.borders);
       if (borders) attrs += ` data-cx-borders="${borders}"`;
+      const colour = colours.get(cell.cell.cell);
+      if (colour) attrs += ` style="${colour}"`;
       if (cell.cell.colspan)
         attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
       if (cell.cell.rowspan)

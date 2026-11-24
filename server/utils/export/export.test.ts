@@ -1496,6 +1496,20 @@ describe("CREUP template", () => {
     expect(node!.layout.hLineWidth(0)).toBe(1.5);
     expect(node!.layout.hLineWidth(1)).toBe(0.75);
     expect(node!.layout.vLineWidth(0)).toBe(0.75);
+
+    const [blue] = blocksToPdf(
+      [{ ...p("x", "Azul"), cell: { ...cell, borderColor: "blue" } }],
+      { links: new LinkRegistry() },
+    ) as unknown as {
+      table: { body: { borderColor?: (string | undefined)[] }[][] };
+    }[];
+    // Left, top, right, bottom: a hidden side has no colour to draw.
+    expect(blue!.table.body[0]![0]!.borderColor).toEqual([
+      undefined,
+      "#163866",
+      undefined,
+      undefined,
+    ]);
   });
 
   it("draws tables with header rows, spans and widths that fit the page", async () => {
