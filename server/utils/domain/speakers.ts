@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -53,10 +53,6 @@ type MemberColumns = Pick<
   typeof members.$inferSelect,
   "id" | "acronym" | "name" | "kind"
 >;
-
-function fail(statusCode: number, message: string): never {
-  throw createError({ statusCode, message });
-}
 
 function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;

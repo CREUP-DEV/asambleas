@@ -1197,16 +1197,52 @@ watch(
   { flush: "post" },
 );
 useResizeObserver(blocBox, layoutBloc);
+
+/**
+ * A count on screen fits it too (E-122): its sizes shrink together
+ * (fitDiff on its box, `.projection-tally-*`) down to a floor the back of
+ * the room still reads. An election's count takes the screen alone, and
+ * the speakers' band leaves while it lasts: nobody speaks during a count.
+ */
+const electionCounting = computed(
+  () => Boolean(tally.value?.election) && mode.value !== "recess",
+);
+const tallyBox = ref<HTMLElement | null>(null);
+let tallyFrame = 0;
+function layoutTally(): void {
+  if (!import.meta.client || tallyFrame) return;
+  tallyFrame = requestAnimationFrame(() => {
+    tallyFrame = 0;
+    if (tallyBox.value) fitDiff(tallyBox.value);
+  });
+}
+// What takes room changed (the rows, the names, the question, the message
+// above), not each vote: a count's digits never change its height.
+watch(
+  () => [
+    tallyRows.value.map((row) => `${row.key}:${row.name ?? ""}`).join(),
+    tallySubject.value,
+    tallyQuestion.value,
+    Boolean(tally.value?.counts),
+    message.value,
+    tallyBox.value,
+  ],
+  layoutTally,
+  { flush: "post" },
+);
+useResizeObserver(tallyBox, layoutTally);
 // The content font (Raleway or the reader's preference) may land after the
 // first layout and change the height of the text.
 onMounted(() => {
   void window.document.fonts?.ready.then(() => {
     layoutDiff();
     layoutBloc();
+    layoutTally();
   });
 });
 onBeforeUnmount(() => {
   if (layoutFrame) cancelAnimationFrame(layoutFrame);
+  if (tallyFrame) cancelAnimationFrame(tallyFrame);
 });
 
 // Clock and fullscreen -----------------------------------------------------------
@@ -1391,15 +1427,17 @@ useHead(() => ({
     >
       <!-- A secret vote being counted: what is voted, its question, and
            the count growing ballot by ballot or a line saying the result
-           comes at the end. -->
+           comes at the end. It fits the screen (layoutTally): nobody
+           scrolls a projector. -->
       <section
         v-if="tally && mode !== 'recess'"
+        ref="tallyBox"
         role="status"
         aria-live="polite"
-        class="border-primary/50 bg-primary/5 rounded-2xl border-4 px-[clamp(1rem,2.5vw,2.5rem)] py-[clamp(0.75rem,2vw,2rem)]"
+        class="border-primary/50 bg-primary/5 min-h-0 overflow-hidden rounded-2xl border-4 px-[clamp(1rem,2.5vw,2.5rem)] py-[clamp(0.75rem,2vw,2rem)]"
       >
         <p
-          class="text-muted flex items-center gap-2 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+          class="projection-tally-title text-muted flex items-center gap-2 font-medium"
         >
           <span
             class="bg-error size-[0.6em] rounded-full motion-safe:animate-pulse"
@@ -1409,13 +1447,13 @@ useHead(() => ({
         </p>
         <p
           v-if="tallySubject"
-          class="text-highlighted mt-1 text-[clamp(1.5rem,3vw,3.25rem)] leading-tight font-extrabold tracking-tight"
+          class="projection-tally-subject text-highlighted mt-1 leading-tight font-extrabold tracking-tight"
         >
           {{ tallySubject }}
         </p>
         <p
           v-if="tallyQuestion"
-          class="text-highlighted mt-1 text-[clamp(1.25rem,2.4vw,2.75rem)] leading-snug font-semibold whitespace-pre-line"
+          class="projection-tally-question text-highlighted mt-1 leading-snug font-semibold whitespace-pre-line"
         >
           {{ tallyQuestion }}
         </p>
@@ -1428,7 +1466,16 @@ useHead(() => ({
             :key="`${row.key}:${row.option}`"
             class="min-w-0"
           >
-            <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
+            <!-- An election's candidate reads as in its result (VoteElection
+                 lg): the name is what the room follows; it wraps, never
+                 cut, since two may differ only at the end (E-121). -->
+            <dt
+              :class="
+                row.key === 'candidate'
+                  ? 'projection-tally-name text-highlighted leading-tight font-semibold break-words'
+                  : 'projection-tally-label text-muted leading-tight break-words'
+              "
+            >
               {{
                 row.key === "candidate"
                   ? row.name ||
@@ -1441,7 +1488,7 @@ useHead(() => ({
               }}
             </dt>
             <dd
-              class="text-[clamp(2.25rem,4.5vw,4.75rem)] leading-tight font-extrabold tabular-nums"
+              class="projection-tally-count leading-tight font-extrabold tabular-nums"
             >
               <CommonTabularDigits :text="String(row.count)" />
             </dd>
@@ -1467,7 +1514,7 @@ useHead(() => ({
         </dl>
         <p
           v-if="tally.counts"
-          class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1rem,1.6vw,1.75rem)] tabular-nums"
+          class="projection-tally-line text-default mt-[clamp(0.5rem,1vw,1rem)] tabular-nums"
         >
           {{
             tally.present !== null
@@ -1481,7 +1528,7 @@ useHead(() => ({
         </p>
         <p
           v-else
-          class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.125rem,1.8vw,2rem)] font-medium"
+          class="projection-tally-reveal text-default mt-[clamp(0.5rem,1vw,1rem)] font-medium"
         >
           {{ t("projection.tally.revealAtEnd") }}
           · {{ tallyRule }}
@@ -1713,6 +1760,10 @@ useHead(() => ({
           <template v-else>{{ recessLeft }}</template>
         </p>
       </section>
+
+      <!-- An election being counted takes the screen alone: no document,
+           amendment nor agenda beside its count (E-122). -->
+      <template v-else-if="electionCounting" />
 
       <!-- An amendment, or a bloc of them, takes most of the screen; beside
            it, a narrow column names the agenda item, counts and lists the
@@ -2170,11 +2221,14 @@ useHead(() => ({
         screen when a long agenda overflows it (an amendment's diff fits in
         its own box above it). The opaque wrapper hides the text scrolling
         behind the translucent band. Nobody speaking nor waiting leaves it
-        out: the document and the agenda take that room.
+        out, and so does a count on screen (nobody speaks while the Mesa
+        counts, and the count needs the room, E-122): the document, the
+        agenda or the count take that room.
       -->
       <div
         v-if="
           mode !== 'recess' &&
+          !tally &&
           speakers &&
           (speakers.current || speakers.next.length > 0)
         "
@@ -2204,6 +2258,62 @@ useHead(() => ({
   font-size: max(
     0.75rem,
     calc(clamp(1rem, 1.6vw, 1.875rem) * var(--projection-fit, 1))
+  );
+}
+
+/*
+ * A count on screen: each size shrinks with --projection-fit (layoutTally)
+ * until the whole count fits, never below a floor the back of the room
+ * still reads: no label under 18 px (a candidate's name, «En blanco»,
+ * «A favor»…: muted, not smaller, says what is secondary), no count under 28.
+ */
+.projection-tally-title {
+  font-size: max(
+    1rem,
+    calc(clamp(1rem, 1.4vw, 1.5rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-subject {
+  font-size: max(
+    1.25rem,
+    calc(clamp(1.5rem, 3vw, 3.25rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-question {
+  font-size: max(
+    1.125rem,
+    calc(clamp(1.25rem, 2.4vw, 2.75rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-label,
+.projection-tally-name {
+  font-size: max(
+    1.125rem,
+    calc(clamp(1.25rem, 2vw, 2.25rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-count {
+  font-size: max(
+    1.75rem,
+    calc(clamp(2.25rem, 4.5vw, 4.75rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-line {
+  font-size: max(
+    1rem,
+    calc(clamp(1rem, 1.6vw, 1.75rem) * var(--projection-fit, 1))
+  );
+}
+
+.projection-tally-reveal {
+  font-size: max(
+    1.125rem,
+    calc(clamp(1.125rem, 1.8vw, 2rem) * var(--projection-fit, 1))
   );
 }
 

@@ -308,7 +308,7 @@ const moreBusy = computed(
 
 <template>
   <article
-    class="border-default bg-default space-y-3 rounded-lg border p-4"
+    class="border-default bg-default space-y-3 rounded-lg border p-3 sm:p-4"
     :class="selected ? 'ring-primary border-primary ring-1' : ''"
     :aria-labelledby="titleId"
   >
@@ -494,7 +494,7 @@ const moreBusy = computed(
           :amendment="amendment"
           :base="base"
         >
-          <div class="border-default rounded-md border p-3">
+          <div class="border-default rounded-md border p-2 sm:p-3">
             <div
               v-if="base === null && baseLoading"
               class="space-y-2"

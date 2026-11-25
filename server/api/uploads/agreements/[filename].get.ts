@@ -1,3 +1,4 @@
+import { notFound } from "../../../utils/core/http";
 import {
   createError,
   defineEventHandler,
@@ -35,9 +36,7 @@ import {
   canSeeDocument,
 } from "../../../utils/domain/visibility";
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Archivo no encontrado" });
-}
+const NOT_FOUND_MESSAGE = "Archivo no encontrado";
 
 /** RFC 6266 header with an ASCII fallback and the UTF-8 name. */
 function contentDisposition(name: string): string {
@@ -91,12 +90,12 @@ export default defineEventHandler(async (event) => {
     !canSeeAssembly(actor, { status: row.assemblyStatus }) ||
     !canSeeDocument(actor, (await withCoProponentIds([row]))[0]!)
   ) {
-    notFound();
+    notFound(NOT_FOUND_MESSAGE);
   }
 
   const filePath = join(getUploadDir(), filename);
   const fileStat = await stat(filePath).catch(() => null);
-  if (!fileStat?.isFile()) notFound();
+  if (!fileStat?.isFile()) notFound(NOT_FOUND_MESSAGE);
 
   // Kept by the browser and asked about each time, after the checks above:
   // a PDF it already holds answers 304 instead of being sent again.

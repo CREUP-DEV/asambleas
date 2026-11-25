@@ -1,8 +1,6 @@
-import { defineEventHandler, readBody } from "h3";
-import {
-  parseDocumentBody,
-  resolveDocumentRoute,
-} from "../../../../../utils/domain/documents";
+import { readBodyWith } from "../../../../../utils/core/http";
+import { defineEventHandler } from "h3";
+import { resolveDocumentRoute } from "../../../../../utils/domain/documents";
 import { recordDocumentReading } from "../../../../../utils/domain/documentViews";
 import type { DocumentReadingDto } from "~~/shared/types/api";
 import { documentReadingSchema } from "~~/shared/utils/schemas/document";
@@ -15,10 +13,7 @@ import { documentReadingSchema } from "~~/shared/utils/schemas/document";
 export default defineEventHandler(
   async (event): Promise<DocumentReadingDto> => {
     const ctx = await resolveDocumentRoute(event);
-    const body = parseDocumentBody(
-      documentReadingSchema,
-      await readBody(event),
-    );
+    const body = await readBodyWith(event, documentReadingSchema);
     return recordDocumentReading(ctx, body);
   },
 );

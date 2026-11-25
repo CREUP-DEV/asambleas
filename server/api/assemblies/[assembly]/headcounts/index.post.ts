@@ -1,9 +1,9 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
 import type { HeadcountsDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { headcountBodySchema } from "~~/shared/utils/schemas/headcount";
 import { requireActor, requireCan } from "../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import { recordHeadcount } from "../../../../utils/domain/headcounts";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../utils/errors";
@@ -16,7 +16,7 @@ export default defineEventHandler(async (event): Promise<HeadcountsDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, headcountBodySchema);
+  const body = await readBodyWith(event, headcountBodySchema);
 
   try {
     const headcounts = await recordHeadcount(actor, assembly, body);

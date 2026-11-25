@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -78,14 +78,6 @@ const STALE_TEXT_MESSAGE =
 
 /** The note of the version that adds the record's own approval. */
 const SELF_APPROVAL_NOTE = "Acuerdo de aprobación del acta";
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({
-    statusCode,
-    message,
-    ...(data === undefined ? {} : { data }),
-  });
-}
 
 function sheetVote(row: typeof votes.$inferSelect): SheetVote {
   return {

@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../utils/core/http";
 import { createError, defineEventHandler, setResponseStatus } from "h3";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
@@ -11,7 +12,6 @@ import {
   findAssemblyByTypeNumber,
   insertMilestones,
   loadAssemblyDto,
-  readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../utils/domain/assemblies";
 import { loadCalendarRules } from "../../utils/domain/calendarRules";
@@ -24,7 +24,7 @@ import { recordEvent } from "../../utils/domain/events";
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_CREATE);
-  const body = await readAssemblyBody(event, assemblyCreateBodySchema);
+  const body = await readBodyWith(event, assemblyCreateBodySchema);
 
   const startDate = new Date(body.startDate);
   const endDate = new Date(body.endDate);

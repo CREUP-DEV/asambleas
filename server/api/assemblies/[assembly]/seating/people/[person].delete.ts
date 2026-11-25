@@ -6,7 +6,7 @@ import {
   deleteSeatingPerson,
   requireSeatingEditor,
 } from "../../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../../utils/errors";
 
 /**
  * Removes someone added by hand, or a seat without a name, from the room
@@ -27,7 +27,7 @@ export default defineEventHandler(
         getRouterParam(event, "person"),
       );
     } catch (error) {
-      throwSeatingError("seating.person", error, event);
+      throwMutationError("seating.person", error, event);
     }
   },
 );

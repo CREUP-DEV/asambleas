@@ -1,9 +1,9 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { ProjectionControlDto } from "~~/shared/types/api";
 import { projectionControlBodySchema } from "~~/shared/utils/schemas/assembly";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../utils/domain/assemblies";
 import { projectionControl } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 
@@ -21,7 +21,7 @@ export default defineEventHandler(
       actor,
       getRouterParam(event, "assembly"),
     );
-    const body = await readAssemblyBody(event, projectionControlBodySchema);
+    const body = await readBodyWith(event, projectionControlBodySchema);
     return projectionControl(actor, assembly.id, body);
   },
 );

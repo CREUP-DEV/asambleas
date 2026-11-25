@@ -397,7 +397,7 @@ export interface ReviewQueueDto {
 }
 
 /**
- * GET .../review/validated (amendment:review): «Validadas» in the
+ * GET .../review/validated (amendment:review): «Publicadas» in the
  * validation inbox, the amendments validated and published that are still
  * undecided and can go back to review (`can.unvalidate`), by document in
  * agenda order, then in text order. Late ones waiting for the assembly's

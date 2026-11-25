@@ -1,3 +1,4 @@
+import { parseWith, readBodyWith } from "../../core/http";
 import { createError, getQuery, getRouterParam, type H3Event } from "h3";
 import type { z } from "zod/v4";
 import {
@@ -6,7 +7,6 @@ import {
   type packageSelectionSchema,
 } from "~~/shared/utils/schemas/export";
 import { requireActor, type Actor } from "../../domain/actor";
-import { parseDocumentBody } from "../../domain/documents";
 import { resolveAssembly } from "../../domain/resolvers";
 import { isFullPackageFilter, type PackageFilter } from "./filter";
 import { rememberedPackageFilter } from "./service";
@@ -25,22 +25,23 @@ export interface PackageRequest {
  * What the package endpoints share: the requester (any account that sees
  * the assembly: the package only holds what is public), the assembly,
  * which package (language, Word versions or not) and which part of it: the
- * request's `selection` (POST), or the key of a filter asked for before
+ * request's `selection` (POST, `post`: read from its body), or the key of a filter asked for before
  * (`?filter=`, status and download).
  */
 export async function resolvePackageRequest(
   event: H3Event,
-  body?: unknown,
+  { post = false }: { post?: boolean } = {},
 ): Promise<PackageRequest> {
   const actor = await requireActor(event);
   const assembly = await resolveAssembly(
     actor,
     getRouterParam(event, "assembly"),
   );
-  if (body !== undefined) {
-    const { locale, editable, justified, selection } = parseDocumentBody(
+  if (post) {
+    const { locale, editable, justified, selection } = await readBodyWith(
+      event,
       assemblyPackageRequestSchema,
-      body ?? {},
+      { empty: {} },
     );
     return {
       actor,
@@ -50,7 +51,7 @@ export async function resolvePackageRequest(
       filter: selection ? partFilter(selection) : null,
     };
   }
-  const { locale, editable, justified, filter } = parseDocumentBody(
+  const { locale, editable, justified, filter } = parseWith(
     assemblyPackageQuerySchema,
     getQuery(event),
   );

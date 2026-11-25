@@ -10,10 +10,29 @@ The usual AGENTS.md handler order applies:
 
 1. `requireActor(event)` from `server/utils/domain/actor.ts`.
 2. Resolve the route params.
-3. Validate the body.
+3. Validate the body with `readBodyWith` (the query with `readQueryWith`).
 4. Run the DB work in a transaction.
 5. Call `recordEvent`.
 6. Return the DTO.
+
+- **Validation errors.** `server/utils/core/http.ts`. A body that fails its
+  schema answers 400 «Datos no válidos» with `data.issues` (a `path` and a
+  `message` each); a body that is not JSON, 400 «Cuerpo de la petición no
+  válido»; a query, 400 «Parámetros no válidos» without issues. A few
+  endpoints keep their own 400 text (and `messageKey`, such as the
+  impersonation's reason). The amendment endpoints, a passage's wording,
+  the exports, the package request and the final vote's annulment read a
+  missing body as `{}`.
+- **Unexpected errors.** `throwMutationError` answers a unique violation
+  with 409 «Ya existe un registro con esos datos» and anything else with 500
+  «Error al procesar la solicitud», and logs only the error's summary
+  (`errorSummary`), never its message, which carries the query's parameters.
+  Any other error an `/api` handler lets through (a mutation without its own
+  `try`, a read) gets the same answer (with the status the thrown value
+  carried, if any, such as an Intranet call's) and the same log from
+  `funnelUnhandledError` (`server/plugins/error-funnel.ts`), before Nitro's
+  and Nuxt's error handlers, which would log it whole. A page's error keeps
+  Nuxt's error page.
 
 - **Route params.**
   - `[assembly]` accepts the slug (`80-ago`) or the id. Resolve it with
@@ -1754,7 +1773,7 @@ while an Admin impersonates, like the whole admin section.
   pending by the final vote too (user's decisions of 2026-11-21).
 
 `GET /api/assemblies/[assembly]/review/validated` returns a
-`ReviewValidatedDto` for `amendment:review` (403 otherwise): «Validadas»,
+`ReviewValidatedDto` for `amendment:review` (403 otherwise): «Publicadas»,
 the amendments validated and published that are still `submitted` and
 whose validation can be taken back (`can.unvalidate`), in the same order,
 late ones waiting for the assembly's decision left out. The inbox reads it
@@ -2213,7 +2232,8 @@ types: the «Seating» section of `shared/types/api.ts`.
   `layout` and `layoutUpdatedAt` null, no groups). Names, surnames, labels
   and photo URLs of the people are personal data and go only to seating
   readers, never to a log: the handlers log a failed query only by its
-  error's name and SQLSTATE (`throwSeatingError`). A group's `member` goes
+  summary (`throwMutationError`: name, SQLSTATE, constraint, stack frames).
+  A group's `member` goes
   through `redactMember`; `imageUrl` and `photoUrl` are null without a
   cached file of the row's current version or for what the Intranet no
   longer lists (`goneAt`). `can.edit` is `seating:edit`. Texts drop control

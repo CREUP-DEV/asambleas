@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
+import { createError, defineEventHandler, getRouterParam } from "h3";
+import { readBodyWith } from "../../utils/core/http";
 import { z } from "zod/v4";
 import {
   ALL_ASSEMBLY_TYPES,
@@ -30,18 +31,14 @@ export default defineEventHandler(async (event): Promise<CalendarRulesDto> => {
       message: "Tipo de asamblea no encontrado",
     });
   }
-  const body = calendarRulesBodySchema.safeParse(await readBody(event));
-  if (!body.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Reglas del calendario no válidas",
-    });
-  }
+  const body = await readBodyWith(event, calendarRulesBodySchema, {
+    message: "Reglas del calendario no válidas",
+  });
   return updateCalendarRules({
     event,
     actor,
     type: type.data,
-    rules: body.data.rules,
-    updatedAt: body.data.updatedAt,
+    rules: body.rules,
+    updatedAt: body.updatedAt,
   });
 });

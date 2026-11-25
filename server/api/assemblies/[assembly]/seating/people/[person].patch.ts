@@ -1,14 +1,14 @@
+import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { SeatingPersonResultDto } from "~~/shared/types/api";
 import { seatingPersonUpdateBodySchema } from "~~/shared/utils/schemas/seating";
 import { requireActor } from "../../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import {
   requireSeatingEditor,
   updateSeatingPerson,
 } from "../../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../../utils/errors";
 
 /** Changes a person of the room (seating:edit), with its optimistic lock. */
 export default defineEventHandler(
@@ -19,7 +19,7 @@ export default defineEventHandler(
       actor,
       getRouterParam(event, "assembly"),
     );
-    const body = await readAssemblyBody(event, seatingPersonUpdateBodySchema);
+    const body = await readBodyWith(event, seatingPersonUpdateBodySchema);
     try {
       return await updateSeatingPerson(
         actor,
@@ -28,7 +28,7 @@ export default defineEventHandler(
         body,
       );
     } catch (error) {
-      throwSeatingError("seating.person", error, event);
+      throwMutationError("seating.person", error, event);
     }
   },
 );

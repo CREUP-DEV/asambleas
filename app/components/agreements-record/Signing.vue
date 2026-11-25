@@ -41,6 +41,37 @@ type Busy = "prepare" | "sign" | "upload" | "remove" | "regenerate" | null;
 const busy = ref<Busy>(null);
 const announcement = ref("");
 
+/**
+ * Each step swaps the main button («Preparar para firmar», «Firmar con
+ * AutoFirma», «Ver el acta firmada») and disables the others meanwhile, so
+ * the focus would fall to the page: once a step ends it goes to the main
+ * button, or to the heading when that one is disabled (E-157). Only when
+ * the focus was lost, and the dialogs hand it over as they close.
+ */
+const mainButton = useTemplateRef<{ $el?: HTMLElement }>("mainButton");
+const heading = useTemplateRef<HTMLElement>("heading");
+function focusMain(): void {
+  const button = mainButton.value?.$el;
+  if (button?.isConnected && !button.matches(":disabled")) button.focus();
+  else heading.value?.focus();
+}
+watch(busy, async (now, before) => {
+  if (now || !before) return;
+  await nextTick();
+  if (confirmRemove.value || confirmRegenerate.value) return;
+  const active = window.document.activeElement;
+  if (active && active !== window.document.body && active.isConnected) {
+    if (!active.matches(":disabled")) return;
+  }
+  focusMain();
+});
+const dialogContent = {
+  onCloseAutoFocus: (event: Event) => {
+    event.preventDefault();
+    focusMain();
+  },
+};
+
 function done(next: AgreementsRecordDto, key: string): void {
   emit("update", next);
   announcement.value = t(key);
@@ -245,7 +276,12 @@ function at(value: string): string {
     class="border-default space-y-3 rounded-lg border p-4"
     aria-labelledby="agreements-signing-title"
   >
-    <h3 id="agreements-signing-title" class="text-highlighted font-semibold">
+    <h3
+      id="agreements-signing-title"
+      ref="heading"
+      tabindex="-1"
+      class="text-highlighted font-semibold outline-none"
+    >
       {{ t("agreementsRecord.signing.title") }}
     </h3>
 
@@ -307,6 +343,7 @@ function at(value: string): string {
       <div class="flex flex-wrap items-center gap-2">
         <UButton
           v-if="signed"
+          ref="mainButton"
           icon="i-lucide-file-text"
           color="neutral"
           variant="outline"
@@ -317,6 +354,7 @@ function at(value: string): string {
         />
         <UButton
           v-else-if="prepared"
+          ref="mainButton"
           icon="i-lucide-signature"
           :label="t('agreementsRecord.signing.sign')"
           :loading="busy === 'sign' || busy === 'upload'"
@@ -325,6 +363,7 @@ function at(value: string): string {
         />
         <UButton
           v-else
+          ref="mainButton"
           icon="i-lucide-file-pen-line"
           :label="t('agreementsRecord.signing.prepare')"
           :loading="busy === 'prepare'"
@@ -362,6 +401,7 @@ function at(value: string): string {
 
     <UModal
       v-model:open="confirmRemove"
+      :content="dialogContent"
       :title="t('agreementsRecord.signing.removeTitle')"
       :description="t('agreementsRecord.signing.removeDescription')"
     >
@@ -386,6 +426,7 @@ function at(value: string): string {
     </UModal>
     <UModal
       v-model:open="confirmRegenerate"
+      :content="dialogContent"
       :title="t('agreementsRecord.signing.regenerateTitle')"
       :description="t('agreementsRecord.signing.outdatedSigned')"
     >

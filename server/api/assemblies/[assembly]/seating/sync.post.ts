@@ -6,7 +6,7 @@ import {
   requireSeatingEditor,
   syncSeating,
 } from "../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../utils/errors";
 
 /**
  * Reads the Intranet's attendees into the room (seating:edit), at most once
@@ -24,7 +24,7 @@ export default defineEventHandler(
     try {
       return await syncSeating(actor, assembly);
     } catch (error) {
-      throwSeatingError("seating.sync", error, event);
+      throwMutationError("seating.sync", error, event);
     }
   },
 );

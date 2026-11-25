@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -33,10 +33,6 @@ import { recordEvent } from "./events";
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = typeof db | Tx;
 type WordingRow = typeof passageWordings.$inferSelect;
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
 
 export function toPassageWordingDto(row: WordingRow): PassageWordingDto {
   return {

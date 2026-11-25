@@ -4,7 +4,7 @@ import {
   getExportQueue,
 } from "../utils/export/queue";
 import { startUserAvatars } from "../utils/auth/avatars";
-import { seatingErrorSummary } from "../utils/seating/errors";
+import { errorSummary } from "../utils/errors";
 
 /**
  * The accounts' photos (server/utils/auth/avatars.ts): creates the
@@ -19,6 +19,6 @@ export default defineNitroPlugin(() => {
     .then((boss) => startUserAvatars(boss))
     // By name and SQLSTATE only, as every avatar error (avatars.ts).
     .catch((error) =>
-      logError("auth.avatars", seatingErrorSummary(error), { action: "start" }),
+      logError("auth.avatars", errorSummary(error), { action: "start" }),
     );
 });

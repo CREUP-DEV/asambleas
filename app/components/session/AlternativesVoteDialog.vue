@@ -186,16 +186,38 @@ const revealPending = computed(() => revealOffered.value && !reveal.value);
 const liveCount = computed(
   () => revealOffered.value && reveal.value === "live",
 );
+/**
+ * The last ballot added or taken back, said once to screen readers with
+ * whose it is («Alternativa A: 5, uno más»), never a bare count, as in
+ * ElectionFields (E-123).
+ */
+const spoken = ref("");
+watch(liveCount, () => {
+  spoken.value = "";
+});
 function addBallot(index: number | "blank" | "invalid", step: 1 | -1): void {
-  if (index === "blank") blank.value = Math.max(0, blank.value + step);
-  else if (index === "invalid")
-    invalid.value = Math.max(0, invalid.value + step);
-  else {
-    const next = [...counts.value];
-    next[index] = Math.max(0, (next[index] ?? 0) + step);
-    counts.value = next;
+  let next: number;
+  let name: string;
+  if (index === "blank") {
+    next = Math.max(0, blank.value + step);
+    blank.value = next;
+    name = t("amendment.vote.blank");
+  } else if (index === "invalid") {
+    next = Math.max(0, invalid.value + step);
+    invalid.value = next;
+    name = t("amendment.vote.invalid");
+  } else {
+    const all = [...counts.value];
+    next = Math.max(0, (all[index] ?? 0) + step);
+    all[index] = next;
+    counts.value = all;
+    name = alternativesText.optionName(index);
   }
   serverUndecided.value = null;
+  spoken.value = t(
+    step === 1 ? "session.election.countUp" : "session.election.countDown",
+    { name, count: next },
+  );
 }
 /** What the projection shows while the secret vote is counted. */
 const announcement = computed<LiveTally | null>(() => {
@@ -597,6 +619,9 @@ function amendmentLine(id: string): string {
           </div>
           <!-- Counted live: one tile per option and per blank or invalid ballot. -->
           <div v-if="liveCount" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <!-- Mounted with the tiles, before the first ballot, so it is
+                 heard; out of the flow, it takes no cell. -->
+            <p class="sr-only" aria-live="polite">{{ spoken }}</p>
             <div
               v-for="tile in [
                 ...counts.map((count, index) => ({
@@ -621,10 +646,7 @@ function amendmentLine(id: string): string {
               <span class="text-muted text-sm font-medium">{{
                 tile.label
               }}</span>
-              <span
-                class="text-highlighted text-3xl font-bold tabular-nums"
-                aria-live="polite"
-              >
+              <span class="text-highlighted text-3xl font-bold tabular-nums">
                 {{ tile.count }}
               </span>
               <div class="flex items-center gap-1">

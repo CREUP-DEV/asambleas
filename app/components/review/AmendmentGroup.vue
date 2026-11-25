@@ -27,7 +27,7 @@ import {
  * (splitReviewParts): in the "Por revisar" tab, those waiting for
  * validation and the transactionals still waiting for the main authors of
  * the amendments they would replace (shown with who is missing, not
- * actionable); in the "Validadas sin publicar" tab, those validated but kept
+ * actionable); in the "Sin publicar" tab, those validated but kept
  * private. Each with its changes over the published text (fetched once per
  * document). When there are several, they can be selected to validate or
  * publish them at once: the endpoints work per document. Late ones waiting

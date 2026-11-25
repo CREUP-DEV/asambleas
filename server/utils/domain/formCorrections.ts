@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -66,14 +66,6 @@ import type { Block } from "~~/shared/types/content";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 type CorrectionRow = typeof documentFormCorrections.$inferSelect;
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({
-    statusCode,
-    message,
-    ...(data === undefined ? {} : { data }),
-  });
-}
 
 const STALE_MESSAGE =
   "El texto aprobado ha cambiado desde que lo abriste. Recarga la página";

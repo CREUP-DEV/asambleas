@@ -269,7 +269,7 @@ async function buildReviewAmendments(
 }
 
 /**
- * «Validadas» in the validation inbox (GET .../review/validated, amendment:
+ * «Publicadas» in the validation inbox (GET .../review/validated, amendment:
  * review; user's decision of 2026-11-20): the amendments it validated and
  * published that are still undecided and whose validation can still be
  * taken back (`can.unvalidate`), by document in agenda order and then in

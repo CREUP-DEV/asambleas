@@ -193,6 +193,8 @@
         "addColumnBefore": "Añadir columna a la izquierda",
         "addColumnAfter": "Añadir columna a la derecha",
         "deleteColumn": "Eliminar columna",
+        "selectTable": "Seleccionar toda la tabla",
+        "cellsTarget": "En las celdas seleccionadas, o en la del cursor",
         "fill": {
           "label": "Color de la celda",
           "none": "Sin color",
@@ -220,6 +222,7 @@
           "full": "Todo el ancho",
           "percent": "{n} %",
           "place": "Posición de la tabla",
+          "placeNeedsWidth": "Elige antes un ancho menor",
           "start": "A la izquierda",
           "center": "Centrada",
           "right": "A la derecha"
@@ -1335,6 +1338,7 @@
       "conciliate": "Conciliar",
       "propose": "Proponer redacción",
       "save": "Conciliar el pasaje",
+      "applyAsk": "Al aplicarla, esta redacción concilia el pasaje en el texto aprobado.",
       "send": "Enviar a la Secretaría",
       "toasts": {
         "applied": "Pasaje conciliado en el texto aprobado",
@@ -3855,6 +3859,9 @@
       "noChange": "Todavía no has cambiado nada del texto.",
       "apply": "Guardar la corrección",
       "send": "Enviar a la Secretaría",
+      "applyShort": "Guardar…",
+      "sendShort": "Enviar…",
+      "toReason": "Lleva al motivo, al final del texto",
       "status": {
         "pending": "Pendiente",
         "applied": "Aplicada",
@@ -3871,6 +3878,8 @@
       "decisionNote": "Nota de la Secretaría: {note}",
       "overtaken": "Otra corrección ha cambiado el texto después. Ya no se puede aplicar tal cual.",
       "applyProposal": "Aplicar",
+      "applyAsk": "Al aplicarla, esta corrección sustituye al texto consolidado.",
+      "applyConfirm": "Aplicar al texto consolidado",
       "reject": "Rechazar",
       "withdraw": "Retirar",
       "rejectNote": "Nota para quien la propuso (opcional)",
@@ -3890,7 +3899,6 @@
     },
     "export": {
       "clean": "PDF limpio",
-      "signedRecord": "Descargar el acta firmada",
       "annotated": "PDF anotado",
       "retry": "Reintentar la exportación",
       "again": "Generar de nuevo",
@@ -4946,6 +4954,8 @@
       "project": "Mostrar el recuento en la proyección",
       "projectHelp": "Cada voto que anotes se ve al momento en la pantalla. Apagado, no se ve nada hasta el resultado.",
       "liveCountHintKeys": "Teclas 1 a {last}: un voto a cada casilla, en su orden. Cada voto se ve al momento en la proyección.",
+      "countUp": "{name}: {count}, uno más",
+      "countDown": "{name}: {count}, uno menos",
       "ballots": "Papeletas con algún voto",
       "ballotsHelp": "Las que marcan al menos una candidatura; sin contar las blancas ni las nulas.",
       "rule": "Cómo se elige",
@@ -5108,7 +5118,7 @@
       "document": "Documento",
       "allDocuments": "Todos los documentos",
       "member": "Quién presenta",
-      "allMembers": "Todos",
+      "allMembers": "Todos los miembros",
       "search": "Buscar…",
       "clear": "Quitar filtros"
     },
@@ -5159,10 +5169,10 @@
       "tabs": {
         "label": "Qué enmiendas ver",
         "review": "Por revisar",
-        "publish": "Validadas sin publicar",
-        "validated": "Validadas"
+        "publish": "Sin publicar",
+        "validated": "Publicadas"
       },
-      "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Validadas sin publicar».",
+      "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Sin publicar».",
       "none": "No hay enmiendas esperando tu validación.",
       "noCode": "Sin número",
       "reclassifyHelp": "Queda en el historial y sus autores lo verán en sus novedades.",
@@ -5224,6 +5234,7 @@
       "unvalidatedHint": "Vuelve a estar en «Por revisar»."
     },
     "validated": {
+      "title": "Validadas y publicadas",
       "filtered": "Ninguna coincide con los filtros.",
       "help": "Las enmiendas que ya validaste y publicaste y que aún no se han decidido. Si validaste alguna por error, deshaz la validación: vuelve a «Por revisar» tal como está. Para devolverla a sus autores con una nota, ábrela.",
       "none": "No hay enmiendas validadas y publicadas pendientes de decidir.",

@@ -1,11 +1,9 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { liveTallyBodySchema } from "~~/shared/utils/schemas/assembly";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
-import {
-  loadPublicItemMarks,
-  readAssemblyBody,
-} from "../../../utils/domain/assemblies";
+import { loadPublicItemMarks } from "../../../utils/domain/assemblies";
 import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import {
@@ -40,7 +38,7 @@ export default defineEventHandler(async (event) => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, liveTallyBodySchema);
+  const body = await readBodyWith(event, liveTallyBodySchema);
   setResponseStatus(event, 204);
   if (body.tally && assembly.status !== "in_session") return null;
   if (!controlsProjection(event, assembly.id, actor)) return null;

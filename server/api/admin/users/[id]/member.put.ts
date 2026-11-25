@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
+import { createError, defineEventHandler, getRouterParam } from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
 import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
 import { members, users } from "../../../../db/schema";
@@ -45,11 +46,9 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const parsed = userMemberLinkBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Miembro no válido" });
-  }
-  const { memberId } = parsed.data;
+  const { memberId } = await readBodyWith(event, userMemberLinkBodySchema, {
+    message: "Miembro no válido",
+  });
 
   const target = await db.query.users.findFirst({
     where: eq(users.id, userId),

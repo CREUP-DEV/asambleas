@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import {
   createError,
   defineEventHandler,
@@ -22,7 +23,6 @@ import {
 import {
   confirmFinalRootChange,
   loadAgendaItemSlug,
-  readAssemblyBody,
   throwAssemblyMutationError,
   toAgendaItemDto,
 } from "../../../../utils/domain/assemblies";
@@ -43,7 +43,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, agendaItemBodySchema);
+  const body = await readBodyWith(event, agendaItemBodySchema);
   const parentId = body.parentId ?? null;
   const acceptsSubmissions = body.acceptsSubmissions ?? false;
   const submissionKinds = normalizeSubmissionKinds(

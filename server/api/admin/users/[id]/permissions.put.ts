@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
+import { createError, defineEventHandler, getRouterParam } from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "../../../../db";
 import { permissions, userPermissions, users } from "../../../../db/schema";
@@ -57,14 +58,10 @@ export default defineEventHandler(async (event) => {
   };
   deny({});
 
-  const parsed = userPermissionsBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "La lista de permisos no es válida",
-    });
-  }
-  const unknown = unknownPermissionKeys(parsed.data.permissions);
+  const body = await readBodyWith(event, userPermissionsBodySchema, {
+    message: "La lista de permisos no es válida",
+  });
+  const unknown = unknownPermissionKeys(body.permissions);
   if (unknown.length > 0) {
     throw createError({
       statusCode: 422,
@@ -72,7 +69,7 @@ export default defineEventHandler(async (event) => {
       data: { unknown },
     });
   }
-  const keys = normalizePermissionKeys(parsed.data.permissions);
+  const keys = normalizePermissionKeys(body.permissions);
 
   const target = await db.query.users.findFirst({
     where: eq(users.id, userId),

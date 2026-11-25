@@ -1,4 +1,5 @@
 import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { agendaItems, documents, documentVersions } from "../../db/schema";
@@ -77,14 +78,6 @@ interface PlannedDocument {
   blocks: Block[];
   contentHash: string;
   dueAt: Date | null;
-}
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({
-    statusCode,
-    message,
-    ...(data === undefined ? {} : { data }),
-  });
 }
 
 /** What every member (not a manager) needs to present a document at all. */

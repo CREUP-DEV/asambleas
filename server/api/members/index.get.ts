@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../utils/core/http";
 import { asc, desc, eq } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
 import { orderMembers } from "~~/shared/utils/memberOrder";
@@ -34,20 +35,15 @@ import { memberImages } from "../../utils/members/images";
  */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
   const actor = await requireActor(event);
-  const query = memberListQuerySchema.safeParse(getQuery(event));
-  if (!query.success) {
-    throw createError({ statusCode: 400, message: "Parámetros no válidos" });
-  }
+  const query = readQueryWith(event, memberListQuerySchema);
 
   const forAmendment =
-    query.data.for !== undefined && canNameExecutiveAuthors(actor);
+    query.for !== undefined && canNameExecutiveAuthors(actor);
   const [rows, images] = await Promise.all([
     db
       .select()
       .from(members)
-      .where(
-        query.data.all && !forAmendment ? undefined : eq(members.active, true),
-      )
+      .where(query.all && !forAmendment ? undefined : eq(members.active, true))
       .orderBy(desc(members.active), asc(members.acronym)),
     memberImages(),
   ]);

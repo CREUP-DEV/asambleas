@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { and, eq, sql } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
@@ -10,7 +11,6 @@ import {
   assertDateRange,
   findAssemblyByTypeNumber,
   loadAssemblyDto,
-  readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
 import { diffChanges } from "../../../utils/domain/changes";
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
     getRouterParam(event, "assembly"),
   );
   const { updatedAt, settings, startDate, endDate, ...fields } =
-    await readAssemblyBody(event, assemblyUpdateBodySchema);
+    await readBodyWith(event, assemblyUpdateBodySchema);
 
   const nextStart = startDate ? new Date(startDate) : assembly.startDate;
   const nextEnd = endDate ? new Date(endDate) : assembly.endDate;

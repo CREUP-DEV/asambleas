@@ -1,8 +1,6 @@
-import { defineEventHandler, getRouterParam, readBody } from "h3";
-import {
-  parseDocumentBody,
-  resolveDocumentRoute,
-} from "../../../../../../../utils/domain/documents";
+import { readBodyWith } from "../../../../../../../utils/core/http";
+import { defineEventHandler, getRouterParam } from "h3";
+import { resolveDocumentRoute } from "../../../../../../../utils/domain/documents";
 import { withdrawFormCorrection } from "../../../../../../../utils/domain/formCorrections";
 import { validateCuid } from "../../../../../../../utils/validation";
 import type { FormCorrectionsDto } from "~~/shared/types/api";
@@ -12,10 +10,7 @@ import { formCorrectionWithdrawSchema } from "~~/shared/utils/schemas/document";
 export default defineEventHandler(
   async (event): Promise<FormCorrectionsDto> => {
     const ctx = await resolveDocumentRoute(event);
-    const body = parseDocumentBody(
-      formCorrectionWithdrawSchema,
-      await readBody(event),
-    );
+    const body = await readBodyWith(event, formCorrectionWithdrawSchema);
     return withdrawFormCorrection(
       ctx,
       validateCuid(getRouterParam(event, "correction"), "Corrección"),

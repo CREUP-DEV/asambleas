@@ -1,3 +1,4 @@
+import { notFound } from "../../../utils/core/http";
 import {
   createError,
   defineEventHandler,
@@ -27,9 +28,7 @@ import {
 } from "../../../utils/domain/documents";
 import { canSeeAssembly } from "../../../utils/domain/visibility";
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Convocatoria no encontrada" });
-}
+const NOT_FOUND_MESSAGE = "Convocatoria no encontrada";
 
 /** RFC 6266 header with an ASCII fallback and the UTF-8 name. */
 function contentDisposition(name: string): string {
@@ -65,11 +64,12 @@ export default defineEventHandler(async (event) => {
     )
     .limit(1);
 
-  if (!row || !canSeeAssembly(actor, { status: row.status })) notFound();
+  if (!row || !canSeeAssembly(actor, { status: row.status }))
+    notFound(NOT_FOUND_MESSAGE);
 
   const filePath = join(getUploadDir(), filename);
   const fileStat = await stat(filePath).catch(() => null);
-  if (!fileStat?.isFile()) notFound();
+  if (!fileStat?.isFile()) notFound(NOT_FOUND_MESSAGE);
 
   // Kept by the browser and asked about each time, after the checks above:
   // a PDF it already holds answers 304 instead of being sent again.

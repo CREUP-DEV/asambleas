@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { createError, getQuery, readBody } from "h3";
+import { fail } from "../core/http";
 import {
   and,
   asc,
@@ -14,7 +14,6 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import type { z } from "zod/v4";
 import { db } from "../../db";
 import {
   agendaItems,
@@ -124,34 +123,6 @@ const VISIBLE_DOCUMENT_STATUSES = PUBLIC_DOCUMENT_STATUSES;
 
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
-}
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
-
-// Request parsing -------------------------------------------------------------
-
-/** Reads and validates a JSON body, answering 400 with the issues on failure. */
-export async function readAssemblyBody<S extends z.ZodType>(
-  event: H3Event,
-  schema: S,
-): Promise<z.output<S>> {
-  const parsed = schema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    fail(400, "Datos no válidos", { issues: parsed.error.issues });
-  }
-  return parsed.data;
-}
-
-/** Validates the query string, answering 400 on failure. */
-export function readAssemblyQuery<S extends z.ZodType>(
-  event: H3Event,
-  schema: S,
-): z.output<S> {
-  const parsed = schema.safeParse(getQuery(event));
-  if (!parsed.success) fail(400, "Parámetros no válidos");
-  return parsed.data;
 }
 
 /**

@@ -1,4 +1,5 @@
-import { defineEventHandler, readBody, createError } from "h3";
+import { defineEventHandler, createError } from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
@@ -56,14 +57,9 @@ export default defineEventHandler(async (event) => {
     }
   };
 
-  const body = await readBody(event);
-  const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "permissionKeys debe ser un array de strings",
-    });
-  }
+  const body = await readBodyWith(event, bodySchema, {
+    message: "permissionKeys debe ser un array de strings",
+  });
 
   const role = await db.query.roles.findFirst({
     where: eq(roles.id, roleId),
@@ -96,9 +92,9 @@ export default defineEventHandler(async (event) => {
   deny({});
 
   const targetPermissions =
-    parsed.data.permissionKeys.length > 0
+    body.permissionKeys.length > 0
       ? await db.query.permissions.findMany({
-          where: inArray(permissions.key, parsed.data.permissionKeys),
+          where: inArray(permissions.key, body.permissionKeys),
           columns: { id: true, key: true },
         })
       : [];
@@ -115,7 +111,7 @@ export default defineEventHandler(async (event) => {
       .filter((key): key is string => Boolean(key));
     deny({
       before: previousPermissionKeys,
-      after: parsed.data.permissionKeys,
+      after: body.permissionKeys,
     });
 
     await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
@@ -138,7 +134,7 @@ export default defineEventHandler(async (event) => {
       targetId: roleId,
       before: { permissions: normalizePermissionKeys(previousPermissionKeys) },
       after: {
-        permissions: normalizePermissionKeys(parsed.data.permissionKeys),
+        permissions: normalizePermissionKeys(body.permissionKeys),
       },
     });
   });

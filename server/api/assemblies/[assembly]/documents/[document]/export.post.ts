@@ -1,8 +1,6 @@
-import { createError, defineEventHandler, readBody } from "h3";
-import {
-  parseDocumentBody,
-  resolveDocumentRoute,
-} from "../../../../../utils/domain/documents";
+import { readBodyWith } from "../../../../../utils/core/http";
+import { createError, defineEventHandler } from "h3";
+import { resolveDocumentRoute } from "../../../../../utils/domain/documents";
 import { enqueueExport } from "../../../../../utils/export/enqueue";
 import { createTranslator } from "../../../../../utils/export/labels";
 import { EXPORT_QUEUE_NAMES } from "../../../../../utils/export/queue";
@@ -21,10 +19,7 @@ import { documentExportSchema } from "~~/shared/utils/schemas/export";
  */
 export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
   const { actor, assembly, document } = await resolveDocumentRoute(event);
-  const body = parseDocumentBody(
-    documentExportSchema,
-    (await readBody(event)) ?? {},
-  );
+  const body = await readBodyWith(event, documentExportSchema, { empty: {} });
 
   const refusal = exportRefusal(actor, document, body.variant);
   if (refusal) {

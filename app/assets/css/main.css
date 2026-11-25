@@ -616,6 +616,17 @@ html {
     width: var(--cx-table-width, 100%);
   }
 
+  /*
+   * On a phone a table narrower than the text takes the whole column, or
+   * its cells shrink to a word per line (M-142); the PDF and Word keep it.
+   */
+  @media (width < 40rem) {
+    /* Not in the editor, whose width menu must show what it sets. */
+    .rich-text table[data-cx-width] {
+      width: 100%;
+    }
+  }
+
   :is(.rich-text, .content-editor) table[data-cx-align="center"] {
     margin-inline: auto;
   }

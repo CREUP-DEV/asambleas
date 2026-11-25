@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
+import { defineEventHandler, getRouterParam } from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
 import type { ImpersonationDto } from "~~/shared/types/api";
 import { impersonationStartBodySchema } from "~~/shared/utils/schemas/activity";
 import { requireAdmin } from "../../../../utils/auth/rbac";
@@ -19,17 +20,13 @@ export default defineEventHandler(async (event): Promise<ImpersonationDto> => {
   await requireAdmin(event);
   const targetUserId = validateAuthId(getRouterParam(event, "id"));
 
-  const parsed = impersonationStartBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Indica el motivo en una sola línea de hasta 200 caracteres",
-      data: { messageKey: "impersonation.errors.reason" },
-    });
-  }
+  const body = await readBodyWith(event, impersonationStartBodySchema, {
+    message: "Indica el motivo en una sola línea de hasta 200 caracteres",
+    data: { messageKey: "impersonation.errors.reason" },
+  });
 
   return startImpersonation(event, {
     targetUserId,
-    reason: parsed.data.reason,
+    reason: body.reason,
   });
 });

@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ReadMarksDto } from "~~/shared/types/api";
 import { readMarksBodySchema } from "~~/shared/utils/schemas/readMarks";
 import { requireActor } from "../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../utils/domain/assemblies";
 import { setReadMarks } from "../../../utils/domain/readMarks";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../utils/errors";
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event): Promise<ReadMarksDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, readMarksBodySchema);
+  const body = await readBodyWith(event, readMarksBodySchema);
 
   try {
     return await setReadMarks(event, actor, assembly, body);

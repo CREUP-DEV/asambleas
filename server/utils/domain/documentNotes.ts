@@ -1,3 +1,4 @@
+import { notFound } from "../core/http";
 import type { H3Event } from "h3";
 import { createError } from "h3";
 import { and, asc, count, eq } from "drizzle-orm";
@@ -70,9 +71,7 @@ function ownNote(actor: Actor, documentId: string, noteId: string) {
   );
 }
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Nota no encontrada" });
-}
+const NOTE_NOT_FOUND = "Nota no encontrada";
 
 /** The account's notes on the document, oldest first. */
 export async function listDocumentNotes(
@@ -155,7 +154,7 @@ export async function updateDocumentNote(
       .from(documentNotes)
       .where(ownNote(actor, document.id, noteId))
       .for("update");
-    if (!current) notFound();
+    if (!current) notFound(NOTE_NOT_FOUND);
     // The account may be open in several places: the later save says so.
     if (
       getOptimisticLockTimestampMs(body.updatedAt) !==
@@ -196,7 +195,7 @@ export async function deleteDocumentNote(
       .delete(documentNotes)
       .where(ownNote(actor, document.id, noteId))
       .returning({ blockId: documentNotes.blockId });
-    if (!removed) notFound();
+    if (!removed) notFound(NOTE_NOT_FOUND);
     await recordAudit(tx, {
       event,
       actor,

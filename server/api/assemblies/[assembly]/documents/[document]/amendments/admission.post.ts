@@ -1,9 +1,9 @@
+import { readBodyWith } from "../../../../../../utils/core/http";
 import { defineEventHandler } from "h3";
 import { admissionBodySchema } from "~~/shared/utils/schemas/amendment";
 import {
   decideAmendmentAdmission,
   loadAmendmentDocumentContext,
-  readAmendmentBody,
   type AmendmentAdmissionResult,
 } from "../../../../../../utils/domain/amendments";
 import { controlsProjection } from "../../../../../../utils/domain/projectionControl";
@@ -16,7 +16,7 @@ import { controlsProjection } from "../../../../../../utils/domain/projectionCon
 export default defineEventHandler(
   async (event): Promise<AmendmentAdmissionResult> => {
     const ctx = await loadAmendmentDocumentContext(event);
-    const body = await readAmendmentBody(event, admissionBodySchema);
+    const body = await readBodyWith(event, admissionBodySchema, { empty: {} });
     return decideAmendmentAdmission(ctx, body, {
       controlsProjection: controlsProjection(event, ctx.assembly.id, ctx.actor),
     });

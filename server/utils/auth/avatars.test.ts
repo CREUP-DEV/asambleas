@@ -122,7 +122,7 @@ describe("a failure while refreshing a photo", () => {
     await expect(refreshUserAvatar("u1")).resolves.toBeUndefined();
     expect(logger.logError).toHaveBeenCalledWith(
       "auth.avatars",
-      { name: "DrizzleQueryError", pgCode: "40P01" },
+      expect.objectContaining({ name: "DrizzleQueryError", pgCode: "40P01" }),
       { action: "refresh", userId: "u1" },
     );
     expect(JSON.stringify(logger.logError.mock.calls)).not.toContain(

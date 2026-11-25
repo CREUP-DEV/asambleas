@@ -357,7 +357,7 @@ describe("mutation endpoints", () => {
       ["server/utils/domain/actor.ts", "requireActor"],
       ["server/utils/domain/resolvers.ts", "resolveAssembly"],
       ["server/utils/domain/documents.ts", "resolveDocumentRoute"],
-      ["server/utils/domain/documents.ts", "parseDocumentBody"],
+      ["server/utils/core/http.ts", "readBodyWith"],
       ["server/utils/errors.ts", "throwMutationError"],
     ] as const) {
       expect(graph.nodes.has(node(file, name)), `${name} not found`).toBe(true);

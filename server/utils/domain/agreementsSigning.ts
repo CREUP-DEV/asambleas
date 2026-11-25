@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { eq, sql } from "drizzle-orm";
 import sharp from "sharp";
 import type {
@@ -83,10 +83,6 @@ const SIGNATURE_BOX = { width: 800, height: 320 };
 const SIGNATURE_DICTIONARY = /\/ByteRange\s*\[/;
 const STALE_MESSAGE =
   "El acta ha cambiado mientras tanto. Recarga e inténtalo de nuevo";
-
-function fail(statusCode: number, message: string): never {
-  throw createError({ statusCode, message });
-}
 
 type SigningRow = typeof agreementRecordSignings.$inferSelect;
 

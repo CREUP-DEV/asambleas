@@ -1,10 +1,10 @@
+import { readBodyWith } from "../../../../../../../utils/core/http";
 import { defineEventHandler } from "h3";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { amendmentCorrectionBodySchema } from "~~/shared/utils/schemas/document";
 import {
   declareInadmissibleOnReview,
   loadAmendmentContext,
-  readAmendmentBody,
   requestAmendmentCorrection,
 } from "../../../../../../../utils/domain/amendments";
 
@@ -15,9 +15,10 @@ import {
  */
 export default defineEventHandler(async (event): Promise<AmendmentDto> => {
   const ctx = await loadAmendmentContext(event);
-  const { correctable, ...body } = await readAmendmentBody(
+  const { correctable, ...body } = await readBodyWith(
     event,
     amendmentCorrectionBodySchema,
+    { empty: {} },
   );
   return correctable === false
     ? declareInadmissibleOnReview(ctx, body)

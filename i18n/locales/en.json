@@ -193,6 +193,8 @@
         "addColumnBefore": "Add column to the left",
         "addColumnAfter": "Add column to the right",
         "deleteColumn": "Delete column",
+        "selectTable": "Select the whole table",
+        "cellsTarget": "On the selected cells, or the one at the cursor",
         "fill": {
           "label": "Cell color",
           "none": "No color",
@@ -220,6 +222,7 @@
           "full": "Full width",
           "percent": "{n}%",
           "place": "Table position",
+          "placeNeedsWidth": "Choose a narrower width first",
           "start": "Left",
           "center": "Centred",
           "right": "Right"
@@ -1335,6 +1338,7 @@
       "conciliate": "Reconcile",
       "propose": "Propose a wording",
       "save": "Reconcile the passage",
+      "applyAsk": "Applying it reconciles the passage in the approved text with this wording.",
       "send": "Send to the Secretaría",
       "toasts": {
         "applied": "Passage reconciled in the approved text",
@@ -3855,6 +3859,9 @@
       "noChange": "You have not changed anything in the text yet.",
       "apply": "Save the correction",
       "send": "Send to the Secretaría",
+      "applyShort": "Save…",
+      "sendShort": "Send…",
+      "toReason": "Takes you to the reason, at the end of the text",
       "status": {
         "pending": "Pending",
         "applied": "Applied",
@@ -3871,6 +3878,8 @@
       "decisionNote": "Note from the Secretaría: {note}",
       "overtaken": "Another correction changed the text since. It can no longer be applied as is.",
       "applyProposal": "Apply",
+      "applyAsk": "Applying it replaces the consolidated text with this correction.",
+      "applyConfirm": "Apply to the consolidated text",
       "reject": "Reject",
       "withdraw": "Withdraw",
       "rejectNote": "Note for whoever proposed it (optional)",
@@ -3890,7 +3899,6 @@
     },
     "export": {
       "clean": "Clean PDF",
-      "signedRecord": "Download the signed record",
       "annotated": "Annotated PDF",
       "retry": "Retry the export",
       "again": "Generate again",
@@ -4946,6 +4954,8 @@
       "project": "Show the count on the projection",
       "projectHelp": "Each vote you enter shows on the screen at once. Off, nothing shows until the result.",
       "liveCountHintKeys": "Keys 1 to {last}: one vote to each tile, in their order. Each vote shows on the projection at once.",
+      "countUp": "{name}: {count}, one more",
+      "countDown": "{name}: {count}, one fewer",
       "ballots": "Ballots with a vote",
       "ballotsHelp": "Those marking at least one candidate; blank and invalid ones are not counted.",
       "rule": "How they are elected",
@@ -5108,7 +5118,7 @@
       "document": "Document",
       "allDocuments": "All documents",
       "member": "Presented by",
-      "allMembers": "Everyone",
+      "allMembers": "All members",
       "search": "Search…",
       "clear": "Clear filters"
     },
@@ -5159,10 +5169,10 @@
       "tabs": {
         "label": "Which amendments to show",
         "review": "To review",
-        "publish": "Validated, not published",
-        "validated": "Validated"
+        "publish": "Not published",
+        "validated": "Published"
       },
-      "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Validated, not published”.",
+      "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Not published”.",
       "none": "No amendments are waiting for your validation.",
       "noCode": "No number",
       "reclassifyHelp": "It stays in the history and its authors will see it in their news.",
@@ -5224,6 +5234,7 @@
       "unvalidatedHint": "It is in “To review” again."
     },
     "validated": {
+      "title": "Validated and published",
       "filtered": "None matches the filters.",
       "help": "The amendments you validated and published that are not decided yet. If you validated one by mistake, undo the validation: it goes back to “To review” as it is. To send it back to its authors with a note, open it.",
       "none": "There are no validated and published amendments still to be decided.",

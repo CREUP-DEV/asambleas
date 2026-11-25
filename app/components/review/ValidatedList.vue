@@ -7,17 +7,21 @@ import type {
 } from "~~/shared/types/api";
 import { amendmentDisplayLabel } from "~/composables/amendment/workspace";
 import { affectsReviewQueue } from "./-live";
+import { focusAfterUndo } from "./-validated";
 
 /**
- * «Validadas» in the validation inbox (user's decision of 2026-11-20): the
+ * «Publicadas» in the validation inbox (user's decision of 2026-11-20): the
  * amendments the Secretaría validated and published that are still
- * undecided (GET .../review/validated), by document, so a validation made
- * by mistake is taken back from here. Each row goes to the amendment (its
- * code) and its document heading to the document; «Deshacer la validación»
- * (POST .../unvalidate) sends it back to «Por revisar» as it is, after
- * saying what that does: everyone stops seeing it and, if its presenter
- * answered, the answer goes back to pending. Sending it back to its authors
- * with a note stays on the amendment's page («Devolver para corregir»).
+ * undecided (GET .../review/validated), by document (ValidatedGroup), so a
+ * validation made by mistake is taken back from here. Each row goes to the
+ * amendment and says where it acts and why; its document heading goes to
+ * the document. «Deshacer la validación» (POST .../unvalidate) sends it
+ * back to «Por revisar» as it is, after saying what that does: everyone
+ * stops seeing it and, if its presenter answered, the answer goes back to
+ * pending. Sending it back to its authors with a note stays on the
+ * amendment's page («Devolver para corregir»). Once taken back, the focus
+ * goes to the next row's «Deshacer» (or the one before), else to the help
+ * above the list, never to the top of the page (E-160).
  *
  * Read only while the tab is open (`active`), the first time and on live
  * changes then, so the inbox never carries the whole list. `undone` tells
@@ -26,6 +30,7 @@ import { affectsReviewQueue } from "./-live";
 const props = defineProps<{
   active: boolean;
   apiBase: string;
+  assemblyId: string;
   /** Localized path of a document of the assembly, by its slug. */
   documentPath: (slug: string) => string;
   /** The page's filters: one document, or one member among the authors. */
@@ -35,8 +40,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   undone: [amendment: AmendmentDto];
-  /** How many there are, once read. */
-  count: [count: number];
   announce: [message: string];
 }>();
 
@@ -91,7 +94,7 @@ onLive((events) => {
   else if (loadedOnce) rows.value = null;
 });
 
-/** The rows the page's filters keep; the tab counts these. */
+/** The rows the page's filters keep. */
 const shownRows = computed(() =>
   (rows.value ?? []).filter(
     (row) =>
@@ -100,12 +103,6 @@ const shownRows = computed(() =>
       (props.memberId === undefined ||
         row.amendment.authors.some((author) => author.id === props.memberId)),
   ),
-);
-watch(
-  () => (rows.value === null ? null : shownRows.value.length),
-  (count) => {
-    if (count !== null) emit("count", count);
-  },
 );
 
 /** By document, in the order the server sends them (agenda, then text). */
@@ -129,16 +126,9 @@ function labelOf(amendment: AmendmentDto): string {
   return amendmentDisplayLabel(amendment) ?? t("review.amendments.noCode");
 }
 
-function amendmentTo(slug: string, amendment: AmendmentDto) {
-  return {
-    path: props.documentPath(slug),
-    query: { enmienda: amendment.id },
-  };
-}
-
 // Undo ---------------------------------------------------------------------------
 
-const target = ref<{ amendment: AmendmentDto; slug: string } | null>(null);
+const target = ref<{ amendment: AmendmentDto } | null>(null);
 const busyId = ref<string | null>(null);
 /** The code the dialog names, kept while it closes. */
 const shownLabel = ref("");
@@ -151,6 +141,33 @@ const confirmOpen = computed({
     if (!open && !busyId.value) target.value = null;
   },
 });
+
+/**
+ * Where the focus goes as the dialog closes after a validation was taken
+ * back: that row and its button are gone, so the next row's «Deshacer» (by
+ * id, which survives a read landing meanwhile), else the help above the
+ * list. On cancel or failure the dialog gives it back to its button.
+ */
+const box = ref<HTMLElement | null>(null);
+const help = ref<HTMLElement | null>(null);
+let focusNext: { id: string | null } | null = null;
+const confirmContent = {
+  onCloseAutoFocus: (event: Event) => {
+    const next = focusNext;
+    focusNext = null;
+    if (!next) return;
+    const button =
+      next.id === null
+        ? null
+        : box.value?.querySelector<HTMLElement>(
+            `[data-undo-id="${CSS.escape(next.id)}"]`,
+          );
+    const element = button?.isConnected ? button : help.value;
+    if (!element?.isConnected) return;
+    event.preventDefault();
+    element.focus();
+  },
+};
 
 /** Its presenter answered: going back clears the answer. */
 function answered(amendment: AmendmentDto): boolean {
@@ -179,6 +196,12 @@ async function undo(): Promise<void> {
       `${props.apiBase}/documents/${encodeURIComponent(amendment.documentId)}/amendments/${encodeURIComponent(amendment.id)}/unvalidate`,
       { method: "POST", body: { ...body } },
     );
+    focusNext = {
+      id: focusAfterUndo(
+        shownRows.value.map((row) => row.amendment.id),
+        amendment.id,
+      ),
+    };
     rows.value = (rows.value ?? []).filter(
       (row) => row.amendment.id !== amendment.id,
     );
@@ -205,8 +228,12 @@ async function undo(): Promise<void> {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <p class="text-muted max-w-3xl text-sm">
+  <div ref="box" class="space-y-4">
+    <p
+      ref="help"
+      tabindex="-1"
+      class="text-muted max-w-3xl text-sm outline-none"
+    >
       {{ t("review.validated.help") }}
     </p>
 
@@ -244,71 +271,16 @@ async function undo(): Promise<void> {
     </p>
 
     <div v-else class="space-y-6">
-      <section
+      <ReviewValidatedGroup
         v-for="group in groups"
         :key="group.document.id"
-        class="space-y-2"
-        :aria-labelledby="`validated-${group.document.id}`"
-      >
-        <h4
-          :id="`validated-${group.document.id}`"
-          class="text-highlighted text-base font-semibold"
-        >
-          <ULink
-            :to="documentPath(group.document.slug)"
-            class="hover:text-primary underline-offset-4 hover:underline"
-          >
-            {{ group.document.title }}
-          </ULink>
-          <span
-            v-if="group.document.reference"
-            class="text-muted ms-2 text-sm font-normal"
-          >
-            {{ group.document.reference }}
-          </span>
-        </h4>
-        <ul class="border-default divide-default divide-y rounded-lg border">
-          <li
-            v-for="amendment in group.amendments"
-            :key="amendment.id"
-            class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5"
-          >
-            <ULink
-              :to="amendmentTo(group.document.slug, amendment)"
-              class="text-highlighted hover:text-primary font-semibold tabular-nums underline-offset-4 hover:underline"
-            >
-              {{ labelOf(amendment) }}
-            </ULink>
-            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              <CommonMemberBadge
-                v-for="author in amendment.authors"
-                :key="author.id"
-                :member="author"
-              />
-              <UBadge
-                v-if="amendment.kind === 'transactional'"
-                color="neutral"
-                variant="outline"
-                size="sm"
-                :label="t('session.enums.amendmentKind.transactional')"
-              />
-            </span>
-            <UButton
-              color="neutral"
-              variant="outline"
-              size="sm"
-              icon="i-lucide-badge-x"
-              :label="t('amendment.validationUndo.undo')"
-              :aria-label="
-                t('review.validated.undoLabel', { label: labelOf(amendment) })
-              "
-              :loading="busyId === amendment.id"
-              :disabled="busyId !== null && busyId !== amendment.id"
-              @click="target = { amendment, slug: group.document.slug }"
-            />
-          </li>
-        </ul>
-      </section>
+        :document="group.document"
+        :amendments="group.amendments"
+        :assembly-id="assemblyId"
+        :document-path="documentPath"
+        :busy-id="busyId"
+        @undo="target = { amendment: $event }"
+      />
     </div>
 
     <UModal
@@ -316,6 +288,7 @@ async function undo(): Promise<void> {
       :title="t('review.validated.confirmTitle', { label: shownLabel })"
       :description="t('amendment.validationUndo.confirmDescription')"
       :dismissible="busyId === null"
+      :content="confirmContent"
     >
       <template #body>
         <ul class="text-default list-disc space-y-1 ps-5 text-sm">

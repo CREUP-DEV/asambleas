@@ -1,9 +1,9 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { SpeakersDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { speakingTurnUpdateBodySchema } from "~~/shared/utils/schemas/speakers";
 import { requireActor, requireCan } from "../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { updateSpeakingTurn } from "../../../../utils/domain/speakers";
 import { throwMutationError } from "../../../../utils/errors";
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event): Promise<SpeakersDto> => {
     getRouterParam(event, "assembly"),
   );
   const turnId = validateCuid(getRouterParam(event, "turn"), "Turno");
-  const body = await readAssemblyBody(event, speakingTurnUpdateBodySchema);
+  const body = await readBodyWith(event, speakingTurnUpdateBodySchema);
 
   try {
     return await updateSpeakingTurn(actor, assembly, turnId, body);

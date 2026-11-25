@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AgendaItemDto } from "~~/shared/types/api";
@@ -22,7 +23,6 @@ import {
   canReadItemTitle,
   confirmFinalRootChange,
   loadAgendaItems,
-  readAssemblyBody,
   throwAssemblyMutationError,
   loadAgendaItemSlug,
   loadPublicItemMarks,
@@ -65,7 +65,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     assembly.id,
     getRouterParam(event, "item"),
   );
-  const parsed = await readAssemblyBody(event, agendaItemUpdateBodySchema);
+  const parsed = await readBodyWith(event, agendaItemUpdateBodySchema);
   const readsTitle = await canReadItemTitle(actor, item);
   const body = readsTitle
     ? parsed

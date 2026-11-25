@@ -1,4 +1,4 @@
-import { createError, defineEventHandler, readBody } from "h3";
+import { createError, defineEventHandler } from "h3";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import type { AssemblyPackageStatusDto } from "~~/shared/types/api";
 import { db } from "../../../../db";
@@ -29,10 +29,7 @@ import {
  */
 export default defineEventHandler(
   async (event): Promise<AssemblyPackageStatusDto> => {
-    const request = await resolvePackageRequest(
-      event,
-      (await readBody(event)) ?? {},
-    );
+    const request = await resolvePackageRequest(event, { post: true });
     await recordAudit(db, {
       event,
       actor: request.actor,

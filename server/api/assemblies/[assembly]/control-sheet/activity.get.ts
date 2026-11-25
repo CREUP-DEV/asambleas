@@ -1,8 +1,8 @@
+import { readQueryWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ActivityPageDto } from "~~/shared/types/api";
 import { controlSheetActivityQuerySchema } from "~~/shared/utils/schemas/activity";
 import { loadControlSheetActivity } from "../../../../utils/domain/activity";
-import { readAssemblyQuery } from "../../../../utils/domain/assemblies";
 import { requireControlSheetReader } from "../../../../utils/domain/controlSheet";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { requireViewer } from "../../../../utils/domain/roomView";
@@ -19,6 +19,6 @@ export default defineEventHandler(async (event): Promise<ActivityPageDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const query = readAssemblyQuery(event, controlSheetActivityQuerySchema);
+  const query = readQueryWith(event, controlSheetActivityQuerySchema);
   return loadControlSheetActivity(actor, assembly.id, query);
 });

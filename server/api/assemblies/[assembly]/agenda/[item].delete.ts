@@ -1,3 +1,4 @@
+import { readQueryWith } from "../../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { and, eq, inArray } from "drizzle-orm";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -21,7 +22,6 @@ import {
   agendaSubtree,
   confirmFinalRootChange,
   loadAgendaItems,
-  readAssemblyQuery,
   throwAssemblyMutationError,
 } from "../../../../utils/domain/assemblies";
 import { agendaSubtreeEntries } from "../../../../utils/domain/changes";
@@ -99,10 +99,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
     assembly.id,
     getRouterParam(event, "item"),
   );
-  const { confirmFinal } = readAssemblyQuery(
-    event,
-    agendaItemDeleteQuerySchema,
-  );
+  const { confirmFinal } = readQueryWith(event, agendaItemDeleteQuerySchema);
 
   let files: DeletedDocumentFiles[] = [];
   try {

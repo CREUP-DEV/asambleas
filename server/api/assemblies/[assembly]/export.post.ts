@@ -1,6 +1,6 @@
-import { defineEventHandler, getRouterParam, readBody } from "h3";
+import { readBodyWith } from "../../../utils/core/http";
+import { defineEventHandler, getRouterParam } from "h3";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
-import { parseDocumentBody } from "../../../utils/domain/documents";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { enqueueExport } from "../../../utils/export/enqueue";
 import { EXPORT_QUEUE_NAMES } from "../../../utils/export/queue";
@@ -22,10 +22,7 @@ export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = parseDocumentBody(
-    assemblyExportSchema,
-    (await readBody(event)) ?? {},
-  );
+  const body = await readBodyWith(event, assemblyExportSchema, { empty: {} });
 
   return enqueueExport({
     queueName: EXPORT_QUEUE_NAMES.ASSEMBLY_EXPORT,

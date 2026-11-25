@@ -1,6 +1,6 @@
-import { defineEventHandler, readBody } from "h3";
+import { readBodyWith } from "../../../../../utils/core/http";
+import { defineEventHandler } from "h3";
 import {
-  parseDocumentBody,
   recordFinalVote,
   resolveDocumentRoute,
 } from "../../../../../utils/domain/documents";
@@ -10,7 +10,7 @@ import { finalVoteSchema } from "~~/shared/utils/schemas/document";
 
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const ctx = await resolveDocumentRoute(event);
-  const body = parseDocumentBody(finalVoteSchema, await readBody(event));
+  const body = await readBodyWith(event, finalVoteSchema);
   return recordFinalVote(ctx, body, {
     controlsProjection: controlsProjection(event, ctx.assembly.id, ctx.actor),
   });

@@ -6,7 +6,7 @@ import {
   deleteSeatingGroup,
   requireSeatingEditor,
 } from "../../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../../utils/errors";
 
 /** Removes a group made by hand and its people (seating:edit). */
 export default defineEventHandler(
@@ -24,7 +24,7 @@ export default defineEventHandler(
         getRouterParam(event, "group"),
       );
     } catch (error) {
-      throwSeatingError("seating.group", error, event);
+      throwMutationError("seating.group", error, event);
     }
   },
 );

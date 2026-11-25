@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail, notFound } from "../core/http";
 import { stat } from "node:fs/promises";
 import {
   and,
@@ -60,7 +60,7 @@ import {
   checkAssignmentBatch,
   releaseConfirmed,
 } from "../seating/assignments";
-import { pgErrorCode } from "../seating/errors";
+import { pgErrorCode } from "../errors";
 import {
   parseSeatingImageFileName,
   seatingImagePath,
@@ -128,13 +128,8 @@ export const SEATING_SYNC_THROTTLE_MS = 60_000;
 /** Rows per insert: well under PostgreSQL's 65,535 parameters. */
 const INSERT_CHUNK = 500;
 
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
-
-function notFound(message: string): never {
-  fail(404, message, { reason: SEATING_NOT_FOUND_REASON });
-}
+/** What every seating 404 carries, so the client tells «no room» apart. */
+const NOT_FOUND = { reason: SEATING_NOT_FOUND_REASON };
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
 
@@ -156,7 +151,7 @@ export function requireSeatingEditor(actor: Actor): void {
 /** An AGET is held online: it has no room. */
 export function requireSeatingRoom(assembly: Pick<AssemblyRow, "type">): void {
   if (!hasSeatingRoom(assembly.type)) {
-    notFound("Esta asamblea no tiene sala");
+    notFound("Esta asamblea no tiene sala", NOT_FOUND);
   }
 }
 
@@ -428,7 +423,7 @@ async function ensureLockedPlan(
 ): Promise<PlanRow> {
   await ensurePlan(tx, assembly);
   const plan = await lockPlan(tx, assembly.id, "update");
-  if (!plan) notFound("No hay sala");
+  if (!plan) notFound("No hay sala", NOT_FOUND);
   return plan;
 }
 
@@ -438,7 +433,7 @@ async function requireLockedPlan(
   assemblyId: string,
 ): Promise<PlanRow> {
   const plan = await lockPlan(tx, assemblyId, "update");
-  if (!plan) notFound("Esta asamblea aún no tiene sala");
+  if (!plan) notFound("Esta asamblea aún no tiene sala", NOT_FOUND);
   return plan;
 }
 
@@ -1046,7 +1041,7 @@ async function requireGroup(
     .select()
     .from(seatingGroups)
     .where(and(eq(seatingGroups.id, id), eq(seatingGroups.planId, planId)));
-  if (!row) notFound("Ese grupo ya no está en la sala");
+  if (!row) notFound("Ese grupo ya no está en la sala", NOT_FOUND);
   return row;
 }
 
@@ -1244,7 +1239,7 @@ async function requirePerson(
     .select()
     .from(seatingPeople)
     .where(and(eq(seatingPeople.id, id), eq(seatingPeople.planId, planId)));
-  if (!row) notFound("Esa persona ya no está en la sala");
+  if (!row) notFound("Esa persona ya no está en la sala", NOT_FOUND);
   return row;
 }
 

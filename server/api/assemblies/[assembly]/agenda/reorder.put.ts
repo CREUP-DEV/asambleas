@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { eq } from "drizzle-orm";
 import type { AgendaDto } from "~~/shared/types/api";
@@ -12,7 +13,6 @@ import {
   hasAgendaCycle,
   loadAgendaDto,
   loadAgendaItems,
-  readAssemblyBody,
   rootSequence,
   throwAssemblyMutationError,
 } from "../../../../utils/domain/assemblies";
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event): Promise<AgendaDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, agendaReorderBodySchema);
+  const body = await readBodyWith(event, agendaReorderBodySchema);
 
   try {
     await db.transaction(async (tx) => {

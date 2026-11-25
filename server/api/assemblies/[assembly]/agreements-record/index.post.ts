@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { AgreementsRecordDto } from "~~/shared/types/api";
 import { agreementsRecordCreateBodySchema } from "~~/shared/utils/schemas/agreementsRecord";
@@ -6,7 +7,6 @@ import {
   createAgreementsRecord,
   requireRecordManager,
 } from "../../../../utils/domain/agreementsRecord";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../utils/errors";
 
@@ -18,10 +18,7 @@ export default defineEventHandler(
   async (event): Promise<AgreementsRecordDto> => {
     const actor = await requireActor(event);
     requireRecordManager(actor);
-    const body = await readAssemblyBody(
-      event,
-      agreementsRecordCreateBodySchema,
-    );
+    const body = await readBodyWith(event, agreementsRecordCreateBodySchema);
     const assembly = await resolveAssembly(
       actor,
       getRouterParam(event, "assembly"),

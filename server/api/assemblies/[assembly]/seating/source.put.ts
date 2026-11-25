@@ -1,14 +1,14 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { SeatingSourceResultDto } from "~~/shared/types/api";
 import { seatingSourceBodySchema } from "~~/shared/utils/schemas/seating";
 import { requireActor } from "../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import {
   requireSeatingEditor,
   setSeatingSource,
 } from "../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../utils/errors";
 
 /**
  * Which assembly's Intranet attendees the room reads (seating:edit): another
@@ -22,11 +22,11 @@ export default defineEventHandler(
       actor,
       getRouterParam(event, "assembly"),
     );
-    const body = await readAssemblyBody(event, seatingSourceBodySchema);
+    const body = await readBodyWith(event, seatingSourceBodySchema);
     try {
       return await setSeatingSource(actor, assembly, body);
     } catch (error) {
-      throwSeatingError("seating.source", error, event);
+      throwMutationError("seating.source", error, event);
     }
   },
 );

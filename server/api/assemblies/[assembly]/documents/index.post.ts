@@ -1,19 +1,12 @@
-import {
-  defineEventHandler,
-  getRouterParam,
-  readBody,
-  setResponseStatus,
-} from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
+import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
 import { requireActor } from "../../../../utils/domain/actor";
 import {
   resolveAgendaItem,
   resolveAssembly,
 } from "../../../../utils/domain/resolvers";
 import { createDocuments } from "../../../../utils/domain/documentCreate";
-import {
-  loadDocumentDto,
-  parseDocumentBody,
-} from "../../../../utils/domain/documents";
+import { loadDocumentDto } from "../../../../utils/domain/documents";
 import type { DocumentDto } from "~~/shared/types/api";
 import { documentCreateSchema } from "~~/shared/utils/schemas/document";
 
@@ -29,9 +22,9 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const { agendaItemId, ...input } = parseDocumentBody(
+  const { agendaItemId, ...input } = await readBodyWith(
+    event,
     documentCreateSchema,
-    await readBody(event),
   );
   const item = await resolveAgendaItem(assembly.id, agendaItemId);
 

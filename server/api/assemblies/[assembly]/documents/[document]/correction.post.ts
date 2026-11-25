@@ -1,6 +1,6 @@
-import { defineEventHandler, readBody } from "h3";
+import { readBodyWith } from "../../../../../utils/core/http";
+import { defineEventHandler } from "h3";
 import {
-  parseDocumentBody,
   requestDocumentCorrection,
   resolveDocumentRoute,
 } from "../../../../../utils/domain/documents";
@@ -10,6 +10,6 @@ import { correctionBodySchema } from "~~/shared/utils/schemas/document";
 /** The Secretaría sends a presented document back to draft with a note. */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const ctx = await resolveDocumentRoute(event);
-  const body = parseDocumentBody(correctionBodySchema, await readBody(event));
+  const body = await readBodyWith(event, correctionBodySchema);
   return requestDocumentCorrection(ctx, body);
 });

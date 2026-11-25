@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, readBody } from "h3";
+import { defineEventHandler } from "h3";
+import { readBodyWith } from "../../../utils/core/http";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { NotificationSettingsDto } from "~~/shared/types/api";
 import { notificationSettingsBodySchema } from "~~/shared/utils/schemas/notifications";
@@ -15,20 +16,14 @@ export default defineEventHandler(
   async (event): Promise<NotificationSettingsDto> => {
     await requireAnyPermission(event, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
     const actor = await requireActor(event);
-    const body = notificationSettingsBodySchema.safeParse(
-      await readBody(event),
-    );
-    if (!body.success) {
-      throw createError({
-        statusCode: 400,
-        message: "Ajustes de avisos no válidos",
-      });
-    }
+    const body = await readBodyWith(event, notificationSettingsBodySchema, {
+      message: "Ajustes de avisos no válidos",
+    });
     await updateNotificationSettings({
       event,
       actor,
-      settings: body.data.settings,
-      updatedAt: body.data.updatedAt,
+      settings: body.settings,
+      updatedAt: body.updatedAt,
     });
     return loadNotificationSettingsDto();
   },

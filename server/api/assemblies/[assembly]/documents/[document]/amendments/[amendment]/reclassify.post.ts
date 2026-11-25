@@ -1,9 +1,9 @@
+import { readBodyWith } from "../../../../../../../utils/core/http";
 import { defineEventHandler } from "h3";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { reclassifyBodySchema } from "~~/shared/utils/schemas/amendment";
 import {
   loadAmendmentContext,
-  readAmendmentBody,
   reclassifyAmendment,
 } from "../../../../../../../utils/domain/amendments";
 
@@ -13,6 +13,6 @@ import {
  */
 export default defineEventHandler(async (event): Promise<AmendmentDto> => {
   const ctx = await loadAmendmentContext(event);
-  const body = await readAmendmentBody(event, reclassifyBodySchema);
+  const body = await readBodyWith(event, reclassifyBodySchema, { empty: {} });
   return reclassifyAmendment(ctx, body);
 });

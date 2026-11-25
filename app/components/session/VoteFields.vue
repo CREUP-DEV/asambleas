@@ -320,19 +320,33 @@ const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 const shortcutsOn = computed(() => liveCount.value && shortcutsEnabled.value);
 /** The ballots added, in order, so «Deshacer» takes the last one back. */
 const history = ref<BallotKey[]>([]);
+/**
+ * The last ballot added or taken back, said once to screen readers with
+ * whose it is («En blanco: 5, uno más»), never a bare count, as in
+ * ElectionFields (E-123).
+ */
+const spoken = ref("");
 // The other mode has no tiles to undo on.
 watch(reveal, () => {
   history.value = [];
+  spoken.value = "";
 });
 
+function countBallot(key: BallotKey, next: number, step: 1 | -1): void {
+  setCount(key, next);
+  spoken.value = t(
+    step === 1 ? "session.election.countUp" : "session.election.countDown",
+    { name: t(`session.vote.${key}`), count: next },
+  );
+}
 function addBallot(key: BallotKey): void {
-  setCount(key, (vote.value[key] ?? 0) + 1);
+  countBallot(key, (vote.value[key] ?? 0) + 1, 1);
   history.value = [...history.value, key];
 }
 function removeBallot(key: BallotKey): void {
   const current = vote.value[key] ?? 0;
   if (current === 0) return;
-  setCount(key, current - 1);
+  countBallot(key, current - 1, -1);
   const index = history.value.lastIndexOf(key);
   if (index !== -1) {
     history.value = history.value.filter((_, at) => at !== index);
@@ -342,7 +356,7 @@ function undoBallot(): void {
   const key = history.value.at(-1);
   if (!key) return;
   history.value = history.value.slice(0, -1);
-  setCount(key, Math.max(0, (vote.value[key] ?? 0) - 1));
+  countBallot(key, Math.max(0, (vote.value[key] ?? 0) - 1), -1);
 }
 
 /** Keys 1 to 4 add a ballot, except in a field (WCAG 2.1.4: they can be off). */
@@ -578,10 +592,7 @@ const denominatorText = computed(() =>
             <span class="text-muted text-sm font-medium">
               {{ t(`session.vote.${key}`) }}
             </span>
-            <span
-              class="text-highlighted text-3xl font-bold tabular-nums"
-              aria-live="polite"
-            >
+            <span class="text-highlighted text-3xl font-bold tabular-nums">
               {{ vote[key] ?? 0 }}
             </span>
             <div class="flex items-center gap-1">
@@ -614,6 +625,8 @@ const denominatorText = computed(() =>
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <!-- Mounted with the tiles, before the first ballot, so it is heard. -->
+          <p class="sr-only" aria-live="polite">{{ spoken }}</p>
           <UButton
             color="neutral"
             variant="outline"

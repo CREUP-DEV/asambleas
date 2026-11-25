@@ -1,3 +1,4 @@
+import { notFound } from "../core/http";
 import type { H3Event } from "h3";
 import { createError } from "h3";
 import { and, asc, count, eq } from "drizzle-orm";
@@ -61,9 +62,7 @@ function ownNote(actor: Actor, amendmentId: string, noteId: string) {
   );
 }
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Nota no encontrada" });
-}
+const NOTE_NOT_FOUND = "Nota no encontrada";
 
 function auditTarget(ctx: AmendmentContext) {
   return {
@@ -146,7 +145,7 @@ export async function updateAmendmentNote(
       .from(amendmentNotes)
       .where(ownNote(actor, amendment.id, noteId))
       .for("update");
-    if (!current) notFound();
+    if (!current) notFound(NOTE_NOT_FOUND);
     // The account may be open in several places: the later save says so.
     if (
       getOptimisticLockTimestampMs(body.updatedAt) !==
@@ -184,7 +183,7 @@ export async function deleteAmendmentNote(
       .delete(amendmentNotes)
       .where(ownNote(actor, amendment.id, noteId))
       .returning({ id: amendmentNotes.id });
-    if (!removed) notFound();
+    if (!removed) notFound(NOTE_NOT_FOUND);
     await recordAudit(tx, {
       event,
       actor,

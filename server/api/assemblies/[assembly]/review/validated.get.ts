@@ -5,7 +5,7 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { loadValidatedAmendments } from "../../../../utils/domain/review";
 
 /**
- * «Validadas» in the validation inbox (amendment:review): the amendments
+ * «Publicadas» in the validation inbox (amendment:review): the amendments
  * validated and published that are still undecided, whose validation can
  * still be taken back.
  */

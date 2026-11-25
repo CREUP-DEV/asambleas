@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, desc, eq, isNotNull, sql, type AnyColumn } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
@@ -6,10 +6,6 @@ import { documentFiles, users } from "../../db/schema";
 import { canManageDocuments } from "./actor";
 import { PDF_URL_PREFIX, type DocumentRouteContext } from "./documents";
 import type { DocumentFileVersionDto } from "~~/shared/types/api";
-
-function fail(statusCode: number, message: string): never {
-  throw createError({ statusCode, message });
-}
 
 const uploader = alias(users, "uploader");
 const replacer = alias(users, "replacer");

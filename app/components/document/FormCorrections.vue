@@ -53,7 +53,10 @@ const mode = computed(() => props.document.can.correctForm);
 const current = computed(() => props.document.consolidatedVersion);
 
 const data = ref<FormCorrectionsDto | null>(null);
+/** Saving the editor's correction. */
 const busy = ref(false);
+/** The correction a decision or a withdrawal is acting on: only its row spins. */
+const busyId = ref<string | null>(null);
 
 async function load(): Promise<void> {
   try {
@@ -88,17 +91,69 @@ const editorKey = ref(0);
 /** The version the editor opened: what the correction is made on. */
 const fromVersionId = ref<string | null>(null);
 
-function start(): void {
+const heading = useTemplateRef<HTMLElement>("heading");
+const editorRef = useTemplateRef<{
+  editor?: unknown;
+  goToBlock: (id: string) => boolean;
+  focus: () => void;
+}>("editorRef");
+const reasonField = useTemplateRef<{
+  textareaRef: HTMLTextAreaElement | null;
+}>("reasonField");
+
+/**
+ * Where the editor opens once it exists: the block the reader had at the
+ * top of the text (`start`'s argument), or the text's start; undefined
+ * when nothing waits.
+ */
+let openAt: string | null | undefined;
+watch(
+  () => editorRef.value?.editor,
+  (instance) => {
+    if (!instance || openAt === undefined) return;
+    const at = openAt;
+    openAt = undefined;
+    // Once the text is laid out, the cursor (and the focus) goes there.
+    // A block the editor does not hold: the text's start, in view.
+    requestAnimationFrame(() => {
+      if (at && editorRef.value?.goToBlock(at)) return;
+      heading.value?.scrollIntoView({ block: "start" });
+      editorRef.value?.focus();
+    });
+  },
+);
+
+/**
+ * Opens the editor over the text in force, with the cursor on `blockId`
+ * (the block being read when the button was pressed) or at its start.
+ */
+function start(blockId?: string | null): void {
   if (!current.value) return;
   draft.value = structuredClone(toRaw(current.value.blocks));
   fromVersionId.value = current.value.id;
   reason.value = "";
   reasonTouched.value = false;
+  openAt = blockId ?? null;
   editorKey.value += 1;
   editing.value = true;
 }
-function cancel(): void {
+/** The editor closes: the focus goes to this section's heading. */
+function close(): void {
   editing.value = false;
+  void nextTick(() => heading.value?.focus());
+}
+function cancel(): void {
+  close();
+}
+/**
+ * The toolbar's «Guardar…» / «Enviar…»: the reason, required, sits below
+ * the whole text, so it takes the reader there.
+ */
+function toReason(): void {
+  const field = reasonField.value?.textareaRef;
+  if (!field) return;
+  field.focus({ preventScroll: true });
+  field.scrollIntoView({ block: "center" });
 }
 
 defineExpose({ start, load });
@@ -133,7 +188,7 @@ async function submit(): Promise<void> {
         reason: reason.value.trim(),
       },
     });
-    editing.value = false;
+    close();
     toast.add({
       id: "form-correction-saved",
       title:
@@ -158,12 +213,39 @@ async function submit(): Promise<void> {
 
 const rejecting = ref<string | null>(null);
 const rejectNote = ref("");
+/** The proposal whose «Aplicar» waits for its confirmation, in its row. */
+const applying = ref<string | null>(null);
+
+/** Focus on an element of a row, once it is drawn. */
+function focusSoon(id: string): void {
+  void nextTick(() => globalThis.document?.getElementById(id)?.focus());
+}
+function askApply(correction: FormCorrectionDto): void {
+  rejecting.value = null;
+  applying.value = correction.id;
+  focusSoon(`form-correction-apply-confirm-${correction.id}`);
+}
+function askReject(correction: FormCorrectionDto): void {
+  applying.value = null;
+  rejecting.value = correction.id;
+  rejectNote.value = "";
+}
+/** Closes the step in the row, back on the button that opened it. */
+function cancelStep(correction: FormCorrectionDto): void {
+  const button =
+    applying.value === correction.id
+      ? `form-correction-apply-${correction.id}`
+      : `form-correction-reject-${correction.id}`;
+  applying.value = null;
+  rejecting.value = null;
+  focusSoon(button);
+}
 
 async function decide(
   correction: FormCorrectionDto,
   decision: "apply" | "reject",
 ): Promise<void> {
-  busy.value = true;
+  busyId.value = correction.id;
   try {
     data.value = await send<FormCorrectionsDto>(
       `${url.value}/${encodeURIComponent(correction.id)}/decision`,
@@ -176,7 +258,10 @@ async function decide(
       },
     );
     rejecting.value = null;
+    applying.value = null;
     rejectNote.value = "";
+    // Its buttons are gone: the focus stays on its row.
+    focusSoon(`form-correction-${correction.id}`);
     toast.add({
       id: `form-correction-${correction.id}`,
       title:
@@ -191,27 +276,32 @@ async function decide(
     if (decision === "apply") emit("changed");
   } catch (error) {
     notifyError(error, "workspace.formCorrections.errors.decide");
+    // Decided or withdrawn meanwhile: its step closes, the focus on its row.
     if (isConflict(error)) {
+      applying.value = null;
+      rejecting.value = null;
+      focusSoon(`form-correction-${correction.id}`);
       void load();
       emit("changed");
     }
   } finally {
-    busy.value = false;
+    busyId.value = null;
   }
 }
 
 async function withdraw(correction: FormCorrectionDto): Promise<void> {
-  busy.value = true;
+  busyId.value = correction.id;
   try {
     data.value = await send<FormCorrectionsDto>(
       `${url.value}/${encodeURIComponent(correction.id)}`,
       { method: "DELETE", body: { updatedAt: correction.updatedAt } },
     );
+    focusSoon(`form-correction-${correction.id}`);
   } catch (error) {
     notifyError(error, "workspace.formCorrections.errors.decide");
     if (isConflict(error)) void load();
   } finally {
-    busy.value = false;
+    busyId.value = null;
   }
 }
 
@@ -252,15 +342,22 @@ function when(value: string | null): string {
       <div class="min-w-0">
         <h2
           id="form-corrections"
-          class="text-highlighted text-lg font-semibold"
+          ref="heading"
+          tabindex="-1"
+          class="text-highlighted focus-visible:ring-primary rounded-sm text-lg font-semibold focus:outline-none focus-visible:ring-2"
         >
           {{ t("workspace.formCorrections.title") }}
         </h2>
+        <!-- While editing, what saving does, said once (M-146). -->
         <p class="text-muted text-sm">
           {{
-            mode === "propose"
-              ? t("workspace.formCorrections.descriptionPropose")
-              : t("workspace.formCorrections.description")
+            editing
+              ? mode === "direct"
+                ? t("workspace.formCorrections.editHintDirect")
+                : t("workspace.formCorrections.editHintPropose")
+              : mode === "propose"
+                ? t("workspace.formCorrections.descriptionPropose")
+                : t("workspace.formCorrections.description")
           }}
         </p>
       </div>
@@ -280,32 +377,43 @@ function when(value: string | null): string {
       "
     />
 
-    <!-- The editor over the text in force. -->
+    <!-- The editor over the text in force; on a phone, without a frame. -->
     <form
       v-if="editing"
-      class="border-default flex flex-col gap-4 rounded-lg border p-4 sm:p-6"
+      class="border-default flex flex-col gap-4 sm:rounded-lg sm:border sm:p-6"
       @submit.prevent="submit"
     >
-      <UAlert
-        color="info"
-        variant="subtle"
-        icon="i-lucide-info"
-        :title="
-          mode === 'direct'
-            ? t('workspace.formCorrections.editHintDirect')
-            : t('workspace.formCorrections.editHintPropose')
-        "
-      />
       <ClientOnly>
         <ContentBlockEditor
           :key="editorKey"
+          ref="editorRef"
           v-model="draft"
           amend
           table-look
           outline
           :pages="pages"
           :label="t('workspace.formCorrections.textLabel')"
-        />
+        >
+          <!-- Saving is at the end of a long text: this goes there. -->
+          <!-- Always drawn: the toolbar keeps no empty group before a change. -->
+          <template #toolbar-end>
+            <UTooltip :text="t('workspace.formCorrections.toReason')">
+              <UButton
+                icon="i-lucide-check"
+                size="sm"
+                color="primary"
+                variant="soft"
+                :label="
+                  mode === 'direct'
+                    ? t('workspace.formCorrections.applyShort')
+                    : t('workspace.formCorrections.sendShort')
+                "
+                :disabled="!changedText"
+                @click="toReason"
+              />
+            </UTooltip>
+          </template>
+        </ContentBlockEditor>
         <template #fallback>
           <USkeleton aria-hidden="true" class="h-96 w-full" />
         </template>
@@ -321,6 +429,7 @@ function when(value: string | null): string {
         required
       >
         <UTextarea
+          ref="reasonField"
           v-model="reason"
           :rows="2"
           autoresize
@@ -358,14 +467,16 @@ function when(value: string | null): string {
     <ol v-if="corrections.length > 0" class="flex flex-col gap-2">
       <li
         v-for="correction in corrections"
+        :id="`form-correction-${correction.id}`"
         :key="correction.id"
-        class="border-default flex flex-col gap-2 rounded-lg border p-3"
+        tabindex="-1"
+        class="border-default focus-visible:ring-primary flex flex-col gap-2 rounded-lg border p-3 focus:outline-none focus-visible:ring-2"
       >
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <UBadge
             :color="STATUS_COLORS[correction.status]"
             variant="subtle"
-            size="sm"
+            size="md"
             :label="t(`workspace.formCorrections.status.${correction.status}`)"
           />
           <span class="text-highlighted font-medium">
@@ -409,12 +520,13 @@ function when(value: string | null): string {
           {{ t("workspace.formCorrections.overtaken") }}
         </p>
 
+        <!-- Each button at least 40 px high on a phone (M-144). -->
         <div class="flex flex-wrap items-center gap-2">
           <UButton
             color="neutral"
             variant="link"
-            size="xs"
-            class="px-0"
+            size="sm"
+            class="max-sm:min-h-10"
             :icon="
               expanded.has(correction.id)
                 ? 'i-lucide-chevron-up'
@@ -429,68 +541,131 @@ function when(value: string | null): string {
             "
             @click="toggle(correction.id)"
           />
-          <template v-if="correction.status === 'pending'">
+          <!-- «Aplicar» and «Rechazar» give way to their step. -->
+          <template
+            v-if="
+              correction.status === 'pending' &&
+              applying !== correction.id &&
+              rejecting !== correction.id
+            "
+          >
             <UButton
               v-if="correction.can.apply"
-              size="xs"
+              :id="`form-correction-apply-${correction.id}`"
+              size="sm"
+              class="max-sm:min-h-10"
               icon="i-lucide-check"
               :label="t('workspace.formCorrections.applyProposal')"
-              :loading="busy"
-              @click="decide(correction, 'apply')"
+              :disabled="busyId !== null"
+              @click="askApply(correction)"
             />
             <UButton
-              v-if="correction.can.reject && rejecting !== correction.id"
-              size="xs"
+              v-if="correction.can.reject"
+              :id="`form-correction-reject-${correction.id}`"
+              size="sm"
+              class="max-sm:min-h-10"
               color="error"
               variant="outline"
               icon="i-lucide-x"
               :label="t('workspace.formCorrections.reject')"
-              :disabled="busy"
-              @click="
-                rejecting = correction.id;
-                rejectNote = '';
-              "
+              :disabled="busyId !== null"
+              @click="askReject(correction)"
             />
             <UButton
               v-if="correction.can.withdraw"
-              size="xs"
+              size="sm"
+              class="max-sm:min-h-10"
               color="neutral"
               variant="outline"
               icon="i-lucide-undo-2"
               :label="t('workspace.formCorrections.withdraw')"
-              :loading="busy"
+              :loading="busyId === correction.id"
+              :disabled="busyId !== null && busyId !== correction.id"
               @click="withdraw(correction)"
             />
           </template>
         </div>
 
+        <!-- «Aplicar» replaces the text in force: it asks first (M-144). -->
+        <!-- One row acts at a time, as before the steps. -->
         <div
-          v-if="rejecting === correction.id"
-          class="flex flex-col gap-2 border-t pt-2"
+          v-if="
+            applying === correction.id &&
+            correction.status === 'pending' &&
+            correction.can.apply
+          "
+          class="border-default flex flex-col gap-2 border-t pt-2"
+        >
+          <p
+            :id="`form-correction-apply-ask-${correction.id}`"
+            class="text-default text-sm"
+          >
+            {{
+              correction.passage
+                ? t("document.pendingConciliation.applyAsk")
+                : t("workspace.formCorrections.applyAsk")
+            }}
+          </p>
+          <div class="flex flex-wrap justify-end gap-2">
+            <UButton
+              size="sm"
+              class="max-sm:min-h-10"
+              color="neutral"
+              variant="ghost"
+              :label="t('common.cancel')"
+              :disabled="busyId !== null"
+              @click="cancelStep(correction)"
+            />
+            <UButton
+              :id="`form-correction-apply-confirm-${correction.id}`"
+              size="sm"
+              class="max-sm:min-h-10"
+              icon="i-lucide-check"
+              :label="t('workspace.formCorrections.applyConfirm')"
+              :aria-describedby="`form-correction-apply-ask-${correction.id}`"
+              :loading="busyId === correction.id"
+              :disabled="busyId !== null && busyId !== correction.id"
+              @click="decide(correction, 'apply')"
+            />
+          </div>
+        </div>
+
+        <div
+          v-if="
+            rejecting === correction.id &&
+            correction.status === 'pending' &&
+            correction.can.reject
+          "
+          class="border-default flex flex-col gap-2 border-t pt-2"
         >
           <UFormField :label="t('workspace.formCorrections.rejectNote')">
             <UTextarea
               v-model="rejectNote"
               :rows="2"
               autoresize
+              autofocus
               :maxlength="FORM_CORRECTION_REASON_MAX_LENGTH"
               class="w-full"
             />
           </UFormField>
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <UButton
-              size="xs"
+              size="sm"
+              class="max-sm:min-h-10"
               color="neutral"
               variant="ghost"
               :label="t('common.cancel')"
-              @click="rejecting = null"
+              :disabled="busyId !== null"
+              @click="cancelStep(correction)"
             />
             <UButton
-              size="xs"
+              size="sm"
+              class="max-sm:min-h-10"
               color="error"
               icon="i-lucide-x"
               :label="t('workspace.formCorrections.rejectConfirm')"
-              :loading="busy"
+              :loading="busyId === correction.id"
+              :disabled="busyId !== null && busyId !== correction.id"
               @click="decide(correction, 'reject')"
             />
           </div>

@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ControlSheetAmendmentRowDto } from "~~/shared/types/api";
 import { controlSheetAmendmentBodySchema } from "~~/shared/utils/schemas/controlSheet";
 import { requireActor } from "../../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../../utils/domain/assemblies";
 import {
   requireControlSheetReader,
   resolveSheetAmendment,
@@ -25,7 +25,7 @@ export default defineEventHandler(
       assembly,
       getRouterParam(event, "amendment"),
     );
-    const body = await readAssemblyBody(event, controlSheetAmendmentBodySchema);
+    const body = await readBodyWith(event, controlSheetAmendmentBodySchema);
     try {
       return await updateSheetAmendment(actor, assembly, amendment, body);
     } catch (error) {

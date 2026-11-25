@@ -8,6 +8,12 @@ import type {
   RecordAgreement,
   RecordHeaderKey,
 } from "~~/shared/utils/agreementsRecord";
+import { RECORD_HEADER_KEYS } from "~~/shared/utils/agreementsRecord";
+import {
+  headerNeedsSave,
+  releaseHeaderDraft,
+  syncHeaderDrafts,
+} from "~/components/agreements-record/-headerDrafts";
 
 /**
  * The acta de acuerdos (document:manage; user's decisions of 2026-11-21):
@@ -111,13 +117,30 @@ async function create(): Promise<void> {
   }
 }
 
-const savingKey = ref<string | null>(null);
-async function saveText(
+/**
+ * The corrections on their way, sent one after another (each reads its lock
+ * as it goes), so none is dropped while another saves and no field has to
+ * be disabled, which would throw the keyboard's focus to the page (E-157).
+ */
+const savingKeys = ref<string[]>([]);
+let saves: Promise<void> = Promise.resolve();
+function isSaving(key: string): boolean {
+  return savingKeys.value.includes(key);
+}
+function saveText(
   key: string,
   correction: { text: string | null; omitted: boolean },
 ): Promise<void> {
-  if (savingKey.value) return;
-  savingKey.value = key;
+  savingKeys.value = [...savingKeys.value, key];
+  saves = saves.then(() => sendText(key, correction));
+  return saves;
+}
+
+const agreementsHeading = useTemplateRef<HTMLElement>("agreementsHeading");
+async function sendText(
+  key: string,
+  correction: { text: string | null; omitted: boolean },
+): Promise<void> {
   const body: AgreementRecordTextBody = {
     key,
     text: correction.text,
@@ -136,11 +159,26 @@ async function saveText(
       color: "success",
       icon: "i-lucide-check",
     });
+    // The record's own line left out leaves the list with its button.
+    if (key === "self" && correction.omitted) {
+      void nextTick(() => {
+        const active = document.activeElement;
+        if (!active || active === document.body) {
+          agreementsHeading.value?.focus();
+        }
+      });
+    }
   } catch (failure) {
     api.notifyError(failure, "agreementsRecord.saveFailed");
+    // Someone else saved first: the field shows their words, as the
+    // conflict's notice says, instead of resending the refused ones.
+    if (api.isConflict(failure) && isHeaderKey(key)) {
+      releaseHeaderDraft(headerDrafts, headerSynced, key);
+    }
     void refresh();
   } finally {
-    savingKey.value = null;
+    const at = savingKeys.value.indexOf(key);
+    savingKeys.value = savingKeys.value.filter((_, index) => index !== at);
   }
 }
 
@@ -161,24 +199,38 @@ const documentPath = computed(() =>
     : null,
 );
 
-/** The header's fields, each corrected like a line. */
+/**
+ * The header's fields, each corrected like a line. A save of one field
+ * leaves the others' drafts alone (syncHeaderDrafts).
+ */
 const headerDrafts = reactive<Record<RecordHeaderKey, string>>({
   secretary_name: "",
   secretary_title: "",
   city: "",
 });
+const headerSynced: Partial<Record<RecordHeaderKey, string>> = {};
+function isHeaderKey(key: string): key is RecordHeaderKey {
+  return (RECORD_HEADER_KEYS as readonly string[]).includes(key);
+}
 watch(
   () => record.value?.record.header,
-  (fields) => {
-    for (const field of fields ?? []) {
-      headerDrafts[field.key] = field.corrected ?? "";
-    }
-  },
+  (fields) => syncHeaderDrafts(headerDrafts, headerSynced, fields ?? []),
   { immediate: true },
 );
+/** The words on their way per field, so Enter and leaving send them once. */
+const headerPending = new Map<RecordHeaderKey, string>();
 function saveHeader(key: RecordHeaderKey): void {
+  const corrected =
+    record.value?.record.header.find((field) => field.key === key)?.corrected ??
+    null;
+  if (!headerNeedsSave(headerDrafts[key], corrected, headerPending.get(key))) {
+    return;
+  }
   const words = headerDrafts[key].trim();
-  void saveText(key, { text: words || null, omitted: false });
+  headerPending.set(key, words);
+  void saveText(key, { text: words || null, omitted: false }).finally(() => {
+    if (headerPending.get(key) === words) headerPending.delete(key);
+  });
 }
 
 const visible = computed(() =>
@@ -325,20 +377,23 @@ function letters(agreement: RecordAgreement): (string | null)[] {
               <UInput
                 v-model="headerDrafts[field.key]"
                 :placeholder="field.proposed"
-                :disabled="readonly || savingKey !== null"
+                :disabled="readonly"
+                :loading="isSaving(field.key)"
+                trailing
                 class="w-full"
                 @keydown.enter="saveHeader(field.key)"
-                @blur="
-                  headerDrafts[field.key].trim() !== (field.corrected ?? '') &&
-                  saveHeader(field.key)
-                "
+                @blur="saveHeader(field.key)"
               />
             </UFormField>
           </div>
         </section>
 
         <section class="space-y-3">
-          <h3 class="text-highlighted font-semibold">
+          <h3
+            ref="agreementsHeading"
+            tabindex="-1"
+            class="text-highlighted font-semibold outline-none"
+          >
             {{ t("agreementsRecord.agreementsTitle") }}
           </h3>
           <p v-if="visible.length === 0" class="text-muted text-sm">
@@ -353,17 +408,20 @@ function letters(agreement: RecordAgreement): (string | null)[] {
               <AgreementsRecordLine
                 :line="agreement"
                 :label="lineLabel(agreement)"
-                :saving="savingKey === agreement.key"
+                :saving="isSaving(agreement.key)"
                 :readonly="readonly"
                 @save="saveText(agreement.key, $event)"
               />
-              <div v-if="agreement.lines.length > 0" class="space-y-2 pl-8">
+              <div
+                v-if="agreement.lines.length > 0"
+                class="space-y-2 ps-4 sm:ps-8"
+              >
                 <AgreementsRecordLine
                   v-for="(line, index) in agreement.lines"
                   :key="line.key"
                   :line="line"
                   :label="letters(agreement)[index] ?? null"
-                  :saving="savingKey === line.key"
+                  :saving="isSaving(line.key)"
                   :readonly="readonly"
                   @save="saveText(line.key, $event)"
                 />

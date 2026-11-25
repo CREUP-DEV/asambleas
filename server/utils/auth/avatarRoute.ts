@@ -1,13 +1,11 @@
-import { createError } from "h3";
+import { notFound } from "../core/http";
 import { eq } from "drizzle-orm";
 import { stat } from "node:fs/promises";
 import { db } from "../../db";
 import { userAvatars } from "../../db/schema";
 import { avatarPath, parseAvatarFileName } from "./avatarFiles";
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Imagen no encontrada" });
-}
+const NOT_FOUND_MESSAGE = "Imagen no encontrada";
 
 /**
  * The path of a stored photo GET /api/uploads/avatars/[file] may serve:
@@ -17,21 +15,21 @@ function notFound(): never {
 export async function resolveAvatarFile(
   name: string | null | undefined,
 ): Promise<string> {
-  if (!name) notFound();
+  if (!name) notFound(NOT_FOUND_MESSAGE);
   const parsed = parseAvatarFileName(name);
-  if (!parsed) notFound();
+  if (!parsed) notFound(NOT_FOUND_MESSAGE);
   const [row] = await db
     .select({ file: userAvatars.file })
     .from(userAvatars)
     .where(eq(userAvatars.userId, parsed.userId))
     .limit(1);
-  if (!row || row.file !== name) notFound();
+  if (!row || row.file !== name) notFound(NOT_FOUND_MESSAGE);
   const path = avatarPath(name);
-  if (!path) notFound();
+  if (!path) notFound(NOT_FOUND_MESSAGE);
   try {
-    if (!(await stat(path)).isFile()) notFound();
+    if (!(await stat(path)).isFile()) notFound(NOT_FOUND_MESSAGE);
   } catch {
-    notFound();
+    notFound(NOT_FOUND_MESSAGE);
   }
   return path;
 }

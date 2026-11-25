@@ -1,7 +1,7 @@
+import { readQueryWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ControlSheetHistoryDto } from "~~/shared/types/api";
 import { controlSheetHistoryQuerySchema } from "~~/shared/utils/schemas/controlSheet";
-import { readAssemblyQuery } from "../../../../utils/domain/assemblies";
 import {
   loadSheetHistory,
   requireControlSheetReader,
@@ -18,7 +18,7 @@ export default defineEventHandler(
       actor,
       getRouterParam(event, "assembly"),
     );
-    const { row } = readAssemblyQuery(event, controlSheetHistoryQuerySchema);
+    const { row } = readQueryWith(event, controlSheetHistoryQuerySchema);
     return loadSheetHistory(actor, assembly, row);
   },
 );

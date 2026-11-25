@@ -37,11 +37,11 @@ import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
  * then "Transaccionales", a section of their own (user's decision of
  * 2026-11-19): those to validate and those still waiting for the main
  * authors of the amendments they would replace (with who is missing; one
- * any of them rejected is gone); then "Enmiendas" in two tabs: "Por
+ * any of them rejected is gone); then "Enmiendas" in three tabs: "Por
  * revisar", the amendments nobody else sees until they are validated, and
- * "Validadas sin publicar",
+ * "Sin publicar",
  * the amendments it validated and kept private, to publish them, and
- * "Validadas", those validated and published still undecided, to take a
+ * "Publicadas", those validated and published still undecided, to take a
  * validation made by mistake back (user's decision of 2026-11-20); and, in
  * "Fuera de plazo",
  * the late ones that wait for the assembly to decide whether to treat them.
@@ -142,6 +142,8 @@ function clearFilters(): void {
   filterDocumentId.value = undefined;
   filterMemberId.value = undefined;
 }
+/** Below sm the label is only read (the menu's `aria-label` names it). */
+const filterFieldUi = { wrapper: "max-sm:sr-only", container: "max-sm:mt-0" };
 
 /** Every document with something here, by its reference and title. */
 const documentFilterItems = computed(() => {
@@ -255,12 +257,14 @@ const toPublishCount = computed(() =>
 );
 
 /**
- * The parts are tabs of "Enmiendas", each with its count: "Validadas" (the
- * validated and published ones still undecided, to take a validation back)
- * is read when opened, so its count shows once it has been.
+ * The parts are tabs of "Enmiendas": «Por revisar» and «Sin publicar» with
+ * their counts, and «Publicadas» (the validated and published ones still
+ * undecided, to take a validation back) without one: it is read only when
+ * opened, and a count appearing then widened the strip (E-159). No two
+ * labels start alike, and below sm the strip scrolls instead of cutting
+ * them (as the control sheet's).
  */
 type AmendmentTab = "review" | "publish" | "validated";
-const validatedCount = ref<number | null>(null);
 const amendmentTab = ref<AmendmentTab>("review");
 const amendmentTabItems = computed<TabsItem[]>(() => [
   {
@@ -281,19 +285,7 @@ const amendmentTabItems = computed<TabsItem[]>(() => [
       variant: "soft",
     },
   },
-  {
-    value: "validated",
-    label: t("review.amendments.tabs.validated"),
-    ...(validatedCount.value === null
-      ? {}
-      : {
-          badge: {
-            label: String(validatedCount.value),
-            color: "neutral" as const,
-            variant: "soft" as const,
-          },
-        }),
-  },
+  { value: "validated", label: t("review.amendments.tabs.validated") },
 ]);
 /** The transactionals listed apart: to validate, and waiting for authors. */
 const transactionalsToValidate = computed(() =>
@@ -326,6 +318,39 @@ const empty = computed(
     amendmentCount.value === 0 &&
     lateCount.value === 0,
 );
+
+/**
+ * A validation taken back from the list shown under «Todo al día» brings
+ * the amendment back to review, so the page swaps to its sections and that
+ * list (its dialog and what it would focus) goes: the focus goes to the
+ * section that now lists it, not to the top of the page. A transactional
+ * comes back under «Transaccionales»; any other under «Enmiendas», whose tab
+ * is set back to «Por revisar» (it may have been left on an emptied one).
+ * The flag lives only until that refresh settles, so a later swap the user
+ * did not cause (a live event) never pulls the focus.
+ */
+const amendmentsHeading = ref<HTMLElement | null>(null);
+const transactionalsHeading = ref<HTMLElement | null>(null);
+let undoneWhileEmpty: AmendmentDto["kind"] | null = null;
+// A second undo cancels the first one's read: only its own settling clears.
+let lastUndo = 0;
+function onUndoneWhileEmpty(amendment: AmendmentDto): void {
+  const undo = ++lastUndo;
+  undoneWhileEmpty = amendment.kind;
+  amendmentTab.value = "review";
+  void refresh().finally(() => {
+    if (undo === lastUndo) undoneWhileEmpty = null;
+  });
+}
+watch(empty, (now) => {
+  if (now || undoneWhileEmpty === null) return;
+  const heading =
+    undoneWhileEmpty === "transactional"
+      ? transactionalsHeading
+      : amendmentsHeading;
+  undoneWhileEmpty = null;
+  void nextTick(() => (heading.value ?? amendmentsHeading.value)?.focus());
+});
 
 const settings = computed(() => ({
   ...DEFAULT_ASSEMBLY_SETTINGS,
@@ -612,32 +637,61 @@ async function confirmBulkPublish() {
         {{ statusMessage }}
       </p>
 
-      <!-- Narrow everything below to one document or one presenter. -->
+      <!-- Narrow everything below to one document or one presenter. On a
+           phone, one row: the labels are read, not shown (the placeholders
+           say «Todos los documentos» and «Todos»), and «Quitar filtros» is
+           its icon. -->
       <div
         v-if="queue && (documentFilterItems.length > 1 || filtering)"
-        class="flex flex-wrap items-end gap-3"
+        class="grid items-end gap-2 sm:flex sm:flex-wrap sm:gap-3"
+        :class="
+          filtering
+            ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]'
+            : 'grid-cols-2'
+        "
       >
         <UFormField
           :label="t('review.filters.document')"
-          class="w-full sm:w-80"
+          class="min-w-0 sm:w-80"
+          :ui="filterFieldUi"
         >
           <USelectMenu
             v-model="filterDocumentId"
             :items="documentFilterItems"
             value-key="value"
             :placeholder="t('review.filters.allDocuments')"
-            :search-input="{ placeholder: t('review.filters.search') }"
+            :search-input="labelledSearch(t('review.filters.search'))"
+            :aria-label="
+              selectMenuLabel(
+                t('review.filters.document'),
+                documentFilterItems,
+                filterDocumentId,
+                t('review.filters.allDocuments'),
+              )
+            "
             class="w-full"
           />
         </UFormField>
-        <UFormField :label="t('review.filters.member')" class="w-full sm:w-64">
+        <UFormField
+          :label="t('review.filters.member')"
+          class="min-w-0 sm:w-64"
+          :ui="filterFieldUi"
+        >
           <USelectMenu
             v-model="filterMemberId"
             :items="memberFilterItems"
             value-key="value"
             :filter-fields="['label', 'acronym']"
             :placeholder="t('review.filters.allMembers')"
-            :search-input="{ placeholder: t('review.filters.search') }"
+            :search-input="labelledSearch(t('review.filters.search'))"
+            :aria-label="
+              selectMenuLabel(
+                t('review.filters.member'),
+                memberFilterItems,
+                filterMemberId,
+                t('review.filters.allMembers'),
+              )
+            "
             class="w-full"
           />
         </UFormField>
@@ -647,6 +701,7 @@ async function confirmBulkPublish() {
           variant="ghost"
           icon="i-lucide-x"
           :label="t('review.filters.clear')"
+          :ui="{ label: 'max-sm:sr-only' }"
           @click="clearFilters"
         />
       </div>
@@ -739,15 +794,16 @@ async function confirmBulkPublish() {
             id="review-validated-heading"
             class="text-highlighted text-lg font-semibold"
           >
-            {{ t("review.amendments.tabs.validated") }}
+            {{ t("review.validated.title") }}
           </h3>
           <ReviewValidatedList
             active
             :api-base="apiBase"
+            :assembly-id="assembly.id"
             :document-path="documentPath"
             :document-id="filterDocumentId"
             :member-id="filterMemberId"
-            @undone="refresh"
+            @undone="onUndoneWhileEmpty"
             @announce="announce"
           />
         </section>
@@ -767,7 +823,7 @@ async function confirmBulkPublish() {
             <UBadge
               color="neutral"
               variant="soft"
-              size="sm"
+              size="md"
               :label="String(documents.length)"
             />
           </h3>
@@ -848,13 +904,15 @@ async function confirmBulkPublish() {
              amendments it groups, so they are never mixed with the rest. -->
         <section
           v-if="canAmendments && transactionalsListed > 0"
-          class="border-primary/30 bg-primary/5 space-y-4 rounded-xl border p-4 sm:p-5"
+          class="sm:border-primary/30 sm:bg-primary/5 space-y-4 sm:rounded-xl sm:border sm:p-5"
           aria-labelledby="review-transactionals-heading"
         >
           <div class="space-y-1">
             <h3
               id="review-transactionals-heading"
-              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
+              ref="transactionalsHeading"
+              tabindex="-1"
+              class="text-highlighted flex items-center gap-2 text-lg font-semibold outline-none"
             >
               <UIcon
                 name="i-lucide-merge"
@@ -865,7 +923,7 @@ async function confirmBulkPublish() {
               <UBadge
                 color="primary"
                 variant="soft"
-                size="sm"
+                size="md"
                 :label="String(transactionalsToValidate)"
                 :aria-label="
                   t(
@@ -903,7 +961,9 @@ async function confirmBulkPublish() {
         >
           <h3
             id="review-amendments-heading"
-            class="text-highlighted text-lg font-semibold"
+            ref="amendmentsHeading"
+            tabindex="-1"
+            class="text-highlighted text-lg font-semibold outline-none"
           >
             {{ t("review.amendments.title") }}
           </h3>
@@ -913,6 +973,12 @@ async function confirmBulkPublish() {
             :content="false"
             variant="link"
             class="w-full"
+            :ui="{
+              list: 'max-sm:overflow-x-auto max-sm:overflow-y-hidden',
+              indicator: 'max-sm:bottom-0',
+              trigger: 'max-sm:shrink-0',
+              label: 'max-sm:overflow-visible max-sm:whitespace-nowrap',
+            }"
             :aria-label="t('review.amendments.tabs.label')"
           />
 
@@ -968,10 +1034,10 @@ async function confirmBulkPublish() {
             v-show="amendmentTab === 'validated'"
             :active="amendmentTab === 'validated'"
             :api-base="apiBase"
+            :assembly-id="assembly.id"
             :document-path="documentPath"
             :document-id="filterDocumentId"
             :member-id="filterMemberId"
-            @count="validatedCount = $event"
             @undone="refresh"
             @announce="announce"
           />
@@ -996,7 +1062,7 @@ async function confirmBulkPublish() {
               <UBadge
                 color="warning"
                 variant="soft"
-                size="sm"
+                size="md"
                 :label="String(lateCount)"
               />
             </h3>

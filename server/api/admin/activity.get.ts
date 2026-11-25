@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../utils/core/http";
 import type { ActivityPageDto } from "~~/shared/types/api";
 import { adminActivityQuerySchema } from "~~/shared/utils/schemas/activity";
 import { requireAdmin } from "../../utils/auth/rbac";
@@ -11,9 +12,6 @@ import { loadAdminActivity } from "../../utils/domain/activity";
  */
 export default defineEventHandler(async (event): Promise<ActivityPageDto> => {
   await requireAdmin(event);
-  const parsed = adminActivityQuerySchema.safeParse(getQuery(event));
-  if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Parámetros no válidos" });
-  }
-  return loadAdminActivity(parsed.data);
+  const query = readQueryWith(event, adminActivityQuerySchema);
+  return loadAdminActivity(query);
 });

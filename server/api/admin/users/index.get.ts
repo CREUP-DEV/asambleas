@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../../utils/core/http";
 import { db } from "../../../db";
 import {
   ADMIN_USER_COLUMNS,
@@ -20,15 +21,11 @@ import { requireAnyPermission } from "../../../utils/auth/rbac";
 export default defineEventHandler(async (event) => {
   await requireAnyPermission(event, [PERMISSION_KEYS.USER_MANAGE_ROLES]);
 
-  const parsed = adminUsersQuerySchema.safeParse(getQuery(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Paginación o filtro inválidos",
-    });
-  }
+  const parsed = readQueryWith(event, adminUsersQuerySchema, {
+    message: "Paginación o filtro inválidos",
+  });
 
-  const { page, pageSize, access, q, role } = parsed.data;
+  const { page, pageSize, access, q, role } = parsed;
   const offset = (page - 1) * pageSize;
 
   const users = await db.query.users.findMany({

@@ -146,8 +146,10 @@ const entries = computed(() =>
       :data-marked="props.marked?.has(entry.row.amendment.id) || undefined"
     >
       <span class="shrink-0 font-semibold tabular-nums">{{ entry.code }}</span>
-      <!-- Acronyms on screen, full names for screen readers. -->
-      <span v-if="entry.authors" class="min-w-0 flex-1 truncate">
+      <!-- Acronyms on screen, full names for screen readers. A joint
+           amendment's list wraps, never cut: the room reads who signs it
+           (E-126); the state stays on the first line. -->
+      <span v-if="entry.authors" class="min-w-0 flex-1 break-words">
         <span aria-hidden="true">{{ entry.authors }}</span>
         <span class="sr-only">{{ entry.authorNames }}</span>
       </span>

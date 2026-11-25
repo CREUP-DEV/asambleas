@@ -529,17 +529,9 @@ const moreItems = computed<MoreItem[][]>(() => {
       to: `${documentPath("consolidado")}?corregir`,
     });
   }
-  // The signed acta de acuerdos stands for its generated PDF.
-  const signedFile = document.value?.signedFile;
-  if (signedFile) {
-    text.push({
-      label: t("workspace.export.signedRecord"),
-      icon: "i-lucide-file-signature",
-      to: signedFile.url,
-      external: true,
-      target: "_blank",
-    });
-  } else if (canExportClean.value) {
+  // The signed acta de acuerdos stands for its generated PDF; the header's
+  // «Acta firmada» opens it.
+  if (!document.value?.signedFile && canExportClean.value) {
     text.push({
       label: t("workspace.export.clean"),
       icon: "i-lucide-file-text",
@@ -626,16 +618,21 @@ const TEXT_MODES: TextMode[] = [
 ];
 
 /**
- * How to show the text, as visible tabs. The acta in force has only itself:
- * nothing amends it.
+ * How to show the text, as visible tabs. The acta in force has no tabs: its
+ * toolbar names it, since nothing amends it.
  */
 const modeItems = computed(() =>
-  recordInForce.value
-    ? [{ label: t("workspace.modes.inForce"), value: "original" as TextMode }]
-    : TEXT_MODES.map((mode) => ({
-        label: t(`workspace.modes.${mode}`),
-        value: mode,
-      })),
+  TEXT_MODES.map((mode) => ({
+    label: t(`workspace.modes.${mode}`),
+    value: mode,
+  })),
+);
+watch(
+  recordInForce,
+  (record) => {
+    if (record) textMode.value = "original";
+  },
+  { immediate: true },
 );
 
 function onTextMode(mode: string | number): void {
@@ -1946,14 +1943,14 @@ const filteredBlockLabel = computed(() =>
               variant="outline"
               icon="i-lucide-file-signature"
               :label="t('workspace.text.openSignedRecord')"
-              :title="
-                t('workspace.text.signedRecordAt', {
-                  date: formatDate(document.signedFile.signedAt, {
-                    locale,
-                  }),
-                })
-              "
             />
+            <span v-if="document.signedFile" class="text-muted text-xs">
+              {{
+                t("workspace.text.signedRecordAt", {
+                  date: formatDate(document.signedFile.signedAt, { locale }),
+                })
+              }}
+            </span>
             <!-- Asked for from "Más"; it shows only once the PDF is on its
                  way, and then offers the download. -->
             <ExportButton
@@ -2202,7 +2199,15 @@ const filteredBlockLabel = computed(() =>
                 }"
               >
                 <template #left>
+                  <!-- The acta in force has only itself: nothing amends it. -->
+                  <span
+                    v-if="recordInForce"
+                    class="text-highlighted text-sm font-medium"
+                  >
+                    {{ t("workspace.modes.inForce") }}
+                  </span>
                   <UTabs
+                    v-else
                     v-model="textMode"
                     :items="modeItems"
                     :content="false"

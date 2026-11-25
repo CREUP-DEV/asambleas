@@ -1,9 +1,5 @@
-import {
-  createError,
-  defineEventHandler,
-  readBody,
-  setResponseStatus,
-} from "h3";
+import { createError, defineEventHandler, setResponseStatus } from "h3";
+import { readBodyWith } from "../../utils/core/http";
 import { sql } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
@@ -22,14 +18,9 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.MEMBER_MANAGE);
 
-  const parsed = memberCreateBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Datos del miembro no válidos",
-    });
-  }
-  const body = parsed.data;
+  const body = await readBodyWith(event, memberCreateBodySchema, {
+    message: "Datos del miembro no válidos",
+  });
 
   try {
     const member = await db.transaction(async (tx) => {

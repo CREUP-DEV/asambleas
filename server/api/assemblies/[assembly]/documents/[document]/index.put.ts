@@ -1,6 +1,6 @@
-import { defineEventHandler, readBody } from "h3";
+import { readBodyWith } from "../../../../../utils/core/http";
+import { defineEventHandler } from "h3";
 import {
-  parseDocumentBody,
   resolveDocumentRoute,
   updateDocument,
 } from "../../../../../utils/domain/documents";
@@ -9,6 +9,6 @@ import { documentUpdateSchema } from "~~/shared/utils/schemas/document";
 
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const ctx = await resolveDocumentRoute(event);
-  const body = parseDocumentBody(documentUpdateSchema, await readBody(event));
+  const body = await readBodyWith(event, documentUpdateSchema);
   return updateDocument(ctx, body);
 });

@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
+import { createError, defineEventHandler, getRouterParam } from "h3";
+import { readBodyWith } from "../../utils/core/http";
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
@@ -23,14 +24,11 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
   requireCan(actor, PERMISSION_KEYS.MEMBER_MANAGE);
   const memberId = validateCuid(getRouterParam(event, "id"), "Miembro");
 
-  const parsed = memberUpdateBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Datos del miembro no válidos",
-    });
-  }
-  const { updatedAt, ...changes } = parsed.data;
+  const { updatedAt, ...changes } = await readBodyWith(
+    event,
+    memberUpdateBodySchema,
+    { message: "Datos del miembro no válidos" },
+  );
 
   try {
     const updated = await db.transaction(async (tx) => {

@@ -1,10 +1,5 @@
-import {
-  createError,
-  getRouterParam,
-  isError,
-  readBody,
-  type H3Event,
-} from "h3";
+import { fail } from "../core/http";
+import { getRouterParam, isError, type H3Event } from "h3";
 import {
   and,
   asc,
@@ -19,7 +14,6 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import type { z } from "zod/v4";
 import { db } from "../../db";
 import {
   amendmentAcceptances,
@@ -322,40 +316,12 @@ function mainAuthorOrFail(
   return choice;
 }
 
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
-
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
 }
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
-}
-
-// Body parsing -------------------------------------------------------------
-
-export async function readAmendmentBody<S extends z.ZodType>(
-  event: H3Event,
-  schema: S,
-): Promise<z.output<S>> {
-  let raw: unknown;
-  try {
-    raw = await readBody(event);
-  } catch {
-    fail(400, "Cuerpo de la petición no válido");
-  }
-  const parsed = schema.safeParse(raw ?? {});
-  if (!parsed.success) {
-    fail(400, "Datos no válidos", {
-      issues: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
-  }
-  return parsed.data;
 }
 
 // Pure helpers ---------------------------------------------------------------
@@ -2376,7 +2342,7 @@ export async function findAmendmentsAwaitingReview(
 
 /**
  * Amendments of these documents the Secretaría validated and published that
- * are still undecided, for «Validadas» in the validation inbox (user's
+ * are still undecided, for «Publicadas» in the validation inbox (user's
  * decision of 2026-11-20), where a validation made by mistake is taken
  * back. Late ones still waiting for the assembly's decision are left out:
  * «Fuera de plazo» lists them. Whether each can go back is the DTO's

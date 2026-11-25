@@ -1,10 +1,6 @@
 import type { H3Event } from "h3";
-import {
-  createError,
-  getRequestHeader,
-  getRouterParam,
-  readMultipartFormData,
-} from "h3";
+import { fail } from "../core/http";
+import { getRequestHeader, getRouterParam, readMultipartFormData } from "h3";
 import {
   and,
   asc,
@@ -212,14 +208,6 @@ function toIso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
 }
 
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({
-    statusCode,
-    message,
-    ...(data === undefined ? {} : { data }),
-  });
-}
-
 /**
  * Stored settings merged over the defaults, as every reader must do. Only the
  * known keys are read: settings stored before a policy was removed (such as
@@ -246,24 +234,6 @@ export function assemblySettings(
  */
 export function hashBlocks(blocks: Block[]): Promise<string> {
   return hashContent(JSON.stringify(blocks));
-}
-
-/** Validates a request body with a Zod schema, answering 400 on failure. */
-export function parseDocumentBody<T>(
-  schema: {
-    safeParse(
-      value: unknown,
-    ):
-      | { success: true; data: T }
-      | { success: false; error: { issues: unknown[] } };
-  },
-  body: unknown,
-): T {
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    fail(400, "Datos no válidos", { issues: parsed.error.issues });
-  }
-  return parsed.data;
 }
 
 // Calendar ------------------------------------------------------------------

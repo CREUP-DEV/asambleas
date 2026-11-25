@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, readBody } from "h3";
+import { createError, defineEventHandler } from "h3";
+import { readBodyWith } from "../../utils/core/http";
 import type {
   MemberSyncBlockedData,
   MemberSyncResult,
@@ -28,13 +29,9 @@ export default defineEventHandler(async (event): Promise<MemberSyncResult> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.MEMBER_MANAGE);
 
-  const parsed = memberSyncBodySchema.safeParse(await readBody(event));
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Datos de la sincronización no válidos",
-    });
-  }
+  const body = await readBodyWith(event, memberSyncBodySchema, {
+    message: "Datos de la sincronización no válidos",
+  });
 
   let outcome: RosterSyncOutcome;
   try {
@@ -42,8 +39,8 @@ export default defineEventHandler(async (event): Promise<MemberSyncResult> => {
       event,
       actor,
       trigger: "manual",
-      confirmDeactivation: parsed.data.confirmDeactivation,
-      confirmedKinds: parsed.data.confirmedKinds,
+      confirmDeactivation: body.confirmDeactivation,
+      confirmedKinds: body.confirmedKinds,
     });
   } catch (error) {
     throwMutationError("members.sync", error, event);

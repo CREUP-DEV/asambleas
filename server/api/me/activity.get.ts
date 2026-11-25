@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../utils/core/http";
 import type { MeActivityPageDto } from "~~/shared/types/api";
 import { meActivityQuerySchema } from "~~/shared/utils/schemas/activity";
 import { requireActor } from "../../utils/domain/actor";
@@ -12,9 +13,6 @@ import { loadMeActivity } from "../../utils/domain/activity";
  */
 export default defineEventHandler(async (event): Promise<MeActivityPageDto> => {
   const actor = await requireActor(event);
-  const parsed = meActivityQuerySchema.safeParse(getQuery(event));
-  if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Parámetros no válidos" });
-  }
-  return loadMeActivity(actor, parsed.data);
+  const query = readQueryWith(event, meActivityQuerySchema);
+  return loadMeActivity(actor, query);
 });

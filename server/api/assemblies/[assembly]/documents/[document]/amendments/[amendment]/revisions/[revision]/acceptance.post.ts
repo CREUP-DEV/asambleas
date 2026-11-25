@@ -1,10 +1,10 @@
+import { readBodyWith } from "../../../../../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { acceptanceBodySchema } from "~~/shared/utils/schemas/amendment";
 import {
   answerTransactionalRevision,
   loadAmendmentContext,
-  readAmendmentBody,
 } from "../../../../../../../../../utils/domain/amendments";
 import { validateCuid } from "../../../../../../../../../utils/validation";
 
@@ -12,6 +12,6 @@ import { validateCuid } from "../../../../../../../../../utils/validation";
 export default defineEventHandler(async (event): Promise<AmendmentDto> => {
   const ctx = await loadAmendmentContext(event);
   const revisionId = validateCuid(getRouterParam(event, "revision"));
-  const body = await readAmendmentBody(event, acceptanceBodySchema);
+  const body = await readBodyWith(event, acceptanceBodySchema, { empty: {} });
   return answerTransactionalRevision(ctx, revisionId, body);
 });

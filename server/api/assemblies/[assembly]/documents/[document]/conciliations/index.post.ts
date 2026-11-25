@@ -1,8 +1,6 @@
-import { defineEventHandler, readBody } from "h3";
-import {
-  parseDocumentBody,
-  resolveDocumentRoute,
-} from "../../../../../../utils/domain/documents";
+import { readBodyWith } from "../../../../../../utils/core/http";
+import { defineEventHandler } from "h3";
+import { resolveDocumentRoute } from "../../../../../../utils/domain/documents";
 import { assertOpImagesBelong } from "../../../../../../utils/domain/documentImages";
 import { createConciliation } from "../../../../../../utils/domain/formCorrections";
 import type { FormCorrectionsDto } from "~~/shared/types/api";
@@ -16,7 +14,7 @@ import { conciliationSchema } from "~~/shared/utils/schemas/document";
 export default defineEventHandler(
   async (event): Promise<FormCorrectionsDto> => {
     const ctx = await resolveDocumentRoute(event);
-    const body = parseDocumentBody(conciliationSchema, await readBody(event));
+    const body = await readBodyWith(event, conciliationSchema);
     // The images its wording inserts are ones stored for this document.
     await assertOpImagesBelong(ctx.document.id, body.ops);
     return createConciliation(ctx, body);

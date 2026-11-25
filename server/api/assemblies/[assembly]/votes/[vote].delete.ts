@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { VoteDto } from "~~/shared/types/api";
 import { voteVoidBodySchema } from "~~/shared/utils/schemas/vote";
 import { requireActor } from "../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import {
   requireItemVoteRecorder,
   voidItemVote,
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event): Promise<VoteDto> => {
   );
   // Before the body: whoever may not change votes gets 403, not 400.
   requireItemVoteRecorder(actor);
-  const body = await readAssemblyBody(event, voteVoidBodySchema);
+  const body = await readBodyWith(event, voteVoidBodySchema);
   try {
     return await voidItemVote(
       actor,

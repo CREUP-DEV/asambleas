@@ -1,4 +1,5 @@
 import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
@@ -39,10 +40,6 @@ const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 
 const EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg" } as const;
 type ImageMime = keyof typeof EXTENSIONS;
-
-function fail(statusCode: number, message: string): never {
-  throw createError({ statusCode, message });
-}
 
 /** Where image files are stored: images/ inside the upload directory. */
 export function getImageDir(): string {

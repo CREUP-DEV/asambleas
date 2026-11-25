@@ -1,5 +1,5 @@
+import { notFound } from "../../../utils/core/http";
 import {
-  createError,
   defineEventHandler,
   getRouterParam,
   sendStream,
@@ -23,9 +23,7 @@ import {
   canSeeDocument,
 } from "../../../utils/domain/visibility";
 
-function notFound(): never {
-  throw createError({ statusCode: 404, message: "Imagen no encontrada" });
-}
+const NOT_FOUND_MESSAGE = "Imagen no encontrada";
 
 /**
  * Serves an image of a document's text to whoever can see that document,
@@ -35,7 +33,7 @@ export default defineEventHandler(async (event) => {
   const actor = await requireActor(event);
 
   const id = getRouterParam(event, "image");
-  if (!id || !IMAGE_ASSET_PATTERN.test(id)) notFound();
+  if (!id || !IMAGE_ASSET_PATTERN.test(id)) notFound(NOT_FOUND_MESSAGE);
 
   const [row] = await db
     .select({
@@ -59,16 +57,16 @@ export default defineEventHandler(async (event) => {
     // Co-presenters see a draft like its main presenter.
     !canSeeDocument(actor, (await withCoProponentIds([row]))[0]!)
   ) {
-    notFound();
+    notFound(NOT_FOUND_MESSAGE);
   }
 
   const name = imageFileName(id, row.mimeType);
-  if (!name) notFound();
+  if (!name) notFound(NOT_FOUND_MESSAGE);
   const path = join(getImageDir(), name);
   try {
-    if (!(await stat(path)).isFile()) notFound();
+    if (!(await stat(path)).isFile()) notFound(NOT_FOUND_MESSAGE);
   } catch {
-    notFound();
+    notFound(NOT_FOUND_MESSAGE);
   }
 
   setResponseHeaders(event, {

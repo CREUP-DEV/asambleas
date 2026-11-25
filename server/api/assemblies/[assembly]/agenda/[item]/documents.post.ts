@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../../../utils/core/http";
 import {
   createError,
   defineEventHandler,
   getRouterParam,
-  readBody,
   setResponseStatus,
 } from "h3";
 import type { BulkDocumentsDto } from "~~/shared/types/api";
@@ -12,7 +12,6 @@ import {
   requireActor,
 } from "../../../../../utils/domain/actor";
 import { createDocuments } from "../../../../../utils/domain/documentCreate";
-import { parseDocumentBody } from "../../../../../utils/domain/documents";
 import {
   resolveAgendaItem,
   resolveAssembly,
@@ -43,7 +42,7 @@ export default defineEventHandler(async (event): Promise<BulkDocumentsDto> => {
     assembly.id,
     getRouterParam(event, "item"),
   );
-  const body = parseDocumentBody(bulkDocumentsSchema, await readBody(event));
+  const body = await readBodyWith(event, bulkDocumentsSchema);
 
   const documents = await createDocuments(
     { actor, assembly, agendaItemId: item.id },

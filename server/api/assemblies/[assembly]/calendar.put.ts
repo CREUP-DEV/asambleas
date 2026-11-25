@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
@@ -9,7 +10,6 @@ import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { lockAssembly } from "../../../utils/domain/agendaWrites";
 import {
   loadAssemblyDto,
-  readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
 import { diffChanges } from "../../../utils/domain/changes";
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, calendarBodySchema);
+  const body = await readBodyWith(event, calendarBodySchema);
 
   try {
     await db.transaction(async (tx) => {

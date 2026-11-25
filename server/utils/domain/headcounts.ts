@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -83,10 +83,6 @@ function toHeadcountMember(member: MemberColumns): HeadcountMemberDto {
     kind: member.kind,
     university: member.university,
   };
-}
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, data });
 }
 
 /** Counts are taken, and corrected, only while the session is open. */

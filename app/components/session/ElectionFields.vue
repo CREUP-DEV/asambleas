@@ -186,19 +186,30 @@ const tiles = computed(() => [
       ]
     : []),
 ]);
+/**
+ * The last vote added or taken back, said once to screen readers with whose
+ * it is («María García: 5, uno más»), never a bare count (E-123).
+ */
+const spoken = ref("");
 function changeVote(key: TileKey, step: 1 | -1): void {
-  if (key === "blank") blank.value = Math.max(0, blank.value + step);
-  else if (key === "invalid") invalid.value = Math.max(0, invalid.value + step);
-  else if (key === "ballots") {
-    update({ ballots: Math.max(0, election.value.ballots + step) });
-  } else {
-    setCount(key, Math.max(0, (election.value.counts[key] ?? 0) + step));
-  }
+  const tile = tiles.value.find((entry) => entry.key === key);
+  if (!tile) return;
+  // Worked out here: the models only come back once the parent renders.
+  const next = Math.max(0, tile.count + step);
+  if (key === "blank") blank.value = next;
+  else if (key === "invalid") invalid.value = next;
+  else if (key === "ballots") update({ ballots: next });
+  else setCount(key, next);
+  spoken.value = t(
+    step === 1 ? "session.election.countUp" : "session.election.countDown",
+    { name: tile.label, count: next },
+  );
 }
 /** The votes added, in order, so «Deshacer el último» takes the last back. */
 const history = ref<TileKey[]>([]);
 watch(liveCount, () => {
   history.value = [];
+  spoken.value = "";
 });
 function addVote(key: TileKey): void {
   changeVote(key, 1);
@@ -347,7 +358,8 @@ onBeforeUnmount(() => {
     </fieldset>
 
     <!-- On screen: one tile per candidate, then the ballots when one may
-         mark several, and the blank and invalid ones in a secret vote. -->
+         mark several, and the blank and invalid ones in a secret vote. A
+         name wraps, never cut: two may differ only at the end (E-123). -->
     <div v-if="liveCount" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <div
         v-for="(tile, index) in tiles"
@@ -355,15 +367,11 @@ onBeforeUnmount(() => {
         class="border-default flex min-w-0 flex-col items-center gap-2 rounded-lg border p-3"
       >
         <span
-          class="text-muted w-full truncate text-center text-sm font-medium"
-          :title="tile.label"
+          class="text-muted w-full text-center text-sm font-medium break-words"
         >
           {{ tile.label }}
         </span>
-        <span
-          class="text-highlighted text-3xl font-bold tabular-nums"
-          aria-live="polite"
-        >
+        <span class="text-highlighted text-3xl font-bold tabular-nums">
           {{ tile.count }}
         </span>
         <div class="flex items-center gap-1">
@@ -378,6 +386,7 @@ onBeforeUnmount(() => {
             @click="addVote(tile.key)"
           />
           <UButton
+            size="lg"
             color="neutral"
             variant="ghost"
             icon="i-lucide-minus"
@@ -395,6 +404,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="liveCount" class="flex flex-wrap items-center gap-2">
+      <!-- Mounted with the tiles, before the first vote, so it is heard. -->
+      <p class="sr-only" aria-live="polite">{{ spoken }}</p>
       <UButton
         color="neutral"
         variant="outline"

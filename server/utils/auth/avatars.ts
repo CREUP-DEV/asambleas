@@ -8,7 +8,7 @@ import { db } from "../../db";
 import { userAvatars, users } from "../../db/schema";
 import { logError, logInfo, logWarn } from "../core/logger";
 import { getExportQueue } from "../export/queue";
-import { seatingErrorSummary } from "../seating/errors";
+import { errorSummary } from "../errors";
 import { renderSeatingImage } from "../seating/images";
 import { isTooLarge, readCapped } from "../seating/intranet";
 import {
@@ -129,7 +129,7 @@ export async function fetchAvatarSource(
  * end with the query's parameters, and the claim binds the picture's URL.
  */
 function logAvatarError(error: unknown, meta: Record<string, unknown>): void {
-  logError("auth.avatars", seatingErrorSummary(error), meta);
+  logError("auth.avatars", errorSummary(error), meta);
 }
 
 // Files ----------------------------------------------------------------------

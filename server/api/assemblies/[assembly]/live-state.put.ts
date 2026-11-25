@@ -1,10 +1,10 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { LiveStateDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { liveStateBodySchema } from "~~/shared/utils/schemas/assembly";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import {
-  readAssemblyBody,
   throwAssemblyMutationError,
   updateLiveState,
 } from "../../../utils/domain/assemblies";
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event): Promise<LiveStateDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, liveStateBodySchema);
+  const body = await readBodyWith(event, liveStateBodySchema);
 
   let state: LiveStateDto;
   try {

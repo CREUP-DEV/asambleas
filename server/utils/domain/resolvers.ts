@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { notFound } from "../core/http";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -13,10 +13,6 @@ import { loadCoProponentIds } from "./presenters";
 import { canSeeAssembly, canSeeDocument } from "./visibility";
 
 const CUID_PATTERN = /^[a-z0-9]{20,32}$/;
-
-function notFound(message: string): never {
-  throw createError({ statusCode: 404, message });
-}
 
 /** Resolves `80-ago` or an id. Hidden assemblies answer 404, not 403. */
 export async function resolveAssembly(actor: Actor, param: string | undefined) {

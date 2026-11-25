@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ControlSheetItemRowDto } from "~~/shared/types/api";
 import { controlSheetItemBodySchema } from "~~/shared/utils/schemas/controlSheet";
 import { canModerate, requireActor } from "../../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../../utils/domain/assemblies";
 import {
   requireControlSheetReader,
   resolveSheetItem,
@@ -21,7 +21,7 @@ import { throwMutationError } from "../../../../../utils/errors";
 export default defineEventHandler(
   async (event): Promise<ControlSheetItemRowDto> => {
     const actor = await requireActor(event);
-    const body = await readAssemblyBody(event, controlSheetItemBodySchema);
+    const body = await readBodyWith(event, controlSheetItemBodySchema);
     if (!(canModerate(actor) && sheetItemBodyOnlyTreated(body))) {
       requireControlSheetReader(actor);
     }

@@ -1,4 +1,5 @@
-import { defineEventHandler, readBody, createError } from "h3";
+import { defineEventHandler, createError } from "h3";
+import { readBodyWith } from "../../../../utils/core/http";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
@@ -53,14 +54,12 @@ export default defineEventHandler(async (event) => {
   const { admin, permissions } = caller;
   const userId = validateAuthId(getRouterParam(event, "id"));
 
-  const body = await readBody(event);
-  const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "roleId requerido" });
-  }
+  const body = await readBodyWith(event, bodySchema, {
+    message: "roleId requerido",
+  });
 
   const targetRole = await db.query.roles.findFirst({
-    where: eq(roles.id, parsed.data.roleId),
+    where: eq(roles.id, body.roleId),
     columns: { id: true, name: true },
   });
 
@@ -167,7 +166,7 @@ export default defineEventHandler(async (event) => {
     // the read above (it locks the row) leaves nothing to update.
     const updated = await tx
       .update(users)
-      .set({ roleId: parsed.data.roleId })
+      .set({ roleId: body.roleId })
       .where(and(eq(users.id, userId), isNull(users.accessRevokedAt)))
       .returning({ id: users.id });
     if (updated.length === 0) {
@@ -201,7 +200,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     success: true,
-    roleId: parsed.data.roleId,
+    roleId: body.roleId,
     roleName: targetRole.name,
   };
 });

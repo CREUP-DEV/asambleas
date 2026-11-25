@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../../utils/core/http";
 import { db } from "../../../db";
 import { emailDeliveries, users } from "../../../db/schema";
 import type {
@@ -23,10 +24,9 @@ export default defineEventHandler(
   async (event): Promise<EmailDeliveryDto[]> => {
     await requireAnyPermission(event, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
     const actor = await requireActor(event);
-    const query = emailDeliveriesQuerySchema.safeParse(getQuery(event));
-    if (!query.success) {
-      throw createError({ statusCode: 400, message: "Consulta no válida" });
-    }
+    const query = readQueryWith(event, emailDeliveriesQuerySchema, {
+      message: "Consulta no válida",
+    });
     const readsSubjects = canManageDocuments(actor);
     const rows = await db
       .select({
@@ -36,7 +36,7 @@ export default defineEventHandler(
       .from(emailDeliveries)
       .leftJoin(users, eq(users.id, emailDeliveries.userId))
       .orderBy(desc(emailDeliveries.createdAt), desc(emailDeliveries.id))
-      .limit(query.data.limit);
+      .limit(query.limit);
     return rows.map(({ delivery, recipientName }) => ({
       id: delivery.id,
       kind: delivery.kind,

@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import {
   computeElectionOutcome,
   type ElectionInput,
@@ -79,10 +79,6 @@ export const ITEM_IS_CONTAINER_REASON = "item_is_container";
 
 const STALE_VOTE_MESSAGE =
   "La votación ha cambiado mientras tanto. Recarga e inténtalo de nuevo";
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
 
 /**
  * Recording and voiding votes on agenda items: the Mesa, the sheet's

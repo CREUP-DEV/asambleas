@@ -272,7 +272,13 @@ pdfmake gives each rule one width; the Word export writes them as Word does.
 A cell's rules may take a colour of the palette (`borderColor`, the fills' seven names; absent, the template's burgundy, which is never stored): a side two cells share takes the colour of the one that wins it (`gridSides`: the stronger; as strong, a colour of its own over the template's, then the cell above or to the left), which the view writes on both cells' sides, the PDF in each cell's `borderColor` and the Word export in each side's colour; the editor shows the cell's own («Color del borde» in «Bordes»), and a Word import reads the first coloured rule of a cell or table, black and near it standing for the template's. A table of one cell is shown as a box (`role="presentation"`). The table
 menu and the right-click menu set them («Bordes», «Ancho de la tabla»,
 «Posición de la tabla»), where the colour is offered; amendments compare no
-cell, so they never change them.
+cell, so they never change them. The colour and «Bordes» act on the cells
+selected, or the cursor's, and say so; «Seleccionar toda la tabla», first in
+that group, selects every cell (`wholeTableCells`), since a touch screen
+cannot drag across cells. The table menu, rebuilt on every change, stays
+open after it or a side; the right-click menu, built once when it opens,
+closes instead, so nothing acts on the cells it read before (right-click
+again inside the selection to go on).
 
 The editor writes Spanish quotes as one types (`SpanishQuotesExtension`):
 a straight `"` becomes « or », and “ ” inside an open «…»; typed over a
@@ -795,10 +801,12 @@ stands. The time-based `amendmentVisibility` setting is gone.
 each user has to do (expected documents, corrections requested) and where
 their documents and amendments stand. The Secretaría gets a validation inbox
 per assembly (`GET .../review`) and the tracking panel. The inbox lists the
-documents to validate, then the amendments in two tabs, each by document:
+documents to validate, then the amendments in three tabs, each by document:
 "Por revisar" (to validate, and the transactionals still waiting for their
-authors) and "Validadas sin publicar" (validated and kept private, to
-publish them), and finally the late ones in "Fuera de plazo"
+authors), "Sin publicar" (validated and kept private, to publish them) and
+"Publicadas" (validated and published, still undecided, to take a validation
+back; read only when opened, so it carries no count), and finally the late
+ones in "Fuera de plazo"
 (`splitReviewParts` in `app/components/review/-queue.ts`). Neither lists
 work that cannot go ahead (`server/utils/domain/workFilters.ts`): a
 member's draft past `documents_close` that is not expected nor sent back

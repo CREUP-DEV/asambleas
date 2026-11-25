@@ -55,6 +55,7 @@ import {
   cellFillTextColour,
 } from "~~/shared/constants/cellFills";
 import { TableKit } from "@tiptap/extension-table";
+import { wholeTableCells } from "./-tableSelection";
 import { TextAlign } from "@tiptap/extension-text-align";
 
 /**
@@ -288,10 +289,25 @@ function cellFillItems(
 const TABLE_WIDTHS = [100, 75, 66, 50, 33, 25];
 
 /**
+ * Selects every cell of the table at the cursor, so «Bordes» and the
+ * colour reach them all: a touch screen cannot drag across cells (M-141).
+ * Without moving the focus, which would close the menu it is chosen from;
+ * the next command's `focus()` keeps the cell selection.
+ */
+function selectWholeTable(): void {
+  const instance = editor.value;
+  const range = instance ? wholeTableCells(instance.state) : null;
+  if (range) instance!.commands.setCellSelection(range);
+}
+
+/**
  * How a table looks, for the table menu and the right-click menu: the
  * cells' colour, each side of the cells at the cursor shown or hidden, all
  * or none, their colour and thick rules, and the table's width and place.
  * Checked as the cells and the table are; nothing outside a table.
+ * `keepOpen`: the menu is rebuilt on every change (the toolbar's), so it
+ * may stay open after a side or the whole table is chosen; the right-click
+ * menu is built once, and closes rather than act on what it read.
  */
 function tableLayoutItems(
   fill: CellFill | "mixed" | null,
@@ -299,7 +315,11 @@ function tableLayoutItems(
   borderColor: ReturnType<typeof cellBorderColorOf>,
   layout: ReturnType<typeof tableLayoutAt>,
   apply: (command: (chain: ChainedCommands) => ChainedCommands) => void,
+  keepOpen: boolean,
 ): ContextMenuItem[] {
+  const stayOpen = (event: Event) => {
+    if (keepOpen) event.preventDefault();
+  };
   const disabled = sides === null || layout === null;
   const shown = (side: (typeof CELL_SIDES)[number]) =>
     sides !== null && sides[side] !== "none" && sides[side] !== "mixed";
@@ -311,9 +331,22 @@ function tableLayoutItems(
     Object.fromEntries(CELL_SIDES.map((side) => [side, edge]));
   const widths = [...TABLE_WIDTHS];
   if (layout && !widths.includes(layout.width)) widths.push(layout.width);
+  // The colour and the sides act on the cells selected, or the cursor's.
+  const target = t("common.editor.table.cellsTarget");
   return [
     {
+      label: t("common.editor.table.selectTable"),
+      icon: "i-lucide-grid-2x2-check",
+      disabled,
+      // In the toolbar the menu stays open to choose what to change next.
+      onSelect: (event: Event) => {
+        stayOpen(event);
+        selectWholeTable();
+      },
+    },
+    {
       label: t("common.editor.table.fill.label"),
+      description: target,
       icon: "i-lucide-paint-bucket",
       disabled: fill === null,
       children: cellFillItems(fill, (choice) =>
@@ -322,6 +355,7 @@ function tableLayoutItems(
     },
     {
       label: t("common.editor.table.borders.label"),
+      description: target,
       icon: "i-lucide-square-dashed",
       disabled,
       children: [
@@ -330,7 +364,7 @@ function tableLayoutItems(
           type: "checkbox" as const,
           checked: shown(side),
           onSelect: (event: Event) => {
-            event.preventDefault();
+            stayOpen(event);
             apply((c) =>
               c.setCellSides({
                 [side]: shown(side) ? "none" : thick ? "thick" : "thin",
@@ -369,7 +403,7 @@ function tableLayoutItems(
             checked: thick,
             disabled: visible.length === 0,
             onSelect: (event: Event) => {
-              event.preventDefault();
+              stayOpen(event);
               apply((c) =>
                 c.setCellSides(
                   Object.fromEntries(
@@ -405,6 +439,11 @@ function tableLayoutItems(
     },
     {
       label: t("common.editor.table.layout.place"),
+      // A table as wide as the text has no place to choose.
+      description:
+        layout && layout.width >= 100
+          ? t("common.editor.table.layout.placeNeedsWidth")
+          : undefined,
       icon: "i-lucide-align-center-horizontal",
       disabled: disabled || layout!.width >= 100,
       children: (["start", "center", "right"] as const).map((place) => ({
@@ -533,6 +572,7 @@ const tableMenu = computed(
                 cellBorder.value,
                 tableLayout.value,
                 runInTable,
+                true,
               ),
             ]
           : []),
@@ -643,13 +683,16 @@ function currentHeading(): string | null {
   );
 }
 
-/** Takes the reader, and the cursor, to the start of a heading. */
-function goToHeading(id: string): void {
+/**
+ * Takes the reader, and the cursor, to the start of a heading or of any
+ * other block; false when the text holds no such block.
+ */
+function goToHeading(id: string): boolean {
   const instance = editor.value;
   const element = instance?.view.dom.querySelector<HTMLElement>(
     `[data-block-id="${CSS.escape(id)}"]`,
   );
-  if (!instance || !element) return;
+  if (!instance || !element) return false;
   const position = instance.view.posAtDOM(element, 0);
   instance
     .chain()
@@ -671,6 +714,7 @@ function goToHeading(id: string): void {
     top,
     behavior: reduceMotion ? "auto" : "smooth",
   });
+  return true;
 }
 
 onBeforeUnmount(() => {
@@ -1076,6 +1120,7 @@ function buildContextItems(): void {
                 cellBorderColorOf(instance),
                 tableLayoutAt(instance),
                 run,
+                false,
               )
             : [],
           [
@@ -1437,6 +1482,8 @@ defineExpose({
   /** Emits pending changes right away (before saving, for instance). */
   flush,
   focus: () => editor.value?.commands.focus(),
+  /** The cursor and the view to a block by its id (false: no such block). */
+  goToBlock: goToHeading,
   editor,
   /** Room the floating toolbar takes over the text, in px. */
   toolbarRoom,
@@ -1535,6 +1582,11 @@ defineExpose({
                   : 'bg-default/95 border-b backdrop-blur'),
               $slots['toolbar-end'] && !stuck
                 ? '[&>[data-slot=group]:last-child]:ms-auto'
+                : '',
+              // On a phone the row scrolls sideways: what the page adds
+              // (saving) stays in view at its end (M-143).
+              $slots['toolbar-end'] && !compact
+                ? 'max-sm:[&>[data-slot=group]:last-child]:bg-default max-sm:[&>[data-slot=group]:last-child]:sticky max-sm:[&>[data-slot=group]:last-child]:end-0 max-sm:[&>[data-slot=group]:last-child]:z-[1] max-sm:[&>[data-slot=group]:last-child]:ps-1'
                 : '',
             ]"
           >

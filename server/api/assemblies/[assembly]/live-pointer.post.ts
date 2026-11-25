@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
 import { eq } from "drizzle-orm";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -5,7 +6,6 @@ import { livePointerBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { liveState } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../utils/domain/assemblies";
 import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { publishLivePointer } from "../../../utils/live/scroll";
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, livePointerBodySchema);
+  const body = await readBodyWith(event, livePointerBodySchema);
   setResponseStatus(event, 204);
   if (assembly.status !== "in_session") return null;
   if (!controlsProjection(event, assembly.id, actor)) return null;

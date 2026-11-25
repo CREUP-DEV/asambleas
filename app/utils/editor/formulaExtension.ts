@@ -137,7 +137,10 @@ export const FormulaExtension = Mark.create({
   name: "formula",
   code: true,
   excludes: "_",
-  inclusive: false,
+  // Typed over its example, or at its end, text stays in the formula, as
+  // Tiptap's `code` mark does; ArrowRight at the paragraph's end leaves it.
+  inclusive: true,
+  exitable: true,
 
   addCommands() {
     return {

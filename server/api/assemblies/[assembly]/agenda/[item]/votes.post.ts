@@ -1,8 +1,8 @@
+import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ItemVoteResultDto } from "~~/shared/types/api";
 import { itemVoteBodySchema } from "~~/shared/utils/schemas/vote";
 import { requireActor } from "../../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../../utils/domain/assemblies";
 import {
   recordItemVote,
   requireItemVoteRecorder,
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event): Promise<ItemVoteResultDto> => {
     assembly,
     getRouterParam(event, "item"),
   );
-  const body = await readAssemblyBody(event, itemVoteBodySchema);
+  const body = await readBodyWith(event, itemVoteBodySchema);
   try {
     return await recordItemVote(actor, assembly, item, body, {
       controlsProjection: controlsProjection(event, assembly.id, actor),

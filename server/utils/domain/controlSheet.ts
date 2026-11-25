@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { z } from "zod/v4";
 import { db } from "../../db";
@@ -102,10 +102,6 @@ type AmendmentBody = z.output<typeof controlSheetAmendmentBodySchema>;
 
 /** Reason of the 409 a stale field answers (useApi's REASON_KEYS). */
 export const CONTROL_SHEET_STALE_REASON = "control_sheet_stale";
-
-function fail(statusCode: number, message: string, data?: unknown): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
-}
 
 /**
  * Everyone who sees the assembly reads its sheet (user's decision of

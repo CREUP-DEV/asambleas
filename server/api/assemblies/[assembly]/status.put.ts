@@ -1,3 +1,4 @@
+import { readBodyWith } from "../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
@@ -11,7 +12,6 @@ import {
   endRecess,
   ensureLiveState,
   loadAssemblyDto,
-  readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
 import { recordEvent } from "../../../utils/domain/events";
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
     actor,
     getRouterParam(event, "assembly"),
   );
-  const body = await readAssemblyBody(event, assemblyStatusBodySchema);
+  const body = await readBodyWith(event, assemblyStatusBodySchema);
 
   if (!ASSEMBLY_STATUS_TRANSITIONS[assembly.status].includes(body.status)) {
     throw createError({

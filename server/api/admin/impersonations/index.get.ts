@@ -1,4 +1,5 @@
-import { createError, defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
+import { readQueryWith } from "../../../utils/core/http";
 import type { AdminImpersonationPageDto } from "~~/shared/types/api";
 import { adminImpersonationQuerySchema } from "~~/shared/utils/schemas/activity";
 import { requireAdmin } from "../../../utils/auth/rbac";
@@ -12,10 +13,7 @@ import { loadAdminImpersonations } from "../../../utils/domain/activity";
 export default defineEventHandler(
   async (event): Promise<AdminImpersonationPageDto> => {
     await requireAdmin(event);
-    const parsed = adminImpersonationQuerySchema.safeParse(getQuery(event));
-    if (!parsed.success) {
-      throw createError({ statusCode: 400, message: "Parámetros no válidos" });
-    }
-    return loadAdminImpersonations(parsed.data);
+    const query = readQueryWith(event, adminImpersonationQuerySchema);
+    return loadAdminImpersonations(query);
   },
 );

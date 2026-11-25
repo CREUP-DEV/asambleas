@@ -1,14 +1,14 @@
+import { readBodyWith } from "../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { SeatingLayoutResultDto } from "~~/shared/types/api";
 import { seatingLayoutBodySchema } from "~~/shared/utils/schemas/seating";
 import { requireActor } from "../../../../utils/domain/actor";
-import { readAssemblyBody } from "../../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import {
   requireSeatingEditor,
   saveSeatingLayout,
 } from "../../../../utils/domain/seating";
-import { throwSeatingError } from "../../../../utils/seating/errors";
+import { throwMutationError } from "../../../../utils/errors";
 
 /** Saves the room's layout (seating:edit), with its optimistic lock. */
 export default defineEventHandler(
@@ -19,11 +19,11 @@ export default defineEventHandler(
       actor,
       getRouterParam(event, "assembly"),
     );
-    const body = await readAssemblyBody(event, seatingLayoutBodySchema);
+    const body = await readBodyWith(event, seatingLayoutBodySchema);
     try {
       return await saveSeatingLayout(actor, assembly, body);
     } catch (error) {
-      throwSeatingError("seating.layout", error, event);
+      throwMutationError("seating.layout", error, event);
     }
   },
 );
