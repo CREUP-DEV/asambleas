@@ -65,9 +65,11 @@ import {
  * - For the authors of an amendment a transactional replaced: that
  *   transactional withdrawn once in force (amendment_withdrawn with
  *   `replacedSources`, by the Mesa or by an author whose own amendments
- *   were the only ones), since their amendment stays replaced; only the
- *   authors of the amendments in its `replacedSourceIds` are told
- *   (isReplacingWithdrawal, replacedOwnSource).
+ *   were the only ones) or lapsed by the Mesa once in force
+ *   (amendment_lapsed with `replacedSources`), since their amendment stays
+ *   replaced; only the authors of the amendments in its
+ *   `replacedSourceIds` are told (isReplacingClosure, replacedOwnSource).
+ *   It never reaches them by email: they are not its authors.
  * - For the presenters of a document (main and co-presenters): what the
  *   Secretaría, the Mesa or the assembly settled about it
  *   (NEWS_DOCUMENT_TYPES), with no amendment.
@@ -116,7 +118,8 @@ export const NEWS_DOCUMENT_TYPES = [
 
 /**
  * Events that may close a transactional by itself, or bring it back
- * (isAutomaticChange).
+ * (isAutomaticChange), and the ones that close it once it replaced what it
+ * groups (isReplacingClosure).
  */
 const AUTOMATIC_TYPES = [
   "amendment_withdrawn",
@@ -182,21 +185,24 @@ export function isAutomaticAnswer(
 }
 
 /**
- * A transactional withdrawn after it had replaced what it groups
+ * A transactional withdrawn or lapsed after it had replaced what it groups
  * (`replacedSources`, from replacesSourcesNow: withdrawAmendment, or the
- * Mesa's withdrawal from the console in recordAmendmentOutcome): those
- * amendments stay `transacted`, so their authors are told although someone
- * decided it.
+ * Mesa's withdrawal or lapse from the console or in bulk in
+ * recordAmendmentOutcome): those amendments stay `transacted`, so their
+ * authors are told although someone decided it.
  */
-export function isReplacingWithdrawal(
+export function isReplacingClosure(
   type: string,
   payload: Record<string, unknown>,
 ): boolean {
-  return type === "amendment_withdrawn" && payload.replacedSources === true;
+  return (
+    (type === "amendment_withdrawn" || type === "amendment_lapsed") &&
+    payload.replacedSources === true
+  );
 }
 
 /**
- * A replacing withdrawal (isReplacingWithdrawal) that replaced one of
+ * A replacing closure (isReplacingClosure) that replaced one of
  * `ownSourceIds`, the member's amendments the transactional groups: it is
  * news only for the authors of the amendments it did replace
  * (`replacedSourceIds`), not for one it left open, such as a late one still
@@ -207,7 +213,7 @@ export function replacedOwnSource(
   payload: Record<string, unknown>,
   ownSourceIds: readonly string[],
 ): boolean {
-  if (!isReplacingWithdrawal(type, payload)) return false;
+  if (!isReplacingClosure(type, payload)) return false;
   const replaced = Array.isArray(payload.replacedSourceIds)
     ? (payload.replacedSourceIds as unknown[])
     : [];
@@ -282,8 +288,8 @@ export function isNewsEvent(
  * approved, the code of the transactional that replaced it (or that
  * replaced first what a lapsed transactional grouped), the code of the
  * amendment whose fate closed a transactional, "replaced" for a
- * transactional withdrawn after it replaced what it groups
- * (isReplacingWithdrawal), the result of a document's final vote or the
+ * transactional withdrawn or lapsed after it replaced what it groups
+ * (isReplacingClosure), the result of a document's final vote or the
  * status a document moved to. Null when the type says it all.
  */
 export function newsValue(
@@ -312,16 +318,17 @@ export function newsValue(
     case "amendment_transacted":
       return text(payload.code);
     case "amendment_lapsed":
-      // Named after the transactional that replaced its parents; one that
-      // lapsed because its late parent was not admitted reads plain.
-      return payload.reason === "sources_transacted"
-        ? text(payload.code)
-        : null;
+      // Named after the transactional that replaced its parents; one the
+      // Mesa lapsed once in force, after it replaced them, is "replaced";
+      // one that lapsed because its late parent was not admitted reads
+      // plain.
+      if (payload.reason === "sources_transacted") return text(payload.code);
+      return isReplacingClosure(type, payload) ? "replaced" : null;
     case "transactional_source_dropped":
       return text(payload.sourceCode);
     case "amendment_withdrawn":
       if (payload.by === "sources_closed") return text(payload.sourceCode);
-      return isReplacingWithdrawal(type, payload) ? "replaced" : null;
+      return isReplacingClosure(type, payload) ? "replaced" : null;
     case "amendment_reopened":
       return payload.reason === "source_reopened"
         ? text(payload.sourceCode)

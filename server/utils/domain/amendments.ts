@@ -616,9 +616,11 @@ export function withdrawNeedsMesa(input: {
  * force: validated and accepted by every main author, so the amendments it
  * replaced are `transacted` for good and stay so. Read on the locked row and
  * its locked parties. Its withdrawal, by an author (withdrawAmendment) or by
- * the Mesa from the console (recordAmendmentOutcome), records
- * `replacedSources` on amendment_withdrawn when it did replace some of its
- * sources (transactedSourceIds), and their authors are told (news.ts).
+ * the Mesa from the console (recordAmendmentOutcome), and its lapse, by the
+ * Mesa from the console or in bulk (recordAmendmentOutcome), record
+ * `replacedSources` on amendment_withdrawn or amendment_lapsed when it did
+ * replace some of its sources (transactedSourceIds), and their authors are
+ * told in their news, never by email (news.ts, isReplacingClosure).
  */
 export function replacesSourcesNow(
   kind: AmendmentKind,
@@ -637,8 +639,9 @@ export function replacesSourcesNow(
  * its sources that are `transacted`, read on their locked rows. A late one
  * still waiting for admission stays `submitted` (sourcesToReplace), and one
  * presented under the earlier rule replaced nothing before its approval, so
- * the withdrawal records `replacedSources` and `replacedSourceIds` only when
- * this is not empty, and only these amendments' authors are told (news.ts).
+ * the withdrawal or the lapse records `replacedSources` and
+ * `replacedSourceIds` only when this is not empty, and only these
+ * amendments' authors are told (news.ts).
  */
 export function transactedSourceIds(
   sourceIds: readonly string[],
@@ -3403,8 +3406,8 @@ function instantReview(instant: boolean, actor: Actor, now: Date) {
  * accepted by every main author, whoever withdraws it; replacesSourcesNow)
  * records `replacedSources` and `replacedSourceIds` when some of its sources
  * are `transacted` (transactedSourceIds): those stay so, and their authors
- * are told (news.ts, isNewsEvent). The Mesa's withdrawal
- * from the console (recordAmendmentOutcome) records it the same way.
+ * are told (news.ts, isNewsEvent). The Mesa's withdrawal or lapse from the
+ * console (recordAmendmentOutcome) records it the same way.
  */
 export async function withdrawAmendment(
   ctx: AmendmentContext,
@@ -5953,9 +5956,10 @@ export async function applyBulkAssent(
  * .../amendments/lapse, BulkLapseBody): the lapse offer after a decision,
  * with the amendments the Mesa ticked. Each goes through the single lapse
  * (applyAmendmentOutcome: its own transaction, optimistic lock, checks,
- * event and the transactionals it closes), and the live notices go out
- * together at the end, as in a bloc approved by assent. One that cannot
- * lapse is left with the reason and the rest go on.
+ * event and the transactionals it closes, and `replacedSourceIds` for a
+ * transactional in force), and the live notices go out together at the
+ * end, as in a bloc approved by assent. One that cannot lapse is left with
+ * the reason and the rest go on.
  */
 export async function applyBulkLapse(
   ctx: DocumentAmendmentContext,
@@ -6341,10 +6345,11 @@ async function recordAmendmentOutcome(
         unique([amendment.id, ...dependents.ids, ...sourceIds]),
       );
       // A transactional in force keeps what it replaced `transacted`: its
-      // withdrawal is news for their authors (replacesSourcesNow,
-      // transactedSourceIds). A lapse is not (isReplacingWithdrawal).
+      // withdrawal or its lapse is news for their authors, never an email
+      // (replacesSourcesNow, transactedSourceIds; news.ts,
+      // isReplacingClosure). The bulk lapse comes through here too.
       let replacedSourceIds: string[] = [];
-      if (transactional && body.action === "withdraw") {
+      if (transactional) {
         const row = locked.find((entry) => entry.id === amendment.id);
         const parties = await lockParties(tx, [amendment.id], "share");
         if (

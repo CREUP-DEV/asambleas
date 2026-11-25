@@ -77,9 +77,7 @@ function sentence(update: HomeWorkUpdate): string {
       locale: locale.value,
       style: "medium",
     });
-    return update.closed.needsAssembly
-      ? t("home.work.updates.document_closed", { date })
-      : t("home.work.updates.document_closedReport", { date });
+    return t("home.work.updates.document_closed", { date });
   }
   if (update.kind !== "amendment_other") {
     return t(`home.work.updates.${update.kind}`);

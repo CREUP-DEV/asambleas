@@ -29,8 +29,8 @@ export const ASSEMBLY_CLOSED_REASON = "assembly_closed";
 
 /**
  * A member creates or sends a document, or changes its kind, past its
- * kind's deadline (presentationDeadlinePassed, `presentationClosed`); only
- * the Secretaría may present it late.
+ * kind's deadline (presentationDeadlinePassed, `presentationClosed`; never
+ * a report); only the Secretaría may present it late.
  */
 export const DOCUMENTS_DEADLINE_PASSED_REASON = "documents_deadline_passed";
 

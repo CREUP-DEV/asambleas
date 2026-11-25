@@ -711,8 +711,9 @@ for any members (see presenters below) and with no content. Members with
 an agenda item that has `acceptsSubmissions`, of a kind the item takes
 (`submissionKinds`; 422 `submission_kind` otherwise), until its kind's
 deadline (`presentationDeadlinePassed`: `candidacies_close` for candidacies
-and venues, `reports_close` for reports, `documents_close` for the rest and
-for a kind whose own milestone the assembly lacks; 409 `data.reason`
+and venues, `documents_close` for the rest and for a kind whose own milestone
+the assembly lacks; a report has none and goes at any time, read late after
+`reports_close`; 409 `data.reason`
 `documents_deadline_passed`; `assembly_closed` once the assembly is closed), always as one of its
 presenters. The same deadline binds sending it (`POST .../submit`), so a
 member never holds a draft it can no longer send, and changing its kind or
@@ -1025,7 +1026,7 @@ otherwise.
 | POST   | `/[amendment]/authors`                         | `amendment:review`                                               | `AmendmentAuthorsBody`. See correcting who presents an amendment below. Returns `AmendmentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/admission`                                   | `amendment:review` or moderator                                  | See admission rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | PUT    | `/[amendment]/position`                        | main presenter or moderator                                      | `PositionBody`. See the main presenter's answer below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| POST   | `/[amendment]/outcome`                         | moderator or `assembly:vote_result`                              | See outcome rules below. A vote with `project: false` (the control sheet), or by whoever only holds `assembly:vote_result`, is not projected.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| POST   | `/[amendment]/outcome`                         | moderator or `assembly:vote_result`                              | See outcome rules below. A vote with `project: false` (the control sheet), or by whoever only holds `assembly:vote_result`, is not projected. A `withdraw` or `lapse` of a transactional in force records `{ by: "moderator", replacedSources: true, replacedSourceIds }`, news for the authors of the sources it replaced and never an email to them.                                                                                                                                                                                                         |
 | POST   | `/assent`                                      | moderator or `assembly:vote_result`                              | `BulkAssentBody` (`items`: id and `updatedAt`, up to 500, unique) → `BulkAssentDto`: a bloc approved by assent in one request, each through the single `approve`/`assent` outcome in order; `failed` lists those it could not approve with the reason, and the rest go on. Live notices go out together at the end. Only while the session is open.                                                                                                                                                                                                            |
 | POST   | `/bloc-vote`                                   | moderator or `assembly:vote_result`                              | `BlocVoteBody` → `BlocVoteDto`: one counted vote on two or more amendments (no assent: that is `/assent`), under the document's amendment majority; carried, every one approved, else every one rejected, in one transaction. 409 `{ tie: true }` under `tieRule: "repeat"`. Reopening one needs `wholeVote: true` and reopens them all.                                                                                                                                                                                                                       |
 | POST   | `/lapse`                                       | moderator or `assembly:vote_result`                              | `BulkLapseBody` (as `BulkAssentBody`) → `BulkLapseDto` (as `BulkAssentDto`): the lapse offer's amendments marked as lapsed in one request, each through the single `lapse` outcome in order; `failed` lists those it could not mark, and the rest go on. Live notices go out together at the end. Only while the session is open.                                                                                                                                                                                                                              |
@@ -1524,7 +1525,15 @@ memberId }`, what waited on it closed). Rejected that way
   the assembly), 409 otherwise. An author can still withdraw its own
   amendment through `POST .../withdraw` (except a transactional already in
   force over other members' amendments, which only the Mesa withdraws:
-  `withdrawNeedsMesa`, 409).
+  `withdrawNeedsMesa`, 409). Both record `{ by: "moderator" }`
+  (`amendment_withdrawn` or `amendment_lapsed`); on a transactional in
+  force (validated and accepted by every main author,
+  `replacesSourcesNow`) that replaced sources (`transactedSourceIds`) they
+  add `replacedSources: true` and `replacedSourceIds`. Those sources stay
+  `transacted`, and their authors read it in their news (home page), never
+  by email: the email (`presenter_decided`) goes only to the
+  transactional's own authors. The bulk lapse (`POST .../lapse`) records
+  it the same way.
 - Every outcome that settles the amendment (`approve`, `vote`, `withdraw`,
   `lapse`) closes the pending transactionals over it (see transactionals),
   locked in the same ordered pass as the amendment.
@@ -1836,9 +1845,9 @@ managers and the Mesa), soonest first:
   (`presentationDeadlinePassed`), not expected, not sent back
   for a correction; managers are not bound by it) is listed with
   `presentationClosedAt` (the deadline that passed, `workDocumentClosedAt`
-  from the kind's `presentationDeadlineAt`), and the home page shows it as a
-  quiet update (`document_closed`), not a task, since `POST .../submit` would
-  refuse it;
+  from the kind's `presentationDeadlineAt`; never a report, which never
+  closes), and the home page shows it as a quiet update (`document_closed`),
+  not a task, since `POST .../submit` would refuse it;
 - `amendments`: the amendments the actor's member authored that are still
   `draft` or `submitted`, newest change first, drafts only while their
   document still takes amendments (published, structured, amendable, with a
@@ -1902,8 +1911,9 @@ managers and the Mesa), soonest first:
     `amendment_lapsed` with `reason: "sources_transacted"`, and coming back
     by itself: `amendment_reopened` with `reason: "source_reopened"`;
   - for the authors of the amendments a transactional replaced, that
-    transactional withdrawn once in force (validated and accepted by every
-    main author, `replacesSourcesNow`): `amendment_withdrawn` with
+    transactional withdrawn or lapsed once in force (validated and
+    accepted by every main author, `replacesSourcesNow`):
+    `amendment_withdrawn` or `amendment_lapsed` with
     `replacedSources: true` and `replacedSourceIds`, the sources it
     replaced (`transacted`; a late one still waiting for admission is not
     among them, and one presented under the earlier rule replaced none
@@ -1911,8 +1921,9 @@ managers and the Mesa), soonest first:
     amendments' authors, recorded when an author withdraws it
     (`POST .../withdraw`, which leaves it to the Mesa while other members'
     amendments are among them) or the Mesa does, from that endpoint or the
-    session console; their amendments stay `transacted`. Its value is
-    `replaced`;
+    session console, and when the Mesa lapses it, from the console or in
+    bulk (`POST .../lapse`); their amendments stay `transacted`. Its value
+    is `replaced`. Only in the news: no email reaches them;
   - for the presenters of a document (main and co-presenters), what was
     settled about it, with `amendment: null`: `document_published` (the
     Secretaría's validation), `document_correction_requested`,
@@ -1943,8 +1954,8 @@ managers and the Mesa), soonest first:
   closed a transactional (`amendment_withdrawn` with
   `by: "sources_closed"`) or whose reopening brought it back
   (`amendment_reopened` with `reason: "source_reopened"`), `replaced` for a
-  transactional in force withdrawn (`amendment_withdrawn` with
-  `replacedSources`), the result of the final vote (`document_voted`)
+  transactional in force withdrawn or lapsed (`amendment_withdrawn` or
+  `amendment_lapsed` with `replacedSources`), the result of the final vote (`document_voted`)
   or the new status (`document_status_changed`); null otherwise.
   `ownAmendment` is true when the amendment is one the member wrote (main
   author or co-author), false for document news and for transactionals it

@@ -38,7 +38,12 @@ vi.mock("./documents", () => ({
   pointLiveVote: vi.fn(),
   shareLockAssembly: vi.fn(),
 }));
-vi.mock("./events", () => ({ recordEvent: vi.fn() }));
+vi.mock("./events", () => ({
+  recordEvent: vi.fn(),
+  // The bulk outcome holds the live notices back and sends them at the end.
+  holdLiveNotices: vi.fn((_held: unknown, run: () => unknown) => run()),
+  sendLiveNotices: vi.fn(),
+}));
 vi.mock("./resolvers", () => ({
   resolveAmendment: vi.fn(),
   resolveAssembly: vi.fn(),
@@ -85,11 +90,13 @@ const {
 } = await import("./amendments");
 const {
   applyAmendmentOutcome,
+  applyBulkLapse,
   assertAlternativesUnderLock,
   lockOpenSession,
   touchVotedWithoutEffect,
 } = await import("./amendments");
 const documentsModule = await import("./documents");
+const eventsModule = await import("./events");
 const { db: stubDb } = await import("../../db");
 const { buildSourceMap, competingTransactionalIds } =
   await import("./transactionalClosure");
@@ -1745,6 +1752,185 @@ describe("decisions under the assembly's lock (CON-4)", () => {
       });
     }
     expect(transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A transaction whose selects answer in turn, each with the next queued
+ * rows, whatever the chain of calls before it; its update answers
+ * `updated`.
+ */
+function queuedTx(selects: unknown[][], updated: unknown[] = []) {
+  const queue = [...selects];
+  const chain = (result: unknown[]): unknown => {
+    const node: unknown = new Proxy(
+      {},
+      {
+        get: (_target, key) => {
+          if (key === "then") {
+            return (resolve: (value: unknown) => void) => resolve(result);
+          }
+          if (key === "returning") return async () => result;
+          return () => node;
+        },
+      },
+    );
+    return node;
+  };
+  return {
+    select: () => chain(queue.shift() ?? []),
+    update: () => chain(updated),
+  } as never;
+}
+
+describe("the Mesa's lapse of a transactional in force (console and bulk)", () => {
+  const at = new Date("2026-11-20T09:00:00.000Z");
+  const updatedAt = "2026-11-20T10:00:00.000Z";
+  const shareLock = vi.mocked(documentsModule.shareLockAssembly);
+  const recordEvent = vi.mocked(eventsModule.recordEvent);
+  const accepted = { role: "author", decision: "accepted" };
+  /**
+   * The selects of a lapse, in order: the document, the source edges
+   * (findCompetitors), the locked amendments (the transactional and its
+   * sources) and its parties.
+   */
+  const lapseTx = (
+    validatedAt: Date | null,
+    parties: { role: string; decision: string }[],
+  ) =>
+    queuedTx(
+      [
+        [
+          {
+            status: "published",
+            finalVoteId: null,
+            consolidatedVersionId: null,
+            agendaItemId: null,
+            acceptedAmendments: "vote",
+          },
+        ],
+        [
+          { transactionalId: "t1", sourceId: "a" },
+          { transactionalId: "t1", sourceId: "late" },
+        ],
+        [
+          { id: "a", kind: "amendment", status: "transacted" },
+          // Late, still waiting for admission: not replaced.
+          { id: "late", kind: "amendment", status: "submitted" },
+          { id: "t1", kind: "transactional", status: "submitted", validatedAt },
+        ],
+        parties,
+      ],
+      [{ id: "t1" }],
+    );
+  const useTx = (tx: unknown) =>
+    Object.assign(stubDb, {
+      transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback(tx),
+      ),
+    });
+  const transactional = {
+    id: "t1",
+    code: "T1",
+    kind: "transactional",
+    status: "submitted",
+    admission: "admitted",
+    documentId: "doc",
+    sources: [{ sourceId: "a" }, { sourceId: "late" }],
+  };
+  const ctx = {
+    actor: { user: { id: "mesa" } },
+    now: new Date(),
+    assembly: { id: "asm", status: "in_session" },
+    document: { id: "doc", finalVoteId: null, consolidatedVersionId: null },
+  };
+  const lapsedPayload = () =>
+    recordEvent.mock.calls
+      .map(([, input]) => input as { type: string; payload: unknown })
+      .find((input) => input.type === "amendment_lapsed")?.payload;
+
+  beforeAll(() => {
+    vi.mocked(actorHelpers.canRecordResults).mockReturnValue(true);
+  });
+  afterAll(async () => {
+    const visibilityStub = await import("./visibility");
+    vi.mocked(visibilityStub.canSeeAmendment).mockReset();
+    vi.mocked(actorHelpers.actsFor).mockReset();
+  });
+
+  /**
+   * The console's lapse. The amendment's DTO is read after the commit, and
+   * this stub has none to read (404): the event is what is checked.
+   */
+  async function consoleLapse(tx: unknown) {
+    recordEvent.mockClear();
+    useTx(tx);
+    Object.assign(stubDb, {
+      query: { amendments: { findMany: vi.fn(async () => []) } },
+    });
+    shareLock.mockResolvedValueOnce({ status: "in_session" } as never);
+    await expect(
+      applyAmendmentOutcome(
+        { ...ctx, amendment: transactional } as never,
+        { action: "lapse", updatedAt } as never,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    return lapsedPayload();
+  }
+
+  it("records the sources it replaced when the console lapses it in force", async () => {
+    expect(await consoleLapse(lapseTx(at, [accepted, accepted]))).toEqual({
+      by: "moderator",
+      replacedSources: true,
+      replacedSourceIds: ["a"],
+    });
+  });
+
+  it("records a plain lapse when it was not in force", async () => {
+    // A main author still to answer, or not validated yet.
+    expect(
+      await consoleLapse(
+        lapseTx(at, [accepted, { role: "author", decision: "pending" }]),
+      ),
+    ).toEqual({ by: "moderator" });
+    expect(await consoleLapse(lapseTx(null, [accepted]))).toEqual({
+      by: "moderator",
+    });
+  });
+
+  it("records the sources it replaced in a bulk lapse too", async () => {
+    recordEvent.mockClear();
+    useTx(lapseTx(at, [accepted]));
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          ...transactional,
+          createdByUserId: "other",
+          authors: [],
+          acceptances: [],
+          sources: [
+            { sourceId: "a", source: { id: "a", authors: [] } },
+            { sourceId: "late", source: { id: "late", authors: [] } },
+          ],
+        },
+      ])
+      .mockResolvedValue([]);
+    Object.assign(stubDb, { query: { amendments: { findMany } } });
+    const visibilityStub = await import("./visibility");
+    vi.mocked(visibilityStub.canSeeAmendment).mockReturnValue(true);
+    vi.mocked(actorHelpers.actsFor).mockReturnValue(false);
+    shareLock.mockResolvedValueOnce({ status: "in_session" } as never);
+    const result = await applyBulkLapse(
+      ctx as never,
+      { items: [{ id: "t1", updatedAt }] } as never,
+    );
+    expect(result.failed).toEqual([]);
+    expect(lapsedPayload()).toEqual({
+      by: "moderator",
+      replacedSources: true,
+      replacedSourceIds: ["a"],
+    });
   });
 });
 

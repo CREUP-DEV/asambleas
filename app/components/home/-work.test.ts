@@ -399,7 +399,7 @@ describe("home work", () => {
     const work = empty({
       documents: [
         closed("res", "resolution"),
-        closed("rep", "report"),
+        closed("can", "candidacy"),
         doc("open"),
       ],
     });
@@ -410,13 +410,12 @@ describe("home work", () => {
     ]);
     const updates = homeWorkUpdates(work);
     expect(updates.map((update) => [update.key, update.kind])).toEqual([
-      ["document-rep", "document_closed"],
+      ["document-can", "document_closed"],
       ["document-res", "document_closed"],
     ]);
-    // A report is treated however late it comes.
     expect(updates.map((update) => update.closed)).toEqual([
-      { at: "2026-11-03T22:59:00Z", needsAssembly: false },
-      { at: "2026-11-03T22:59:00Z", needsAssembly: true },
+      { at: "2026-11-03T22:59:00Z" },
+      { at: "2026-11-03T22:59:00Z" },
     ]);
   });
 
@@ -752,6 +751,28 @@ describe("home work", () => {
           key: "home.news.phrase.transactional",
           params: { code: "T1" },
         },
+      });
+      // Lapsed by the Mesa once it had replaced the party's amendment: it
+      // stays replaced, and "replaced" is never read as a code. Its own
+      // authors read the plain lapse.
+      const lapsed = (own: boolean) =>
+        homeWorkNewsItem(
+          news("n", {
+            type: "amendment_lapsed",
+            amendment: { id: "t2", code: "T2", kind: "transactional" },
+            ownAmendment: own,
+            by: null,
+            value: "replaced",
+          }),
+        );
+      expect(words(lapsed(false))).toMatchObject({
+        sentence: "home.news.amendment.lapsedReplacing",
+        phrase: ["home.news.phrase.transactional", { code: "T2" }],
+      });
+      expect(lapsed(false).sentence.params).toEqual({});
+      expect(lapsed(true).sentence).toEqual({
+        key: "home.news.amendment.lapsed",
+        params: {},
       });
     });
 

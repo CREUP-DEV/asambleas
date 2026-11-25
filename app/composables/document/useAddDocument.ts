@@ -21,9 +21,10 @@ import { usePresentationDeadlines } from "~/composables/document/usePresentation
  *   its own deadline (presentationDeadlinePassed, on the shared clock, so it
  *   goes away on time in a tab left open), for their own member, under the
  *   items that take a kind their member may present whose deadline has not
- *   passed (a candidacy until `candidacies_close`, a report until
- *   `reports_close`, the rest until `documents_close`), the same rule the
- *   server applies to creating and to sending the draft. Nobody adds under
+ *   passed (a candidacy until `candidacies_close`, the rest until
+ *   `documents_close`, a report at any time: it only reads late after
+ *   `reports_close`), the same rule the server applies to creating and to
+ *   sending the draft. Nobody adds under
  *   an automatic sub-item (the one the server creates for each document
  *   presented under such an item): the document goes to the item above, and
  *   gets its own.
@@ -32,12 +33,16 @@ import { usePresentationDeadlines } from "~/composables/document/usePresentation
  *   dropped from the address. After a document in an automatic sub-item it
  *   opens on the item above again, which takes the next one too. It works
  *   for managers outside the window too, as the agenda's own buttons do.
- * - It hands the page the same deadlines (`kindOpen`, `schedule`:
- *   usePresentationDeadlines) for what the page says about them. A member's
- *   `schedule` reads only the kinds it may present under some item
- *   (memberSubmissionKinds), so the overview counts down to its own
- *   deadline; managers, and a member before the agenda loads, read every
- *   kind.
+ * - It hands the page the same deadlines (`kindOpen`, `schedule`,
+ *   `closingSchedule`: usePresentationDeadlines) for what the page says
+ *   about them. A member's read only the kinds it may present under some
+ *   item (memberSubmissionKinds); managers, and a member before the agenda
+ *   loads, read every kind. `schedule` decides whether anything may still
+ *   be presented (with reports among the kinds it never closes);
+ *   `closingSchedule`, over the kinds that close, is what the overview's
+ *   card says: it counts down to the nearest of those deadlines (never
+ *   `reports_close`, which closes nothing) and reads closed once all have
+ *   passed, though reports still go in.
  */
 export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
   const me = useMe();
@@ -59,7 +64,10 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
     return [...kinds];
   });
 
-  const { kindOpen, schedule } = usePresentationDeadlines(assembly, ownKinds);
+  const { kindOpen, schedule, closingSchedule } = usePresentationDeadlines(
+    assembly,
+    ownKinds,
+  );
 
   /** The assembly still takes documents from managers. */
   const assemblyOpen = computed(
@@ -166,5 +174,6 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
     manager,
     kindOpen,
     schedule,
+    closingSchedule,
   };
 }

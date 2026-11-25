@@ -301,10 +301,11 @@ export function isExpectedDocument(
 /**
  * Whether a presenter (not a manager) can no longer present this document.
  * Its kind's own deadline applies (presentationDeadlinePassed:
- * `candidacies_close` for candidacies and venues, `reports_close` for
- * reports, `documents_close` for the rest and for a kind whose own milestone
- * the assembly lacks), the same one createDocuments checks, so a member never
- * holds a draft it can no longer send. The documents the Secretaría expects
+ * `candidacies_close` for candidacies and venues, `documents_close` for the
+ * rest and for a kind whose own milestone the assembly lacks; never for a
+ * report, which only reads late after `reports_close`), the same one
+ * createDocuments checks, so a member never holds a draft it can no longer
+ * send. The documents the Secretaría expects
  * (isExpectedDocument) are not bound by it: their internal deadline, if any,
  * governs, and an overdue one can still be presented (the tracking panel
  * flags it).
@@ -2201,9 +2202,9 @@ export async function updateDocumentContent(
 /**
  * A presenter sends a draft to the Secretaría (`submitted`), which then
  * validates it (publishes it) or asks for a correction. Members must do it
- * before its kind's deadline (presentationDeadlinePassed), unless the
- * Secretaría expects the document (see presentationClosed); managers are not
- * bound by it.
+ * before its kind's deadline (presentationDeadlinePassed; a report has none
+ * and is only marked late), unless the Secretaría expects the document (see
+ * presentationClosed); managers are not bound by it.
  * Presenting it again after a correction clears the correction note.
  */
 export async function submitDocument(

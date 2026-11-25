@@ -222,6 +222,17 @@ const pendingPassages = computed(
     ) ?? [],
 );
 
+// The provisional-text and pending-wordings notices show their title alone;
+// «Ver detalles» unfolds the rest (M-053). Folded on the server and the
+// client alike, and not remembered. Each toggle is described by its notice's
+// title, so the two «Ver detalles» can be told apart.
+const provisionalOpen = ref(false);
+const provisionalTitleId = useId();
+const provisionalDetailsId = useId();
+const wordingsOpen = ref(false);
+const wordingsTitleId = useId();
+const wordingsDetailsId = useId();
+
 // Pending conciliation ---------------------------------------------------------
 // The final vote may approve the text with passages still to word (user's
 // decisions of 2026-11-21): the version carries the automatic proposal
@@ -518,43 +529,107 @@ watch(popoverOpen, (open) => {
             </ul>
           </template>
         </UAlert>
+        <!-- The provisional-text and pending-wordings notices: one line
+             each, the title and a «Ver detalles» link after it; the rest
+             shows only once unfolded (M-053). The conciliation notice above
+             carries buttons and stays unfolded. -->
         <UAlert
           v-if="!document.finalVote"
           color="info"
           variant="subtle"
           icon="i-lucide-hourglass"
-          :title="t('workspace.consolidatedView.provisional')"
-          :description="
-            pendingCount > 0
-              ? t(
-                  'workspace.consolidatedView.pending',
-                  { count: pendingCount },
-                  pendingCount,
-                )
-              : t('workspace.consolidatedView.provisionalDescription')
-          "
-        />
+        >
+          <template #title>
+            <div class="flex flex-wrap items-baseline gap-x-2">
+              <span :id="provisionalTitleId">{{
+                t("workspace.consolidatedView.provisional")
+              }}</span>
+              <UButton
+                color="neutral"
+                variant="link"
+                size="xs"
+                class="-my-1 px-0"
+                :trailing-icon="
+                  provisionalOpen
+                    ? 'i-lucide-chevron-up'
+                    : 'i-lucide-chevron-down'
+                "
+                :label="
+                  provisionalOpen
+                    ? t('workspace.consolidatedView.hideDetails')
+                    : t('workspace.consolidatedView.showDetails')
+                "
+                :aria-expanded="provisionalOpen"
+                :aria-controls="provisionalDetailsId"
+                :aria-describedby="provisionalTitleId"
+                @click="provisionalOpen = !provisionalOpen"
+              />
+            </div>
+          </template>
+          <template v-if="provisionalOpen" #description>
+            <p :id="provisionalDetailsId">
+              {{
+                pendingCount > 0
+                  ? t(
+                      "workspace.consolidatedView.pending",
+                      { count: pendingCount },
+                      pendingCount,
+                    )
+                  : t("workspace.consolidatedView.provisionalDescription")
+              }}
+            </p>
+          </template>
+        </UAlert>
 
         <UAlert
           v-if="!finalText && pendingPassages.length > 0"
           color="info"
           variant="subtle"
           icon="i-lucide-pen-line"
-          :title="
-            t(
-              'workspace.consolidated.pendingWordings',
-              { count: pendingPassages.length },
-              pendingPassages.length,
-            )
-          "
-          :description="
-            pendingPassages
-              .map((passage) =>
-                passage.amendmentIds.map((id) => list.labelOf(id)).join(', '),
-              )
-              .join(' · ')
-          "
-        />
+        >
+          <template #title>
+            <div class="flex flex-wrap items-baseline gap-x-2">
+              <span :id="wordingsTitleId">{{
+                t(
+                  "workspace.consolidated.pendingWordings",
+                  { count: pendingPassages.length },
+                  pendingPassages.length,
+                )
+              }}</span>
+              <UButton
+                color="neutral"
+                variant="link"
+                size="xs"
+                class="-my-1 px-0"
+                :trailing-icon="
+                  wordingsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+                "
+                :label="
+                  wordingsOpen
+                    ? t('workspace.consolidatedView.hideDetails')
+                    : t('workspace.consolidatedView.showDetails')
+                "
+                :aria-expanded="wordingsOpen"
+                :aria-controls="wordingsDetailsId"
+                :aria-describedby="wordingsTitleId"
+                @click="wordingsOpen = !wordingsOpen"
+              />
+            </div>
+          </template>
+          <template v-if="wordingsOpen" #description>
+            <p :id="wordingsDetailsId">
+              {{
+                pendingPassages
+                  .map((passage) =>
+                    passage.amendmentIds
+                      .map((id) => list.labelOf(id))
+                      .join(", "),
+                  )
+                  .join(" · ")
+              }}
+            </p>
+          </template>
+        </UAlert>
         <UAlert
           v-if="consolidation.conflicts.length > 0"
           color="warning"

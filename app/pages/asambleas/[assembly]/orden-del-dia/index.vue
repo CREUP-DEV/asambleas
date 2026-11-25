@@ -13,7 +13,6 @@ import {
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import { ORGANIZE_QUERY } from "~/composables/document/agendaReturn";
 import { useAddDocument } from "~/composables/document/useAddDocument";
-import { usePresentationDeadlines } from "~/composables/document/usePresentationDeadlines";
 import type {
   AgendaFoldState,
   AgendaMove,
@@ -129,10 +128,13 @@ const canCreateDocument = computed(() =>
 
 // The shared clock, so "Presentar documento" closes with the deadline even
 // in a tab that stays open for days. Each kind keeps its own deadline
-// (presentationDeadlinePassed): the page closes once none is open, and
-// each item once none of the kinds it takes for the member is
-// (AgendaItemNode, through `kindOpen`).
-const { kindOpen, schedule } = usePresentationDeadlines(assembly);
+// (presentationDeadlinePassed): the page closes once none of the kinds the
+// member may present here is open (useAddDocument's `schedule`; never with
+// reports among them, as a report never closes), and each item once none
+// of the kinds it takes for the member is (AgendaItemNode, through
+// `kindOpen`).
+const addDocument = useAddDocument(agenda);
+const { kindOpen, schedule } = addDocument;
 const documentsClosed = computed(() => !schedule.value.open);
 
 const submitBlockedReason = computed<string | null>(() => {
@@ -514,8 +516,6 @@ async function onSaved(item: AgendaItemDto, created: boolean) {
 }
 
 // New document ------------------------------------------------------------------
-
-const addDocument = useAddDocument(agenda);
 
 function openNewDocument(
   node: AgendaTreeNode<AgendaItemDto>,

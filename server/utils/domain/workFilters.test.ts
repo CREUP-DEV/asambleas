@@ -122,17 +122,16 @@ describe("workDocumentClosedAt", () => {
     expect(
       workDocumentClosedAt(draft, openItem, milestones, false, after),
     ).toEqual(close);
-    // A report past reports_close: its own deadline.
-    const reportsClose = new Date("2026-11-08T22:59:00Z");
+    // A report never closes: past reports_close it is still a task.
     expect(
       workDocumentClosedAt(
         { ...draft, kind: "report" as const },
         openItem,
-        { ...milestones, reports_close: reportsClose },
+        { ...milestones, reports_close: new Date("2026-11-08T22:59:00Z") },
         false,
         after,
       ),
-    ).toEqual(reportsClose);
+    ).toBeNull();
   });
 
   it("is null while the draft is still open", () => {

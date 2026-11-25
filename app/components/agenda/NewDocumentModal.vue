@@ -62,9 +62,9 @@ import { errorPayload } from "~/composables/api/useApi";
  *   an item may name the kinds it takes: members are offered only those
  *   (one kind alone comes chosen). Automatic sub-items are never offered.
  *   Members are offered only the kinds still in their own deadline
- *   (presentationDeadlinePassed: a candidacy until `candidacies_close`, a
- *   report until `reports_close`, the rest until `documents_close`), as the
- *   server checks when it creates the draft and when it is sent.
+ *   (presentationDeadlinePassed: a candidacy until `candidacies_close`, the
+ *   rest until `documents_close`, a report at any time), as the server
+ *   checks when it creates the draft and when it is sent.
  * - The type and the title are proposed from the item (proposeFromItem):
  *   "Aprobación, si procede, del Posicionamiento sobre X" gives a
  *   positioning titled "Posicionamiento sobre X". Choosing another item

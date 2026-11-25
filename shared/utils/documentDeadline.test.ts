@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { MilestoneKey } from "../constants/domain";
 import {
+  closesForMembers,
+  closingPresentationSchedule,
   documentDeadlineKey,
+  lateAfterAt,
   lateNeedsAssembly,
+  presentationDeadlineAt,
   presentationDeadlinePassed,
   presentationSchedule,
   sentAfterDeadline,
@@ -135,32 +139,56 @@ describe("presentationDeadlinePassed", () => {
   });
 
   it("falls back on documents_close without the kind's own deadline", () => {
-    // An AGET has no candidacies_close; an assembly may have no reports_close.
+    // An AGET has no candidacies_close.
     const aget = { documents_close: MILESTONES.documents_close };
     expect(presentationDeadlinePassed("candidacy", at(aget), between)).toBe(
       true,
     );
-    expect(presentationDeadlinePassed("report", at(aget), between)).toBe(true);
     expect(presentationDeadlinePassed("resolution", at({}), between)).toBe(
       false,
     );
   });
 
-  it("closes a report at its own deadline, not documents_close", () => {
+  it("never closes a report, past reports_close or documents_close", () => {
     const milestones = {
       ...MILESTONES,
-      reports_close: "2026-11-13T22:59:00.000Z",
+      reports_close: "2026-11-11T22:59:00.000Z",
     };
-    expect(presentationDeadlinePassed("report", at(milestones), between)).toBe(
+    const afterAll = "2026-11-20T10:00:00.000Z";
+    expect(presentationDeadlinePassed("report", at(milestones), afterAll)).toBe(
       false,
     );
-    expect(
-      presentationDeadlinePassed(
-        "report",
-        at(milestones),
-        "2026-11-14T10:00:00.000Z",
-      ),
-    ).toBe(true);
+    // Without reports_close it does not fall back on documents_close.
+    expect(presentationDeadlinePassed("report", at(MILESTONES), afterAll)).toBe(
+      false,
+    );
+    expect(presentationDeadlineAt("report", at(milestones))).toBeNull();
+  });
+});
+
+describe("closesForMembers", () => {
+  it("leaves only reports open for good", () => {
+    expect(closesForMembers("report")).toBe(false);
+    expect(closesForMembers("executive_report")).toBe(true);
+    expect(closesForMembers("resolution")).toBe(true);
+    expect(closesForMembers("candidacy")).toBe(true);
+  });
+});
+
+describe("lateAfterAt", () => {
+  it("reads the kind's own deadline, with no fallback", () => {
+    const milestones = {
+      ...MILESTONES,
+      reports_close: "2026-11-11T22:59:00.000Z",
+    };
+    expect(lateAfterAt("report", at(milestones))).toBe(
+      milestones.reports_close,
+    );
+    expect(lateAfterAt("report", at(MILESTONES))).toBeNull();
+    expect(lateAfterAt("resolution", at(MILESTONES))).toBe(
+      MILESTONES.documents_close,
+    );
+    expect(lateAfterAt("candidacy", at({ documents_close: "x" }))).toBeNull();
   });
 });
 
@@ -185,8 +213,61 @@ describe("presentationSchedule", () => {
 
   it("closes once every kind is past its deadline", () => {
     expect(
-      presentationSchedule(at(MILESTONES), "2026-11-15T10:01:00.000Z"),
+      presentationSchedule(at(MILESTONES), "2026-11-15T10:01:00.000Z", [
+        "resolution",
+        "candidacy",
+      ]),
     ).toEqual({ open: false, next: null, last: MILESTONES.candidacies_close });
+  });
+
+  it("never closes with reports among the kinds", () => {
+    const milestones = {
+      ...MILESTONES,
+      reports_close: "2026-11-11T22:59:00.000Z",
+    };
+    // Every kind: reports keep it open, and reports_close is no deadline.
+    expect(
+      presentationSchedule(at(milestones), "2026-11-15T10:01:00.000Z"),
+    ).toEqual({ open: true, next: null, last: MILESTONES.candidacies_close });
+    expect(
+      presentationSchedule(at(milestones), "2026-11-09T10:00:00.000Z", [
+        "report",
+      ]),
+    ).toEqual({ open: true, next: null, last: null });
+  });
+
+  it("reads only the kinds that close in closingPresentationSchedule", () => {
+    const milestones = {
+      ...MILESTONES,
+      reports_close: "2026-11-11T22:59:00.000Z",
+    };
+    // Every kind, as a manager reads it: closed past candidacies_close,
+    // though reports still go in.
+    expect(
+      closingPresentationSchedule(at(milestones), "2026-11-15T10:01:00.000Z"),
+    ).toEqual({ open: false, next: null, last: MILESTONES.candidacies_close });
+    // Open until then, counting down to the nearest deadline ahead.
+    expect(
+      closingPresentationSchedule(at(milestones), "2026-11-09T10:00:00.000Z"),
+    ).toEqual({
+      open: true,
+      next: MILESTONES.documents_close,
+      last: MILESTONES.candidacies_close,
+    });
+    // A member presenting resolutions and reports: closed past
+    // documents_close.
+    expect(
+      closingPresentationSchedule(at(milestones), "2026-11-12T10:00:00.000Z", [
+        "resolution",
+        "report",
+      ]),
+    ).toEqual({ open: false, next: null, last: MILESTONES.documents_close });
+    // Only reports: no deadline to state, never closed.
+    expect(
+      closingPresentationSchedule(at(milestones), "2026-11-15T10:01:00.000Z", [
+        "report",
+      ]),
+    ).toEqual({ open: true, next: null, last: null });
   });
 
   it("reads only the kinds given, as a member's own", () => {

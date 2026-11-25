@@ -4,8 +4,9 @@ import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { isPastDeadline } from "~~/shared/utils/calendar";
 import type { MilestoneKey } from "~~/shared/constants/domain";
 import {
-  documentDeadlineKey,
-  lateNeedsAssembly,
+  closesForMembers,
+  lateAfterAt,
+  presentationDeadlineAt,
 } from "~~/shared/utils/documentDeadline";
 import { errorStatus } from "~/composables/api/useApi";
 import {
@@ -543,31 +544,46 @@ const deadlineExempt = computed(() => {
 });
 
 /**
- * The calendar's deadline for presenting this document, when it applies:
- * its kind's own (documentDeadlineKey), or `documents_close` when the
- * assembly lacks it, as presentationDeadlinePassed reads it on the server.
+ * A report never closes for members (closesForMembers): its deadline only
+ * says when it starts to read late, and step 3 names it so.
  */
-const documentsClose = computed(() => {
+const lateOnly = computed(() =>
+  document.value ? !closesForMembers(document.value.kind) : false,
+);
+
+/**
+ * The calendar's deadline for this document, when it applies: the one that
+ * closes its presentation (presentationDeadlineAt: its kind's own, or
+ * `documents_close` when the assembly lacks it, as the server reads it), or
+ * for a report the one after which it reads late (lateAfterAt).
+ */
+const calendarDeadline = computed(() => {
   const current = document.value;
   if (deadlineExempt.value || !current) return null;
   const milestones = assembly.value?.milestones ?? [];
   const at = (key: MilestoneKey) =>
     milestones.find((m) => m.key === key)?.at ?? null;
-  return at(documentDeadlineKey(current.kind)) ?? at("documents_close");
+  return lateOnly.value
+    ? lateAfterAt(current.kind, at)
+    : presentationDeadlineAt(current.kind, at);
 });
+
+/** That deadline has passed (its own minute still on time). */
+const calendarDeadlinePassed = computed(() =>
+  Boolean(
+    calendarDeadline.value && isPastDeadline(calendarDeadline.value, now.value),
+  ),
+);
 
 /**
  * The calendar's deadline has passed for this presenter (presentationClosed
  * on the server, which would refuse the submission): step 3 says so instead
- * of offering «Enviar». Only once the agenda is loaded, since until then an
- * item that takes no submissions cannot exempt the document.
+ * of offering «Enviar». Never for a report, which is only sent late. Only
+ * once the agenda is loaded, since until then an item that takes no
+ * submissions cannot exempt the document.
  */
 const presentationClosed = computed(() =>
-  Boolean(
-    agenda.value &&
-    documentsClose.value &&
-    isPastDeadline(documentsClose.value, now.value),
-  ),
+  Boolean(agenda.value && !lateOnly.value && calendarDeadlinePassed.value),
 );
 
 /** The internal deadline, unless a correction made a passed one moot. */
@@ -919,7 +935,7 @@ async function onDeleted(): Promise<void> {
               {{ t("document.authoring.sendHelp") }}
             </p>
             <dl
-              v-if="shownDueAt || documentsClose"
+              v-if="shownDueAt || calendarDeadline"
               class="grid gap-3 text-sm sm:grid-cols-2"
             >
               <div v-if="shownDueAt">
@@ -937,18 +953,28 @@ async function onDeleted(): Promise<void> {
                   />
                 </dd>
               </div>
-              <div v-if="documentsClose">
+              <div v-if="calendarDeadline">
                 <dt class="text-muted text-xs font-medium">
-                  {{ t("document.submit.deadline") }}
+                  {{
+                    lateOnly
+                      ? t("document.submit.reportDeadline")
+                      : t("document.submit.deadline")
+                  }}
                 </dt>
                 <dd class="text-highlighted font-medium">
                   {{
-                    formatDateTime(documentsClose, { style: "long", locale })
+                    formatDateTime(calendarDeadline, { style: "long", locale })
                   }}
                 </dd>
-                <dd>
+                <dd
+                  v-if="lateOnly && calendarDeadlinePassed"
+                  class="text-muted"
+                >
+                  {{ t("document.submit.reportLate") }}
+                </dd>
+                <dd v-else>
                   <CommonCountdown
-                    :to="documentsClose"
+                    :to="calendarDeadline"
                     :urgent-hours="48"
                     icon="i-lucide-hourglass"
                   />
@@ -964,11 +990,7 @@ async function onDeleted(): Promise<void> {
                 class="mt-0.5 size-4 shrink-0"
                 aria-hidden="true"
               />
-              {{
-                lateNeedsAssembly(document.kind)
-                  ? t("document.authoring.sendClosed")
-                  : t("document.authoring.sendClosedReport")
-              }}
+              {{ t("document.authoring.sendClosed") }}
             </p>
             <template v-else-if="canSubmit">
               <!-- Until step 2 has text, the Word upload is the main action -->

@@ -81,6 +81,15 @@ describe("newsValue", () => {
     ).toBe("T2");
     // The Mesa lapsing an amendment names nobody.
     expect(newsValue("amendment_lapsed", { by: "moderator" })).toBeNull();
+    // Lapsed by the Mesa after it replaced what it groups: never read as
+    // the code of another transactional.
+    expect(
+      newsValue("amendment_lapsed", {
+        by: "moderator",
+        replacedSources: true,
+        replacedSourceIds: ["a"],
+      }),
+    ).toBe("replaced");
   });
 
   it("names the amendment whose fate closed a transactional", () => {
@@ -586,6 +595,38 @@ describe("isNewsEvent", () => {
         party,
       ),
     ).toBe(false);
+  });
+
+  it("tells the parties of a transactional in force that it lapsed", () => {
+    const party = { ...none, overOwn: true, ownSourceIds: ["a"] };
+    // The Mesa lapses one that already replaced their amendments, from the
+    // console or in bulk: they stay replaced.
+    const replacing = onAmendment("amendment_lapsed", {
+      by: "moderator",
+      replacedSources: true,
+      replacedSourceIds: ["a", "b"],
+    });
+    expect(isNewsEvent(replacing, party)).toBe(true);
+    // Its late source still waiting for admission was not replaced.
+    expect(isNewsEvent(replacing, { ...party, ownSourceIds: ["late"] })).toBe(
+      false,
+    );
+    // Nor without the amendments it replaced named.
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_lapsed", {
+          by: "moderator",
+          replacedSources: true,
+        }),
+        party,
+      ),
+    ).toBe(false);
+    // One that was not in force replaced nothing: a plain lapse.
+    expect(
+      isNewsEvent(onAmendment("amendment_lapsed", { by: "moderator" }), party),
+    ).toBe(false);
+    // Its own authors read the lapse as theirs.
+    expect(isNewsEvent(replacing, { ...none, authored: true })).toBe(true);
   });
 
   it("tells presenters what was settled about their document", () => {

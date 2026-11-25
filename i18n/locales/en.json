@@ -560,7 +560,8 @@
         "title": "Documents can be presented",
         "until": "Until {date}.",
         "closedTitle": "Documents deadline passed",
-        "closed": "It closed on {date}. You can still add documents."
+        "closed": "It closed on {date}. You can still add documents.",
+        "closedReports": "It closed on {date}. You can still present reports."
       },
       "todo": {
         "title": "Pending tasks",
@@ -907,7 +908,6 @@
       "sendNeedsText": "First add the text in step 2.",
       "sendNeedsPdf": "First upload the PDF in step 2.",
       "sendClosed": "The deadline for presenting documents has passed. Only the Secretariat can present it late, and the assembly decides whether to take it up.",
-      "sendClosedReport": "The deadline for presenting documents has passed. Only the Secretariat can present it late.",
       "returningToHome": "Returning to the overview",
       "saveAndAddAnother": "Save and add another",
       "savedForLater": "Document saved"
@@ -1072,6 +1072,8 @@
       "description": "The Secretariat will review it before publishing it. Meanwhile you cannot edit it; if something needs changing, it will ask you for a correction.",
       "confirm": "Send to the Secretariat",
       "deadline": "Submission deadline",
+      "reportDeadline": "Report deadline",
+      "reportLate": "It has passed: it will arrive late, but it will still be taken up.",
       "working": "Sending the document to the Secretariat...",
       "success": "Sent to the Secretariat",
       "error": "The document could not be sent",
@@ -1109,6 +1111,8 @@
         "deadlineOpen": "Submissions open until {date}",
         "deadlinePassed": "The submission deadline ended on {date}",
         "deadlineManager": "As the Secretariat you can still submit it.",
+        "reportOnTime": "Report deadline open until {date}",
+        "reportLate": "The report deadline ended on {date}: it will arrive late, but it will still be taken up",
         "noProponent": "The document has no proponent",
         "notAmendable": "This document does not accept amendments",
         "windowRange": "Amendments from {opens} to {closes}",
@@ -3199,8 +3203,7 @@
         "amendment_other": "Status: {status}.",
         "amendment_authors": "Waiting for the main authors of the amendments it would replace to accept it. Then the Secretariat will check it.",
         "amendment_late": "Late: the assembly still has to decide whether to treat it.",
-        "document_closed": "The deadline passed on {date}. Only the Secretariat can present it late, and the assembly decides whether to take it up.",
-        "document_closedReport": "The deadline passed on {date}. Only the Secretariat can present it late."
+        "document_closed": "The deadline passed on {date}. Only the Secretariat can present it late, and the assembly decides whether to take it up."
       },
       "transactional": "Transactional {code}",
       "transactionalBy": "Transactional {code} by {member}",
@@ -3255,6 +3258,7 @@
         "lapsed": "Lapsed: {amendment} is no longer voted on.",
         "withdrawn": "Withdrawn: {amendment} will no longer be debated.",
         "withdrawnReplacing": "Withdrawn: {amendment}, which had already replaced your amendment. Your amendment stays replaced and does not return to the debate.",
+        "lapsedReplacing": "Lapsed: {amendment}, which had already replaced your amendment. Your amendment stays replaced and does not return to the debate.",
         "reopened": "Reopened: {amendment} is undecided again.",
         "other": "There is news about {amendment}.",
         "validatedLate": "Validated, but {amendment} came in late: the assembly still has to decide whether to treat it.",
@@ -3675,7 +3679,7 @@
       "agenda_requests_close": "Agenda item requests close",
       "agenda_final": "Final agenda",
       "documents_close": "Document submissions close",
-      "reports_close": "Reports close",
+      "reports_close": "Report deadline",
       "documents_publish": "Documents published",
       "amendments_open": "Amendment window opens",
       "amendments_close": "Amendment window closes",
@@ -3845,6 +3849,8 @@
       "provisional": "Provisional text: the document has not been voted on yet",
       "provisionalDescription": "It includes the amendments approved so far.",
       "pending": "It includes the amendments approved so far. One amendment is still to be decided. | It includes the amendments approved so far. {count} amendments are still to be decided.",
+      "showDetails": "See details",
+      "hideDetails": "Hide details",
       "unpublished": "No consolidated text yet",
       "unpublishedDescription": "The document has not been published yet.",
       "openWorkspace": "Open in the workspace",

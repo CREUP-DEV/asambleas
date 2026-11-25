@@ -3,7 +3,11 @@ import { DOCUMENT_KIND_DEFAULTS } from "~~/shared/constants/domain";
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { isPastDeadline } from "~~/shared/utils/calendar";
 import { assemblyYear } from "~~/shared/utils/dates";
-import { documentDeadlineKey } from "~~/shared/utils/documentDeadline";
+import {
+  closesForMembers,
+  lateAfterAt,
+  presentationDeadlineAt,
+} from "~~/shared/utils/documentDeadline";
 import { formatDateTime, toDate } from "~/utils/format";
 
 /**
@@ -15,7 +19,8 @@ import { formatDateTime, toDate } from "~/utils/format";
  *
  * Sending again after the Secretaría asked for a correction says so, and the
  * presentation deadline no longer applies: the correction reopens it (same
- * rule as the server).
+ * rule as the server). A report never closes: past its deadline the check
+ * only warns that it arrives late.
  *
  * Publishing again a withdrawn or postponed document (`publishedAt` set)
  * keeps its base text, reference and amendments; the copy says so and the
@@ -155,20 +160,38 @@ const contentCheck = computed<Check>(() => {
 });
 
 /**
- * The document's presentation deadline: its kind's own (documentDeadlineKey),
- * or `documents_close` when the assembly lacks it, as the server reads it
- * (presentationDeadlinePassed).
+ * The document's presentation deadline: its kind's own, or `documents_close`
+ * when the assembly lacks it, as the server reads it (presentationDeadlineAt).
+ * A report never closes (closesForMembers): its own deadline, with no
+ * fallback (lateAfterAt), only says when it arrives late, never blocking.
  */
 const deadlineCheck = computed<Check>(() => {
-  const close =
-    milestone(documentDeadlineKey(props.document.kind)) ??
-    milestone("documents_close");
+  const kind = props.document.kind;
+  const lateOnly = !closesForMembers(kind);
+  const close = lateOnly
+    ? lateAfterAt(kind, milestone)
+    : presentationDeadlineAt(kind, milestone);
   if (!close || !toDate(close)) {
     return {
       key: "deadline",
       state: "info",
       title: t("document.publish.checks.noDeadline"),
     };
+  }
+  if (lateOnly) {
+    return isPastDeadline(close, now.value)
+      ? {
+          key: "deadline",
+          state: "warning",
+          title: t("document.publish.checks.reportLate", { date: date(close) }),
+        }
+      : {
+          key: "deadline",
+          state: "ok",
+          title: t("document.publish.checks.reportOnTime", {
+            date: date(close),
+          }),
+        };
   }
   if (isPastDeadline(close, now.value)) {
     return {

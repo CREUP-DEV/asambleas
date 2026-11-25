@@ -189,17 +189,21 @@ until the assembly closes, whatever the calendar says, and "Presentar
 documento" to members while documents can be presented (the assembly is not
 closed and some kind their member may present under an item is still in its
 own deadline, `presentationDeadlinePassed`: a candidacy until
-`candidacies_close`, a report until `reports_close`, the rest until
-`documents_close`); the modal offers members only the kinds still in their
+`candidacies_close`, the rest until `documents_close`, a report at any
+time, read late after `reports_close`); the modal offers members only the
+kinds still in their
 deadline, the same rule the server applies to creating and to sending the
 draft, and to changing its kind or its item (the document's form offers no
 other kind, but keeps its own, and no move that would leave it past its
 deadline, such as out of an item reserved to the Secretaría; a choice whose
 deadline passes with the modal or the form open is dropped). An agenda item
 tells a member the deadline passed only once every kind it takes from them
-has, and the overview's card says presentation closed only once no kind that
-member may present is open, counting down to the nearest of those deadlines
-ahead until then. The modal starts with the
+has, the agenda page once every kind that member may present has, and the
+overview's card says presentation closed once no kind that closes (every one
+but the report) is open among those the member may present, or among every
+kind for managers, counting down to the nearest of those deadlines ahead
+until then; once closed, it tells a member it shows to that reports can still
+be presented. The modal starts with the
 agenda item and proposes the kind and the title from it (`proposeFromItem`:
 "Aprobación, si procede, del Posicionamiento sobre X" gives a positioning
 titled "Posicionamiento sobre X"; an item that names several documents gets

@@ -102,19 +102,17 @@ describe("createDocuments by a member", () => {
     await expect(create("published", ["venue"])).rejects.toBe(PLANNED);
   });
 
-  it("takes a report past documents_close until its own deadline", async () => {
+  it("takes a report past documents_close", async () => {
     betweenDeadlines();
     await expect(create("published", ["report"])).rejects.toBe(PLANNED);
   });
 
-  it("refuses a report past reports_close", async () => {
+  it("takes a report past reports_close too: it only reads late", async () => {
     vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({
+      documents_close: new Date(Date.now() - 2 * 86_400_000),
       reports_close: new Date(Date.now() - 86_400_000),
     });
-    await expect(create("published", ["report"])).rejects.toMatchObject({
-      statusCode: 409,
-      data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON },
-    });
+    await expect(create("published", ["report"])).rejects.toBe(PLANNED);
   });
 
   it("refuses a candidacy past candidacies_close", async () => {

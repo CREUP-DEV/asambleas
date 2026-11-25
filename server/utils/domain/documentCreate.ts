@@ -97,7 +97,7 @@ async function requireMemberMayCreate(
     });
   }
   // Each document by its own deadline (presentationDeadlinePassed): a
-  // candidacy until candidacies_close, a report until reports_close.
+  // candidacy until candidacies_close, a report at any time.
   const milestones = await loadMilestones(assembly.id);
   const now = new Date();
   for (const [index, input] of inputs.entries()) {
@@ -208,9 +208,9 @@ async function planDocument(
  * document:create present them under agenda items that accept submissions,
  * of a kind the item takes (422 `submission_kind` otherwise), until the
  * kind's own deadline (presentationDeadlinePassed: `candidacies_close` for
- * candidacies and venues, `reports_close` for reports, `documents_close`
- * for the rest and for a kind whose own milestone the assembly lacks), with
- * the kind defaults, always among its presenters:
+ * candidacies and venues, `documents_close` for the rest and for a kind
+ * whose own milestone the assembly lacks; a report at any time, late after
+ * `reports_close`), with the kind defaults, always among its presenters:
  * they may add co-presenters and name the main presenter, their own member
  * or another one (planPresenters). For everyone, no presenter may be barred
  * from the kind (a sectorial never presents an internal motion). Members

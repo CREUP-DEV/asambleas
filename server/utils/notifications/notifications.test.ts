@@ -316,6 +316,27 @@ describe("noticesForEvent", () => {
         "presenter_decided",
       ]);
     }
+    // A transactional in force the Mesa lapsed or withdrew: only its own
+    // authors get the email. The authors of what it replaced (its parties)
+    // read it in their news only.
+    for (const type of ["amendment_lapsed", "amendment_withdrawn"]) {
+      const notices = noticesForEvent(
+        event(type, {
+          by: "moderator",
+          replacedSources: true,
+          replacedSourceIds: ["s1"],
+        }),
+        amendmentFacts({
+          transactional: true,
+          status: type === "amendment_lapsed" ? "lapsed" : "withdrawn",
+          validated: true,
+          parties: [{ memberId: "m4", decision: "accepted" }],
+        }),
+      );
+      expect(notices.map((notice) => [notice.kind, notice.memberIds])).toEqual([
+        ["presenter_decided", ["m2", "m3"]],
+      ]);
+    }
     expect(
       kinds(noticesForEvent(event("amendment_reclassified"), amendmentFacts())),
     ).toEqual(["presenter_changed"]);

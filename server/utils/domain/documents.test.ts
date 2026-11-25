@@ -287,15 +287,15 @@ describe("presentationClosed", () => {
         after,
       ),
     ).toBe(false);
-    // A report past reports_close no longer goes.
+    // A report never closes: past reports_close it only reads late.
     expect(
       presentationClosed(
         { kind: "report", dueAt: null, correctionRequestedAt: null },
         open,
         calendar,
-        new Date("2026-11-04T10:01:00Z"),
+        new Date("2026-11-06T10:00:00Z"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -379,6 +379,31 @@ describe("requirePresentationChangeOpen", () => {
         after: presentationItemAfterMove("d1", reserved, null),
       }),
     ).not.toThrow();
+  });
+
+  it("always takes a report, and never leaves one for a closed kind", () => {
+    const report = { ...candidacy, kind: "report" as const };
+    const late = {
+      ...calendar,
+      reports_close: new Date("2026-11-01T10:00:00Z"),
+    };
+    const afterAll = new Date("2026-11-06T10:00:00Z");
+    expect(() =>
+      requirePresentationChangeOpen(
+        resolution,
+        { kind: "report", before: open, after: open },
+        late,
+        afterAll,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      requirePresentationChangeOpen(
+        report,
+        { kind: "resolution", before: open, after: open },
+        late,
+        afterAll,
+      ),
+    ).toThrow(expect.objectContaining(refused));
   });
 
   it("takes a kind still in its deadline, and always keeps the current one", () => {

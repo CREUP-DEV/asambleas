@@ -71,21 +71,22 @@ const {
 const addDocument = useAddDocument(agenda);
 
 /**
- * Every kind is past its own deadline (presentationSchedule, the same rule
- * as useAddDocument's button; for a member, the kinds it may present):
- * only managers still get the card, and it says when the last deadline
- * closed instead of counting down. A candidacy still goes after
- * `documents_close`, so until then the card stays open for whoever may
- * present one.
+ * Every kind that closes is past its own deadline (useAddDocument's
+ * `closingSchedule`; for a member, the kinds it may present): the card says
+ * when the last deadline closed instead of counting down. A candidacy still
+ * goes after `documents_close`, so until then the card stays open for
+ * whoever may present one. A report never closes, so the card still shows
+ * then to managers and to a member who may present reports (the button
+ * follows `schedule`), and says what can still be added.
  */
-const documentsClosed = computed(() => !addDocument.schedule.value.open);
+const documentsClosed = computed(() => !addDocument.closingSchedule.value.open);
 
 /**
  * The date the card names: while open, the nearest deadline still ahead
  * (what it counts down to); once closed, the last one. Null without any.
  */
 const documentsClose = computed(() => {
-  const { next, last } = addDocument.schedule.value;
+  const { next, last } = addDocument.closingSchedule.value;
   return documentsClosed.value ? last : next;
 });
 
@@ -379,9 +380,17 @@ const warnedKeys = computed(() =>
             class="text-muted text-sm"
           >
             {{
-              t("assembly.overview.addDocument.closed", {
-                date: formatDateTime(documentsClose, { style: "long", locale }),
-              })
+              t(
+                addDocument.manager.value
+                  ? "assembly.overview.addDocument.closed"
+                  : "assembly.overview.addDocument.closedReports",
+                {
+                  date: formatDateTime(documentsClose, {
+                    style: "long",
+                    locale,
+                  }),
+                },
+              )
             }}
           </p>
           <p v-else-if="documentsClose" class="text-muted text-sm">

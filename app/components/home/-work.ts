@@ -11,7 +11,6 @@
  * a component; import it explicitly.
  */
 import type { AmendmentKind } from "~~/shared/constants/domain";
-import { lateNeedsAssembly } from "~~/shared/utils/documentDeadline";
 import type {
   MeWorkAcceptanceDto,
   MeWorkAmendmentDto,
@@ -56,6 +55,7 @@ export type HomeWorkUpdateKind =
   /**
    * A draft past its presentation deadline: only the Secretaría may present
    * it late, so it is no task (MeWorkDocumentDto.presentationClosedAt).
+   * Never a report, which never closes for members (closesForMembers).
    */
   | "document_closed"
   | "document_review"
@@ -125,12 +125,8 @@ export interface HomeWorkUpdate {
   assembly: MeWorkAssemblyRef;
   document: HomeWorkDocumentRef;
   amendment: (HomeWorkAmendmentRef & { status: string }) | null;
-  /**
-   * Only for `document_closed`: the deadline that passed, and whether the
-   * assembly must agree to treat it once presented late (lateNeedsAssembly:
-   * not for a report).
-   */
-  closed?: { at: string; needsAssembly: boolean };
+  /** Only for `document_closed`: the deadline that passed. */
+  closed?: { at: string };
 }
 
 function documentRef(entry: MeWorkDocumentDto): HomeWorkDocumentRef {
@@ -383,12 +379,7 @@ export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
       document: documentRef(entry),
       amendment: null,
       ...(kind === "document_closed" && entry.presentationClosedAt
-        ? {
-            closed: {
-              at: entry.presentationClosedAt,
-              needsAssembly: lateNeedsAssembly(entry.document.kind),
-            },
-          }
+        ? { closed: { at: entry.presentationClosedAt } }
         : {}),
     });
   }
@@ -667,6 +658,14 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
           })
         : make("home.news.amendment.transacted");
     case "amendment_lapsed":
+      // A transactional the Mesa lapsed after it replaced the reader's
+      // amendment (value "replaced"): that amendment stays replaced. Its
+      // own authors read the plain lapse.
+      if (news.value === "replaced") {
+        return news.ownAmendment
+          ? make("home.news.amendment.lapsed")
+          : make("home.news.amendment.lapsedReplacing");
+      }
       // A transactional left behind because another one replaced its
       // amendments first: the value names that one.
       return news.value

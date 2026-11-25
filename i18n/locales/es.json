@@ -560,7 +560,8 @@
         "title": "Plazo de presentación de documentos abierto",
         "until": "Hasta el {date}.",
         "closedTitle": "Plazo de presentación de documentos cerrado",
-        "closed": "Cerró el {date}. Puedes seguir añadiendo documentos."
+        "closed": "Cerró el {date}. Puedes seguir añadiendo documentos.",
+        "closedReports": "Cerró el {date}. Aún puedes presentar informes."
       },
       "todo": {
         "title": "Tareas pendientes",
@@ -907,7 +908,6 @@
       "sendNeedsText": "Primero añade el texto en el paso 2.",
       "sendNeedsPdf": "Primero sube el PDF en el paso 2.",
       "sendClosed": "El plazo de presentación ha terminado. Solo Secretaría puede presentarlo fuera de plazo, y la asamblea decide si lo trata.",
-      "sendClosedReport": "El plazo de presentación ha terminado. Solo Secretaría puede presentarlo fuera de plazo.",
       "returningToHome": "Volviendo al inicio",
       "saveAndAddAnother": "Guardar y añadir otro",
       "savedForLater": "Documento guardado"
@@ -1072,6 +1072,8 @@
       "description": "Secretaría lo revisará antes de publicarlo. Mientras tanto no podrás editarlo; si hace falta cambiar algo, te pedirá una corrección.",
       "confirm": "Enviar a Secretaría",
       "deadline": "Plazo de presentación",
+      "reportDeadline": "Plazo de los informes",
+      "reportLate": "Ya ha pasado: llegará fuera de plazo, pero se tratará igual.",
       "working": "Enviando el documento a Secretaría...",
       "success": "Enviado a Secretaría",
       "error": "No se ha podido enviar el documento",
@@ -1109,6 +1111,8 @@
         "deadlineOpen": "Plazo de presentación abierto hasta el {date}",
         "deadlinePassed": "El plazo de presentación terminó el {date}",
         "deadlineManager": "Como Secretaría puedes presentarlo igualmente.",
+        "reportOnTime": "Plazo de los informes abierto hasta el {date}",
+        "reportLate": "El plazo de los informes terminó el {date}: llegará fuera de plazo, pero se tratará igual",
         "noProponent": "El documento no tiene proponente",
         "notAmendable": "Este documento no admite enmiendas",
         "windowRange": "Enmiendas del {opens} al {closes}",
@@ -3199,8 +3203,7 @@
         "amendment_other": "Estado: {status}.",
         "amendment_authors": "Espera a que la acepten los autores principales de las enmiendas que sustituiría. Después la revisará Secretaría.",
         "amendment_late": "Fuera de plazo: falta que la asamblea decida tratarla.",
-        "document_closed": "El plazo terminó el {date}. Solo Secretaría puede presentarlo fuera de plazo, y la asamblea decide si lo trata.",
-        "document_closedReport": "El plazo terminó el {date}. Solo Secretaría puede presentarlo fuera de plazo."
+        "document_closed": "El plazo terminó el {date}. Solo Secretaría puede presentarlo fuera de plazo, y la asamblea decide si lo trata."
       },
       "transactional": "Transaccional {code}",
       "transactionalBy": "Transaccional {code} de {member}",
@@ -3255,6 +3258,7 @@
         "lapsed": "Ha decaído {amendment}: ya no se vota.",
         "withdrawn": "Se ha retirado {amendment}: ya no se debatirá.",
         "withdrawnReplacing": "Se ha retirado {amendment}, que ya sustituía a tu enmienda: tu enmienda sigue sustituida y no vuelve al debate.",
+        "lapsedReplacing": "Ha decaído {amendment}, que ya sustituía a tu enmienda: tu enmienda sigue sustituida y no vuelve al debate.",
         "reopened": "Se ha reabierto {amendment}: vuelve a estar pendiente de decisión.",
         "other": "Hay cambios en {amendment}.",
         "validatedLate": "Se ha validado {amendment}, pero llegó fuera de plazo: falta que la asamblea decida tratarla.",
@@ -3675,7 +3679,7 @@
       "agenda_requests_close": "Cierre de solicitudes de puntos",
       "agenda_final": "Orden del día definitivo",
       "documents_close": "Cierre de presentación de documentos",
-      "reports_close": "Cierre de informes",
+      "reports_close": "Plazo de los informes",
       "documents_publish": "Publicación de documentos",
       "amendments_open": "Apertura del plazo de enmiendas",
       "amendments_close": "Cierre del plazo de enmiendas",
@@ -3845,6 +3849,8 @@
       "provisional": "Texto provisional: aún no se ha votado el documento",
       "provisionalDescription": "Incluye las enmiendas aprobadas hasta ahora.",
       "pending": "Incluye las enmiendas aprobadas hasta ahora. Queda una enmienda por decidir. | Incluye las enmiendas aprobadas hasta ahora. Quedan {count} enmiendas por decidir.",
+      "showDetails": "Ver detalles",
+      "hideDetails": "Ocultar detalles",
       "unpublished": "Todavía no hay texto consolidado",
       "unpublishedDescription": "El documento aún no se ha publicado.",
       "openWorkspace": "Ver en el espacio de trabajo",
