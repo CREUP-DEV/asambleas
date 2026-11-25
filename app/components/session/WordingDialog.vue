@@ -14,6 +14,8 @@ import { passageFragment } from "~~/shared/utils/content/passages";
 import { sessionWordingSeed } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { WordingDialogContext } from "~/composables/document/wordingDialog";
+import { sessionWordingEdited } from "~/composables/session/dirtyDialog";
+import { useDirtyDialog } from "~/composables/session/useDirtyDialog";
 
 /**
  * The Mesa words a passage where approved amendments collide (user's
@@ -37,8 +39,9 @@ import type { WordingDialogContext } from "~/composables/document/wordingDialog"
  * wording (user's decisions of 2026-11-21).
  */
 const props = defineProps<{ context?: WordingDialogContext }>();
-const session: WordingDialogContext =
-  props.context ?? useSessionConsoleContext();
+/** The console's own context, for its confirmation; none outside it. */
+const consoleSession = props.context ? null : useSessionConsoleContext();
+const session: WordingDialogContext = props.context ?? consoleSession!;
 const purpose = computed(() => session.purpose ?? "mesa");
 const { t } = useI18n();
 
@@ -167,6 +170,37 @@ watch(
   { immediate: true },
 );
 
+// A wording being written is not lost by a stray Escape or click outside;
+// the X, «Cancelar» and «Más tarde» ask first, and so does starting again
+// from another text (E-127).
+const { dismissible, onOpenUpdate, discardAllowed } = useDirtyDialog({
+  open,
+  dirty: () => sessionWordingEdited(seed.value?.seed ?? [], edited.value),
+  question: () => ({
+    title: t("session.discard.wordingTitle"),
+    description: t("session.discard.wordingDescription"),
+  }),
+  confirm: consoleSession?.confirm,
+});
+
+/** «Empezar desde» the passage's own text: as worded, or the automatic one. */
+const startOwnLabel = computed(() =>
+  t(
+    passage.value?.status === "worded"
+      ? "session.wording.startCurrent"
+      : "session.wording.startAutomatic",
+  ),
+);
+
+/** «Empezar desde…»: asks before replacing text the Mesa wrote. */
+async function startFrom(source: string | null, label: string): Promise<void> {
+  const allowed = await discardAllowed({
+    title: t("session.discard.restartTitle", { source: label }),
+    description: t("session.discard.restartDescription"),
+  });
+  if (allowed) reseed(source);
+}
+
 const ops = computed(() =>
   seed.value && seed.value.basePassage.length > 0
     ? diffPassage(
@@ -259,10 +293,12 @@ async function backToAutomatic(): Promise<void> {
 
 <template>
   <UModal
-    v-model:open="open"
+    :open="open"
+    :dismissible="dismissible"
     :title="t('session.wording.title', { codes })"
     :description="description"
     :ui="{ content: 'sm:max-w-5xl', description: 'sr-only' }"
+    @update:open="onOpenUpdate"
   >
     <template #body>
       <!-- In the body, not the header: long, it would cover the passage on
@@ -443,14 +479,8 @@ async function backToAutomatic(): Promise<void> {
                 size="xs"
                 color="neutral"
                 :variant="startedFrom === null ? 'subtle' : 'outline'"
-                :label="
-                  t(
-                    passage.status === 'worded'
-                      ? 'session.wording.startCurrent'
-                      : 'session.wording.startAutomatic',
-                  )
-                "
-                @click="reseed(null)"
+                :label="startOwnLabel"
+                @click="startFrom(null, startOwnLabel)"
               />
               <UButton
                 v-for="amendment in passageAmendments"
@@ -464,7 +494,7 @@ async function backToAutomatic(): Promise<void> {
                     code: amendment.code,
                   })
                 "
-                @click="reseed(amendment.id)"
+                @click="startFrom(amendment.id, amendment.code)"
               />
             </div>
           </div>

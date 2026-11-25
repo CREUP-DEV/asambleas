@@ -4553,6 +4553,14 @@
       "description": "“{item}” has a vote that is not recorded. If you move to another item, it stays pending until you record it.",
       "confirm": "Move on without it"
     },
+    "discard": {
+      "voteTitle": "Close without recording the vote?",
+      "voteDescription": "The votes entered in this window will be lost. If the count is on the projection, it will leave the screen.",
+      "wordingTitle": "Close without saving the wording?",
+      "wordingDescription": "The changes you wrote in the passage's text will be lost.",
+      "restartTitle": "Start from “{source}”?",
+      "restartDescription": "The text you wrote will be replaced and your changes lost."
+    },
     "validateConfirm": {
       "title": "Validate and publish 1 amendment? | Validate and publish {count} amendments?",
       "description": "It becomes validated and the whole assembly can read it. This cannot be undone. | They become validated and the whole assembly can read them. This cannot be undone."

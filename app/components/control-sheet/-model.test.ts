@@ -22,8 +22,11 @@ import {
   buildGeneralRows,
   documentAgendaTrail,
   itemTreatedControl,
+  liveProjectedAmendmentIds,
   previewAmendmentRows,
+  rememberProjectedAmendments,
   rowVoteEntries,
+  sheetProjectedAmendmentIds,
   sheetTurnsFromNotes,
   staleSheetRow,
   type AmendmentSheetRow,
@@ -1154,6 +1157,103 @@ describe("buildAmendmentRows treated", () => {
     );
     expect(row!.state).toBe("incorporated");
     expect(row!.note).toBeNull();
+  });
+});
+
+describe("projected amendments from the live state (HOJ-9)", () => {
+  const onScreen = (
+    amendmentId: string | null,
+    amendmentBloc: string[] = [],
+  ) => ({
+    amendmentId,
+    amendmentBloc,
+  });
+
+  it("reads what is on screen only in session", () => {
+    expect(liveProjectedAmendmentIds(onScreen("a1"), "in_session")).toEqual([
+      "a1",
+    ]);
+    expect(liveProjectedAmendmentIds(onScreen("a1"), "convened")).toEqual([]);
+    expect(liveProjectedAmendmentIds(onScreen("a1"), "closed")).toEqual([]);
+    expect(liveProjectedAmendmentIds(onScreen("a1"), undefined)).toEqual([]);
+    expect(liveProjectedAmendmentIds(null, "in_session")).toEqual([]);
+  });
+
+  it("takes the bloc's amendments, each once", () => {
+    expect(
+      liveProjectedAmendmentIds(
+        onScreen(null, ["a2", "a3", "a2"]),
+        "in_session",
+      ),
+    ).toEqual(["a2", "a3"]);
+  });
+
+  it("joins the read, what was seen and what is on screen", () => {
+    const ids = sheetProjectedAmendmentIds(
+      ["a1"],
+      new Set(["a2"]),
+      onScreen("a3"),
+      "in_session",
+    );
+    expect([...ids].sort()).toEqual(["a1", "a2", "a3"]);
+    // Out of session the server stamps nothing: the read and the seen only.
+    expect([
+      ...sheetProjectedAmendmentIds(
+        ["a1"],
+        new Set(),
+        onScreen("a3"),
+        "convened",
+      ),
+    ]).toEqual(["a1"]);
+  });
+
+  it("marks a pending row treated in the tick the Mesa projects it", () => {
+    const rows = buildAmendmentRows(
+      [amendment({ id: "a1", status: "submitted" })],
+      sheetProjectedAmendmentIds([], new Set(), onScreen("a1"), "in_session"),
+      "a1",
+    );
+    expect(rows.map((row) => [row.treated, row.autoTreated])).toEqual([
+      [true, true],
+    ]);
+  });
+
+  it("keeps what left the screen until a read holds it", () => {
+    let seen: ReadonlySet<string> = new Set();
+    seen = rememberProjectedAmendments(seen, [], onScreen("a1"), "in_session");
+    // The Mesa moves on: a1 is no longer on screen, and still projected.
+    seen = rememberProjectedAmendments(seen, [], onScreen("a2"), "in_session");
+    expect([...seen].sort()).toEqual(["a1", "a2"]);
+    expect(
+      [
+        ...sheetProjectedAmendmentIds([], seen, onScreen(null), "in_session"),
+      ].sort(),
+    ).toEqual(["a1", "a2"]);
+    // A read that began before a2 went on screen holds only a1.
+    seen = rememberProjectedAmendments(
+      seen,
+      ["a1"],
+      onScreen(null),
+      "in_session",
+    );
+    expect([...seen]).toEqual(["a2"]);
+    seen = rememberProjectedAmendments(
+      seen,
+      ["a1", "a2"],
+      onScreen(null),
+      "in_session",
+    );
+    expect(seen.size).toBe(0);
+  });
+
+  it("adds nothing out of session and keeps the set when nothing changes", () => {
+    const seen: ReadonlySet<string> = new Set(["a1"]);
+    expect(
+      rememberProjectedAmendments(seen, [], onScreen("a2"), "convened"),
+    ).toBe(seen);
+    expect(
+      rememberProjectedAmendments(seen, [], onScreen("a1"), "in_session"),
+    ).toBe(seen);
   });
 });
 

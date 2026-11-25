@@ -4553,6 +4553,14 @@
       "description": "«{item}» tiene una votación sin registrar. Si pasas a otro punto, seguirá pendiente hasta que la registres.",
       "confirm": "Pasar sin registrarla"
     },
+    "discard": {
+      "voteTitle": "¿Cerrar sin registrar la votación?",
+      "voteDescription": "Se perderán los votos anotados en esta ventana. Si el recuento se ve en la proyección, dejará de verse.",
+      "wordingTitle": "¿Cerrar sin guardar la redacción?",
+      "wordingDescription": "Se perderán los cambios que has escrito en el texto del pasaje.",
+      "restartTitle": "¿Empezar desde «{source}»?",
+      "restartDescription": "El texto que has escrito se sustituirá y se perderán tus cambios."
+    },
     "validateConfirm": {
       "title": "¿Validar y publicar 1 enmienda? | ¿Validar y publicar {count} enmiendas?",
       "description": "Quedará validada y toda la asamblea podrá leerla. No se puede deshacer. | Quedarán validadas y toda la asamblea podrá leerlas. No se puede deshacer."

@@ -75,6 +75,8 @@ import {
   followWaitsForPanel,
   itemTreatedControl,
   previewAmendmentRows,
+  rememberProjectedAmendments,
+  sheetProjectedAmendmentIds,
   sheetTurnsFromNotes,
   staleSheetRow,
   type AgendaTrailStep,
@@ -244,6 +246,48 @@ const membersById = computed<ReadonlyMap<string, MemberDto>>(
 );
 
 const live = computed(() => liveFetch.data.value ?? null);
+
+/**
+ * The amendments seen on screen in session that the sheet's last read does
+ * not hold yet (HOJ-9): a first projection only sends `live_changed`, which
+ * never reads the sheet again (affectsControlSheet), so the rows take them
+ * from the live state. Synchronous, so no move of the Mesa is skipped; a
+ * read drops only what it holds (rememberProjectedAmendments), and another
+ * assembly starts afresh.
+ */
+const seenProjected = shallowRef<ReadonlySet<string>>(new Set());
+watch(
+  () => assembly.value?.id,
+  () => {
+    seenProjected.value = new Set();
+  },
+  { flush: "sync" },
+);
+watch(
+  [
+    live,
+    () => sheet.value?.projectedAmendmentIds,
+    () => assembly.value?.status,
+  ],
+  ([state, read, status]) => {
+    seenProjected.value = rememberProjectedAmendments(
+      seenProjected.value,
+      read ?? [],
+      state,
+      status,
+    );
+  },
+  { immediate: true, flush: "sync" },
+);
+/** What the rows read as projected: the last read, then what was seen. */
+const projectedAmendmentIds = computed(() =>
+  sheetProjectedAmendmentIds(
+    sheet.value?.projectedAmendmentIds ?? [],
+    seenProjected.value,
+    live.value,
+    assembly.value?.status,
+  ),
+);
 /** A sheet key: its notes, turns and history (ControlSheetDto.can). */
 const internal = computed(() => sheet.value?.can.internal ?? false);
 const items = computed(() => agenda.data.value?.items ?? []);
@@ -523,7 +567,7 @@ const presentsAny = computed(
 const amendmentRows = computed(() => {
   const rows = buildAmendmentRows(
     amendmentsData.value?.amendments ?? [],
-    new Set(sheet.value?.projectedAmendmentIds ?? []),
+    projectedAmendmentIds.value,
     live.value?.amendmentId ?? null,
     sheet.value?.amendmentRows ?? [],
     sheet.value?.positions ?? [],
@@ -564,7 +608,7 @@ async function exportExcel(): Promise<void> {
       );
       let rows = buildAmendmentRows(
         dto.amendments,
-        new Set(sheet.value?.projectedAmendmentIds ?? []),
+        projectedAmendmentIds.value,
         live.value?.amendmentId ?? null,
         sheet.value?.amendmentRows ?? [],
         sheet.value?.positions ?? [],

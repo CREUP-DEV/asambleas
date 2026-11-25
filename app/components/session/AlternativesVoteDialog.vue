@@ -21,6 +21,9 @@ import {
   type VoteBallotInput,
 } from "~~/shared/utils/rollCall";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { sessionTallyRepeatDue } from "~/composables/session/liveTally";
+import { sessionAlternativesCounted } from "~/composables/session/dirtyDialog";
+import { useDirtyDialog } from "~/composables/session/useDirtyDialog";
 
 /**
  * A vote between alternatives (user's decisions of 2026-11-20): the
@@ -233,9 +236,19 @@ watch(
   },
   { deep: true },
 );
-// The server keeps it in memory for 90 s: sent again while counting.
+// The server keeps it in memory for 90 s: sent again while counting, but
+// not while the vote is being recorded (sessionTallyRepeatDue, as in
+// VoteFields and ElectionFields), at most one repeat skipped in a row.
+let repeatSkipped = false;
 useIntervalFn(() => {
-  if (announcement.value) session.pushTally(announcement.value);
+  if (!announcement.value) return;
+  const saving = busy.value || Object.values(session.busy.value).some(Boolean);
+  if (!sessionTallyRepeatDue({ busy: saving, skippedLast: repeatSkipped })) {
+    repeatSkipped = true;
+    return;
+  }
+  repeatSkipped = false;
+  session.pushTally(announcement.value);
 }, 15_000);
 onBeforeUnmount(() => {
   if (tallyShown) session.pushTally(null);
@@ -390,6 +403,25 @@ async function record(tieResolution?: AlternativesTieResolution) {
   }
 }
 
+// Counted votes, ballots or a roll call under way are not lost by a stray
+// Escape or click outside; the X and «Cancelar» ask first (E-127).
+const { dismissible, onOpenUpdate } = useDirtyDialog({
+  open,
+  dirty: () =>
+    sessionAlternativesCounted({
+      counts: counts.value,
+      abstentions: abstentions.value,
+      blank: blank.value,
+      invalid: invalid.value,
+      ballots: ballots.value,
+    }),
+  question: () => ({
+    title: t("session.discard.voteTitle"),
+    description: t("session.discard.voteDescription"),
+  }),
+  confirm: session.confirm,
+});
+
 function amendmentLine(id: string): string {
   const amendment = session.byId.value.get(id);
   const authors =
@@ -400,10 +432,12 @@ function amendmentLine(id: string): string {
 
 <template>
   <UModal
-    v-model:open="open"
+    :open="open"
+    :dismissible="dismissible"
     :title="t('session.alternatives.title')"
     :description="t('session.alternatives.description')"
     :ui="{ content: 'sm:max-w-3xl' }"
+    @update:open="onOpenUpdate"
   >
     <template #body>
       <div class="space-y-5">

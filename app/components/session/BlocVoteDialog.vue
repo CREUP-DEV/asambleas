@@ -9,6 +9,8 @@ import {
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
+import { sessionVoteCounted } from "~/composables/session/dirtyDialog";
+import { useDirtyDialog } from "~/composables/session/useDirtyDialog";
 
 /**
  * One vote on a bloc of amendments (user's decision of 2026-11-21): the
@@ -56,6 +58,17 @@ const announce = computed<LiveTallyAnnounce | null>(() => ({
   question: t("session.blocVote.question", { codes: codes.value.join(", ") }),
 }));
 const saving = computed(() => Boolean(session.busy.value["bloc-vote"]));
+// Counted votes or a roll call under way are not lost by a stray Escape or
+// click outside; the X and «Cancelar» ask first (E-127).
+const { dismissible, onOpenUpdate } = useDirtyDialog({
+  open,
+  dirty: () => sessionVoteCounted(vote.value),
+  question: () => ({
+    title: t("session.discard.voteTitle"),
+    description: t("session.discard.voteDescription"),
+  }),
+  confirm: session.confirm,
+});
 
 async function submit(): Promise<void> {
   if (blocked.value) return;
@@ -67,10 +80,12 @@ async function submit(): Promise<void> {
 
 <template>
   <UModal
-    v-model:open="open"
+    :open="open"
+    :dismissible="dismissible"
     :title="t('session.blocVote.title', { count: ids.length }, ids.length)"
     :description="t('session.blocVote.description')"
     :ui="{ content: 'sm:max-w-2xl' }"
+    @update:open="onOpenUpdate"
   >
     <template #body>
       <form

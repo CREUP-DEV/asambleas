@@ -16,6 +16,11 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
 import {
+  sessionElectionCounted,
+  sessionVoteCounted,
+} from "~/composables/session/dirtyDialog";
+import { useDirtyDialog } from "~/composables/session/useDirtyDialog";
+import {
   computeElectionOutcome,
   electionRunoffRule,
   type ElectionInput,
@@ -401,6 +406,20 @@ function prepareRunoff(first: ElectionRecord): void {
   confirming.value = false;
 }
 
+// Counted votes, candidates' votes or a roll call under way are not lost by
+// a stray Escape or click outside; the X and «Cancelar» ask first (E-127).
+const { dismissible, onOpenUpdate } = useDirtyDialog({
+  open,
+  dirty: () =>
+    sessionVoteCounted(vote.value) ||
+    (isElection.value && sessionElectionCounted(election.value)),
+  question: () => ({
+    title: t("session.discard.voteTitle"),
+    description: t("session.discard.voteDescription"),
+  }),
+  confirm: session.confirm,
+});
+
 function cancelOrBack(close: () => void): void {
   if (confirming.value) confirming.value = false;
   else close();
@@ -430,10 +449,12 @@ async function record(): Promise<void> {
 
 <template>
   <UModal
-    v-model:open="open"
+    :open="open"
+    :dismissible="dismissible"
     :title="t('session.itemVote.title')"
     :description="itemLabel"
     :ui="{ content: 'sm:max-w-2xl' }"
+    @update:open="onOpenUpdate"
   >
     <template #body>
       <form

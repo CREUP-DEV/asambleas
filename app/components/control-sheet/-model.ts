@@ -24,6 +24,7 @@ import type {
   DocumentSummaryDto,
   HeadcountDto,
   LiveEventDto,
+  LiveStateDto,
   MemberRef,
   PositionDto,
   SpeakingTurnDto,
@@ -475,6 +476,71 @@ export function amendmentNoVoteKey(
   return APPROVED_WITHOUT_VOTE.has(amendment.approvalMethod)
     ? "controlSheet.result.not_applicable"
     : `controlSheet.approval.${amendment.approvalMethod}`;
+}
+
+/**
+ * The amendments the Mesa has on screen that the server stamps projected
+ * as it puts them there (stampAmendmentsProjected): the one in debate and
+ * the bloc's, only while the assembly is in session, as the server's own
+ * stamping. The bloc's options hold the bloc's own amendments.
+ */
+export function liveProjectedAmendmentIds(
+  live: Pick<LiveStateDto, "amendmentId" | "amendmentBloc"> | null,
+  status: AssemblyStatus | null | undefined,
+): string[] {
+  if (!live || status !== "in_session") return [];
+  return [
+    ...new Set([
+      ...(live.amendmentId ? [live.amendmentId] : []),
+      ...(live.amendmentBloc ?? []),
+    ]),
+  ];
+}
+
+/**
+ * The amendments the sheet reads as projected (HOJ-9): those of its last
+ * read (ControlSheetDto.projectedAmendmentIds), those seen on screen since
+ * (rememberProjectedAmendments) and those on screen now. A first projection
+ * only sends `live_changed`, which never reads the sheet again
+ * (affectsControlSheet), so without the live state the row would stay
+ * untreated until another event.
+ */
+export function sheetProjectedAmendmentIds(
+  read: readonly string[],
+  seen: ReadonlySet<string>,
+  live: Pick<LiveStateDto, "amendmentId" | "amendmentBloc"> | null,
+  status: AssemblyStatus | null | undefined,
+): Set<string> {
+  return new Set([
+    ...read,
+    ...seen,
+    ...liveProjectedAmendmentIds(live, status),
+  ]);
+}
+
+/**
+ * The amendments seen on screen that the sheet's last read does not hold
+ * yet: those on screen now are added, and those the read holds leave. A
+ * read that began before the Mesa moved lacks what it put on screen, so
+ * only what a read holds leaves, never the whole set: the server's stamp
+ * is never cleared, so what was on screen in session stays projected.
+ * Returns `seen` itself when nothing changes.
+ */
+export function rememberProjectedAmendments(
+  seen: ReadonlySet<string>,
+  read: readonly string[],
+  live: Pick<LiveStateDto, "amendmentId" | "amendmentBloc"> | null,
+  status: AssemblyStatus | null | undefined,
+): ReadonlySet<string> {
+  const held = new Set(read);
+  const next = new Set(
+    [...seen, ...liveProjectedAmendmentIds(live, status)].filter(
+      (id) => !held.has(id),
+    ),
+  );
+  return next.size === seen.size && [...next].every((id) => seen.has(id))
+    ? seen
+    : next;
 }
 
 /** The amendments of a document past draft, in the console's order. */

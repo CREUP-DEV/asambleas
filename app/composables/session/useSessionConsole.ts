@@ -66,6 +66,7 @@ import type {
 } from "~~/shared/utils/alternativesVote";
 import type { VoteBallotInput } from "~~/shared/utils/rollCall";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import { cancelStaleRead } from "../fetch/cancelStaleRead";
 import {
   keepLastGoodData,
   onlyForKey,
@@ -1086,7 +1087,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return projectedDocumentIds.value.has(documentId) ? "projected" : null;
   }
 
-  /** Puts a vote a mutation returned in the list, replacing its old copy. */
+  /**
+   * Puts a vote a mutation returned in the list, replacing its old copy;
+   * a read that left before it never brings the old copy back (CON-10).
+   */
   function storeItemVote(vote: VoteDto): void {
     const current = itemVotesDto.value?.votes ?? [];
     const index = current.findIndex((other) => other.id === vote.id);
@@ -1094,6 +1098,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (index === -1) next.push(vote);
     else next[index] = vote;
     itemVotesDto.value = { votes: next };
+    cancelStaleRead(itemVotesFetch);
   }
 
   // Live updates --------------------------------------------------------------
@@ -1237,27 +1242,62 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   // Local updates ---------------------------------------------------------------
 
+  /**
+   * Stores a list of amendments a mutation answered with, if the console
+   * still shows its document. A read of the list that left before the
+   * mutation would land after it and put decided amendments back to
+   * pending: it is replaced by one that leaves now (CON-10), unless the
+   * caller reads the list again itself right after (`rereads`).
+   */
+  function storeAmendmentList(
+    next: SessionAmendmentsDto,
+    options: { rereads?: boolean } = {},
+  ): void {
+    if (next.documentId !== documentId.value) return;
+    amendmentsDto.value = next;
+    if (!options.rereads) cancelStaleRead(amendmentsFetch);
+  }
+
+  /**
+   * Puts fresh amendments in the local list, so their updatedAt is current:
+   * one write and at most one read for a whole batch (a bloc, the
+   * alternatives, a bulk approval).
+   */
+  function upsertAmendments(
+    updated: readonly AmendmentDto[],
+    options: { rereads?: boolean } = {},
+  ): void {
+    const current = amendmentsDto.value;
+    if (!current) return;
+    const mine = updated.filter(
+      (amendment) => amendment.documentId === documentId.value,
+    );
+    if (mine.length === 0) return;
+    const next = [...current.amendments];
+    for (const amendment of mine) {
+      const index = next.findIndex((other) => other.id === amendment.id);
+      if (index === -1) next.push(amendment);
+      else next[index] = amendment;
+    }
+    storeAmendmentList({ ...current, amendments: next }, options);
+  }
+
   /** Puts a fresh amendment in the local list, so its updatedAt is current. */
   function upsertAmendment(amendment: AmendmentDto): void {
-    const current = amendmentsDto.value;
-    if (!current || amendment.documentId !== documentId.value) return;
-    const index = current.amendments.findIndex(
-      (other) => other.id === amendment.id,
-    );
-    const next = [...current.amendments];
-    if (index === -1) next.push(amendment);
-    else next[index] = amendment;
-    amendmentsDto.value = { ...current, amendments: next };
+    upsertAmendments([amendment]);
   }
 
   /**
    * Stores a document a mutation returned, only if the console still shows
    * it: another Mesa member may have moved the debate (and the console with
    * it) while the request was in flight, and the fetch key now points at
-   * the new document's entry.
+   * the new document's entry. A read that left before the mutation never
+   * brings the old one back (CON-10).
    */
   function storeDocument(updated: DocumentDto): void {
-    if (updated.id === documentId.value) document.value = updated;
+    if (updated.id !== documentId.value) return;
+    document.value = updated;
+    cancelStaleRead(documentFetch);
   }
 
   function documentApi(path = ""): string {
@@ -1781,7 +1821,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       const result = await track("bloc-vote", () =>
         api.send<BlocVoteDto>(documentApi("/amendments/bloc-vote"), { body }),
       );
-      for (const amendment of result.amendments) upsertAmendment(amendment);
+      // The read right after replaces any read on its way (cancel).
+      upsertAmendments(result.amendments, { rereads: true });
       void refreshAmendments();
       const approved = result.decision.vote?.result === "approved";
       toast.add({
@@ -1910,7 +1951,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           body,
         }),
       );
-      for (const amendment of result.amendments) upsertAmendment(amendment);
+      upsertAmendments(result.amendments);
       refreshUnlessLive(refreshAmendments);
       const vote = result.decision.vote!;
       toast.add({
@@ -2519,7 +2560,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           body: { items } satisfies BulkLapseBody,
         }),
       );
-      for (const result of response.results) upsertAmendment(result.amendment);
+      upsertAmendments(response.results.map((result) => result.amendment));
       done = response.results.length;
       // Lapsing closes the transactionals over it: the change's own live
       // event reads the rest of the list again.
@@ -2582,7 +2623,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           }),
         );
         results = response.results;
-        for (const result of results) upsertAmendment(result.amendment);
+        upsertAmendments(results.map((result) => result.amendment));
       } catch (error) {
         // Stopped by an error, part of the bloc may be approved already:
         // the list is read again, and no count is given (it would say
@@ -2751,9 +2792,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   /** Stores the list a validation returned, if the console still shows it. */
   function storeAmendments(dto: DocumentAmendmentsDto, forDocument: string) {
-    if (documentId.value === forDocument) {
-      amendmentsDto.value = { ...dto, documentId: forDocument };
-    }
+    storeAmendmentList({ ...dto, documentId: forDocument });
   }
 
   /**
@@ -2849,10 +2888,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       );
       const current = amendmentsDto.value;
       if (current && documentId.value === forDocument) {
-        amendmentsDto.value = {
+        storeAmendmentList({
           ...current,
           relations: [...current.relations, relation],
-        };
+        });
       }
       toast.add({
         title: t("session.toasts.relationCreated"),
@@ -2880,10 +2919,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       );
       const current = amendmentsDto.value;
       if (current && documentId.value === forDocument) {
-        amendmentsDto.value = {
+        storeAmendmentList({
           ...current,
           relations: current.relations.filter((relation) => relation.id !== id),
-        };
+        });
       }
       return true;
     } catch (error) {
