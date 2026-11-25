@@ -11,7 +11,14 @@
         "3001"
       ],
       "port": 3001,
-      "autoPort": false
+      "autoPort": false,
+      "env": {
+        "NUXT_SMTP_HOST": "127.0.0.1",
+        "NUXT_SMTP_PORT": "1225",
+        "NUXT_SMTP_SECURE": "false",
+        "NUXT_SMTP_USER": "",
+        "NUXT_SMTP_PASS": ""
+      }
     }
   ]
 }
