@@ -946,7 +946,7 @@ otherwise.
 | PUT    | `/[amendment]`                                 | author while the amendment is a draft                            | `AmendmentUpdateBody`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | DELETE | `/[amendment]`                                 | author while the amendment is a draft                            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/submit`                          | author                                                           | See submission rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it. A transactional already in force over amendments of members other than the author's is the Mesa's to withdraw: 409 to its authors (`withdrawNeedsMesa`).                                                                                                                                                                                                                                                                                                                    |
 | POST   | `/validate`                                    | `amendment:review`                                               | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | POST   | `/publish`                                     | `amendment:review`                                               | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/correction`                      | `amendment:review`                                               | `AmendmentCorrectionBody`. See validation below. Returns `AmendmentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -1453,7 +1453,9 @@ memberId }`, what waited on it closed). Rejected that way
 - `withdraw` and `lapse` set `withdrawn` and `lapsed`, only on amendments in
   the debate: `admission: "admitted"` (validated and, if late, admitted by
   the assembly), 409 otherwise. An author can still withdraw its own
-  amendment through `POST .../withdraw`.
+  amendment through `POST .../withdraw` (except a transactional already in
+  force over other members' amendments, which only the Mesa withdraws:
+  `withdrawNeedsMesa`, 409).
 - Every outcome that settles the amendment (`approve`, `vote`, `withdraw`,
   `lapse`) closes the pending transactionals over it (see transactionals),
   locked in the same ordered pass as the amendment.
@@ -1594,6 +1596,13 @@ sourceCode }`, read in the news like the closure (nobody named, its
   asked for an answer (`can.accept` false, left out of the home page's
   `acceptances`, and accepting it returns 409); its proposer withdraws it
   or the Mesa closes it.
+- Withdrawing a transactional in force never restores its sources: they
+  stay `transacted`. So once it stands in for amendments of members other
+  than the author's, only the Mesa withdraws it: `can.withdraw` is false
+  and `POST .../withdraw` returns 409 to its authors (`withdrawNeedsMesa`,
+  checked again under the lock). While it waits for its parties or the
+  Secretaría, or groups only the author's own amendments, its author still
+  may.
 - Every path that replaces sources locks the transactional, its sources and
   the other transactionals over them in one ordered pass, after the
   document (share). Presenting a transactional takes the document
@@ -1721,7 +1730,8 @@ while an Admin impersonates, like the whole admin section.
   validation, as `DocumentSummaryDto`, in creation order;
 - `amendments`: with `amendment:review`, each with its document reference,
   grouped by document in agenda order (then creation order) and then in
-  text order:
+  text order, none of a withdrawn or postponed document (they wait for
+  nobody until it is published again):
   - waiting for validation: `submitted`, not validated, and not a
     transactional still waiting for its main authors;
   - waiting for publication: validated, not published, and not draft,
@@ -1752,9 +1762,14 @@ managers and the Mesa), soonest first:
 
 - `documents`: the documents the actor's member presents, as main presenter
   or co-presenter, that are `draft` (expected ones included), `submitted` or
-  `published`;
+  `published`. A draft whose presentation is closed for the actor
+  (`presentationClosed`: past `documents_close`, not expected, not sent back
+  for a correction; managers are not bound by it) is left out, since
+  `POST .../submit` would refuse it;
 - `amendments`: the amendments the actor's member authored that are still
-  `draft` or `submitted`, newest change first, with `reviewState` (a
+  `draft` or `submitted`, newest change first, drafts only while their
+  document still takes amendments (published, structured, amendable, with a
+  base text and not voted, as `assertAmendable`), with `reviewState` (a
   member-proposed transactional shows `pending_authors`), the
   `correctionNote`, and `late` and `admission`, so a late one can say it
   waits for the assembly's decision;
@@ -1763,8 +1778,9 @@ managers and the Mesa), soonest first:
   drafts past `dueAt`), which need `document:manage`, and
   `amendmentsToValidate` and `amendmentsToPublish` (the inbox's "to
   validate" and "to publish" sets: transactionals waiting for their main
-  authors and late amendments waiting for the assembly's decision are not
-  counted), which need `amendment:review`;
+  authors, late amendments waiting for the assembly's decision and the
+  amendments of withdrawn or postponed documents are not counted), which
+  need `amendment:review`;
 - `proponent`: the `published` documents the actor's member presents as main
   presenter, not voted yet, with something to answer, in assembly order and
   then creation order. `positionsPending` counts, over the amendments of the

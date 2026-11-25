@@ -14,6 +14,13 @@ import {
   sessionTurnMoveIndex,
   sessionTurnWho,
 } from "./sessionModel";
+import { sessionRestorePlace } from "./removedTurns";
+
+/**
+ * A notice that offers «Deshacer» stays at least this long (WCAG 2.2.1),
+ * not the toaster's 5 seconds.
+ */
+const UNDO_TOAST_DURATION_MS = 10_000;
 
 export interface SessionSpeakersOptions {
   /** The assembly's API base, e.g. `/api/assemblies/{id}`. */
@@ -181,6 +188,7 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
       title: t("session.speakers.finished", { who }),
       color: "neutral",
       icon: "i-lucide-mic-off",
+      duration: UNDO_TOAST_DURATION_MS,
       actions: [
         {
           label: t("session.actions.undo"),
@@ -276,7 +284,10 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
    * next). The Mesa's list keeps a cancelled turn only while it belongs to
    * the agenda item in debate (open turns carry over between items): one
    * written down for an earlier item is gone from it, and its `updatedAt`
-   * with it, so it is written down again in the same place instead.
+   * with it, so it is written down again in the same place instead. A turn
+   * still listed but no longer cancelled is already back (the toast's
+   * «Deshacer» after «Quitados», or pressed twice): nothing is written, so
+   * it is never on the list twice.
    */
   async function restore(
     turn: SpeakingTurnDto,
@@ -287,12 +298,15 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
     if (listed?.status === "cancelled") {
       return update(listed, { status: "waiting", position: place }, send);
     }
+    if (listed) return true;
     return writeAgain(turn, place, send);
   }
 
   /**
-   * Takes a turn off the list (the person no longer wants to speak). A
-   * mistake is undone from the toast: the turn goes back to its place.
+   * Takes a turn off the list (the person no longer wants to speak), at
+   * once: the Mesa does it often, mid-debate. A mistake is undone from the
+   * toast or, once it is gone, from «Quitados» (bringBack): the turn goes
+   * back to its place.
    */
   async function remove(turn: SpeakingTurnDto): Promise<boolean> {
     const before = byId.value.get(turn.id) ?? turn;
@@ -309,6 +323,7 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
       }),
       color: "neutral",
       icon: "i-lucide-x",
+      duration: UNDO_TOAST_DURATION_MS,
       actions: [
         {
           label: t("session.actions.undo"),
@@ -321,6 +336,20 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
       ],
     });
     return true;
+  }
+
+  /**
+   * Puts a turn the Mesa took off the list back in it, from «Quitados»: at
+   * the place it had then (sessionRestorePlace), the end at most. Its
+   * notice, if still up, goes: its «Deshacer» has nothing left to undo.
+   */
+  async function bringBack(turn: SpeakingTurnDto): Promise<boolean> {
+    const ok = await restore(
+      turn,
+      sessionRestorePlace(turn, view.value.waiting.length),
+    );
+    if (ok) toast.remove(`session-speaker-removed-${turn.id}`);
+    return ok;
   }
 
   /**
@@ -393,6 +422,7 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
     rename,
     setLimit,
     remove,
+    bringBack,
     returnToQueue,
     move,
     next,

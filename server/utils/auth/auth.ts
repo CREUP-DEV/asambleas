@@ -376,6 +376,10 @@ export const auth = betterAuth({
         process.env.GOOGLE_CLIENT_SECRET,
         "GOOGLE_CLIENT_SECRET",
       ),
+      // Google always shows its account chooser, so whoever signed in with a
+      // personal Gmail can pick the account the Intranet knows instead of
+      // being sent back to the same one after signing out.
+      prompt: "select_account",
     },
   },
   session: {

@@ -76,6 +76,9 @@ const {
   revisionAfterAnswers,
   transactionalsShareSources,
   unauthorizedTransactionalAuthors,
+  withdrawAmendment,
+  withdrawNeedsMesa,
+  REPLACED_SOURCES_WITHDRAW_MESSAGE,
 } = await import("./amendments");
 const {
   applyAmendmentOutcome,
@@ -436,6 +439,99 @@ describe("amendmentCapabilities", () => {
       submit: false,
       withdraw: true,
       position: true,
+    });
+  });
+
+  describe("withdrawing a transactional that replaced its sources", () => {
+    // UAM (m1) presented T3 over UAM 3 and UCM 2 (m2); UCM accepted it and
+    // the Secretaría validated it: UAM 3 and UCM 2 are `transacted`.
+    const parties = [
+      { memberId: "m1", decision: "accepted" as const },
+      { memberId: "m2", decision: "accepted" as const },
+    ];
+    const inForce = {
+      ...admitted,
+      isAuthor: true,
+      authorsApproval: "accepted" as const,
+      acceptances: parties,
+    };
+
+    it("keeps it for the Mesa once it stands in for other members' amendments", () => {
+      expect(withdrawNeedsMesa(inForce)).toBe(true);
+      expect(amendmentCapabilities(inForce).withdraw).toBe(false);
+      // An author that is also the Mesa may.
+      expect(
+        amendmentCapabilities({ ...inForce, moderate: true }).withdraw,
+      ).toBe(true);
+    });
+
+    it("leaves it to its author while it has not replaced anything", () => {
+      const waiting = {
+        ...inForce,
+        authorsApproval: "pending" as const,
+        acceptances: [
+          parties[0]!,
+          { memberId: "m2", decision: "pending" as const },
+        ],
+      };
+      expect(withdrawNeedsMesa(waiting)).toBe(false);
+      expect(amendmentCapabilities(waiting).withdraw).toBe(true);
+      const unvalidated = { ...inForce, validatedAt: null };
+      expect(withdrawNeedsMesa(unvalidated)).toBe(false);
+      expect(amendmentCapabilities(unvalidated).withdraw).toBe(true);
+    });
+
+    it("leaves it to its author when it groups only that member's amendments", () => {
+      const own = { ...inForce, acceptances: [parties[0]!] };
+      expect(withdrawNeedsMesa(own)).toBe(false);
+      expect(amendmentCapabilities(own).withdraw).toBe(true);
+    });
+
+    it("never touches an amendment that is not a transactional", () => {
+      const plain = { ...admitted, isAuthor: true, authorsApproval: null };
+      expect(withdrawNeedsMesa(plain)).toBe(false);
+      expect(amendmentCapabilities(plain).withdraw).toBe(true);
+    });
+
+    it("lets the proposer withdraw an older one left behind by another transactional", () => {
+      // docs/api.md: one left submitted with a source already closed is never
+      // answered again, so its parties never all accept it.
+      const leftBehind = {
+        ...inForce,
+        authorsApproval: "pending" as const,
+        acceptances: [{ memberId: "m2", decision: "pending" as const }],
+      };
+      expect(amendmentCapabilities(leftBehind).withdraw).toBe(true);
+    });
+
+    it("refuses the author's withdrawal on the server with a reason", async () => {
+      vi.mocked(actorHelpers.canModerate).mockReturnValue(false);
+      try {
+        const party = (memberId: string) => ({
+          memberId,
+          role: "author" as const,
+          decision: "accepted" as const,
+        });
+        const ctx = {
+          actor: { user: { id: "u1" }, memberId: "m1" },
+          isAuthor: true,
+          now: at,
+          document: { finalVoteId: null, consolidatedVersionId: null },
+          amendment: {
+            id: "t3",
+            kind: "transactional",
+            status: "submitted",
+            validatedAt: at,
+            acceptances: [party("m1"), party("m2")],
+          },
+        } as unknown as Parameters<typeof withdrawAmendment>[0];
+        await expect(withdrawAmendment(ctx)).rejects.toMatchObject({
+          statusCode: 409,
+          message: REPLACED_SOURCES_WITHDRAW_MESSAGE,
+        });
+      } finally {
+        vi.mocked(actorHelpers.canModerate).mockReset();
+      }
     });
   });
 

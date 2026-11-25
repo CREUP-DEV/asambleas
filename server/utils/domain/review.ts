@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import { db } from "../../db";
 import {
+  agendaItems,
   amendmentAcceptances,
   amendmentAuthors,
   amendments,
@@ -77,6 +78,12 @@ import {
   canSeeDocument,
   redactMemberOrNull,
 } from "./visibility";
+import {
+  SHELVED_DOCUMENT_STATUSES,
+  acceptsAmendmentDrafts,
+  isShelvedDocument,
+  isWorkDocumentOpen,
+} from "./workFilters";
 
 /**
  * The Secretaría's validation inbox (GET .../review) and each user's work on
@@ -126,7 +133,8 @@ function proponentAnswerBy(assembly: AssemblyRow): string | null {
  * waiting for the assembly's decision and, read only, member-proposed
  * transactionals waiting for their main authors
  * (findAmendmentsAwaitingReview), grouped by document in agenda order (then
- * creation order) and then in text order.
+ * creation order) and then in text order. Amendments of withdrawn or
+ * postponed documents are left out (isShelvedDocument).
  */
 export async function loadReviewQueue(
   actor: Actor,
@@ -153,13 +161,17 @@ export async function loadReviewQueue(
       )
     : [];
 
+  // A withdrawn or postponed document's amendments wait for nobody until it
+  // is published again (isShelvedDocument; loadWorkReview counts the same).
   const amendmentDtos = reviewAmendments
     ? await buildReviewAmendments(
         actor,
         assembly,
         visible,
         milestones,
-        await findAmendmentsAwaitingReview(visible),
+        await findAmendmentsAwaitingReview(
+          visible.filter((row) => !isShelvedDocument(row)),
+        ),
         now,
       )
     : [];
@@ -311,11 +323,14 @@ function byAssemblyOrder<T extends { assembly: MeWorkAssemblyRef }>(
 
 /**
  * Documents the actor's member presents, as main presenter or co-presenter,
- * with where each one stands.
+ * with where each one stands. A draft whose presentation is closed for the
+ * actor is left out (isWorkDocumentOpen): the server would refuse to
+ * submit it, so it is no task.
  */
 async function loadWorkDocuments(
   actor: Actor,
   assemblyRows: AssemblyRow[],
+  now: Date,
 ): Promise<MeWorkDocumentDto[]> {
   if (!actor.memberId || assemblyRows.length === 0) return [];
   const byId = new Map(assemblyRows.map((row) => [row.id, row]));
@@ -334,13 +349,47 @@ async function loadWorkDocuments(
       ascending(table.id),
     ],
   });
-  const visible = (await withCoProponentIds(rows)).filter((row) =>
+  const seen = (await withCoProponentIds(rows)).filter((row) =>
     canSeeDocument(actor, row),
+  );
+  const milestones = await loadMilestonesByAssembly([...byId.keys()]);
+  const manager = canManageDocuments(actor);
+  const draftItemIds = manager
+    ? []
+    : [
+        ...new Set(
+          seen
+            .filter((row) => row.status === "draft")
+            .map((row) => row.agendaItemId),
+        ),
+      ];
+  const items = new Map(
+    (draftItemIds.length > 0
+      ? await db
+          .select({
+            id: agendaItems.id,
+            acceptsSubmissions: agendaItems.acceptsSubmissions,
+            generatedForDocumentId: agendaItems.generatedForDocumentId,
+          })
+          .from(agendaItems)
+          .where(inArray(agendaItems.id, draftItemIds))
+      : []
+    ).map((item) => [item.id, item]),
+  );
+  const visible = seen.filter((row) =>
+    isWorkDocumentOpen(
+      row,
+      items.get(row.agendaItemId),
+      milestones.get(row.assemblyId) ?? {},
+      manager,
+      now,
+    ),
   );
   const summaries = await buildDocumentSummaries(
     actor,
     visible,
-    await loadMilestonesByAssembly([...byId.keys()]),
+    milestones,
+    now,
   );
   return byAssemblyOrder(
     visible.map((row, index) => ({
@@ -351,7 +400,12 @@ async function loadWorkDocuments(
   );
 }
 
-/** Amendments the actor's member wrote that are not decided yet, newest change first. */
+/**
+ * Amendments the actor's member wrote that are not decided yet, newest
+ * change first. A draft whose document no longer takes amendments (voted,
+ * withdrawn, postponed: acceptsAmendmentDrafts) is left out, since it can no
+ * longer be edited or presented.
+ */
 async function loadWorkAmendments(
   actor: Actor,
   assemblyRows: AssemblyRow[],
@@ -375,6 +429,11 @@ async function loadWorkAmendments(
       documentSlug: documents.slug,
       documentTitle: documents.title,
       documentStatus: documents.status,
+      documentFormat: documents.format,
+      documentAmendable: documents.amendable,
+      baseVersionId: documents.baseVersionId,
+      finalVoteId: documents.finalVoteId,
+      consolidatedVersionId: documents.consolidatedVersionId,
       proponentMemberId: documents.proponentMemberId,
       submittedByUserId: documents.submittedByUserId,
       assemblyId: documents.assemblyId,
@@ -392,7 +451,21 @@ async function loadWorkAmendments(
         inArray(documents.assemblyId, [...byId.keys()]),
       ),
     )
-    .orderBy(desc(amendments.updatedAt), asc(amendments.id));
+    .orderBy(desc(amendments.updatedAt), asc(amendments.id))
+    .then((list) =>
+      list.filter(
+        (row) =>
+          row.status !== "draft" ||
+          acceptsAmendmentDrafts({
+            status: row.documentStatus,
+            format: row.documentFormat,
+            amendable: row.documentAmendable,
+            baseVersionId: row.baseVersionId,
+            finalVoteId: row.finalVoteId,
+            consolidatedVersionId: row.consolidatedVersionId,
+          }),
+      ),
+    );
 
   // A transactional waits for its main authors before the Secretaría.
   const transactionalIds = rows
@@ -463,7 +536,8 @@ function countsByAssembly(
  * assemblies with something pending are listed. The amendment counts match
  * the inbox's "to validate" and "to publish" sections: transactionals
  * waiting for their main authors and late amendments waiting for the
- * assembly wait for someone else, so they are not counted.
+ * assembly wait for someone else, so they are not counted, and, as in the
+ * inbox, neither are the amendments of withdrawn or postponed documents.
  */
 async function loadWorkReview(
   actor: Actor,
@@ -489,7 +563,15 @@ async function loadWorkReview(
       .select({ assemblyId: documents.assemblyId, total: count() })
       .from(amendments)
       .innerJoin(documents, eq(documents.id, amendments.documentId))
-      .where(and(inAssemblies, visibleDocumentsCondition(actor), condition))
+      .where(
+        and(
+          inAssemblies,
+          visibleDocumentsCondition(actor),
+          // As the inbox: not of a withdrawn or postponed document.
+          notInArray(documents.status, [...SHELVED_DOCUMENT_STATUSES]),
+          condition,
+        ),
+      )
       .groupBy(documents.assemblyId);
 
   const [toValidate, overdue, amendmentsToValidate, amendmentsToPublish] =
@@ -723,7 +805,7 @@ export async function loadMeWork(actor: Actor): Promise<MeWorkDto> {
   const now = new Date();
   const [workDocuments, workAmendments, review, proponent, acceptances, news] =
     await Promise.all([
-      loadWorkDocuments(actor, assemblyRows),
+      loadWorkDocuments(actor, assemblyRows, now),
       loadWorkAmendments(actor, assemblyRows),
       loadWorkReview(actor, assemblyRows, now),
       loadWorkProponent(actor, assemblyRows),

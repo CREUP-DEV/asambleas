@@ -4,9 +4,15 @@ import { datedCountdown } from "~/components/common/-countdown";
 
 /**
  * Relative time to (or since) a date: "dentro de 3 días", "hace 2 horas".
- * Follows the app's shared clock (useAppNow, every minute on the minute),
- * announces changes politely, and shows the absolute date (Europe/Madrid)
- * as a tooltip and in `datetime`.
+ * Follows the app's shared clock (useAppNow, every minute on the minute) and
+ * shows the absolute date (Europe/Madrid) as a tooltip and in `datetime`.
+ *
+ * It is not a live region: a screen reader reads the time left when it
+ * reaches it. In the last hour the text changes every minute, and a list of
+ * documents sharing one deadline would otherwise queue the same sentence for
+ * every row while someone is reading or writing (as `role="timer"` keeps
+ * `aria-live="off"`). Whoever acts after a deadline is told so where they act
+ * (the composer's late warning), not by the countdown.
  *
  * `urgent` turns on within `urgentHours` of the date; `expired` is emitted
  * once when the date passes while the component is mounted.
@@ -91,8 +97,6 @@ watch(past, (isPast, wasPast) => {
       'text-warning': urgent,
       'text-muted': past,
     }"
-    aria-live="polite"
-    aria-atomic="true"
   >
     <!--
       The icon sits in a box one line tall at the top, so it stays centred

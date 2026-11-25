@@ -58,7 +58,9 @@ useHead({
 </script>
 
 <template>
-  <main class="flex min-h-screen items-center justify-center bg-elevated">
+  <main
+    class="flex min-h-dvh items-center justify-center bg-elevated px-4 py-8"
+  >
     <UCard class="w-full max-w-sm">
       <template #header>
         <div class="flex flex-col items-center gap-2">
@@ -90,6 +92,9 @@ useHead({
           block
           @click="handleGoogleSignIn"
         />
+        <p class="text-center text-xs text-muted">
+          {{ t("auth.signInAccountHint") }}
+        </p>
       </div>
     </UCard>
   </main>

@@ -289,6 +289,7 @@
   "auth": {
     "signIn": "Iniciar sesión",
     "signInWithGoogle": "Iniciar sesión con Google",
+    "signInAccountHint": "Entra con la misma cuenta de Google que usas en la Intranet de CREUP.",
     "signOut": "Cerrar sesión",
     "unauthorized": "No tienes permisos para acceder a esta página",
     "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo.",
@@ -553,7 +554,7 @@
       },
       "todo": {
         "title": "Tareas pendientes",
-        "readOnly": "Tu cuenta es de invitado. Puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no puedes presentar nada."
+        "readOnly": "Con esta cuenta puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no presentar nada."
       },
       "next": {
         "none": "No quedan plazos por delante en el calendario.",
@@ -894,6 +895,8 @@
       },
       "sendNeedsText": "Primero añade el texto en el paso 2.",
       "sendNeedsPdf": "Primero sube el PDF en el paso 2.",
+      "sendClosed": "El plazo de presentación ha terminado. Solo Secretaría puede presentarlo fuera de plazo, y la asamblea decide si lo trata.",
+      "sendClosedReport": "El plazo de presentación ha terminado. Solo Secretaría puede presentarlo fuera de plazo.",
       "returningToHome": "Volviendo al inicio",
       "saveAndAddAnother": "Guardar y añadir otro",
       "savedForLater": "Documento guardado"
@@ -1592,6 +1595,7 @@
       "submittedLate": "Ha llegado fuera de plazo: Secretaría la revisará y la Mesa decidirá si la admite.",
       "submitFailed": "No se ha podido presentar la enmienda",
       "withdrawConfirm": "¿Retirar esta enmienda? No se debatirá.",
+      "withdrawReplacingConfirm": "¿Retirar esta transaccional? Las enmiendas que agrupa ya quedaron sustituidas y no volverán al debate.",
       "withdrawn": "Enmienda retirada",
       "withdrawFailed": "No se ha podido retirar la enmienda",
       "deleteConfirm": "¿Eliminar este borrador? No se puede deshacer.",
@@ -3017,7 +3021,7 @@
           "cas": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre del Comité de Asuntos Sectoriales (CAS). Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
           "asociado": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu consejo.",
           "sectorial": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu sectorial. Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
-          "guest": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú puedes leerlo todo, pero no presentar ni cambiar nada."
+          "guest": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú puedes leerlo todo, pero no presentar ni cambiar nada. Si representas a un miembro y esperabas poder presentar, entra con la cuenta de Google que usas en la Intranet."
         }
       },
       "find": {
@@ -3092,7 +3096,7 @@
       "emptyDescription": "Si Secretaría te pide un documento o una corrección, lo verás aquí.",
       "emptyNoMember": "Para presentar documentos o enmiendas, tu cuenta tiene que estar vinculada a un miembro."
     },
-    "readOnly": "Tu cuenta es de invitado. Puedes consultar las asambleas, sus documentos y sus enmiendas, pero no puedes presentar nada.",
+    "readOnly": "Esta cuenta no está vinculada a ningún miembro: puedes consultar las asambleas, sus documentos y sus enmiendas, pero no presentar nada. Si representas a un miembro, entra con la cuenta de Google que usas en la Intranet o escribe a la Secretaría.",
     "next": {
       "title": "Lo siguiente",
       "when": "{assembly}, el {date}",
@@ -4698,6 +4702,7 @@
       "moveDown": "Bajar a {who}",
       "more": "Más opciones para {who}",
       "done": "Ya han hablado ({count})",
+      "removedList": "Quitados ({count})",
       "unnamed": "Sin nombre",
       "elapsed": "Tiempo de palabra: {time}",
       "remaining": "Tiempo que le queda: {time}",
@@ -4725,6 +4730,7 @@
       },
       "changedElsewhere": "Otra persona de la Mesa acaba de cambiar los turnos. La lista ya está al día.",
       "backToQueue": "Devolver a la lista",
+      "backToQueueOf": "Devolver a la lista a {who}",
       "rename": "Corregir nombre",
       "renameTitle": "Corregir el nombre de la persona",
       "renameHint": "Turno de {who}",

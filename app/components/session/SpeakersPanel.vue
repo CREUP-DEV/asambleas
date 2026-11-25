@@ -12,6 +12,7 @@ import {
   sessionTurnDuration,
   sessionTurnWho,
 } from "~/composables/session/sessionModel";
+import { sessionRemovedTurns } from "~/composables/session/removedTurns";
 import {
   SPEAKERS_VISIBLE_BUSY_KEY,
   useSessionConsoleContext,
@@ -33,7 +34,10 @@ import {
  * happens in an explicit mode with up and down buttons that keep the
  * keyboard focus on the turn being moved. Mistakes are mended from "Más":
  * the floor given to the wrong person goes back to the head of the list,
- * and a misspelt name is corrected. Until the session is open nobody is
+ * and a misspelt name is corrected. «Quitar de la lista» acts at once; the
+ * turns taken off this item wait, folded, under «Quitados», each with
+ * «Devolver a la lista», so a mistake is mended after its toast is gone
+ * (WCAG 2.2.1). Until the session is open nobody is
  * written down nor given the floor; while it is suspended the Mesa may
  * still end the floor and take turns off the list.
  */
@@ -336,6 +340,44 @@ async function move(turn: SpeakingTurnDto, step: 1 | -1): Promise<void> {
 
 const doneOpen = ref(false);
 
+// Who was taken off the list -----------------------------------------------------
+
+/**
+ * Turns taken off this item's list, the last first: back from here. A turn
+ * going back to the head of the list from the floor passes through
+ * cancelled on its way (returnToQueue): it is not shown meanwhile.
+ */
+const removed = computed(() =>
+  sessionRemovedTurns(
+    speakers.turns.value,
+    session.liveState.value?.agendaItemId ?? null,
+  ).filter((turn) => !session.busy.value[`speaker-${turn.id}-return`]),
+);
+const removedOpen = ref(false);
+
+const restoreButtonId = (turn: SpeakingTurnDto) =>
+  `session-speaker-${turn.id}-restore`;
+const moreButtonId = (turn: SpeakingTurnDto) =>
+  `session-speaker-${turn.id}-more`;
+
+/**
+ * Brings a turn back to the list. Its row leaves the fold, so the focus
+ * goes to the next turn still there, or, with none left, to the turn's
+ * «Más» in the waiting list: never to the top of the page.
+ */
+async function bringBack(turn: SpeakingTurnDto): Promise<void> {
+  const index = removed.value.findIndex((other) => other.id === turn.id);
+  if (!(await speakers.bringBack(turn))) return;
+  await nextTick();
+  const next = removed.value[Math.min(index, removed.value.length - 1)];
+  const target = next
+    ? restoreButtonId(next)
+    : waiting.value.some((other) => other.id === turn.id)
+      ? moreButtonId(turn)
+      : null;
+  if (target) window.document.getElementById(target)?.focus();
+}
+
 // Screen readers ---------------------------------------------------------------
 
 /**
@@ -624,6 +666,7 @@ function duration(turn: SpeakingTurnDto): string | null {
               :content="{ align: 'end' }"
             >
               <UButton
+                :id="moreButtonId(turn)"
                 size="sm"
                 color="neutral"
                 variant="ghost"
@@ -667,6 +710,56 @@ function duration(turn: SpeakingTurnDto): string | null {
             <span v-if="duration(turn)" class="tabular-nums">
               {{ duration(turn) }}
             </span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Who was taken off the list, folded away, to bring back a mistake. -->
+      <section v-if="removed.length > 0">
+        <UButton
+          color="neutral"
+          variant="link"
+          size="sm"
+          class="px-0"
+          :trailing-icon="
+            removedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+          "
+          :label="
+            t(
+              'session.speakers.removedList',
+              { count: removed.length },
+              removed.length,
+            )
+          "
+          :aria-expanded="removedOpen"
+          aria-controls="session-speakers-removed"
+          @click="removedOpen = !removedOpen"
+        />
+        <ul
+          v-show="removedOpen"
+          id="session-speakers-removed"
+          class="text-muted mt-1 space-y-1 text-sm"
+        >
+          <li
+            v-for="turn in removed"
+            :key="turn.id"
+            class="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <span class="min-w-0 flex-1 break-words">{{ who(turn) }}</span>
+            <UButton
+              :id="restoreButtonId(turn)"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-undo-2"
+              :label="t('session.speakers.backToQueue')"
+              :aria-label="
+                t('session.speakers.backToQueueOf', { who: who(turn) })
+              "
+              :loading="busyFor(turn)"
+              :disabled="closed || busyFor(turn)"
+              @click="bringBack(turn)"
+            />
           </li>
         </ul>
       </section>

@@ -791,7 +791,14 @@ documents to validate, then the amendments in two tabs, each by document:
 "Por revisar" (to validate, and the transactionals still waiting for their
 authors) and "Validadas sin publicar" (validated and kept private, to
 publish them), and finally the late ones in "Fuera de plazo"
-(`splitReviewParts` in `app/components/review/-queue.ts`).
+(`splitReviewParts` in `app/components/review/-queue.ts`). Neither lists
+work that cannot go ahead (`server/utils/domain/workFilters.ts`): a
+member's draft past `documents_close` that is not expected nor sent back
+(`presentationClosed`) and amendment drafts on a document that no longer
+takes amendments leave the home page, and the amendments of withdrawn or
+postponed documents leave the inbox and its counts until the document is
+published again. The editor's step 3 says the deadline passed instead of
+offering «Enviar».
 
 ## Reviewing amendments, transactionals and the session
 

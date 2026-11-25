@@ -289,6 +289,7 @@
   "auth": {
     "signIn": "Sign in",
     "signInWithGoogle": "Sign in with Google",
+    "signInAccountHint": "Sign in with the same Google account you use in the CREUP Intranet.",
     "signOut": "Sign out",
     "unauthorized": "You do not have permission to access this page",
     "sessionExpired": "Your session has expired. Please sign in again.",
@@ -553,7 +554,7 @@
       },
       "todo": {
         "title": "Pending tasks",
-        "readOnly": "Your account is a guest account. You can read this assembly, its documents and its amendments, but you cannot present anything."
+        "readOnly": "With this account you can read this assembly, its documents and its amendments, but you cannot present anything."
       },
       "next": {
         "none": "No deadlines are left in the calendar.",
@@ -894,6 +895,8 @@
       },
       "sendNeedsText": "First add the text in step 2.",
       "sendNeedsPdf": "First upload the PDF in step 2.",
+      "sendClosed": "The deadline for presenting documents has passed. Only the Secretariat can present it late, and the assembly decides whether to take it up.",
+      "sendClosedReport": "The deadline for presenting documents has passed. Only the Secretariat can present it late.",
       "returningToHome": "Returning to the overview",
       "saveAndAddAnother": "Save and add another",
       "savedForLater": "Document saved"
@@ -1592,6 +1595,7 @@
       "submittedLate": "It arrived late: the Secretariat will check it and the Mesa will decide whether to admit it.",
       "submitFailed": "The amendment could not be submitted",
       "withdrawConfirm": "Withdraw this amendment? It will not be debated.",
+      "withdrawReplacingConfirm": "Withdraw this transactional? The amendments it groups were already replaced and will not come back to the debate.",
       "withdrawn": "Amendment withdrawn",
       "withdrawFailed": "The amendment could not be withdrawn",
       "deleteConfirm": "Delete this draft? This cannot be undone.",
@@ -3017,7 +3021,7 @@
           "cas": "Here are the agenda, the documents and the amendments of each assembly. You present documents and amendments on behalf of the Sectoral Affairs Committee (CAS). There is only one thing you cannot present: an internal motion. You can still amend one.",
           "asociado": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your council.",
           "sectorial": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your sectorial. The one thing you cannot submit is an internal motion. You can still amend one.",
-          "guest": "Here you find the agenda, the documents and the amendments of each assembly. You can read everything, but you cannot submit or change anything."
+          "guest": "Here you find the agenda, the documents and the amendments of each assembly. You can read everything, but you cannot submit or change anything. If you represent a member and expected to present, sign in with the Google account you use in the Intranet."
         }
       },
       "find": {
@@ -3092,7 +3096,7 @@
       "emptyDescription": "If the Secretariat asks you for a document or a correction, you will see it here.",
       "emptyNoMember": "To present documents or amendments, your account has to be linked to a member."
     },
-    "readOnly": "Your account is a guest account. You can read the assemblies, their documents and their amendments, but you cannot present anything.",
+    "readOnly": "This account is not linked to any member: you can read the assemblies, their documents and their amendments, but you cannot present anything. If you represent a member, sign in with the Google account you use in the Intranet or write to the Secretariat.",
     "next": {
       "title": "Coming next",
       "when": "{assembly}, on {date}",
@@ -4698,6 +4702,7 @@
       "moveDown": "Move {who} down",
       "more": "More options for {who}",
       "done": "Already spoke ({count})",
+      "removedList": "Removed ({count})",
       "unnamed": "No name",
       "elapsed": "Speaking time: {time}",
       "remaining": "Time left: {time}",
@@ -4725,6 +4730,7 @@
       },
       "changedElsewhere": "Someone else at the Mesa just changed the turns. The list is up to date now.",
       "backToQueue": "Back to the list",
+      "backToQueueOf": "Back to the list: {who}",
       "rename": "Correct the name",
       "renameTitle": "Correct the person's name",
       "renameHint": "{who}'s turn",

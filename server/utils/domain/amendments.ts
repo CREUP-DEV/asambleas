@@ -614,6 +614,34 @@ export interface CapabilityInput {
   grouped?: boolean;
 }
 
+/** 409 to an author withdrawing what withdrawNeedsMesa keeps for the Mesa. */
+export const REPLACED_SOURCES_WITHDRAW_MESSAGE =
+  "Esta transaccional ya sustituye a enmiendas de otros miembros: pide a la Mesa que la retire";
+
+/**
+ * Whether only the Mesa may withdraw this amendment: a transactional that
+ * already replaced what it groups (validated, or the Mesa's, and accepted by
+ * every main author; its sources are `transacted` for good, withdrawing it
+ * never brings them back) and stands in for amendments of members other
+ * than the actor's. Their main authors agreed to it, not to dropping their
+ * amendments from the debate, so one author alone cannot withdraw it. One
+ * whose parties are all the actor's member stays the author's to withdraw,
+ * and one not in force yet too (withdrawing it leaves its sources open).
+ */
+export function withdrawNeedsMesa(input: {
+  authorsApproval?: AcceptanceDecision | null;
+  validatedAt: Date | null;
+  actorMemberId: string | null;
+  /** The parties of a transactional: rows with the role "author". */
+  acceptances: { memberId: string }[];
+}): boolean {
+  return (
+    input.authorsApproval === "accepted" &&
+    input.validatedAt !== null &&
+    input.acceptances.some((party) => party.memberId !== input.actorMemberId)
+  );
+}
+
 /**
  * What the actor may do with an amendment. Once the document is voted only
  * publishing is left (docs/api.md, "After the final vote").
@@ -642,7 +670,10 @@ export function amendmentCapabilities(
       }) === null,
     edit: input.isAuthor && draft,
     submit: input.isAuthor && draft,
-    withdraw: input.isAuthor && submitted,
+    withdraw:
+      input.isAuthor &&
+      submitted &&
+      (input.moderate || !withdrawNeedsMesa(input)),
     accept: awaitsPartyAnswer({
       status: input.status,
       memberId: input.actorMemberId,
@@ -1635,6 +1666,26 @@ export function documentVoted(document: {
   return Boolean(document.finalVoteId || document.consolidatedVersionId);
 }
 
+/**
+ * Whether the document's text takes amendments at all: published,
+ * structured, amendable and with a base text. Whether it is voted
+ * (documentVoted) and whether the assembly is open are checked apart.
+ * The home page filters with it (workFilters.acceptsAmendmentDrafts).
+ */
+export function documentAmendable(document: {
+  status: string;
+  format: string;
+  amendable: boolean;
+  baseVersionId: string | null;
+}): boolean {
+  return (
+    document.status === "published" &&
+    document.format === "structured" &&
+    document.amendable &&
+    Boolean(document.baseVersionId)
+  );
+}
+
 /** The final vote fixes the text: nothing about its amendments changes afterwards. */
 function assertNotVoted(document: {
   finalVoteId: string | null;
@@ -1652,13 +1703,7 @@ function assertNotFinal(ctx: DocumentAmendmentContext): void {
 
 /** Presenting or editing amendments needs a published, structured, amendable text. */
 function assertAmendable(ctx: DocumentAmendmentContext): void {
-  const { document } = ctx;
-  if (
-    document.status !== "published" ||
-    document.format !== "structured" ||
-    !document.amendable ||
-    !document.baseVersionId
-  ) {
+  if (!documentAmendable(ctx.document)) {
     fail(409, "El documento no admite enmiendas");
   }
   if (ctx.assembly.status === "closed") fail(409, "La asamblea está cerrada");
@@ -3339,19 +3384,40 @@ function instantReview(instant: boolean, actor: Actor, now: Date) {
 /**
  * An author withdraws its presented, undecided amendment, or the Mesa does
  * it for them. The pending transactionals over it are closed
- * (closeTransactionalsOver).
+ * (closeTransactionalsOver). A transactional that already replaced other
+ * members' amendments is the Mesa's to withdraw (withdrawNeedsMesa),
+ * checked again once it is locked: the last acceptance may have put it in
+ * force meanwhile.
  */
 export async function withdrawAmendment(
   ctx: AmendmentContext,
 ): Promise<AmendmentDto> {
   const { actor, amendment, now } = ctx;
-  if (!ctx.isAuthor && !canModerate(actor)) {
+  const moderate = canModerate(actor);
+  if (!ctx.isAuthor && !moderate) {
     fail(403, "Solo los autores o la Mesa pueden retirar la enmienda");
   }
   if (amendment.status !== "submitted") {
     fail(409, "Solo se pueden retirar enmiendas presentadas y sin decidir");
   }
   assertNotFinal(ctx);
+  const needsMesa = (
+    validatedAt: Date | null,
+    acceptances: Pick<
+      LoadedAmendment["acceptances"][number],
+      "role" | "memberId" | "decision"
+    >[],
+  ) =>
+    !moderate &&
+    withdrawNeedsMesa({
+      authorsApproval: authorsApproval({ kind: amendment.kind, acceptances }),
+      validatedAt,
+      actorMemberId: actor.memberId,
+      acceptances: acceptances.filter((party) => party.role === "author"),
+    });
+  if (needsMesa(amendment.validatedAt, amendment.acceptances)) {
+    fail(409, REPLACED_SOURCES_WITHDRAW_MESSAGE);
+  }
 
   await db.transaction(async (tx) => {
     await lockDocument(tx, ctx.document.id, "share");
@@ -3364,6 +3430,13 @@ export async function withdrawAmendment(
       amendment.id,
       ...dependents.ids,
     ]);
+    if (amendment.kind === "transactional" && !moderate) {
+      const row = locked.find((entry) => entry.id === amendment.id);
+      const parties = await lockParties(tx, [amendment.id], "share");
+      if (row && needsMesa(row.validatedAt, parties)) {
+        fail(409, REPLACED_SOURCES_WITHDRAW_MESSAGE);
+      }
+    }
     const updated = await tx
       .update(amendments)
       .set({ status: "withdrawn", decidedAt: now })

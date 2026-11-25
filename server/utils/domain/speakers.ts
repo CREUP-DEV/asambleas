@@ -507,8 +507,13 @@ export async function updateSpeakingTurn(
     }
 
     // Taking the floor stamps what is in debate then: the sheet names the
-    // speaker under that item or amendment, whenever it asked.
-    const stamp = plan.start ? await readLiveSpeakers(tx, assembly.id) : null;
+    // speaker under that item or amendment, whenever it asked. A waiting
+    // turn taken off the list is stamped with the item in debate too, so it
+    // stays in the Mesa's «Quitados» there even when it was asked for on an
+    // earlier item (a restored turn is stamped again when it speaks).
+    const cancelling = turn.status === "waiting" && plan.status === "cancelled";
+    const stamp =
+      plan.start || cancelling ? await readLiveSpeakers(tx, assembly.id) : null;
     const position = plan.queue.indexOf(turn.id);
     const moved = position >= 0 && position !== turn.position;
     const renamed = speaker !== turn.speaker;
@@ -539,6 +544,9 @@ export async function updateSpeakingTurn(
               agendaItemId: stamp.agendaItemId,
               amendmentId: stamp.amendmentId,
             }
+          : {}),
+        ...(cancelling && stamp?.agendaItemId
+          ? { agendaItemId: stamp.agendaItemId }
           : {}),
         ...(plan.end ? { endedAt: now } : {}),
         ...(plan.reset ? { startedAt: null, endedAt: null } : {}),

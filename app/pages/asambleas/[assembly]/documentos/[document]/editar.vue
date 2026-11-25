@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
+import { isPastDeadline } from "~~/shared/utils/calendar";
+import { lateNeedsAssembly } from "~~/shared/utils/documentDeadline";
 import { errorStatus } from "~/composables/api/useApi";
 import {
   formatMemberList,
@@ -544,6 +546,20 @@ const documentsClose = computed(() =>
         ?.at ?? null),
 );
 
+/**
+ * The calendar's deadline has passed for this presenter (presentationClosed
+ * on the server, which would refuse the submission): step 3 says so instead
+ * of offering «Enviar». Only once the agenda is loaded, since until then an
+ * item that takes no submissions cannot exempt the document.
+ */
+const presentationClosed = computed(() =>
+  Boolean(
+    agenda.value &&
+    documentsClose.value &&
+    isPastDeadline(documentsClose.value, now.value),
+  ),
+);
+
 /** The internal deadline, unless a correction made a passed one moot. */
 const shownDueAt = computed(() => {
   const due = document.value?.dueAt ?? null;
@@ -885,7 +901,10 @@ async function onDeleted(): Promise<void> {
             {{ t("document.authoring.steps.send") }}
           </h3>
           <UCard :ui="{ body: 'p-4 sm:p-5 space-y-4' }">
-            <p class="text-default text-sm">
+            <p
+              v-if="!(canSubmit && presentationClosed)"
+              class="text-default text-sm"
+            >
               {{ t("document.authoring.sendHelp") }}
             </p>
             <dl
@@ -925,7 +944,22 @@ async function onDeleted(): Promise<void> {
                 </dd>
               </div>
             </dl>
-            <template v-if="canSubmit">
+            <p
+              v-if="canSubmit && presentationClosed"
+              class="text-muted flex items-start gap-2 text-sm"
+            >
+              <UIcon
+                name="i-lucide-calendar-x"
+                class="mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{
+                lateNeedsAssembly(document.kind)
+                  ? t("document.authoring.sendClosed")
+                  : t("document.authoring.sendClosedReport")
+              }}
+            </p>
+            <template v-else-if="canSubmit">
               <!-- Until step 2 has text, the Word upload is the main action -->
               <p
                 v-if="contentMissing"

@@ -11,6 +11,7 @@ import { blockLabels } from "~~/shared/utils/content/render";
 import { canChangeAmendmentAuthors } from "~~/shared/utils/amendmentAuthors";
 import { canReclassifyAmendment } from "~~/shared/utils/amendmentReclassify";
 import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
+import { isSessionReplacing } from "~/composables/session/sessionModel";
 import {
   transactionalAuthorTurn,
   transactionalClosure,
@@ -1348,7 +1349,9 @@ async function remove(): Promise<void> {
           {{
             confirming === "delete"
               ? t("amendment.detail.deleteConfirm")
-              : t("amendment.detail.withdrawConfirm")
+              : isSessionReplacing(amendment)
+                ? t("amendment.detail.withdrawReplacingConfirm")
+                : t("amendment.detail.withdrawConfirm")
           }}
         </span>
         <UButton
