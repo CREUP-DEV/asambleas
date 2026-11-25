@@ -1,7 +1,58 @@
 # Control sheet ("Hoja de control"): implementation plan
 
+## Status (2026-11-24)
+
+Built and deployed. This plan is now a record of the design. The rules in
+force are in `AGENTS.md` («Control sheet»), `docs/design.md` and
+`docs/api.md`. Where they disagree with the sections below, they win.
+
+- **Phases.** Phases 1, 2, 4 and 8 are done. Phases 3, 6 and 7 are done in
+  part. Phase 5 (procedural motions and postponement) is not built; the
+  80.ª AGO ran without it.
+- **Where the code departs from this plan.**
+  - The public part of the sheet is open to everyone who sees the assembly
+    (`335ed99`). «Turnos de palabra» and «Historial» stay with the sheet's
+    keys. `canNoteSpeakers` replaced `canRecordSpeakers`, and
+    `canViewControlSheet` also admits `assembly:vote_result`. The read
+    still refuses `?view=room`.
+  - Ballots are a `votes.ballots` jsonb, not a `vote_ballots` table.
+  - Elections are stored in the item's vote (`votes.election`).
+  - Every agenda item is listed: «Añadir punto» and «Quitar de la hoja»
+    are gone (`5f91496`).
+  - An item becomes treated once the Mesa presents it in session. An
+    amendment counts as treated unless it is pending and was never
+    projected (`2d507e1`).
+  - The Excel workbook is built in the browser from the rows on screen
+    (`79b7137`, `9fd00f7`). There is no export endpoint.
+  - No assent vote row was built: assent reads «por asentimiento» from the
+    approval method.
+- **What is left**, all low priority:
+  1. **Cleanup.**
+     - Drop the `listed` condition from `sheetNotesIn`: an old `listed`
+       mark still blocks deleting an item. Also drop the `listed` field from
+       the PATCH.
+     - Retire the old `cea_position` columns in two releases. First take
+       them out of the Drizzle schema, which the selects and `returning()`
+       still name. Then drop them in the next release.
+  2. **One `portal` filter.** Only the sheet and the item vote offer
+     `portal` only in an AGET. The console's amendment, final-vote and
+     alternatives forms offer it everywhere.
+  3. **Optional.** A «Votaciones registradas» sheet in the Excel, so roll-call
+     ballots reach the file, and «Aplicar a todos los documentos del punto»
+     in the final-vote dialog.
+  4. **Phase 5, only if a real session asks for it**, with a smaller scope:
+     motions as an item vote with a motive, and a word other than
+     «Aplazado», which is now a document status.
+- **Known limits.**
+  - The election limit is gone.
+  - The withdrawn-document limit still holds: the in-session «Retirar
+    documento» was never built.
+  - The tied-round limit still holds for yes/no votes.
+
+## Original plan (2026-11-14)
+
 Revised draft, 2026-11-14, after a review from four angles (requirements,
-security, data model, UX). Not committed. It replaces the Excel control
+security, data model, UX). It replaces the Excel control
 sheet kept during an assembly (79.ª AGO: `General`, one row per agenda
 item; one tab per amended document). Requirement R-SES-01, and partly
 R-SES-04, R-VOT-01/03/04, R-TRZ-03/04 and R-OTR-02 in

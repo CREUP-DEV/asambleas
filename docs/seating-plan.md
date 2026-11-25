@@ -1,6 +1,53 @@
 # Room seating ("Sala"): implementation plan
 
-Draft, 2026-11-14. Not committed. Built on five read-only research passes
+## Status (2026-11-24)
+
+Built and deployed: the platform side is `88caf81`, with `c5ea443` and
+`51b797f` after the 80.ª AGO's first real answers. This plan is now a record
+of the design. The rules in force are in `AGENTS.md` («Seating»),
+`docs/design.md`, `docs/api.md` and `docs/intranet.md` §3.5, which also
+covers the Intranet routes. Where they disagree with the sections below,
+they win.
+
+- **Phases.** Phases 1 to 6 are done. Phases 7, 9 and 10 are not built.
+  Phase 8 is reduced to the level of detail by zoom.
+- **Where the code departs from this plan.**
+  - «Colocar» never drags, by decision (WCAG 2.5.7): pick in the tray or on
+    a seat, then tap or Enter. So the dragging in §7 and in phase 8 is
+    decided against, not deferred.
+  - A Mesa person links a seat only to their own account; any other link
+    gets a 422.
+  - `seating_synced` is recorded only when something changed.
+  - A live `seating_images_ready` shows a new image without a reload, so
+    the fourth known limit applies only to finding a new version on the
+    Intranet.
+  - SVG logos are rasterised in a separate process, GIF logos are accepted,
+    and versions that fail for good are not queued again.
+- **What is left.**
+  1. **Retention of attendee photos (phase 10), high.** §6 promises that
+     cached photos go 30 days after the assembly closes, and
+     `AGENTS.md` says it is not built. The photos of the 80.ª AGO, the
+     first assembly with a seating plan, are due to go 30 days after it
+     closes. The job should:
+     - run daily, on the pattern of the image cleanup;
+     - delete only the `photo-*` files of plans whose assembly closed more
+       than 30 days ago, keeping logos and names;
+     - clear `photoFile`;
+     - keep the sync from fetching those photos again for that plan.
+  2. **Low priority**, in this order:
+     - copying a room from another assembly and the print page (phase 9);
+     - the level of detail by zoom in `Plan.vue` (phase 8);
+     - free editing and other templates (phase 7);
+     - presence and undo in «Colocar» (the rest of phase 10).
+- **Facts that are now out of date.**
+  - SVG drawing does exist in `app/` now: the seating plan itself.
+  - The control sheet is deployed.
+  - `sortablejs` is still a dependency.
+- **Known limits.** Limits 1, 2, 3 and 5 still hold.
+
+## Original plan (2026-11-14)
+
+Draft, 2026-11-14. Built on five read-only research passes
 (the Intranet's events, attendees and images; its `asambleas/v1` API; this
 platform; the sibling projects `asistencia`, `attendance`, `recuento`, `qr`
 and `web`; UX and rendering options) and a completeness review. Requirement
