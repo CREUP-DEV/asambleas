@@ -25,6 +25,11 @@ import type {
   Block,
 } from "~~/shared/types/content";
 import {
+  isListedErrorReason,
+  listedErrorReasonMessageKey,
+} from "~~/shared/constants/errorReasons";
+import { errorPayload } from "../api/useApi";
+import {
   compareAmendmentAnswers,
   compareAmendmentCodes,
   type AmendmentOrderOptions,
@@ -1792,54 +1797,14 @@ export function consolidationInputs(
 
 // API errors -------------------------------------------------------------------
 
-/** Reason codes of 422 answers (validateOps and the amendment API). */
-export const AMENDMENT_ERROR_REASONS = [
-  "empty",
-  "delete_empty",
-  "unknown_block",
-  "duplicate_delete",
-  "unknown_anchor",
-  "duplicate_anchor",
-  "insert_empty",
-  "duplicate_block_id",
-  "out_of_range",
-  "anchor_mismatch",
-  "noop",
-  "replace_in_deleted_block",
-  "overlapping_ops",
-  "inconsistent_counts",
-  "format_shape",
-  "format_image",
-  "duplicate_format",
-  "marks_out_of_range",
-] as const;
-
 /** i18n key of a reason code; unknown codes share a generic message. */
 export function amendmentErrorKey(reason: string): string {
-  return (AMENDMENT_ERROR_REASONS as readonly string[]).includes(reason)
-    ? `amendment.errors.${reason}`
+  return isListedErrorReason(reason)
+    ? listedErrorReasonMessageKey(reason)
     : "amendment.errors.unknown";
 }
 
-/** Distinct reason codes carried by a 422 response (`data.data.reasons`). */
+/** Distinct reason codes carried by a 422 response (`data.reasons`). */
 export function amendmentErrorReasons(error: unknown): string[] {
-  if (!error || typeof error !== "object") return [];
-  const body = (error as { data?: unknown }).data;
-  const inner =
-    body && typeof body === "object"
-      ? (body as { data?: unknown }).data
-      : undefined;
-  const reasons =
-    inner && typeof inner === "object"
-      ? (inner as { reasons?: unknown }).reasons
-      : undefined;
-  if (!Array.isArray(reasons)) return [];
-  const codes = reasons
-    .map((item) =>
-      item && typeof item === "object"
-        ? (item as { reason?: unknown }).reason
-        : undefined,
-    )
-    .filter((code): code is string => typeof code === "string");
-  return [...new Set(codes)];
+  return [...new Set(errorPayload(error).reasons.map((item) => item.reason))];
 }

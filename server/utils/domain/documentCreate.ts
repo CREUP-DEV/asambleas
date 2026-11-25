@@ -1,5 +1,4 @@
-import { createError } from "h3";
-import { fail } from "../core/http";
+import { fail, httpError, type FailData } from "../core/http";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { agendaItems, documents, documentVersions } from "../../db/schema";
@@ -20,11 +19,7 @@ import {
   requireSubmissionTarget,
   uniqueDocumentSlug,
 } from "./documents";
-import {
-  ASSEMBLY_CLOSED_REASON,
-  DOCUMENTS_DEADLINE_PASSED_MESSAGE,
-  DOCUMENTS_DEADLINE_PASSED_REASON,
-} from "./documentRefusals";
+import { DOCUMENTS_DEADLINE_PASSED_MESSAGE } from "./documentRefusals";
 import { recordEvent } from "./events";
 import { resolveBodyMembers } from "./executiveMembers";
 import {
@@ -42,11 +37,13 @@ import {
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { DocumentCreateBody } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
-import {
-  FILE_FORMAT_REFUSED_REASON,
-  fileFormatRefused,
-} from "~~/shared/utils/documentFormat";
+import { fileFormatRefused } from "~~/shared/utils/documentFormat";
 import { presentationDeadlinePassed } from "~~/shared/utils/documentDeadline";
+import {
+  ASSEMBLY_CLOSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_REASON,
+  FILE_FORMAT_REFUSED_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * Creating documents (POST .../documents and the bulk POST
@@ -394,12 +391,10 @@ async function withIndex<T>(
       message: string;
       data?: unknown;
     };
-    const data =
-      failure.data && typeof failure.data === "object" ? failure.data : {};
-    throw createError({
-      statusCode: failure.statusCode,
-      message: failure.message,
-      data: { ...data, index },
-    });
+    // The data of a refusal raised by `fail`, whose type it already passed.
+    const data = (
+      failure.data && typeof failure.data === "object" ? failure.data : {}
+    ) as FailData;
+    throw httpError(failure.statusCode, failure.message, { ...data, index });
   }
 }

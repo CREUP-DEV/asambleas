@@ -1,5 +1,5 @@
 import { createError, defineEventHandler, getRouterParam } from "h3";
-import { readBodyWith } from "../../../../utils/core/http";
+import { fail, readBodyWith } from "../../../../utils/core/http";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "../../../../db";
 import { permissions, userPermissions, users } from "../../../../db/schema";
@@ -63,11 +63,7 @@ export default defineEventHandler(async (event) => {
   });
   const unknown = unknownPermissionKeys(body.permissions);
   if (unknown.length > 0) {
-    throw createError({
-      statusCode: 422,
-      message: "Algún permiso indicado no existe",
-      data: { unknown },
-    });
+    fail(422, "Algún permiso indicado no existe", { unknown });
   }
   const keys = normalizePermissionKeys(body.permissions);
 

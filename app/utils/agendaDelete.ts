@@ -7,12 +7,13 @@
  * Every function is pure and never mutates its input.
  */
 
-import {
-  AGENDA_DELETE_AMENDMENTS_CODE,
-  AGENDA_DELETE_LIVE_CODE,
-  AGENDA_DELETE_SHEET_CODE,
-} from "~~/shared/utils/agendaSubmissions";
 import { agendaSubtreeIds, type AgendaTreeItem } from "./agendaTree";
+import {
+  AGENDA_DELETE_AMENDMENTS_REASON,
+  AGENDA_DELETE_LIVE_REASON,
+  AGENDA_DELETE_SHEET_REASON,
+} from "~~/shared/constants/errorReasons";
+import { errorPayload } from "~/composables/api/useApi";
 
 /** How many documents the confirmation names; the rest are counted. */
 export const AGENDA_DELETE_NAMED_MAX = 5;
@@ -81,30 +82,21 @@ function count(value: unknown): number {
 }
 
 /**
- * The refusal a failed delete carries (409 with `data.code`), or null for
- * any other failure. ofetch keeps the response body in `data`, whose own
- * `data` is what createError got.
+ * The refusal a failed delete carries (409 with its `data.reason`), or null
+ * for any other failure.
  */
 export function agendaDeleteRefusal(
   error: unknown,
 ): AgendaDeleteRefusal | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: unknown }).data;
-  if (!body || typeof body !== "object") return null;
-  const nested = (body as { data?: unknown }).data;
-  const data = (nested && typeof nested === "object" ? nested : body) as {
-    code?: unknown;
-    documents?: unknown;
-    amendments?: unknown;
-  };
-  if (data.code === AGENDA_DELETE_AMENDMENTS_CODE) {
+  const { reason, data } = errorPayload(error);
+  if (reason === AGENDA_DELETE_AMENDMENTS_REASON) {
     return {
       reason: "amendments",
       documents: count(data.documents),
       amendments: count(data.amendments),
     };
   }
-  if (data.code === AGENDA_DELETE_LIVE_CODE) return { reason: "live" };
-  if (data.code === AGENDA_DELETE_SHEET_CODE) return { reason: "sheet" };
+  if (reason === AGENDA_DELETE_LIVE_REASON) return { reason: "live" };
+  if (reason === AGENDA_DELETE_SHEET_REASON) return { reason: "sheet" };
   return null;
 }

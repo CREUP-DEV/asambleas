@@ -4,6 +4,13 @@ import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
 } from "~~/shared/constants/security";
+import {
+  errorReasonMessageKey,
+  isErrorReason,
+  isListedErrorReason,
+  listedErrorReasonMessageKey,
+  type ErrorReason,
+} from "~~/shared/constants/errorReasons";
 import { currentConsoleTab } from "../session/consoleTab";
 import { useMe } from "../security/useMe";
 
@@ -28,7 +35,7 @@ type QueryValue = string | number | boolean | null | undefined;
  * i18n key per HTTP status. Anything else falls back to the caller's key. A
  * 409 without a reason or key is a rule of the current state, worded
  * neutrally; the optimistic lock's «Alguien ha modificado…» needs its
- * reason (`stale_write`, REASON_KEYS).
+ * reason (`stale_write`, ERROR_REASONS in shared/constants/errorReasons.ts).
  */
 const STATUS_KEYS: Record<number, string> = {
   400: "common.errors.validation",
@@ -70,86 +77,138 @@ export function isConflict(error: unknown): boolean {
   return errorStatus(error) === 409 && !isIdentityChanged(error);
 }
 
-/**
- * The i18n key a failed request carries in `data.messageKey` (createError
- * on the server), or null. ofetch's FetchError keeps the response body in
- * `data`, whose own `data` is the one createError got; h3's H3Error keeps
- * that `data` itself.
- */
-export function errorMessageKey(error: unknown): string | null {
-  if (!error || typeof error !== "object") return null;
-  const data = (error as { data?: unknown }).data;
-  if (!data || typeof data !== "object") return null;
-  const body = data as { messageKey?: unknown; data?: unknown };
-  const nested =
-    body.data && typeof body.data === "object"
-      ? (body.data as { messageKey?: unknown }).messageKey
-      : undefined;
-  const key = typeof nested === "string" ? nested : body.messageKey;
-  return typeof key === "string" && key.length > 0 ? key : null;
+/** One problem of a body with several (`data.reasons[]`, validateOps). */
+export interface ErrorListedReason {
+  /** The op at fault, or -1 for the whole body. */
+  index: number;
+  reason: string;
+}
+
+/** What a failed request says about why, read from either nesting. */
+export interface ErrorPayload {
+  /** HTTP status, or null for a network failure or a non-HTTP error. */
+  status: number | null;
+  /** `data.reason`, when it is a code of the catalog. */
+  reason: ErrorReason | null;
+  /** `data.reasons[]`, the problems of a body with several. */
+  reasons: ErrorListedReason[];
+  /** `data.messageKey`, an i18n key for the global barriers. */
+  messageKey: string | null;
+  /**
+   * The refusal's own data (what `fail` got: the row as it is now, the
+   * counts that block it…), or an empty object.
+   */
+  data: Record<string, unknown>;
 }
 
 /**
- * Refusals the server names with a code in `data.reason` instead of an i18n
- * key, and the message that explains each. Only the ones any form may get:
- * the rest are worded by the form that causes them.
+ * The shape before ARQ-1, read during one release so that a page and a
+ * server of different releases understand each other: a code in
+ * `data.code`, the flags `stale` and `pendingConciliation`, and the two
+ * codes renamed. Remove it, and the server's `code` and flags, in the
+ * release after.
  */
-const REASON_KEYS: Record<string, string> = {
-  // The row changed since the page read it (server/utils/optimisticLock.ts,
-  // STALE_WRITE_REASON).
-  stale_write: "common.errors.conflict",
-  // An account that does not see the executive areas named the CEA.
-  executive_member: "common.errors.executiveMember",
-  // It chose the CEA as main author or presenter and the server cannot tell
-  // which area that is.
-  executive_main: "common.errors.executiveMain",
-  // On an amendment or a transactional, where every CEA office is named
-  // by itself: the generic "CEA" is never an author.
-  executive_author: "common.errors.executiveAuthor",
-  // A sheet field someone else changed since it was read (the panel shows
-  // what is there now).
-  control_sheet_stale: "common.errors.controlSheetStale",
-  // A «Retirado» by hand on an item with documents.
-  control_sheet_withdrawn_document: "common.errors.controlSheetWithdrawn",
-  // The Mesa's mark or a result by hand on an item still waiting for a vote.
-  control_sheet_awaiting_vote: "common.errors.controlSheetAwaitingVote",
-  // The Mesa's mark on an amendment still to be decided.
-  control_sheet_amendment_undecided: "common.errors.controlSheetUndecided",
-  // A vote on an agenda item while one of its documents is voted: the
-  // item is voted through the documents' final votes.
-  item_has_voted_documents: "common.errors.itemHasVotedDocuments",
-  // The same refusal for someone who may not see those documents yet: it
-  // names none.
-  item_takes_no_vote: "common.errors.itemTakesNoVote",
-  item_is_container: "common.errors.itemIsContainer",
-  // The room (Sala) changed under a write: the page shows what is there now.
-  seating_stale: "common.errors.seatingStale",
-  // A layout save that removes occupied seats, until the client confirms it.
-  seating_seats_occupied: "common.errors.seatingSeatsOccupied",
-  // A group, a person or a whole room that is no longer there (or an AGET).
-  seating_not_found: "common.errors.seatingNotFound",
-  // Calendar rules, not a stale read (server/utils/domain/documentRefusals.ts).
-  assembly_closed: "common.errors.assemblyClosed",
-  documents_deadline_passed: "common.errors.documentsDeadlinePassed",
+const LEGACY_REASONS: Record<string, ErrorReason> = {
+  empty: "docx_empty",
+  no_change: "form_correction_no_change",
 };
 
+function legacyReason(data: Record<string, unknown>): ErrorReason | null {
+  if (
+    typeof data.reason === "string" &&
+    Object.hasOwn(LEGACY_REASONS, data.reason)
+  ) {
+    return LEGACY_REASONS[data.reason]!;
+  }
+  if (isErrorReason(data.code)) return data.code;
+  if (data.pendingConciliation === true) {
+    return "form_correction_pending_conciliation";
+  }
+  if (data.stale === true) return "form_correction_stale";
+  return null;
+}
+
+/** A plain object, or null. */
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 /**
- * The i18n key for the `data.reason` of a failed request (same nesting as
- * errorMessageKey), or null when it has none or it is not in REASON_KEYS.
+ * The one reader of a failed request's body (ARQ-1): every caller that
+ * branches on why a request failed reads this, never `error.data` by hand.
+ * ofetch's FetchError keeps the response body in `data`, whose own `data`
+ * is what `fail` got; h3's H3Error keeps that `data` itself. Compare
+ * `reason` with the catalog's constants (`shared/constants/errorReasons.ts`),
+ * never with a literal.
+ */
+export function errorPayload(error: unknown): ErrorPayload {
+  const status = errorStatus(error);
+  const outer = record(
+    error && typeof error === "object"
+      ? (error as { data?: unknown }).data
+      : undefined,
+  );
+  // A response body (it has `statusCode`) without `data` carries none.
+  const data =
+    record(outer?.data) ?? (outer && !("statusCode" in outer) ? outer : {});
+  const messageKey =
+    typeof data.messageKey === "string" && data.messageKey.length > 0
+      ? data.messageKey
+      : null;
+  const reason = isErrorReason(data.reason) ? data.reason : legacyReason(data);
+  const reasons = Array.isArray(data.reasons)
+    ? data.reasons.flatMap((item): ErrorListedReason[] => {
+        const entry = record(item);
+        return entry && typeof entry.reason === "string"
+          ? [
+              {
+                index: typeof entry.index === "number" ? entry.index : -1,
+                reason: entry.reason,
+              },
+            ]
+          : [];
+      })
+    : [];
+  return { status, reason, reasons, messageKey, data };
+}
+
+/** The i18n key a failed request carries in `data.messageKey`, or null. */
+export function errorMessageKey(error: unknown): string | null {
+  return errorPayload(error).messageKey;
+}
+
+/**
+ * The i18n key of the `data.reason` of a failed request, or null when it has
+ * none or its code has no key of its own (ERROR_REASONS).
  */
 export function errorReasonKey(error: unknown): string | null {
-  if (!error || typeof error !== "object") return null;
-  const data = (error as { data?: unknown }).data;
-  if (!data || typeof data !== "object") return null;
-  const body = data as { reason?: unknown; data?: unknown };
-  const nested =
-    body.data && typeof body.data === "object"
-      ? (body.data as { reason?: unknown }).reason
-      : undefined;
-  const reason = typeof nested === "string" ? nested : body.reason;
-  return typeof reason === "string" && Object.hasOwn(REASON_KEYS, reason)
-    ? REASON_KEYS[reason]!
+  const { reason } = errorPayload(error);
+  return reason ? errorReasonMessageKey(reason) : null;
+}
+
+/**
+ * The i18n keys that may word a failed request, best first: its
+ * `messageKey`, its reason's key, and the key of the first code of its
+ * `reasons[]` that has one. None for a 5xx, whose body is internal.
+ * `notifyError` takes the first its locale has, then the status's.
+ */
+export function errorKeyCandidates(payload: ErrorPayload): string[] {
+  if (payload.status === null || payload.status >= 500) return [];
+  const keys: string[] = [];
+  if (payload.messageKey) keys.push(payload.messageKey);
+  const reasonKey = payload.reason
+    ? errorReasonMessageKey(payload.reason)
     : null;
+  if (reasonKey) keys.push(reasonKey);
+  for (const item of payload.reasons) {
+    if (isListedErrorReason(item.reason)) {
+      keys.push(listedErrorReasonMessageKey(item.reason));
+      break;
+    }
+  }
+  return keys;
 }
 
 /** i18n key (and server `data.messageKey`) of the stale-identity 409. */
@@ -272,27 +331,25 @@ export function useApi() {
    * Shows a localized toast for a failed request and returns its status.
    * With `fallbackKey`, that key is the title and the status explains why;
    * without it, the status message is the title. Server messages are never
-   * shown: they are untranslated, and on 5xx they are internal. An i18n key
-   * the server sent with a 4xx (`data.messageKey`) explains it better than
-   * the status, when this locale has it; so does the message of a refusal
-   * it named in `data.reason` (errorReasonKey). The identity-changed 409 was
-   * already said by `send`, which reloads the page: nothing more shows.
+   * shown: they are untranslated, and on 5xx they are internal. With a 4xx,
+   * what the server named explains it better than the status, when this
+   * locale has its key (errorKeyCandidates): `data.messageKey`, the code in
+   * `data.reason`, or the first code of `data.reasons[]`. The
+   * identity-changed 409 was already said by `send`, which reloads the
+   * page: nothing more shows.
    */
   function notifyError(error: unknown, fallbackKey?: string): number | null {
     if (isAbort(error)) return null;
-    const status = errorStatus(error);
+    const payload = errorPayload(error);
+    const { status } = payload;
     if (isIdentityChanged(error)) return status;
-    const messageKey =
-      status !== null && status < 500
-        ? (errorMessageKey(error) ?? errorReasonKey(error))
-        : null;
+    const messageKey = errorKeyCandidates(payload).find((key) => i18n.te(key));
     const statusKey =
-      messageKey && i18n.te(messageKey)
-        ? messageKey
-        : status === null
-          ? "common.errors.network"
-          : (STATUS_KEYS[status] ??
-            (status >= 500 ? "common.errors.server" : null));
+      messageKey ??
+      (status === null
+        ? "common.errors.network"
+        : (STATUS_KEYS[status] ??
+          (status >= 500 ? "common.errors.server" : null)));
 
     const title = i18n.t(fallbackKey ?? statusKey ?? "common.errors.unknown");
     const description =

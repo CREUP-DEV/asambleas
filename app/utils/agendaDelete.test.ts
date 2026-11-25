@@ -120,10 +120,30 @@ describe("agendaDeleteRefusal", () => {
         statusCode: 409,
         data: {
           statusCode: 409,
+          data: {
+            reason: "agenda_item_amendments",
+            code: "agenda_item_amendments",
+            documents: 2,
+            amendments: 7,
+          },
+        },
+      }),
+    ).toEqual({ reason: "amendments", documents: 2, amendments: 7 });
+  });
+
+  it("reads the shape before ARQ-1 (only `code`) for one release", () => {
+    expect(
+      agendaDeleteRefusal({
+        statusCode: 409,
+        data: {
+          statusCode: 409,
           data: { code: "agenda_item_amendments", documents: 2, amendments: 7 },
         },
       }),
     ).toEqual({ reason: "amendments", documents: 2, amendments: 7 });
+    expect(
+      agendaDeleteRefusal({ data: { data: { code: "agenda_item_sheet" } } }),
+    ).toEqual({ reason: "sheet" });
   });
 
   it("reads it from an h3 error too", () => {
@@ -137,7 +157,7 @@ describe("agendaDeleteRefusal", () => {
 
   it("reads the refusal during the session", () => {
     expect(
-      agendaDeleteRefusal({ data: { data: { code: "agenda_item_live" } } }),
+      agendaDeleteRefusal({ data: { data: { reason: "agenda_item_live" } } }),
     ).toEqual({ reason: "live" });
   });
 

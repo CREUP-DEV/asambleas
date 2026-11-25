@@ -9,37 +9,6 @@ import type { DocumentKind, DocumentStatus } from "../constants/domain";
  * members only: the Secretaría (document managers) puts any kind anywhere.
  */
 
-/** Stable `data.reason` of the 422 a member gets for a kind the item refuses. */
-export const SUBMISSION_KIND_REFUSED_REASON = "submission_kind";
-
-/**
- * Stable `data.reason` of the 422 anyone gets for putting a document in the
- * automatic sub-item of another document.
- */
-export const AUTO_ITEM_REFUSED_REASON = "auto_item";
-
-/**
- * Stable `data.code` of the 409 a delete of an agenda item gets while a
- * document under it has amendments. `data` also carries `documents` (how
- * many documents have any) and `amendments` (how many rows in all).
- */
-export const AGENDA_DELETE_AMENDMENTS_CODE = "agenda_item_amendments";
-
-/**
- * Stable `data.code` of the 409 a delete of an agenda item gets during the
- * session while the item, a sub-item or one of their documents is being
- * projected, or one of them has speaking turns still open.
- */
-export const AGENDA_DELETE_LIVE_CODE = "agenda_item_live";
-
-/**
- * Stable `data.code` of the 409 a delete of an agenda item gets while the
- * control sheet noted something about it or a sub-item (a listing, a
- * result by hand, a treated mark or observations): the record of the
- * session is never deleted along with the agenda.
- */
-export const AGENDA_DELETE_SHEET_CODE = "agenda_item_sheet";
-
 /** More documents than this in one bulk request is surely a mistake. */
 export const BULK_DOCUMENTS_MAX = 30;
 

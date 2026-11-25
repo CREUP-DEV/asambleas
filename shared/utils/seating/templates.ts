@@ -24,9 +24,9 @@ import { SEATING_RUNS } from "./runs";
  */
 
 /**
- * The Doble U's limits. The outer U's base must be at least two tables
- * wider than the inner U's, or the inner U's chairs would touch the outer
- * U's tables (MIN_U_CLEARANCE).
+ * The Doble U's limits. The outer U's base must be wide enough for the inner
+ * U's chairs to clear the outer U's tables (MIN_U_CLEARANCE,
+ * minOuterBaseTables): two tables more than the inner U's today.
  */
 export const DOUBLE_U_LIMITS = {
   outerArmTables: { min: 1, max: 15 },
@@ -58,26 +58,63 @@ export const MIN_U_CLEARANCE = 120;
 /** Free floor between the Mesa's table and the nearest U. */
 export const MESA_CLEARANCE = 300;
 
-/** What is wrong with a Doble U's numbers, if anything (Spanish, for the API). */
-export function doubleUParamsProblem(params: DoubleUParams): string | null {
+/**
+ * What is wrong with a Doble U's numbers: a code, the number at fault and
+ * the values that word it. The client translates it
+ * (`seating.doubleU.problems`); the API's schema refuses with the code.
+ *
+ * - `range`: a number outside DOUBLE_U_LIMITS (`min`, `max`);
+ * - `gap_step`: a gap that is not a multiple of its step (`step`);
+ * - `base`: an outer base too short for the inner U's chairs to clear the
+ *   outer U's tables by MIN_U_CLEARANCE on each side (`count`, the fewest
+ *   tables it takes).
+ */
+export interface DoubleUParamsProblem {
+  code: "range" | "gap_step" | "base";
+  field: keyof DoubleUParams;
+  values: Record<string, number>;
+}
+
+/**
+ * The fewest tables on the outer U's base around an inner U whose base has
+ * `innerBaseTables`: the inner base, its two arms' depth and the clearance
+ * on each side, in whole tables.
+ */
+export function minOuterBaseTables(innerBaseTables: number): number {
+  return Math.ceil(
+    (innerBaseTables * SEATING_TABLE_LENGTH +
+      2 * SEATING_TABLE_DEPTH +
+      2 * MIN_U_CLEARANCE) /
+      SEATING_TABLE_LENGTH,
+  );
+}
+
+/** What is wrong with a Doble U's numbers, or null when they make a room. */
+export function doubleUParamsProblem(
+  params: DoubleUParams,
+): DoubleUParamsProblem | null {
   for (const [key, limit] of Object.entries(DOUBLE_U_LIMITS)) {
-    const value = params[key as keyof DoubleUParams];
+    const field = key as keyof DoubleUParams;
+    const value = params[field];
     if (!Number.isInteger(value) || value < limit.min || value > limit.max) {
-      return `Valor fuera de los límites: ${key}`;
+      return {
+        code: "range",
+        field,
+        values: { min: limit.min, max: limit.max },
+      };
     }
   }
   if (params.gap % DOUBLE_U_LIMITS.gap.step !== 0) {
-    return "La separación entre las U va de 10 en 10 cm";
+    return {
+      code: "gap_step",
+      field: "gap",
+      values: { step: DOUBLE_U_LIMITS.gap.step },
+    };
   }
   const hasInner = params.innerArmTables > 0 || params.innerBaseTables > 0;
-  if (
-    hasInner &&
-    params.outerBaseTables * SEATING_TABLE_LENGTH -
-      (params.innerBaseTables * SEATING_TABLE_LENGTH +
-        2 * SEATING_TABLE_DEPTH) <
-      2 * MIN_U_CLEARANCE
-  ) {
-    return "La U exterior debe tener al menos dos mesas más en la base que la interior";
+  const count = minOuterBaseTables(params.innerBaseTables);
+  if (hasInner && params.outerBaseTables < count) {
+    return { code: "base", field: "outerBaseTables", values: { count } };
   }
   return null;
 }
@@ -184,7 +221,9 @@ function uTop(tables: readonly TableSkeleton[]): number {
  */
 function doubleUSkeleton(params: DoubleUParams): TableSkeleton[] {
   const problem = doubleUParamsProblem(params);
-  if (problem) throw new RangeError(problem);
+  if (problem) {
+    throw new RangeError(`Doble U: ${problem.code} (${problem.field})`);
+  }
   const T = SEATING_TABLE_LENGTH;
   const D = SEATING_TABLE_DEPTH;
   // Laid out from the top of the outer U's arms (y = 0), then moved.

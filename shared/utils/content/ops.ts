@@ -11,10 +11,12 @@ import {
   sameBlockFormat,
   sameMarksOver,
 } from "./format";
+import type { ListedErrorReason } from "../../constants/errorReasons";
 
+/** A problem of one op (`index`, or -1 for the whole list). */
 export interface OpError {
   index: number;
-  reason: string;
+  reason: Exclude<ListedErrorReason, "inconsistent_counts">;
 }
 
 export function indexBlocks(blocks: Block[]): Map<string, number> {

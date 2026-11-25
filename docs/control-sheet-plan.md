@@ -467,8 +467,8 @@ cancelling one from the sheet; notes after the assembly closes.
   refetches debounced; speakers events refresh only «Intervinientes».
   `control_sheet` joins `IGNORED_LIVE_ENTITIES`; sheet events never carry
   the live `documentId`.
-- Every new 409 or 422 has a `data.reason` with a `REASON_KEYS` entry in
-  both locales.
+- Every new 409 or 422 has a `data.reason` of the catalog (`ERROR_REASONS`,
+  `shared/constants/errorReasons.ts`), with its key in both locales.
 
 ## 9. Server
 

@@ -131,13 +131,6 @@ const compactSteppers = computed(() => mounted.value && wide.value);
         />
       </UFormField>
     </div>
-    <p
-      v-if="problem && problem.field === null"
-      class="text-error text-sm"
-      role="alert"
-    >
-      {{ t(problem.key, problem.values) }}
-    </p>
     <p v-if="showCapacity" class="text-muted text-sm">
       {{ t("seating.doubleU.capacity", { count: capacity }, capacity) }}
     </p>

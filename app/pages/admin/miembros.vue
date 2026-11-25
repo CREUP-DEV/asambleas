@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { FormError, FormSubmitEvent, TableColumn } from "@nuxt/ui";
 import { MEMBER_KINDS } from "~~/shared/constants/domain";
+import { LARGE_DEACTIVATION_REASON } from "~~/shared/constants/errorReasons";
+import { errorPayload } from "~/composables/api/useApi";
 import type { MemberKind } from "~~/shared/constants/domain";
 import type {
   IsoDate,
@@ -161,14 +163,12 @@ const ROSTER_KINDS: readonly RosterMemberKind[] = [
  * other error, including the other 409s (identity changed, duplicates).
  */
 function blockedSyncKinds(error: unknown): MemberSyncDeactivationKind[] | null {
-  if (api.errorStatus(error) !== 409) return null;
-  // ofetch keeps the response body in `data`; createError's `data` is inside.
-  const body = (error as { data?: { data?: unknown } }).data?.data;
-  if (!body || typeof body !== "object") return null;
-  const data = body as Partial<MemberSyncBlockedData>;
-  if (data.reason !== "large_deactivation" || !Array.isArray(data.kinds)) {
+  const payload = errorPayload(error);
+  if (payload.status !== 409 || payload.reason !== LARGE_DEACTIVATION_REASON) {
     return null;
   }
+  const data = payload.data as Partial<MemberSyncBlockedData>;
+  if (!Array.isArray(data.kinds)) return null;
   const kinds = data.kinds.filter(
     (entry): entry is MemberSyncDeactivationKind =>
       Boolean(entry) &&

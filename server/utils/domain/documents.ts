@@ -63,11 +63,7 @@ import {
   withholdItemTitles,
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
-import {
-  ASSEMBLY_CLOSED_REASON,
-  DOCUMENTS_DEADLINE_PASSED_MESSAGE,
-  DOCUMENTS_DEADLINE_PASSED_REASON,
-} from "./documentRefusals";
+import { DOCUMENTS_DEADLINE_PASSED_MESSAGE } from "./documentRefusals";
 import { recordEvent } from "./events";
 import { loadSignedRecordFile } from "./agreementsSignedFile";
 import { assertSessionOpen } from "./sessionOpen";
@@ -144,12 +140,7 @@ import {
   type AmendmentWindow,
   type Milestones,
 } from "~~/shared/utils/calendar";
-import {
-  AUTO_ITEM_REFUSED_REASON,
-  isAutoItem,
-  itemAcceptsKind,
-  SUBMISSION_KIND_REFUSED_REASON,
-} from "~~/shared/utils/agendaSubmissions";
+import { isAutoItem, itemAcceptsKind } from "~~/shared/utils/agendaSubmissions";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { consolidateApproved } from "~~/shared/utils/content/passages";
 import {
@@ -159,10 +150,7 @@ import {
 } from "~~/shared/utils/content/pendingPassages";
 import { loadPassageWordings, wordingInputs } from "./wordings";
 import { hashContent } from "~~/shared/utils/diff";
-import {
-  FILE_FORMAT_REFUSED_REASON,
-  fileFormatRefused,
-} from "~~/shared/utils/documentFormat";
+import { fileFormatRefused } from "~~/shared/utils/documentFormat";
 import { presentationDeadlinePassed } from "~~/shared/utils/documentDeadline";
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { pickDocumentSlug, slugify } from "~~/shared/utils/slug";
@@ -174,6 +162,15 @@ import {
   normalizeBlocPurpose,
   type LivePointerFields,
 } from "~~/shared/utils/liveBloc";
+import {
+  ASSEMBLY_CLOSED_REASON,
+  AUTO_ITEM_REFUSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_REASON,
+  FILE_FORMAT_REFUSED_REASON,
+  PRESENTERS_MAIN_ONLY_REASON,
+  PRESENTER_KIND_REASON,
+  SUBMISSION_KIND_REFUSED_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * The document API (docs/api.md, "Documents"). Handlers resolve the route
@@ -1313,7 +1310,7 @@ export async function requirePresentersMayPresent(
         .map((member) => member.acronym)
         .sort()
         .join(", ")} no puede estar entre quienes la presentan`,
-      { reason: "presenter_kind" },
+      { reason: PRESENTER_KIND_REASON },
     );
   }
 }
@@ -1923,7 +1920,9 @@ export async function updateDocument(
       if (typeof presenters === "string") {
         // Only the main presenter or the Secretaría choose who it is.
         if (presenters === "main_only") {
-          fail(403, PRESENTERS_MESSAGES.main_only, { reason: "main_only" });
+          fail(403, PRESENTERS_MESSAGES.main_only, {
+            reason: PRESENTERS_MAIN_ONLY_REASON,
+          });
         }
         fail(422, PRESENTERS_MESSAGES[presenters]);
       }

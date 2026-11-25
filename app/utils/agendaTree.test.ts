@@ -357,10 +357,17 @@ describe("moves and the final agenda", () => {
     expect(
       isAgendaFinalConflict({
         statusCode: 409,
-        data: { statusCode: 409, data: { code: "agenda_final" } },
+        data: {
+          statusCode: 409,
+          data: { reason: "agenda_final", code: "agenda_final" },
+        },
       }),
     ).toBe(true);
     // h3: createError's data itself.
+    expect(isAgendaFinalConflict({ data: { reason: "agenda_final" } })).toBe(
+      true,
+    );
+    // The shape before ARQ-1, read for one release.
     expect(isAgendaFinalConflict({ data: { code: "agenda_final" } })).toBe(
       true,
     );

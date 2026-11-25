@@ -5915,8 +5915,7 @@
       "problems": {
         "range": "Between {min} and {max}",
         "gapStep": "In steps of {step} cm",
-        "base": "At least {count} tables: two more than on the inner U's base",
-        "other": "These numbers do not make a room"
+        "base": "At least {count} tables: two more than on the inner U's base"
       }
     },
     "edit": {

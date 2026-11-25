@@ -10,6 +10,7 @@
  */
 
 import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
+import { CONTROL_SHEET_STALE_REASON } from "~~/shared/constants/errorReasons";
 import type {
   AssemblySettings,
   AssemblyStatus,
@@ -53,6 +54,7 @@ import {
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 import { sortSessionAmendments } from "~/composables/session/sessionModel";
+import { errorPayload } from "~/composables/api/useApi";
 import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 
 /** A document as a row of «General» shows it. */
@@ -724,10 +726,8 @@ export function previewAmendmentRows(
  * row as it is now), or null for any other failure.
  */
 export function staleSheetRow<T>(error: unknown): T | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: Record<string, unknown> }).data;
-  const inner = (body?.data ?? body) as Record<string, unknown> | undefined;
-  return inner?.reason === "control_sheet_stale" ? (inner.row as T) : null;
+  const { reason, data } = errorPayload(error);
+  return reason === CONTROL_SHEET_STALE_REASON ? (data.row as T) : null;
 }
 
 /**

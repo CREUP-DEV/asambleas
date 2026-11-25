@@ -40,7 +40,7 @@ const documentHelpers = await import("./documents");
 const { resolveBodyMembers } = await import("./executiveMembers");
 const { createDocuments } = await import("./documentCreate");
 const { ASSEMBLY_CLOSED_REASON, DOCUMENTS_DEADLINE_PASSED_REASON } =
-  await import("./documentRefusals");
+  await import("~~/shared/constants/errorReasons");
 
 type Ctx = Parameters<typeof createDocuments>[0];
 

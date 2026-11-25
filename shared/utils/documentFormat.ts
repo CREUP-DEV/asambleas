@@ -14,9 +14,6 @@ import {
  * amendments (reports, minutes, accounts...).
  */
 
-/** Stable `data.reason` of the 422 the server answers. */
-export const FILE_FORMAT_REFUSED_REASON = "file_kind";
-
 /** The types a member can present as a PDF: those that take no amendments. */
 export function kindAcceptsFile(kind: DocumentKind): boolean {
   return DOCUMENT_KIND_DEFAULTS[kind].amendable === false;

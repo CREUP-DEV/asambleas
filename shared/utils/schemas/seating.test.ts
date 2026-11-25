@@ -122,7 +122,15 @@ describe("seatingLayoutSchema", () => {
       kind: "double_u",
       params: { ...(room.template.params as object), innerBaseTables: 5 },
     } as SeatingLayout["template"];
-    expect(seatingLayoutSchema.safeParse(room).success).toBe(false);
+    const refused = seatingLayoutSchema.safeParse(room);
+    expect(refused.success).toBe(false);
+    // The issue carries the code, not a sentence (ARQ-1).
+    expect(refused.error?.issues).toContainEqual(
+      expect.objectContaining({
+        message: "double_u_base",
+        path: ["template", "params", "outerBaseTables"],
+      }),
+    );
     const rows = layout();
     rows.template = { kind: "rows", params: { rows: 6, seatsPerRow: 12 } };
     expect(seatingLayoutSchema.safeParse(rows).success).toBe(true);

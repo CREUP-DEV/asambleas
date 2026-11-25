@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { documents } from "../db/schema";
 import {
-  STALE_WRITE_REASON,
   assertOptimisticLock,
   buildOptimisticLockCondition,
   isStale,
   keepUpdatedAt,
 } from "./optimisticLock";
+import { STALE_WRITE_REASON } from "~~/shared/constants/errorReasons";
 
 const dialect = new PgDialect();
 const AT = "2026-11-25T10:00:00.123Z";

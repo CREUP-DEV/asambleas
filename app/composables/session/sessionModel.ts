@@ -72,24 +72,19 @@ import {
   computeVoteOutcome,
   type VoteOutcome,
 } from "~~/shared/utils/votes";
+import { errorPayload } from "../api/useApi";
 
 // Errors ---------------------------------------------------------------------
 
 /**
- * The `data` an API error carried (`createError({ data })`). ofetch exposes
- * the response body as `error.data`, and h3 nests the handler's data inside
- * it, so `{ conflicts }`, `{ undecided }` or `{ tie }` live at `error.data.data`.
+ * The `data` an API error carried (errorPayload): `{ conflicts }`,
+ * `{ undecided }` or `{ tie }`. Null when it carried none.
  */
 export function sessionErrorData(
   error: unknown,
 ): Record<string, unknown> | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: unknown }).data;
-  if (!body || typeof body !== "object") return null;
-  const inner = (body as { data?: unknown }).data;
-  return inner && typeof inner === "object"
-    ? (inner as Record<string, unknown>)
-    : null;
+  const { data } = errorPayload(error);
+  return Object.keys(data).length > 0 ? data : null;
 }
 
 /** String ids found under `key` of an error's data, e.g. `undecided`. */

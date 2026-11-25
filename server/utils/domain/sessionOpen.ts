@@ -1,4 +1,6 @@
 import { createError } from "h3";
+import { fail } from "../core/http";
+import { PROJECTION_CONTROL_REASON } from "~~/shared/constants/errorReasons";
 import type { AssemblyStatus } from "~~/shared/constants/domain";
 import {
   isSessionInProgress,
@@ -13,13 +15,13 @@ import {
  */
 export function assertControlsProjection(controls: boolean): void {
   if (controls) return;
-  throw createError({
-    statusCode: 409,
-    message: "Otra consola controla la proyección",
-    data: {
-      code: "projection_control",
-      messageKey: PROJECTION_CONTROL_MESSAGE_KEY,
-    },
+  // The messageKey words it (a global barrier); `code` is the shape before
+  // ARQ-1, for an open tab of the previous client: drop it in the release
+  // after.
+  fail(409, "Otra consola controla la proyección", {
+    reason: PROJECTION_CONTROL_REASON,
+    code: PROJECTION_CONTROL_REASON,
+    messageKey: PROJECTION_CONTROL_MESSAGE_KEY,
   });
 }
 

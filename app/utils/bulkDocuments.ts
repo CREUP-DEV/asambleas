@@ -6,6 +6,7 @@
  */
 
 import type { DocumentFormat, DocumentKind } from "~~/shared/constants/domain";
+import { errorPayload } from "~/composables/api/useApi";
 
 export const BULK_TITLE_MAX = 300;
 export const BULK_PDF_MAX_BYTES = 20 * 1024 * 1024;
@@ -89,20 +90,11 @@ export function titleFromFileName(name: string): string {
 
 /**
  * The row a failed bulk request points at (`data.index`, in the order
- * sent), or null when the failure is not about one row. ofetch keeps the
- * response body in `data`, whose own `data` is what createError got.
+ * sent), or null when the failure is not about one row.
  */
 export function bulkErrorIndex(error: unknown): number | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: unknown }).data;
-  if (!body || typeof body !== "object") return null;
-  const nested = (body as { data?: unknown }).data;
-  const data = (nested && typeof nested === "object" ? nested : body) as {
-    index?: unknown;
-  };
-  return typeof data.index === "number" &&
-    Number.isInteger(data.index) &&
-    data.index >= 0
-    ? data.index
+  const { index } = errorPayload(error).data;
+  return typeof index === "number" && Number.isInteger(index) && index >= 0
+    ? index
     : null;
 }

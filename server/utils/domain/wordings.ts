@@ -1,4 +1,8 @@
 import { fail } from "../core/http";
+import {
+  PASSAGE_CHANGED_REASON,
+  WORDING_OUTSIDE_REASON,
+} from "~~/shared/constants/errorReasons";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -173,7 +177,9 @@ export async function setPassageWording(
     const now = consolidateApproved(blocks, approved);
     if (!now.passages.some((passage) => passage.key === key)) {
       fail(409, "Ese pasaje ha cambiado. Recarga la página", {
-        code: "passage_changed",
+        // `code` is the shape before ARQ-1: drop it in the release after.
+        reason: PASSAGE_CHANGED_REASON,
+        code: PASSAGE_CHANGED_REASON,
       });
     }
     const trial = consolidateApproved(blocks, approved, {
@@ -192,7 +198,8 @@ export async function setPassageWording(
       )
     ) {
       fail(422, "La redacción solo puede cambiar el texto de ese pasaje", {
-        code: "wording_outside",
+        reason: WORDING_OUTSIDE_REASON,
+        code: WORDING_OUTSIDE_REASON,
       });
     }
 

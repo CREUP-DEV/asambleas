@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { fail } from "../core/http";
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { members } from "../../db/schema";
@@ -9,6 +9,11 @@ import {
   canSeeExecutiveMembers,
   type ExecutiveMask,
 } from "./visibility";
+import {
+  EXECUTIVE_AUTHOR_REFUSED_REASON,
+  EXECUTIVE_MAIN_REFUSED_REASON,
+  EXECUTIVE_MEMBER_REFUSED_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * The executive areas (members of kind "executive") and the accounts that
@@ -19,18 +24,8 @@ import {
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** `data.reason` of the 422 that refuses an executive area in a body. */
-export const EXECUTIVE_MEMBER_REFUSED_REASON = "executive_member";
-
 export const EXECUTIVE_MEMBER_REFUSED_MESSAGE =
   "No puedes añadir a la CEA. Pídeselo a la propia CEA o a la Secretaría.";
-
-/**
- * `data.reason` of the 422 for the generic id as main author or main
- * presenter when it cannot say which area: nothing was added, so it has its
- * own wording.
- */
-export const EXECUTIVE_MAIN_REFUSED_REASON = "executive_main";
 
 export const EXECUTIVE_MAIN_REFUSED_MESSAGE =
   "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.";
@@ -170,36 +165,23 @@ export function planNamedMember(input: {
 }
 
 export function refuseExecutiveMember(): never {
-  throw createError({
-    statusCode: 422,
-    message: EXECUTIVE_MEMBER_REFUSED_MESSAGE,
-    data: { reason: EXECUTIVE_MEMBER_REFUSED_REASON },
+  fail(422, EXECUTIVE_MEMBER_REFUSED_MESSAGE, {
+    reason: EXECUTIVE_MEMBER_REFUSED_REASON,
   });
 }
-
-/**
- * `data.reason` of the 422 for the generic id in the body of an amendment
- * or a transactional: there every office is named by its real id, so the
- * generic id is never an author.
- */
-export const EXECUTIVE_AUTHOR_REFUSED_REASON = "executive_author";
 
 export const EXECUTIVE_AUTHOR_REFUSED_MESSAGE =
   "«CEA» no es un miembro. Elige el cargo de la CEA por su nombre.";
 
 export function refuseExecutiveAuthor(): never {
-  throw createError({
-    statusCode: 422,
-    message: EXECUTIVE_AUTHOR_REFUSED_MESSAGE,
-    data: { reason: EXECUTIVE_AUTHOR_REFUSED_REASON },
+  fail(422, EXECUTIVE_AUTHOR_REFUSED_MESSAGE, {
+    reason: EXECUTIVE_AUTHOR_REFUSED_REASON,
   });
 }
 
 export function refuseExecutiveMain(): never {
-  throw createError({
-    statusCode: 422,
-    message: EXECUTIVE_MAIN_REFUSED_MESSAGE,
-    data: { reason: EXECUTIVE_MAIN_REFUSED_REASON },
+  fail(422, EXECUTIVE_MAIN_REFUSED_MESSAGE, {
+    reason: EXECUTIVE_MAIN_REFUSED_REASON,
   });
 }
 

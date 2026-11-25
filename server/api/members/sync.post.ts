@@ -1,9 +1,10 @@
-import { createError, defineEventHandler } from "h3";
-import { readBodyWith } from "../../utils/core/http";
+import { defineEventHandler } from "h3";
+import { fail, readBodyWith } from "../../utils/core/http";
 import type {
   MemberSyncBlockedData,
   MemberSyncResult,
 } from "~~/shared/types/api";
+import { LARGE_DEACTIVATION_REASON } from "~~/shared/constants/errorReasons";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { memberSyncBodySchema } from "~~/shared/utils/schemas/member";
 import { requireActor, requireCan } from "../../utils/domain/actor";
@@ -48,16 +49,15 @@ export default defineEventHandler(async (event): Promise<MemberSyncResult> => {
 
   if (outcome.status === "blocked") {
     // Thrown after the transaction committed, so the audit row stays.
-    const data: MemberSyncBlockedData = {
-      reason: "large_deactivation",
+    const data = {
+      reason: LARGE_DEACTIVATION_REASON,
       kinds: outcome.kinds,
-    };
-    throw createError({
-      statusCode: 409,
-      message:
-        "La sincronización desactivaría demasiados miembros y necesita confirmación",
+    } satisfies MemberSyncBlockedData;
+    fail(
+      409,
+      "La sincronización desactivaría demasiados miembros y necesita confirmación",
       data,
-    });
+    );
   }
   return outcome.result;
 });

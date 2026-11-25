@@ -1,11 +1,8 @@
-import { readQueryWith } from "../../../../utils/core/http";
+import { fail, readQueryWith } from "../../../../utils/core/http";
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { and, eq, inArray } from "drizzle-orm";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
-  AGENDA_DELETE_AMENDMENTS_CODE,
-  AGENDA_DELETE_LIVE_CODE,
-  AGENDA_DELETE_SHEET_CODE,
   agendaDeleteBlocker,
   carriesGuardedTitle,
 } from "~~/shared/utils/agendaSubmissions";
@@ -37,6 +34,11 @@ import {
   resolveAgendaItem,
   resolveAssembly,
 } from "../../../../utils/domain/resolvers";
+import {
+  AGENDA_DELETE_AMENDMENTS_REASON,
+  AGENDA_DELETE_LIVE_REASON,
+  AGENDA_DELETE_SHEET_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * Whether the session is on something about to be deleted: the projection
@@ -128,20 +130,27 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         held.map((entry) => entry.amendments),
       );
       if (blocker) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "No se puede eliminar: hay documentos con enmiendas en este punto o en sus subpuntos",
-          data: { code: AGENDA_DELETE_AMENDMENTS_CODE, ...blocker },
-        });
+        // `code` is the shape before ARQ-1, for an open tab of the previous
+        // client: drop it in the release after (also below).
+        fail(
+          409,
+          "No se puede eliminar: hay documentos con enmiendas en este punto o en sus subpuntos",
+          {
+            reason: AGENDA_DELETE_AMENDMENTS_REASON,
+            code: AGENDA_DELETE_AMENDMENTS_REASON,
+            ...blocker,
+          },
+        );
       }
       if (await sheetNotesIn(tx, itemIds)) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "No se puede eliminar: hay votaciones o anotaciones de la hoja de control de este punto o de sus subpuntos",
-          data: { code: AGENDA_DELETE_SHEET_CODE },
-        });
+        fail(
+          409,
+          "No se puede eliminar: hay votaciones o anotaciones de la hoja de control de este punto o de sus subpuntos",
+          {
+            reason: AGENDA_DELETE_SHEET_REASON,
+            code: AGENDA_DELETE_SHEET_REASON,
+          },
+        );
       }
       if (
         current.status === "in_session" &&
@@ -152,12 +161,14 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
           held.map((entry) => entry.document.id),
         ))
       ) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "No se puede eliminar durante la sesión: se está tratando este punto, un subpunto o uno de sus documentos",
-          data: { code: AGENDA_DELETE_LIVE_CODE },
-        });
+        fail(
+          409,
+          "No se puede eliminar durante la sesión: se está tratando este punto, un subpunto o uno de sus documentos",
+          {
+            reason: AGENDA_DELETE_LIVE_REASON,
+            code: AGENDA_DELETE_LIVE_REASON,
+          },
+        );
       }
 
       const removed: DeletedDocumentFiles[] = [];

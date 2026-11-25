@@ -16,6 +16,8 @@ import {
   blocksSchema,
   DOCUMENT_MAX_BLOCKS,
 } from "../../../shared/utils/schemas/content";
+import type { ErrorReason } from "../../../shared/constants/errorReasons";
+import { httpError } from "../core/http";
 import { logError, logWarn } from "../core/logger";
 import { prepareImportedHtml } from "./docxHtml";
 
@@ -1125,11 +1127,15 @@ function tooExtensiveError() {
  * splitting the file cannot help.
  */
 function emptyDocumentError() {
-  return createError({
-    statusCode: 422,
-    message: "El documento no contiene texto que se pueda importar",
-    data: { reason: "empty" },
-  });
+  return httpError(
+    422,
+    "El documento no contiene texto que se pueda importar",
+    // "empty" is the code before ARQ-1, for an open tab of the previous
+    // client; the current one reads it as `docx_empty` (`errorPayload`). It
+    // is not in the catalog, where `empty` is a validateOps code, hence the
+    // cast: send DOCX_EMPTY_REASON in the release after.
+    { reason: "empty" as string as ErrorReason },
+  );
 }
 
 /**

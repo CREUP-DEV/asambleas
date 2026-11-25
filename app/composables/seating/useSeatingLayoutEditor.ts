@@ -13,6 +13,10 @@ import {
 } from "~~/shared/utils/seating/layout";
 import { canGenerateTemplate } from "~~/shared/utils/seating/templates";
 import {
+  SEATING_SEATS_OCCUPIED_REASON,
+  SEATING_STALE_REASON,
+} from "~~/shared/constants/errorReasons";
+import {
   freeChairSpot,
   regenerateKeepingIds,
   sameLayout,
@@ -237,7 +241,7 @@ export function useSeatingLayoutEditor(options: {
     } catch (error) {
       const seats = seatingRefusal<SeatingSeatsOccupiedData>(
         error,
-        "seating_seats_occupied",
+        SEATING_SEATS_OCCUPIED_REASON,
       );
       if (seats) {
         occupied.value = seats.seats;
@@ -245,7 +249,7 @@ export function useSeatingLayoutEditor(options: {
       }
       const stale = seatingRefusal<SeatingLayoutStaleData>(
         error,
-        "seating_stale",
+        SEATING_STALE_REASON,
       );
       if (stale) {
         conflict.value = {

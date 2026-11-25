@@ -79,6 +79,13 @@ import {
   type DocumentPresenters,
 } from "./visibility";
 import { loadItemVoteRows, toItemVoteDto, toVoteDto } from "./votes";
+import {
+  CONTROL_SHEET_AWAITING_VOTE_REASON,
+  CONTROL_SHEET_OBSERVATIONS_TOO_LONG_REASON,
+  CONTROL_SHEET_STALE_REASON,
+  CONTROL_SHEET_UNDECIDED_REASON,
+  CONTROL_SHEET_WITHDRAWN_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * The control sheet of an assembly (hoja de control): what the Mesa, the
@@ -99,9 +106,6 @@ type ItemSheetRow = typeof controlSheetItems.$inferSelect;
 type AmendmentSheetRow = typeof controlSheetAmendments.$inferSelect;
 type ItemBody = z.output<typeof controlSheetItemBodySchema>;
 type AmendmentBody = z.output<typeof controlSheetAmendmentBodySchema>;
-
-/** Reason of the 409 a stale field answers (useApi's REASON_KEYS). */
-export const CONTROL_SHEET_STALE_REASON = "control_sheet_stale";
 
 /**
  * Everyone who sees the assembly reads its sheet (user's decision of
@@ -736,29 +740,6 @@ interface SheetEvent {
   type: string;
   payload: Record<string, unknown>;
 }
-
-/** Reason of the 422 an addition to observations already near full gets. */
-export const CONTROL_SHEET_OBSERVATIONS_TOO_LONG_REASON =
-  "control_sheet_observations_too_long";
-
-/** Reason of the 422 a «Retirado» by hand gets on an item with documents. */
-export const CONTROL_SHEET_WITHDRAWN_REASON =
-  "control_sheet_withdrawn_document";
-
-/**
- * Reason of the 422 the Mesa's mark, or a «Retirado» or «Decaído» by hand,
- * gets on an item that still waits for a vote (itemsAwaitingVote): it is
- * treated only by its votes (user's decision of 2026-11-19).
- */
-export const CONTROL_SHEET_AWAITING_VOTE_REASON = "control_sheet_awaiting_vote";
-
-/**
- * Reason of the 422 the Mesa's mark gets on an amendment still to be
- * decided: it is treated when the Mesa settles it (user's decision of
- * 2026-11-19).
- */
-export const CONTROL_SHEET_UNDECIDED_REASON =
-  "control_sheet_amendment_undecided";
 
 /**
  * Whether a body for an item changes only the Mesa's treated mark: the one

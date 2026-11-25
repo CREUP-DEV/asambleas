@@ -107,6 +107,8 @@ describe("convertDocx", { timeout: 30_000 }, () => {
   });
 
   it("rejects an empty document, telling it apart from a limit hit", async () => {
+    // The code before ARQ-1 for one release (the client reads it as
+    // `docx_empty`); `docx_empty` itself in the release after.
     const empty = { statusCode: 422, data: { reason: "empty" } };
     await expect(convert(await buildDocx("<w:p/>"))).rejects.toMatchObject(
       empty,

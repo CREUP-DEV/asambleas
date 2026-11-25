@@ -2,6 +2,10 @@ import type { H3Event } from "h3";
 import type { Readable } from "node:stream";
 import { createError, getQuery, readBody, sendStream } from "h3";
 import type { z } from "zod/v4";
+import type {
+  ErrorReason,
+  ListedErrorReason,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * The one way a server module refuses a request and reads what it sent
@@ -11,19 +15,47 @@ import type { z } from "zod/v4";
  */
 
 /**
- * Throws an HTTP error with its extra fields (`messageKey`, `reason`…). h3
- * keeps `data` only when it is truthy, so a missing one sends none.
+ * The extra fields of a refusal (ARQ-1). The client branches on `reason`, a
+ * code of the catalog in `shared/constants/errorReasons.ts`: the type
+ * refuses any other, so a new code enters the catalog first. `reasons`
+ * lists the problems of a body (validateOps, and `inconsistent_counts`),
+ * whose codes are `LISTED_ERROR_REASONS`; `messageKey` is for the
+ * global barriers and error pages. Any other field is the
+ * refusal's own data (the row as it is now, the counts that block it…).
+ * An `interface` is not assignable here (it has no index signature): give
+ * such data a `type`.
  */
+export type FailData = {
+  reason?: ErrorReason;
+  reasons?: readonly { index: number; reason: ListedErrorReason }[];
+  messageKey?: string;
+  [field: string]: unknown;
+};
+
+/**
+ * The HTTP error `fail` throws, for a caller that builds it now and throws
+ * it later. h3 keeps `data` only when it is truthy, so a missing one sends
+ * none.
+ */
+export function httpError(
+  statusCode: number,
+  message: string,
+  data?: FailData,
+) {
+  return createError({ statusCode, message, ...(data ? { data } : {}) });
+}
+
+/** Throws an HTTP error with its extra fields (`reason`, `messageKey`…). */
 export function fail(
   statusCode: number,
   message: string,
-  data?: unknown,
+  data?: FailData,
 ): never {
-  throw createError({ statusCode, message, ...(data ? { data } : {}) });
+  throw httpError(statusCode, message, data);
 }
 
 /** Throws a 404: what a reader may not see answers like what is not there. */
-export function notFound(message: string, data?: unknown): never {
+export function notFound(message: string, data?: FailData): never {
   fail(404, message, data);
 }
 
@@ -42,7 +74,7 @@ export interface ParseOptions {
    */
   message?: string;
   /** Extra fields of that refusal, such as `messageKey`. */
-  data?: unknown;
+  data?: FailData;
 }
 
 /**

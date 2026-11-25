@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGENDA_FINAL_CONFLICT_CODE,
   agendaItemBodySchema,
   agendaItemDeleteQuerySchema,
   agendaReorderBodySchema,
 } from "~~/shared/utils/schemas/assembly";
 import { agendaFinalSince } from "~~/shared/utils/calendar";
 import { finalRootChange } from "./assemblies";
+import { AGENDA_FINAL_CONFLICT_REASON } from "~~/shared/constants/errorReasons";
 
 const provisional = false;
 const final = true;
@@ -52,10 +52,15 @@ describe("finalRootChange", () => {
       }
       expect(thrown).toMatchObject({
         statusCode: 409,
-        data: { code: AGENDA_FINAL_CONFLICT_CODE },
+        // `code` is the shape before ARQ-1, sent for one release: assert
+        // `reason` alone once it is dropped.
+        data: {
+          reason: AGENDA_FINAL_CONFLICT_REASON,
+          code: AGENDA_FINAL_CONFLICT_REASON,
+        },
       });
     }
-    expect(AGENDA_FINAL_CONFLICT_CODE).toBe("agenda_final");
+    expect(AGENDA_FINAL_CONFLICT_REASON).toBe("agenda_final");
   });
 
   it("lets a confirmed change through and marks it as after final", () => {

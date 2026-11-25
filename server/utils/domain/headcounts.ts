@@ -21,6 +21,7 @@ import type {
 import type { AssemblySettings } from "~~/shared/constants/domain";
 import { quorumRulesOf } from "~~/shared/constants/calendarRules";
 import { HEADCOUNT_GUEST_ROLES } from "~~/shared/constants/roles";
+import { ROLL_CALL_MISMATCH_REASON } from "~~/shared/constants/errorReasons";
 import {
   ROLL_CALL_KINDS,
   compareGuests,
@@ -713,7 +714,7 @@ export async function resolveRollCallBallots(
         : result.problem.reason === "repeated_member"
           ? "Alguna delegación vota dos veces"
           : "Algún voto no corresponde a esta votación",
-      { reasons: [{ index: -1, reason: result.problem.reason }] },
+      { reason: ROLL_CALL_MISMATCH_REASON },
     );
   }
   return {

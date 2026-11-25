@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DOCX_EMPTY_REASON } from "~~/shared/constants/errorReasons";
 import type { DocxImportDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import {
@@ -79,17 +80,6 @@ function fail(key: string, titleKey = "document.import.error"): void {
   });
 }
 
-/**
- * The reason code the server attached to a refusal (`createError({ data })`
- * reaches the client at `error.data.data`), e.g. `"empty"` for a file with
- * no usable text, which shares its 422 with "exceeds the content limits".
- */
-function errorReason(error: unknown): unknown {
-  if (!error || typeof error !== "object") return undefined;
-  return (error as { data?: { data?: { reason?: unknown } } | null }).data?.data
-    ?.reason;
-}
-
 async function upload(file: File): Promise<void> {
   if (!/\.docx$/i.test(file.name)) {
     fail("document.import.invalidFile");
@@ -112,7 +102,8 @@ async function upload(file: File): Promise<void> {
     const status = errorStatus(error);
     if (status === 415) fail("document.import.invalidFile");
     // Blank, or only images (which are dropped): splitting it cannot help.
-    else if (status === 422 && errorReason(error) === "empty")
+    // `docx_empty` shares its 422 with "exceeds the content limits".
+    else if (status === 422 && errorPayload(error).reason === DOCX_EMPTY_REASON)
       fail("document.import.emptyDescription", "document.import.empty");
     // The file is within 15 MB (checked above): the server refused what it
     // expands to (size, markup or number of paragraphs).

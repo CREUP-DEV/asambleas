@@ -100,7 +100,6 @@ import {
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
 import {
-  AGENDA_FINAL_CONFLICT_CODE,
   ASSEMBLY_LIST_PAGE_SIZE,
   DEFAULT_SPEAKING_LIMIT_SECONDS,
 } from "~~/shared/utils/schemas/assembly";
@@ -109,6 +108,7 @@ import {
   buildAssemblySlug,
   formatAssemblyLabel,
 } from "~~/shared/utils/slug";
+import { AGENDA_FINAL_CONFLICT_REASON } from "~~/shared/constants/errorReasons";
 
 /**
  * Assembly, calendar, agenda, decisions and live-state helpers shared by the
@@ -737,8 +737,8 @@ export async function isAgendaFinal(
  * Gate of every change to the root items (create, move, rename, delete).
  * While the agenda is provisional the change just goes ahead (false). Once
  * it is final the request must say `confirmFinal: true`: without it the
- * answer is 409 with `data.code` "agenda_final", so the client asks and
- * retries; with it the change goes ahead and the result is true, which the
+ * answer is 409 with `data.reason` `agenda_final`
+ * (AGENDA_FINAL_CONFLICT_REASON), so the client asks and retries; with it the change goes ahead and the result is true, which the
  * caller writes into its event as `afterFinal`. Sub-items never come here.
  * Callers hold the assembly lock, so the calendar cannot move meanwhile.
  */
@@ -763,7 +763,12 @@ export function finalRootChange(
     fail(
       409,
       "El orden del día ya es definitivo: confirma el cambio de puntos principales",
-      { code: AGENDA_FINAL_CONFLICT_CODE },
+      // `code` is the shape before ARQ-1, for an open tab of the previous
+      // client: drop it in the release after.
+      {
+        reason: AGENDA_FINAL_CONFLICT_REASON,
+        code: AGENDA_FINAL_CONFLICT_REASON,
+      },
     );
   }
   return true;

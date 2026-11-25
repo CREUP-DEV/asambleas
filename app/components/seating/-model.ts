@@ -35,10 +35,12 @@ import {
   type SeatingColour,
 } from "~~/shared/utils/seating/groups";
 import {
-  DOUBLE_U_LIMITS,
   doubleUParamsProblem,
   regenerateSeatingLayout,
+  type DoubleUParamsProblem,
 } from "~~/shared/utils/seating/templates";
+import type { ErrorReason } from "~~/shared/constants/errorReasons";
+import { errorPayload } from "~/composables/api/useApi";
 
 // The plan's states -------------------------------------------------------------
 
@@ -572,47 +574,32 @@ export const DOUBLE_U_FIELDS = [
 ] as const satisfies readonly (keyof DoubleUParams)[];
 
 export interface DoubleUProblem {
-  /** The number at fault, when it is one. */
-  field: keyof DoubleUParams | null;
+  /** The number at fault. */
+  field: keyof DoubleUParams;
   /** i18n key under `seating.doubleU.problems`, and its values. */
   key: string;
   values: Record<string, number>;
 }
 
+/** The i18n key of each code of doubleUParamsProblem. */
+const DOUBLE_U_PROBLEM_KEYS: Record<DoubleUParamsProblem["code"], string> = {
+  range: "seating.doubleU.problems.range",
+  gap_step: "seating.doubleU.problems.gapStep",
+  base: "seating.doubleU.problems.base",
+};
+
 /**
- * What is wrong with a Doble U's numbers, worded through i18n from
- * DOUBLE_U_LIMITS (doubleUParamsProblem's own text is for the API), or
- * null when they make a room.
+ * What is wrong with a Doble U's numbers (doubleUParamsProblem, the rule the
+ * server applies), worded through i18n, or null when they make a room.
  */
 export function doubleUProblem(params: DoubleUParams): DoubleUProblem | null {
-  for (const field of DOUBLE_U_FIELDS) {
-    const value = params[field];
-    const limit = DOUBLE_U_LIMITS[field];
-    if (!Number.isInteger(value) || value < limit.min || value > limit.max) {
-      return {
-        field,
-        key: "seating.doubleU.problems.range",
-        values: { min: limit.min, max: limit.max },
-      };
-    }
-  }
-  if (params.gap % DOUBLE_U_LIMITS.gap.step !== 0) {
-    return {
-      field: "gap",
-      key: "seating.doubleU.problems.gapStep",
-      values: { step: DOUBLE_U_LIMITS.gap.step },
-    };
-  }
-  const hasInner = params.innerArmTables > 0 || params.innerBaseTables > 0;
-  if (hasInner && params.outerBaseTables < params.innerBaseTables + 2) {
-    return {
-      field: "outerBaseTables",
-      key: "seating.doubleU.problems.base",
-      values: { count: params.innerBaseTables + 2 },
-    };
-  }
-  return doubleUParamsProblem(params)
-    ? { field: null, key: "seating.doubleU.problems.other", values: {} }
+  const problem = doubleUParamsProblem(params);
+  return problem
+    ? {
+        field: problem.field,
+        key: DOUBLE_U_PROBLEM_KEYS[problem.code],
+        values: problem.values,
+      }
     : null;
 }
 
@@ -671,23 +658,16 @@ export function seatNameKey(kind: SeatingRunKind): string {
 }
 
 /**
- * The `data` a refusal of the seating endpoints carries (createError's
- * `data` reaches the client at `error.data.data`), when its `reason` is the
- * one asked for: the room as it is now on a `seating_stale`, the occupied
- * seats on a `seating_seats_occupied`.
+ * The `data` a refusal of the seating endpoints carries (errorPayload), when
+ * its `reason` is the one asked for: the room as it is now on a
+ * `seating_stale`, the occupied seats on a `seating_seats_occupied`.
  */
 export function seatingRefusal<T extends object>(
   error: unknown,
-  reason: string,
+  reason: ErrorReason,
 ): T | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: unknown }).data;
-  if (!body || typeof body !== "object") return null;
-  const inner = (body as { data?: unknown }).data;
-  if (!inner || typeof inner !== "object") return null;
-  return (inner as { reason?: unknown }).reason === reason
-    ? (inner as T)
-    : null;
+  const payload = errorPayload(error);
+  return payload.reason === reason ? (payload.data as T) : null;
 }
 
 /** Minutes after which an editor's visit reads the Intranet again. */

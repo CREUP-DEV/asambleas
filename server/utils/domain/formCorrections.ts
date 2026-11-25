@@ -1,4 +1,11 @@
 import { fail } from "../core/http";
+import {
+  FORM_CORRECTION_NO_CHANGE_REASON,
+  FORM_CORRECTION_PENDING_CONCILIATION_REASON,
+  FORM_CORRECTION_STALE_REASON,
+  PASSAGE_CHANGED_REASON,
+  WORDING_OUTSIDE_REASON,
+} from "~~/shared/constants/errorReasons";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -59,8 +66,8 @@ import type { Block } from "~~/shared/types/content";
  *   or reject it (with a note), or for its author to withdraw it.
  * Every correction is the whole corrected text over the version it was
  * made on; one made on a version that is no longer in force is refused
- * (409 `stale`), and so is applying a proposal another correction
- * overtook. Annulling the final vote voids the proposals still waiting
+ * (409 `stale_write`), and so is applying a proposal another correction
+ * overtook (409 `form_correction_stale`). Annulling the final vote voids the proposals still waiting
  * (voidPendingFormCorrections).
  */
 
@@ -73,6 +80,15 @@ const STALE_MESSAGE =
 /** A correction of form while a passage is pending conciliation. */
 const PENDING_MESSAGE =
   "Primero hay que conciliar las enmiendas pendientes del texto aprobado";
+
+/**
+ * The data of that refusal. `pendingConciliation` is the flag before ARQ-1,
+ * for an open tab of the previous client: drop it in the release after.
+ */
+const PENDING_CONCILIATION_DATA = {
+  reason: FORM_CORRECTION_PENDING_CONCILIATION_REASON,
+  pendingConciliation: true,
+} as const;
 
 /** Reads the corrections that are not applied (and their texts). */
 function seesUnapplied(actor: Actor, document: PresentedDocumentRow): boolean {
@@ -268,11 +284,11 @@ export async function createFormCorrection(
       .from(documentVersions)
       .where(eq(documentVersions.id, body.fromVersionId));
     if (storedPendingPassages(from?.pendingPassages).length > 0) {
-      fail(409, PENDING_MESSAGE, { pendingConciliation: true });
+      fail(409, PENDING_MESSAGE, PENDING_CONCILIATION_DATA);
     }
     if (from?.contentHash === contentHash) {
       fail(422, "El texto no tiene ningún cambio", {
-        reason: "no_change",
+        reason: FORM_CORRECTION_NO_CHANGE_REASON,
       });
     }
 
@@ -409,11 +425,12 @@ export async function decideFormCorrection(
       fail(
         409,
         "Otra corrección ha cambiado el texto desde esta propuesta: corrígelo directamente con lo que proponía",
-        { stale: true },
+        // `stale` is the flag before ARQ-1: drop it in the release after.
+        { reason: FORM_CORRECTION_STALE_REASON, stale: true },
       );
     }
     if ((await pendingOf(tx, document.consolidatedVersionId)).length > 0) {
-      fail(409, PENDING_MESSAGE, { pendingConciliation: true });
+      fail(409, PENDING_MESSAGE, PENDING_CONCILIATION_DATA);
     }
     const versionId = await applyText(
       tx,
@@ -547,7 +564,8 @@ async function conciliatedText(
     fail(
       409,
       "Ese pasaje ya no está pendiente de conciliar. Recarga la página",
-      { code: "passage_changed" },
+      // `code` is the shape before ARQ-1: drop it in the release after.
+      { reason: PASSAGE_CHANGED_REASON, code: PASSAGE_CHANGED_REASON },
     );
   }
   if (!document.baseVersionId) fail(409, "El documento no tiene texto base");
@@ -577,7 +595,8 @@ async function conciliatedText(
     )
   ) {
     fail(422, "La redacción solo puede cambiar el texto de ese pasaje", {
-      code: "wording_outside",
+      reason: WORDING_OUTSIDE_REASON,
+      code: WORDING_OUTSIDE_REASON,
     });
   }
   const remaining = new Set(pending.map((passage) => passage.key));

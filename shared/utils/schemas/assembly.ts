@@ -150,13 +150,6 @@ export const assemblyListQuerySchema = z.object({
 
 // Agenda -----------------------------------------------------------------
 
-/**
- * `data.code` of the 409 a change to the root items gets once the agenda is
- * final and the request does not say `confirmFinal: true`. The client asks
- * and sends the request again with it.
- */
-export const AGENDA_FINAL_CONFLICT_CODE = "agenda_final";
-
 export const agendaItemBodySchema = z.object({
   parentId: entityIdSchema.nullable().optional(),
   title: singleLine(AGENDA_TITLE_MAX_LENGTH),

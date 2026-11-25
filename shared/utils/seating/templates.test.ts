@@ -17,6 +17,7 @@ import {
   defaultDoubleULayout,
   doubleUCapacity,
   doubleUParamsProblem,
+  minOuterBaseTables,
   generateSeatingLayout,
   regenerateSeatingLayout,
 } from "./templates";
@@ -199,16 +200,31 @@ describe("the Doble U", () => {
         ...DEFAULT_DOUBLE_U_PARAMS,
         innerBaseTables: 5,
       }),
-    ).toMatch(/dos mesas más/);
+    ).toEqual({
+      code: "base",
+      field: "outerBaseTables",
+      values: { count: 7 },
+    });
     expect(
       doubleUParamsProblem({ ...DEFAULT_DOUBLE_U_PARAMS, mesaSeats: 6 }),
-    ).not.toBeNull();
+    ).toEqual({
+      code: "range",
+      field: "mesaSeats",
+      values: { min: 3, max: 5 },
+    });
     expect(
       doubleUParamsProblem({ ...DEFAULT_DOUBLE_U_PARAMS, gap: 155 }),
-    ).not.toBeNull();
+    ).toEqual({ code: "gap_step", field: "gap", values: { step: 10 } });
     expect(() => generateSeatingLayout(doubleU({ outerArmTables: 0 }))).toThrow(
       RangeError,
     );
+  });
+
+  it("asks the outer base for two tables more than the inner one", () => {
+    // 4 inner tables (720 cm), two arms' depth (120) and 120 cm on each
+    // side: 1080 cm, six tables of 180.
+    expect(minOuterBaseTables(4)).toBe(6);
+    expect(minOuterBaseTables(0)).toBe(2);
   });
 
   it("generates only the Doble U and Vacía today", () => {

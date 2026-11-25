@@ -7,6 +7,10 @@ import {
   PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
+import {
+  EXECUTIVE_MAIN_REFUSED_REASON,
+  EXECUTIVE_MEMBER_REFUSED_REASON,
+} from "~~/shared/constants/errorReasons";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AcceptanceDto, MemberDto, MemberRef } from "~~/shared/types/api";
 import { entityIdSchema } from "~~/shared/utils/schemas/primitives";
@@ -40,8 +44,6 @@ const {
   visibleAcronym,
 } = await import("./visibility");
 const {
-  EXECUTIVE_MAIN_REFUSED_REASON,
-  EXECUTIVE_MEMBER_REFUSED_REASON,
   planAmendmentBodyMembers,
   refuseExecutiveAuthor,
   planListedMembers,

@@ -16,7 +16,6 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
-import { SUBMISSION_KIND_REFUSED_REASON } from "~~/shared/utils/agendaSubmissions";
 import { mayUseFileFormat } from "~~/shared/utils/documentFormat";
 import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
@@ -47,6 +46,8 @@ import {
   proposeFromItem,
   type ItemProposal,
 } from "~/composables/document/itemProposal";
+import { SUBMISSION_KIND_REFUSED_REASON } from "~~/shared/constants/errorReasons";
+import { errorPayload } from "~/composables/api/useApi";
 
 /**
  * Adds a document under an agenda item.
@@ -639,9 +640,7 @@ function opensEditor(created: DocumentDto): boolean {
 
 /** The server refused the type: the item does not take it (422). */
 function refusedKind(error: unknown): boolean {
-  const body = (error as { data?: { data?: { reason?: unknown } } } | null)
-    ?.data;
-  return body?.data?.reason === SUBMISSION_KIND_REFUSED_REASON;
+  return errorPayload(error).reason === SUBMISSION_KIND_REFUSED_REASON;
 }
 
 async function onSubmit(event: FormSubmitEvent<DocumentForm>) {

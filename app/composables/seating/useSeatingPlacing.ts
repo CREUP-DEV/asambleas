@@ -14,6 +14,10 @@ import type {
 import type { SeatAssignment } from "~~/shared/utils/seating/groups";
 import { assignmentOps } from "~~/shared/utils/seating/proposal";
 import { seatingRefusal } from "~/components/seating/-model";
+import {
+  SEATING_NOT_FOUND_REASON,
+  SEATING_STALE_REASON,
+} from "~~/shared/constants/errorReasons";
 import { useCurrentAssembly } from "../assembly/useCurrentAssembly";
 
 /**
@@ -64,13 +68,13 @@ export function useSeatingPlacing(options: {
   }
 
   function failed(error: unknown, fallbackKey: string): void {
-    if (seatingRefusal(error, "seating_stale")) {
+    if (seatingRefusal(error, SEATING_STALE_REASON)) {
       stale();
       return;
     }
     api.notifyError(error, fallbackKey);
     // «Eso ya no está en la sala. Se muestra lo que hay ahora.»: it does.
-    if (seatingRefusal(error, "seating_not_found")) options.refresh();
+    if (seatingRefusal(error, SEATING_NOT_FOUND_REASON)) options.refresh();
   }
 
   /**
@@ -104,11 +108,12 @@ export function useSeatingPlacing(options: {
     return (error) => {
       const data = seatingRefusal<Partial<Record<"person" | "group", T>>>(
         error,
-        "seating_stale",
+        SEATING_STALE_REASON,
       );
       const current = data?.[key];
       if (current) handlers.stale?.(current);
-      else if (seatingRefusal(error, "seating_not_found")) handlers.gone?.();
+      else if (seatingRefusal(error, SEATING_NOT_FOUND_REASON))
+        handlers.gone?.();
     };
   }
 

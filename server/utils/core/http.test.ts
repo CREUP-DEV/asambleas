@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
 import {
   fail,
+  httpError,
   notFound,
   parseWith,
   readBodyWith,
@@ -53,12 +54,40 @@ describe("fail and notFound", () => {
       await thrown(() => fail(422, "No", { messageKey: "a.b" })),
     ).toMatchObject({ statusCode: 422, data: { messageKey: "a.b" } });
     expect(
-      await thrown(() => notFound("No está", { reason: "gone" })),
+      await thrown(() => notFound("No está", { reason: "seating_not_found" })),
     ).toMatchObject({
       statusCode: 404,
       message: "No está",
-      data: { reason: "gone" },
+      data: { reason: "seating_not_found" },
     });
+  });
+
+  it("take only a reason of the catalog (checked by typecheck)", async () => {
+    expect(
+      await thrown(() =>
+        // @ts-expect-error: not a code of shared/constants/errorReasons.ts.
+        fail(409, "Choca", { reason: "seating_gone" }),
+      ),
+    ).toMatchObject({ data: { reason: "seating_gone" } });
+    const reason: string = "stale_write";
+    expect(
+      await thrown(() =>
+        // @ts-expect-error: any string is not a code either.
+        fail(409, "Choca", { reason }),
+      ),
+    ).toMatchObject({ data: { reason } });
+  });
+});
+
+describe("httpError", () => {
+  it("builds what fail throws, without throwing it", () => {
+    const error = httpError(422, "Vacío", { reason: "docx_empty" });
+    expect(error).toMatchObject({
+      statusCode: 422,
+      message: "Vacío",
+      data: { reason: "docx_empty" },
+    });
+    expect(httpError(409, "Choca").data).toBeUndefined();
   });
 });
 

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DOCUMENT_KINDS } from "../constants/domain";
 import {
-  AGENDA_DELETE_AMENDMENTS_CODE,
-  AGENDA_DELETE_LIVE_CODE,
   agendaDeleteBlocker,
   autoItemRemovable,
   BULK_DOCUMENTS_MAX,
@@ -15,12 +13,16 @@ import {
   itemAcceptsKind,
   normalizeItemVoted,
   normalizeSubmissionKinds,
-  SUBMISSION_KIND_REFUSED_REASON,
   titleDocumentId,
   visibleAgendaItems,
 } from "./agendaSubmissions";
 import { agendaItemBodySchema } from "./schemas/assembly";
 import { bulkDocumentsSchema } from "./schemas/document";
+import {
+  AGENDA_DELETE_AMENDMENTS_REASON,
+  AGENDA_DELETE_LIVE_REASON,
+  SUBMISSION_KIND_REFUSED_REASON,
+} from "../constants/errorReasons";
 
 describe("itemAcceptsKind", () => {
   it("takes no kind while the item accepts no submissions", () => {
@@ -56,8 +58,8 @@ describe("itemAcceptsKind", () => {
 
   it("keeps its codes stable", () => {
     expect(SUBMISSION_KIND_REFUSED_REASON).toBe("submission_kind");
-    expect(AGENDA_DELETE_AMENDMENTS_CODE).toBe("agenda_item_amendments");
-    expect(AGENDA_DELETE_LIVE_CODE).toBe("agenda_item_live");
+    expect(AGENDA_DELETE_AMENDMENTS_REASON).toBe("agenda_item_amendments");
+    expect(AGENDA_DELETE_LIVE_REASON).toBe("agenda_item_live");
   });
 });
 

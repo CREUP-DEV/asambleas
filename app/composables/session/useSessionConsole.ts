@@ -57,7 +57,8 @@ import {
   isSessionInProgress,
   liveStateClearsOnly,
 } from "~~/shared/utils/sessionGate";
-import { useApi } from "../api/useApi";
+import { errorPayload, useApi } from "../api/useApi";
+import { ITEM_HAS_VOTED_DOCUMENTS_REASON } from "~~/shared/constants/errorReasons";
 import { useAlternativesVoteText } from "../vote/useAlternativesVoteText";
 import type {
   AlternativesTieResolution,
@@ -187,24 +188,6 @@ export type SessionItemVoteResult =
       /** A tie the tie rule sends back to the vote: the dialog says so. */
       tie: boolean;
     };
-
-/**
- * The `data.reason` of a failed request, nested by h3 under `data.data` or
- * at `data` (same nesting as errorReasonKey in useApi).
- */
-function errorReason(error: unknown): string | null {
-  const nested = sessionErrorData(error)?.reason;
-  if (typeof nested === "string") return nested;
-  const data =
-    error && typeof error === "object"
-      ? (error as { data?: unknown }).data
-      : null;
-  const reason =
-    data && typeof data === "object"
-      ? (data as { reason?: unknown }).reason
-      : null;
-  return typeof reason === "string" ? reason : null;
-}
 
 /** A document's amendments, tagged with the document they were fetched for. */
 export type SessionAmendmentsDto = DocumentAmendmentsDto & {
@@ -3105,7 +3088,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     } catch (error) {
       if (sessionErrorData(error)?.tie === true)
         return { ok: false, tie: true };
-      if (errorReason(error) === "item_has_voted_documents") {
+      if (errorPayload(error).reason === ITEM_HAS_VOTED_DOCUMENTS_REASON) {
         toast.add({
           id: `session-item-vote-documents-${itemId}`,
           title: t("session.errors.itemVote"),

@@ -68,8 +68,9 @@ vi.mock("../seating/images", () => ({
 
 const { recordEvent } = await import("./events");
 const { canSeeExecutiveMembers } = await import("./visibility");
+const { SEATING_NOT_FOUND_REASON } =
+  await import("~~/shared/constants/errorReasons");
 const {
-  SEATING_NOT_FOUND_REASON,
   createSeatingPerson,
   requireSeatingEditor,
   requireSeatingReader,

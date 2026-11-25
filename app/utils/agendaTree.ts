@@ -17,8 +17,9 @@ import {
   agendaEffectiveParents,
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
-import { AGENDA_FINAL_CONFLICT_CODE } from "~~/shared/utils/schemas/assembly";
 import { titleFromItemTitle } from "~/composables/document/itemProposal";
+import { AGENDA_FINAL_CONFLICT_REASON } from "~~/shared/constants/errorReasons";
+import { errorPayload } from "~/composables/api/useApi";
 
 export interface AgendaTreeItem {
   id: string;
@@ -481,19 +482,10 @@ export type AgendaRootChangeRunner = <T>(
 
 /**
  * Whether a failed request is the server asking to confirm a change to the
- * root items of a final agenda (409 with `data.code`). ofetch keeps the
- * response body in `data`, whose own `data` is what createError got.
+ * root items of a final agenda (409 `agenda_final`).
  */
 export function isAgendaFinalConflict(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const body = (error as { data?: unknown }).data;
-  if (!body || typeof body !== "object") return false;
-  const { code, data } = body as { code?: unknown; data?: unknown };
-  const nested =
-    data && typeof data === "object"
-      ? (data as { code?: unknown }).code
-      : undefined;
-  return (nested ?? code) === AGENDA_FINAL_CONFLICT_CODE;
+  return errorPayload(error).reason === AGENDA_FINAL_CONFLICT_REASON;
 }
 
 // Moves -----------------------------------------------------------------------

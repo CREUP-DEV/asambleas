@@ -54,6 +54,11 @@ import {
   isItemVotedDocument,
   itemHasVotedDocuments,
 } from "~~/shared/utils/controlSheet";
+import {
+  ITEM_HAS_VOTED_DOCUMENTS_REASON,
+  ITEM_IS_CONTAINER_REASON,
+  ITEM_TAKES_NO_VOTE_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * Votes on an agenda item itself (a ratification, an election), subject
@@ -66,16 +71,6 @@ import {
  * with no top-level documentId: the item's document, if it carries one's
  * title, goes only in the payload (titleDocumentPayload).
  */
-
-/** Reason of the 422 a vote on an item with voted documents gets (useApi's REASON_KEYS). */
-export const ITEM_HAS_VOTED_DOCUMENTS_REASON = "item_has_voted_documents";
-/**
- * The same refusal, worded for someone who may not see those documents
- * (none of them is public yet), so it names none.
- */
-export const ITEM_TAKES_NO_VOTE_REASON = "item_takes_no_vote";
-/** `data.reason` of the 422 for an item where members present. */
-export const ITEM_IS_CONTAINER_REASON = "item_is_container";
 
 const STALE_VOTE_MESSAGE =
   "La votación ha cambiado mientras tanto. Recarga e inténtalo de nuevo";

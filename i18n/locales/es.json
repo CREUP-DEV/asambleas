@@ -5915,8 +5915,7 @@
       "problems": {
         "range": "Entre {min} y {max}",
         "gapStep": "De {step} en {step} cm",
-        "base": "Al menos {count} mesas: dos más que en la base de la U interior",
-        "other": "Estos números no forman una sala"
+        "base": "Al menos {count} mesas: dos más que en la base de la U interior"
       }
     },
     "edit": {

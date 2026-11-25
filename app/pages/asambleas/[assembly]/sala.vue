@@ -24,6 +24,7 @@ import {
 } from "~~/shared/utils/seating/proposal";
 import { seatingWalk } from "~~/shared/utils/seating/runs";
 import { seatingWarnings } from "~~/shared/utils/seating/warnings";
+import { SEATING_STALE_REASON } from "~~/shared/constants/errorReasons";
 import {
   SEATING_COLOUR_STYLES,
   searchSeating,
@@ -1361,7 +1362,7 @@ async function chooseSource(sourceAssemblyId: string | null): Promise<void> {
       icon: "i-lucide-check",
     });
   } catch (error) {
-    if (seatingRefusal<SeatingSourceStaleData>(error, "seating_stale")) {
+    if (seatingRefusal<SeatingSourceStaleData>(error, SEATING_STALE_REASON)) {
       sourceOpen.value = false;
       seating.refresh();
     }

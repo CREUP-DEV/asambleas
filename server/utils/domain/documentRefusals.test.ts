@@ -26,7 +26,8 @@ vi.mock("./resolvers", () => ({
 }));
 
 const { annulFinalVote, submitDocument } = await import("./documents");
-const { ASSEMBLY_CLOSED_REASON } = await import("./documentRefusals");
+const { ASSEMBLY_CLOSED_REASON } =
+  await import("~~/shared/constants/errorReasons");
 
 type Ctx = Parameters<typeof submitDocument>[0];
 

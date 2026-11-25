@@ -144,7 +144,13 @@ export const doubleUParamsSchema = z
   })
   .superRefine((params, context) => {
     const problem = doubleUParamsProblem(params);
-    if (problem) context.addIssue({ code: "custom", message: problem });
+    if (problem) {
+      context.addIssue({
+        code: "custom",
+        message: `double_u_${problem.code}`,
+        path: [problem.field],
+      });
+    }
   });
 
 const templateSchema = z.discriminatedUnion("kind", [

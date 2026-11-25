@@ -85,6 +85,12 @@ import {
   canSeeExecutiveMembers,
   redactMember,
 } from "./visibility";
+import {
+  EXECUTIVE_MEMBER_REFUSED_REASON,
+  SEATING_NOT_FOUND_REASON,
+  SEATING_SEATS_OCCUPIED_REASON,
+  SEATING_STALE_REASON,
+} from "~~/shared/constants/errorReasons";
 
 /**
  * The room of an assembly and who sits where («Sala»,
@@ -117,11 +123,6 @@ type PersonCreateBody = z.output<typeof seatingPersonCreateBodySchema>;
 type PersonUpdateBody = z.output<typeof seatingPersonUpdateBodySchema>;
 type SourceBody = z.output<typeof seatingSourceBodySchema>;
 
-/** Reasons of the seating refusals (useApi's REASON_KEYS). */
-export const SEATING_STALE_REASON = "seating_stale";
-export const SEATING_SEATS_OCCUPIED_REASON = "seating_seats_occupied";
-export const SEATING_NOT_FOUND_REASON = "seating_not_found";
-
 /** A sync within this long of the last call to the Intranet calls nothing. */
 export const SEATING_SYNC_THROTTLE_MS = 60_000;
 
@@ -129,7 +130,7 @@ export const SEATING_SYNC_THROTTLE_MS = 60_000;
 const INSERT_CHUNK = 500;
 
 /** What every seating 404 carries, so the client tells «no room» apart. */
-const NOT_FOUND = { reason: SEATING_NOT_FOUND_REASON };
+const NOT_FOUND = { reason: SEATING_NOT_FOUND_REASON } as const;
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
 
@@ -1026,12 +1027,16 @@ async function requireLinkableMember(
   memberId: string,
 ): Promise<MemberRefRow> {
   if (memberId === GENERIC_EXECUTIVE_MEMBER_ID) {
-    fail(422, "La CEA no es un miembro", { reason: "executive_member" });
+    fail(422, "La CEA no es un miembro", {
+      reason: EXECUTIVE_MEMBER_REFUSED_REASON,
+    });
   }
   const member = await loadGroupMember(tx, memberId);
   if (!member) fail(422, "Miembro no encontrado");
   if (member.kind === "executive" && !canSeeExecutiveMembers(actor)) {
-    fail(422, "No puedes elegir ese cargo", { reason: "executive_member" });
+    fail(422, "No puedes elegir ese cargo", {
+      reason: EXECUTIVE_MEMBER_REFUSED_REASON,
+    });
   }
   return member;
 }
