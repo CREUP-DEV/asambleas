@@ -15,7 +15,10 @@ import {
   agendaChildGroups,
   numberAgendaItems,
 } from "../../../shared/utils/agendaNumbering";
-import { compareAmendmentAnswers } from "../../../shared/utils/amendmentOrder";
+import {
+  compareAmendmentAnswers,
+  compareAmendmentCodes,
+} from "../../../shared/utils/amendmentOrder";
 import { inApprovalOrder } from "../../../shared/utils/approvalOrder";
 import type {
   Passage,
@@ -172,11 +175,25 @@ export function annexDisplayCode(
   return parts.length > 0 ? parts.join(" · ") : "?";
 }
 
+/**
+ * Presentation order, as on screen (compareAmendments): the number, then
+ * the code (a transactional's "T2" before "T10", compareAmendmentCodes),
+ * then the id. The annex has no presentation time; codes are unique per
+ * document, so only amendments without a code reach the id.
+ */
 function byNumber(a: AnnexAmendment, b: AnnexAmendment): number {
   const an = a.number ?? Number.POSITIVE_INFINITY;
   const bn = b.number ?? Number.POSITIVE_INFINITY;
   if (an !== bn) return an - bn;
-  return a.positionKey - b.positionKey || a.id.localeCompare(b.id);
+  if (a.code !== b.code) {
+    if (a.code === null) return 1;
+    if (b.code === null) return -1;
+    const codes = compareAmendmentCodes(a.code, b.code);
+    if (codes !== 0) return codes;
+  }
+  return (
+    a.positionKey - b.positionKey || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
 }
 
 /**

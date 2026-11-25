@@ -5,17 +5,25 @@ import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
+  sameBlockContent,
+  sameIdSet,
+  transactionalSeed,
+  type TransactionalSeed,
+} from "~~/shared/utils/content/transactionalSeed";
+import {
   isSessionDecidable,
   isSessionOpen,
   isSessionPendingAdmission,
-  sessionSameBlocks,
-  sessionSameIds,
   sessionTransactionalParties,
-  sessionTransactionalSeed,
-  type SessionTransactionalSeed,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { widenedEdit } from "~/composables/amendment/transactional";
+import {
+  isTransactionalComposerCopy,
+  sameIdList,
+  type TransactionalComposerCopy,
+} from "~/composables/amendment/draftCopy";
+import { useDraftCopy } from "~/composables/amendment/useDraftCopy";
 
 /**
  * Builds a transactional amendment in the room. The editor starts from the
@@ -39,6 +47,10 @@ import { widenedEdit } from "~/composables/amendment/transactional";
  * shows another one the panel names that document instead of the form, the
  * draft is kept, and it comes back when the console returns to it. Starting
  * a transactional on the new document asks first, naming the old one.
+ *
+ * Until it is created, this browser keeps a copy of the draft per document
+ * (`useDraftCopy`): after a reload or a crash, opening the panel on that
+ * document offers «Recuperar» once.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -59,7 +71,7 @@ const authorsTouched = ref(false);
 /** Main author among the authors (required when there are several). */
 const mainAuthorId = ref<string | null>(null);
 const createdId = ref<string | null>(null);
-const seed = shallowRef<SessionTransactionalSeed | null>(null);
+const seed = shallowRef<TransactionalSeed | null>(null);
 const editorKey = ref(0);
 /**
  * Paragraphs taken in around what the amendments touch (user's decision of
@@ -69,10 +81,21 @@ const widen = ref({ before: 0, after: 0 });
 const editor = useTemplateRef<{ flush: () => void }>("editor");
 /** Set when the Mesa discards the draft: the next opening starts afresh. */
 let discarded = false;
+/**
+ * A draft just started whose copy in this browser has not been read yet:
+ * nothing is written over it until it is (`copyReady`, `offerCopy`).
+ */
+let copyUnread = false;
 /** The document the draft was started on: it only applies to that base. */
 const draftDocumentId = ref<string | null>(null);
 /** Its title, kept to name it once the console shows another document. */
 const draftDocumentTitle = ref("");
+/**
+ * Its base version: the local copy only fits that one. Undefined until the
+ * console has read that document (`session.document` and the amendments are
+ * separate reads, so the amendments may arrive first).
+ */
+const draftBaseVersionId = ref<string | null | undefined>(undefined);
 
 /** The draft was started on a document the console no longer shows. */
 const onOtherDocument = computed(
@@ -111,9 +134,9 @@ const sourceItems = computed(() =>
   })),
 );
 
-/** Sources in order of presentation: the first one wins a collision. */
-const sources = computed<AmendmentDto[]>(() =>
-  sourceIds.value
+/** Amendments by id in order of presentation: the first one wins a collision. */
+function sourcesOf(ids: string[]): AmendmentDto[] {
+  return ids
     .map((id) => session.byId.value.get(id))
     .filter((amendment) => amendment !== undefined)
     .sort(
@@ -121,8 +144,11 @@ const sources = computed<AmendmentDto[]>(() =>
         (a.number ?? Number.MAX_SAFE_INTEGER) -
           (b.number ?? Number.MAX_SAFE_INTEGER) ||
         a.positionKey - b.positionKey,
-    ),
-);
+    );
+}
+
+/** Sources in order of presentation: the first one wins a collision. */
+const sources = computed<AmendmentDto[]>(() => sourcesOf(sourceIds.value));
 
 /** The main author of each source: who has to accept it. */
 /** Who accepts it: the originals' main authors (2026-11-20). */
@@ -187,7 +213,7 @@ function widenPassage(side: "before" | "after"): void {
   const previous = seed.value;
   if (!previous) return;
   const next = { ...widen.value, [side]: widen.value[side] + 1 };
-  const wider = sessionTransactionalSeed(
+  const wider = transactionalSeed(
     session.base.value,
     seedSources(),
     createId,
@@ -203,7 +229,7 @@ function widenPassage(side: "before" | "after"): void {
 
 /** Restarts the text from the current sources (the editor is remounted). */
 function reseed(): void {
-  seed.value = sessionTransactionalSeed(
+  seed.value = transactionalSeed(
     session.base.value,
     seedSources(),
     createId,
@@ -222,8 +248,11 @@ function reseed(): void {
 
 function startFresh(ids: string[]): void {
   discarded = false;
+  resumeCopy();
   draftDocumentId.value = session.documentId.value;
   draftDocumentTitle.value = documentTitle(draftDocumentId.value);
+  draftBaseVersionId.value = undefined;
+  fillDraftBase();
   createdId.value = null;
   justification.value = "";
   authorsTouched.value = false;
@@ -237,7 +266,7 @@ function textEdited(): boolean {
   // The editor emits with a short delay: take what is on screen right now.
   editor.value?.flush();
   return (
-    seed.value !== null && !sessionSameBlocks(edited.value, seed.value.seed)
+    seed.value !== null && !sameBlockContent(edited.value, seed.value.seed)
   );
 }
 
@@ -266,12 +295,15 @@ function discardMessage(): string {
 watch(open, (isOpen) => {
   if (!isOpen) return;
   const requested = [...session.composer.sourceIds];
+  /** A draft the Mesa confirmed to drop: its copy goes with it. */
+  let replacing = false;
   if (!discarded && !createdId.value && seed.value) {
     if (onOtherDocument.value) {
       // A draft left on another document: it cannot continue here, and it
       // is kept for when the console returns there unless the Mesa drops it.
+      replacing = hasDraft();
       if (
-        hasDraft() &&
+        replacing &&
         !window.confirm(
           t("session.composer.replaceOtherConfirm", {
             title: draftDocumentTitle.value,
@@ -283,14 +315,21 @@ watch(open, (isOpen) => {
       }
     } else {
       // Reopened for the same amendments: resume the draft as it was.
-      if (sessionSameIds(requested, sourceIds.value)) return;
+      if (sameIdSet(requested, sourceIds.value)) return;
       // Opened for other amendments: keep the draft unless the Mesa drops it.
-      if (hasDraft() && !window.confirm(t("session.composer.replaceConfirm"))) {
+      replacing = hasDraft();
+      if (replacing && !window.confirm(t("session.composer.replaceConfirm"))) {
         return;
       }
     }
   }
+  // Still under the old draft's key: never offered back once dropped.
+  if (replacing) discardCopy();
   startFresh(requested);
+  // A draft kept in this browser for this document: offered once, as soon
+  // as the document and its amendments are read (`copyReady`).
+  copyUnread = true;
+  offerCopy();
 });
 
 // Another Mesa member moved the console to another document. With nothing
@@ -316,7 +355,7 @@ watch(onOtherDocument, (other) => {
 
 function onSourcesChange(value: string[] | null | undefined): void {
   const next = [...(value ?? [])];
-  if (sessionSameIds(next, sourceIds.value)) {
+  if (sameIdSet(next, sourceIds.value)) {
     sourceIds.value = next;
     return;
   }
@@ -347,11 +386,171 @@ function cancel(close: () => void): void {
   if (hasDraft()) {
     if (!window.confirm(discardMessage())) return;
     discarded = true;
+    discardCopy();
   }
   close();
 }
 
-useLeaveGuard(hasDraft, discardMessage);
+// A confirmed leave gives the draft up, copy included; a reload keeps it.
+useLeaveGuard(hasDraft, discardMessage, () => discardCopy());
+
+// The copy in this browser ---------------------------------------------------------
+
+/**
+ * What the copy keeps now; null when nothing would be lost. Like hasDraft,
+ * but it never flushes the editor: it runs on every change.
+ */
+function copySnapshot(): TransactionalComposerCopy | null {
+  const current = seed.value;
+  if (discarded || createdId.value || !current) return null;
+  const textChanged = !sameBlockContent(edited.value, current.seed);
+  if (!textChanged && !justification.value.trim() && !authorsTouched.value) {
+    return null;
+  }
+  return {
+    sourceIds: [...sourceIds.value],
+    widen: { ...widen.value },
+    passageIds: current.passage.map((block) => block.id),
+    edited: edited.value,
+    justification: justification.value,
+    authorIds: [...authorIds.value],
+    authorsTouched: authorsTouched.value,
+    executiveAuthorIds: [],
+    mainAuthorId: mainAuthorId.value,
+  };
+}
+
+/**
+ * A copy fits while its amendments are still open in the room and they
+ * still give the passage it was written over.
+ */
+function copyFits(data: unknown): data is TransactionalComposerCopy {
+  if (!isTransactionalComposerCopy(data) || data.sourceIds.length === 0) {
+    return false;
+  }
+  const kept = sourcesOf(data.sourceIds);
+  if (
+    kept.length !== data.sourceIds.length ||
+    kept.some(
+      (amendment) =>
+        !isSessionOpen(amendment) && !isSessionPendingAdmission(amendment),
+    )
+  ) {
+    return false;
+  }
+  try {
+    const again = transactionalSeed(
+      session.base.value,
+      kept.map(({ id, ops }) => ({ id, ops })),
+      createId,
+      data.widen,
+    );
+    return sameIdList(
+      again.passage.map((block) => block.id),
+      data.passageIds,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The draft's base, read once the console has its document. */
+function fillDraftBase(): void {
+  if (draftBaseVersionId.value !== undefined || !draftDocumentId.value) return;
+  const current = session.document.value;
+  if (current?.id === draftDocumentId.value) {
+    draftBaseVersionId.value = current.baseVersion?.id ?? null;
+  }
+}
+
+/**
+ * Whether the copy can be read and written: its base is known and, until
+ * the copy has been read, the console holds the draft's document and its
+ * amendments (`copyFits` checks them; against data still loading a good
+ * copy would be dropped). Once read, writing goes on while the console
+ * shows another document: the draft stays on its own.
+ */
+function copyReady(): boolean {
+  if (draftBaseVersionId.value === undefined) return false;
+  if (!copyUnread) return true;
+  return (
+    session.document.value?.id === draftDocumentId.value &&
+    session.amendments.value.length > 0
+  );
+}
+
+/**
+ * Reads the copy of the draft just started, once it can be: offered unless
+ * the Mesa already typed something, which is the draft now and overwrites it.
+ */
+function offerCopy(): void {
+  if (!copyUnread) return;
+  fillDraftBase();
+  if (!copyReady()) return;
+  copyUnread = false;
+  if (copySnapshot() === null) openCopy();
+  else flushCopy();
+}
+
+watch(
+  () =>
+    [
+      session.document.value?.id,
+      session.document.value?.baseVersion?.id,
+      session.amendments.value.length,
+    ] as const,
+  () => {
+    fillDraftBase();
+    offerCopy();
+  },
+);
+
+const {
+  offer: copyOffer,
+  open: openCopy,
+  recover: takeCopy,
+  discard: discardCopy,
+  resume: resumeCopy,
+  dismiss: dismissCopy,
+  flush: flushCopy,
+} = useDraftCopy<TransactionalComposerCopy>({
+  composer: "session-transactional",
+  documentId: () => draftDocumentId.value,
+  scope: () => "new",
+  stamp: () => ({
+    baseVersionId: draftBaseVersionId.value ?? null,
+    token: null,
+  }),
+  ready: copyReady,
+  snapshot: copySnapshot,
+  track: [
+    sourceIds,
+    edited,
+    justification,
+    authorIds,
+    mainAuthorId,
+    widen,
+    createdId,
+  ],
+  settle: () => editor.value?.flush(),
+  accept: copyFits,
+});
+
+/** Puts the kept draft back: its amendments, passage, text and authors. */
+function recoverCopy(): void {
+  const data = takeCopy();
+  if (!data) return;
+  sourceIds.value = [...data.sourceIds];
+  widen.value = { ...data.widen };
+  authorsTouched.value = data.authorsTouched;
+  if (data.authorsTouched) authorIds.value = [...data.authorIds];
+  // The editor is mounted again (reseed) with the kept text in it, a fresh
+  // copy read from storage.
+  reseed();
+  edited.value = data.edited;
+  justification.value = data.justification;
+  mainAuthorId.value = data.mainAuthorId;
+}
 
 const ops = computed(() =>
   seed.value && seed.value.passage.length > 0
@@ -397,7 +596,10 @@ async function create(): Promise<void> {
         : (authorIds.value[0] ?? null),
     submit: true,
   });
-  if (result) createdId.value = result.id;
+  if (result) {
+    createdId.value = result.id;
+    discardCopy();
+  }
 }
 
 function debateCreated(): void {
@@ -440,6 +642,13 @@ function voteCreated(): void {
         "
       />
       <div v-else-if="!created" class="space-y-6">
+        <!-- A draft this browser kept for this document: offered once. -->
+        <AmendmentDraftCopyNotice
+          v-if="copyOffer"
+          :saved-at="copyOffer.savedAt"
+          @recover="recoverCopy"
+          @discard="dismissCopy"
+        />
         <UFormField
           :label="t('session.composer.sources')"
           :hint="t('session.composer.sourcesHint')"

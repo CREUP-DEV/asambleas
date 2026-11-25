@@ -65,6 +65,7 @@ import {
 import { diffChanges, sortedIds } from "./changes";
 import {
   ASSEMBLY_CLOSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_MESSAGE,
   DOCUMENTS_DEADLINE_PASSED_REASON,
 } from "./documentRefusals";
 import { recordEvent } from "./events";
@@ -118,6 +119,7 @@ import {
   type VoteResult,
 } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { assemblyYear } from "~~/shared/utils/dates";
 import type {
   AmendmentWindowDto,
   CorrectionBody,
@@ -138,7 +140,6 @@ import type {
 import type { Block } from "~~/shared/types/content";
 import {
   amendmentWindow,
-  isPastDeadline,
   isWindowOpen,
   type AmendmentWindow,
   type Milestones,
@@ -162,6 +163,7 @@ import {
   FILE_FORMAT_REFUSED_REASON,
   fileFormatRefused,
 } from "~~/shared/utils/documentFormat";
+import { presentationDeadlinePassed } from "~~/shared/utils/documentDeadline";
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { pickDocumentSlug, slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
@@ -276,15 +278,6 @@ export function documentWindow(
   };
 }
 
-/** Whether members may still present documents (documents_close milestone). */
-export function documentsDeadlinePassed(
-  milestones: Milestones,
-  now = new Date(),
-): boolean {
-  const close = milestones.documents_close;
-  return Boolean(close && isPastDeadline(close, now));
-}
-
 /** What the presentation rules read of the agenda item a document hangs from. */
 export interface PresentationItem {
   acceptsSubmissions: boolean;
@@ -310,13 +303,17 @@ export function isExpectedDocument(
 
 /**
  * Whether a presenter (not a manager) can no longer present this document.
- * The documents_close milestone applies, except to the documents the
- * Secretaría expects (isExpectedDocument): their internal deadline, if any,
+ * Its kind's own deadline applies (presentationDeadlinePassed:
+ * `candidacies_close` for candidacies and venues, `reports_close` for
+ * reports, `documents_close` for the rest and for a kind whose own milestone
+ * the assembly lacks), the same one createDocuments checks, so a member never
+ * holds a draft it can no longer send. The documents the Secretaría expects
+ * (isExpectedDocument) are not bound by it: their internal deadline, if any,
  * governs, and an overdue one can still be presented (the tracking panel
  * flags it).
  */
 export function presentationClosed(
-  document: Pick<DocumentRow, "dueAt" | "correctionRequestedAt">,
+  document: Pick<DocumentRow, "kind" | "dueAt" | "correctionRequestedAt">,
   item: PresentationItem,
   milestones: Milestones,
   now = new Date(),
@@ -326,8 +323,72 @@ export function presentationClosed(
   if (document.correctionRequestedAt !== null) return false;
   return (
     !isExpectedDocument(document, item) &&
-    documentsDeadlinePassed(milestones, now)
+    presentationDeadlinePassed(document.kind, (key) => milestones[key], now)
   );
+}
+
+/**
+ * Where a moved document hangs, as the presentation rules read it. Under an
+ * item that accepts submissions it gets a new automatic sub-item
+ * (`autoItem`): insertAutoItem leaves its generatedForDocumentId null until
+ * bindAutoItem, which runs after the checks, and read that way it would
+ * pass for an item reserved to the Secretaría (isExpectedDocument), so it
+ * is read bound to the document already. Otherwise it hangs from `target`.
+ */
+export function presentationItemAfterMove(
+  documentId: string,
+  target: PresentationItem,
+  autoItem: PresentationItem | null,
+): PresentationItem {
+  if (!autoItem) {
+    return {
+      acceptsSubmissions: target.acceptsSubmissions,
+      generatedForDocumentId: target.generatedForDocumentId,
+    };
+  }
+  return {
+    acceptsSubmissions: autoItem.acceptsSubmissions,
+    generatedForDocumentId: documentId,
+  };
+}
+
+/**
+ * A presenter (not a manager) never changes a document's kind or item into
+ * one it can no longer present: refused (409) when the change leaves it
+ * closed (presentationClosed with the new kind where it hangs `after` the
+ * change) and it was not closed before (with its kind where it hangs
+ * `before`). So nobody gets around a deadline by creating a kind still open
+ * and switching it afterwards, and a document the Secretaría expected under
+ * an item reserved to it does not lose that exemption by a move past its
+ * kind's deadline, which would leave a draft the member cannot send. A draft
+ * already closed, or still open after the change, may change freely, and
+ * the same exemptions hold: an internal deadline or a correction requested
+ * keep it open wherever it goes.
+ */
+export function requirePresentationChangeOpen(
+  document: Pick<DocumentRow, "kind" | "dueAt" | "correctionRequestedAt">,
+  change: {
+    kind: DocumentKind;
+    before: PresentationItem;
+    after: PresentationItem;
+  },
+  milestones: Milestones,
+  now = new Date(),
+): void {
+  const closedAfter = presentationClosed(
+    { ...document, kind: change.kind },
+    change.after,
+    milestones,
+    now,
+  );
+  if (
+    closedAfter &&
+    !presentationClosed(document, change.before, milestones, now)
+  ) {
+    fail(409, DOCUMENTS_DEADLINE_PASSED_MESSAGE, {
+      reason: DOCUMENTS_DEADLINE_PASSED_REASON,
+    });
+  }
 }
 
 /** Presenters and managers read the correction the Secretaría asked for. */
@@ -1344,15 +1405,6 @@ export async function nextVersionNumber(
   return Number(row?.last ?? 0) + 1;
 }
 
-const REFERENCE_TIME_ZONE = "Europe/Madrid";
-
-function referenceYear(at: Date): string {
-  return new Intl.DateTimeFormat("en", {
-    timeZone: REFERENCE_TIME_ZONE,
-    year: "numeric",
-  }).format(at);
-}
-
 /**
  * Next official reference for kinds that use one: "{PREFIX} {NNN}/{YYYY}",
  * numbered per prefix and year (of `at`, in Madrid time) across every
@@ -1365,7 +1417,7 @@ export async function assignReference(
 ): Promise<string | null> {
   const prefix = DOCUMENT_KIND_DEFAULTS[kind].referencePrefix;
   if (!prefix) return null;
-  const year = referenceYear(at);
+  const year = assemblyYear(at);
   await executor.execute(
     sql`select pg_advisory_xact_lock(hashtext(${`document_reference:${prefix}:${year}`}))`,
   );
@@ -1632,7 +1684,8 @@ export const FILE_FORMAT_REFUSED_MESSAGE =
  * Updates the metadata of a document. Presenters may change title, summary,
  * kind, format (text or PDF, until it is published; a PDF only for the types
  * that take no amendments), agenda item and
- * presenters (planPresenters) of their draft;
+ * presenters (planPresenters) of their draft, a kind or an item only while
+ * they could still present it after the change (requirePresentationChangeOpen);
  * everything else needs document:manage. The slug never changes, since it is
  * part of the URLs already shared.
  */
@@ -1753,6 +1806,10 @@ export async function updateDocument(
     let leftItem: AgendaItemRow | null = null;
     let keptItem: AgendaItemRow | null = null;
     let newItem: AgendaItemRow | null = null;
+    // Where the document hangs now, and where it ends up hanging when it
+    // moves (null: it stays), as the presentation rules read them.
+    let hangsFrom: PresentationItem | null = null;
+    let movedTo: PresentationItem | null = null;
     if (changed.includes("agendaItemId")) {
       const target = await requireAgendaTarget(
         tx,
@@ -1766,6 +1823,7 @@ export async function updateDocument(
         .select()
         .from(agendaItems)
         .where(eq(agendaItems.id, current.agendaItemId));
+      hangsFrom = here ?? null;
       const ownItem =
         here && here.generatedForDocumentId === current.id ? here : null;
       if (
@@ -1793,6 +1851,7 @@ export async function updateDocument(
         } else {
           patch.agendaItemId = target.id;
         }
+        movedTo = presentationItemAfterMove(current.id, target, newItem);
         leftItem = await findRemovableAutoItem(tx, current);
         if (!leftItem) keptItem = ownItem;
       }
@@ -1806,6 +1865,29 @@ export async function updateDocument(
         fail(422, SUBMISSION_KIND_REFUSED_MESSAGE, {
           reason: SUBMISSION_KIND_REFUSED_REASON,
         });
+      }
+    }
+    if (!manager && (movedTo || changed.includes("kind"))) {
+      // The kind's own deadline where the document hangs once stored, as
+      // for creating and sending it: a change never leaves the member a
+      // draft it cannot send that it could send before.
+      const before =
+        hangsFrom ??
+        (
+          await tx
+            .select({
+              acceptsSubmissions: agendaItems.acceptsSubmissions,
+              generatedForDocumentId: agendaItems.generatedForDocumentId,
+            })
+            .from(agendaItems)
+            .where(eq(agendaItems.id, current.agendaItemId))
+        )[0];
+      if (before) {
+        requirePresentationChangeOpen(
+          current,
+          { kind: nextKind, before, after: movedTo ?? before },
+          await loadMilestones(assembly.id, tx),
+        );
       }
     }
     if (changed.includes("kind")) {
@@ -2118,8 +2200,9 @@ export async function updateDocumentContent(
 /**
  * A presenter sends a draft to the Secretaría (`submitted`), which then
  * validates it (publishes it) or asks for a correction. Members must do it
- * before the documents_close milestone, unless the Secretaría expects the
- * document (see presentationClosed); managers are not bound by it.
+ * before its kind's deadline (presentationDeadlinePassed), unless the
+ * Secretaría expects the document (see presentationClosed); managers are not
+ * bound by it.
  * Presenting it again after a correction clears the correction note.
  */
 export async function submitDocument(
@@ -2156,7 +2239,7 @@ export async function submitDocument(
         .from(agendaItems)
         .where(eq(agendaItems.id, current.agendaItemId));
       if (item && presentationClosed(current, item, milestones)) {
-        fail(409, "El plazo de presentación de documentos ha terminado", {
+        fail(409, DOCUMENTS_DEADLINE_PASSED_MESSAGE, {
           reason: DOCUMENTS_DEADLINE_PASSED_REASON,
         });
       }

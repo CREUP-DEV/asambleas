@@ -8,7 +8,12 @@
 export const ASSEMBLY_CLOSED_REASON = "assembly_closed";
 
 /**
- * A member creates or sends a document past `documents_close`
- * (`presentationClosed`); only the Secretaría may present it late.
+ * A member creates or sends a document, or changes its kind, past its
+ * kind's deadline (presentationDeadlinePassed, `presentationClosed`); only
+ * the Secretaría may present it late.
  */
 export const DOCUMENTS_DEADLINE_PASSED_REASON = "documents_deadline_passed";
+
+/** What a member reads with DOCUMENTS_DEADLINE_PASSED_REASON. */
+export const DOCUMENTS_DEADLINE_PASSED_MESSAGE =
+  "El plazo de presentación de documentos ha terminado";

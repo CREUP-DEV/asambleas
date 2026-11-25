@@ -20,12 +20,27 @@ import {
   documentPresenterMembers,
   formatMemberList,
 } from "~/composables/document/documentPresenters";
+import {
+  proposeFromItem,
+  type ItemProposal,
+} from "~/composables/document/itemProposal";
+import {
+  ITEM_SELECT_UI,
+  repropose,
+} from "~/composables/document/itemProposalForm";
 
 /**
  * "Añadir documento esperado": the Secretaría creates, in advance, an empty
  * document for the member that has to provide it (a CEA report, a
  * resolution), with an internal deadline. The member then finds it on their
  * home page and fills it in. Nothing opens afterwards: the panel shows it.
+ *
+ * The item is a numbered, searchable list whose long titles wrap. Choosing
+ * it proposes the type and the title (proposeFromItem, as "Añadir
+ * documento" does), over what the user has not changed. After a document is
+ * added, the next opening keeps its item, type, format and deadline, and
+ * asks again only who presents it and its title: a dozen CEA reports under
+ * one item, all with the same deadline, take a presenter and a title each.
  *
  * The type's rules (amendments, vote) come from its defaults; only the
  * format is offered, as two cards in view (text on the platform or an
@@ -36,9 +51,16 @@ const props = defineProps<{
   apiBase: string;
   /**
    * Agenda items in agenda order, with their number ("2.1"; null for one
-   * that is not in the agenda for everyone yet).
+   * that is not in the agenda for everyone yet). `hasDocuments`: the item
+   * already shows documents, so no title is proposed from it; left out, it
+   * is taken as unknown and no title is proposed either (never a duplicate).
    */
-  items: { id: string; number: string | null; title: string }[];
+  items: {
+    id: string;
+    number: string | null;
+    title: string;
+    hasDocuments?: boolean;
+  }[];
 }>();
 
 const open = defineModel<boolean>("open", { default: false });
@@ -89,6 +111,36 @@ function initialState(): ExpectedFormState {
 
 const state = reactive<ExpectedFormState>(initialState());
 
+/**
+ * What the last document added leaves for the next one, in memory while the
+ * page stays: its item, type, format and deadline.
+ */
+type KeptFields = Pick<
+  ExpectedFormState,
+  "agendaItemId" | "kind" | "format" | "dueAt"
+>;
+const kept = shallowRef<KeptFields | null>(null);
+
+const NO_PROPOSAL: ItemProposal = { kind: null, title: null };
+/** What was last proposed, to tell it from what the user typed or chose. */
+const lastProposal = shallowRef<ItemProposal>(NO_PROPOSAL);
+
+function proposalFor(itemId: string): ItemProposal {
+  const item = props.items.find((candidate) => candidate.id === itemId);
+  return item
+    ? proposeFromItem({ ...item, hasDocuments: item.hasDocuments ?? true })
+    : NO_PROPOSAL;
+}
+
+/** Another item: propose again the type and title the user has not changed. */
+function onItem(itemId: string | undefined): void {
+  const next = proposalFor(itemId ?? "");
+  Object.assign(state, repropose(state, lastProposal.value, next), {
+    agendaItemId: itemId ?? "",
+  });
+  lastProposal.value = next;
+}
+
 /** Lower bound of the picker: typed dates may still be earlier. */
 const minDue = computed(() => new Date(now.value).toISOString());
 const dueInPast = computed(
@@ -120,7 +172,16 @@ watch(
   open,
   (isOpen) => {
     if (!isOpen) return;
-    Object.assign(state, initialState());
+    Object.assign(state, initialState(), kept.value ?? {});
+    // The kept item may be gone from the agenda meanwhile.
+    if (!props.items.some((item) => item.id === state.agendaItemId)) {
+      state.agendaItemId = "";
+    }
+    // A kept type reads as proposed, so another item replaces it; the kept
+    // item proposes no title again: a document was just added under it.
+    lastProposal.value = kept.value
+      ? { kind: kept.value.kind ?? null, title: null }
+      : NO_PROPOSAL;
     void loadMembers();
   },
   { immediate: true },
@@ -223,6 +284,12 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
       body,
     });
     emit("created", created);
+    kept.value = {
+      agendaItemId: data.agendaItemId,
+      kind: data.kind,
+      format: data.format,
+      dueAt: data.dueAt,
+    };
     open.value = false;
     // Every presenter, the main one first ("UPV, UV y UM").
     const presenters = documentPresenterMembers(created).map(
@@ -269,12 +336,23 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
           name="agendaItemId"
           required
         >
-          <USelect
-            v-model="state.agendaItemId"
+          <USelectMenu
+            :model-value="state.agendaItemId || undefined"
             :items="itemOptions"
             value-key="value"
             :placeholder="t('tracking.expected.itemPlaceholder')"
+            :aria-label="
+              selectMenuLabel(
+                t('tracking.expected.item'),
+                itemOptions,
+                state.agendaItemId,
+                t('tracking.expected.itemPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('agenda.newDocument.searchItem'))"
+            :ui="ITEM_SELECT_UI"
             class="w-full"
+            @update:model-value="onItem"
           />
         </UFormField>
 

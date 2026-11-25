@@ -31,7 +31,7 @@ const BOX_ICON = {
 } as const;
 
 type StatusColor = keyof typeof ON_TINT;
-const STATUS_COLORS = Object.keys(ON_TINT) as StatusColor[];
+const TINT_COLORS = Object.keys(ON_TINT) as StatusColor[];
 
 /**
  * The keyboard focus ring is solid (E-001). Nuxt UI draws it in the
@@ -127,14 +127,14 @@ export default defineAppConfig({
       compoundVariants: focusRing({}, (color) => ({ root: FOCUS[color] })),
     },
     alert: {
-      compoundVariants: STATUS_COLORS.map((color) => ({
+      compoundVariants: TINT_COLORS.map((color) => ({
         color,
         variant: ["subtle", "soft", "outline"],
         class: statusBox(BOX_ICON[color]),
       })),
     },
     badge: {
-      compoundVariants: STATUS_COLORS.map((color) => ({
+      compoundVariants: TINT_COLORS.map((color) => ({
         color,
         variant: ["subtle", "soft"],
         class: ON_TINT[color],
@@ -142,7 +142,7 @@ export default defineAppConfig({
     },
     button: {
       compoundVariants: [
-        ...STATUS_COLORS.map((color) => ({
+        ...TINT_COLORS.map((color) => ({
           color,
           variant: ["subtle", "soft", "outline", "ghost"],
           class: ON_TINT[color],

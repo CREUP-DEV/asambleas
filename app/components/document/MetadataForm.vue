@@ -20,6 +20,8 @@ import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import { formatDateTime, toDate } from "~/utils/format";
 import { presenterKindGroups } from "~/composables/document/documentKinds";
+import { usePresentationDeadlines } from "~/composables/document/usePresentationDeadlines";
+import { errorReasonKey } from "~/composables/api/useApi";
 import {
   choicePresenterIds,
   coPresentersDroppedWithoutLead,
@@ -69,7 +71,9 @@ import {
  * Presenters choose the type from cards, the ones their member usually
  * presents and "Otro tipo" for the rest (DocumentKindPicker); a PDF only
  * offers the types that take no amendments, as when it was created (the
- * server refuses the others). Managers get a searchable list of every type.
+ * server refuses the others), and a type past its deadline is offered only
+ * when it is the document's own or the deadlines do not bind the document
+ * (deadlineExempt). Managers get a searchable list of every type.
  *
  * On a published document, changing what an accepted amendment becomes also
  * changes the amendments already answered, so the form says what saving
@@ -423,17 +427,71 @@ const kindItems = computed(() =>
   })),
 );
 
+const { kindOpen } = usePresentationDeadlines(() => props.assembly);
+
+/**
+ * The calendar's deadlines do not bind this document's type
+ * (presentationClosed on the server): the Secretaría expects it (an internal
+ * deadline, or an item that takes no submissions and is not an automatic
+ * sub-item) or asked for a correction. A move to another item puts it in
+ * an automatic sub-item, which never exempts it.
+ */
+const deadlineExempt = computed(() => {
+  const document = props.document;
+  if (document.dueAt || document.correctionRequestedAt) return true;
+  if (state.agendaItemId !== document.agendaItemId) return false;
+  const item = agenda.value?.items.find(
+    (candidate) => candidate.id === document.agendaItemId,
+  );
+  return item?.acceptsSubmissions === false && !item.auto;
+});
+
+/**
+ * Where the document hangs now, the deadline of its stored type binds it
+ * (presentationClosed on the server): it can no longer be sent as it is.
+ */
+const closedNow = computed(() => {
+  const document = props.document;
+  if (document.dueAt || document.correctionRequestedAt) return false;
+  const item = agenda.value?.items.find(
+    (candidate) => candidate.id === document.agendaItemId,
+  );
+  if (!item || (item.acceptsSubmissions === false && !item.auto)) return false;
+  return !kindOpen(initial.value.kind);
+});
+
+/**
+ * A move to another item would leave the document closed by `kind`'s
+ * deadline when it was not before (requirePresentationChangeOpen on the
+ * server): another item never exempts it, unless an internal deadline or a
+ * correction requested does wherever it goes.
+ */
+function moveClosesKind(kind: DocumentKind): boolean {
+  const document = props.document;
+  if (document.dueAt || document.correctionRequestedAt) return false;
+  return !kindOpen(kind) && !closedNow.value;
+}
+
 /**
  * Presenters get the usual types of their member as cards, and a PDF only
- * the types that take no amendments (the server refuses the others).
+ * the types that take no amendments (the server refuses the others). Past
+ * a type's deadline it is no longer offered (kindOpen,
+ * requirePresentationChangeOpen on the server), unless it is the document's
+ * own type or the deadlines do not bind the document (deadlineExempt).
  */
-const presenterKinds = computed(() =>
-  presenterKindGroups({
+const presenterKinds = computed(() => {
+  const groups = presenterKindGroups({
     memberKind: props.document.proponent?.kind ?? myMember.value?.kind,
     format: props.document.format,
     current: initial.value.kind,
-  }),
-);
+  });
+  const offered = (kind: DocumentKind) =>
+    kind === initial.value.kind || deadlineExempt.value || kindOpen(kind);
+  return {
+    common: groups.common.filter(offered),
+    others: groups.others.filter(offered),
+  };
+});
 
 function onKindPick(kind: DocumentKind | undefined): void {
   if (kind) state.kind = kind;
@@ -456,7 +514,9 @@ const { data: agenda, status: agendaStatus } = useAssemblyAgenda();
  * Informe de ..."), which also shows where it sits in the tree. The
  * automatic sub-item of another document is never a place to move to, for
  * anyone (the server refuses it); presenters can only pick an item that
- * takes the type chosen.
+ * takes the type chosen, and none other once the move would leave the
+ * document past its type's deadline (moveClosesKind): a document the
+ * Secretaría expects under an item reserved to it stays there.
  */
 const agendaItems = computed(() => {
   const items = agenda.value?.items ?? [];
@@ -473,9 +533,32 @@ const agendaItems = computed(() => {
       disabled:
         !manager.value &&
         item.id !== initial.value.agendaItemId &&
-        !itemAcceptsKind(item, state.kind),
+        (!itemAcceptsKind(item, state.kind) || moveClosesKind(state.kind)),
     }));
 });
+
+// Presenters: a type or an item chosen but not saved goes back to the
+// stored one once its deadline passes with the form open (the server would
+// refuse it), as the type's card and the item's entry go away.
+watch(
+  () =>
+    !manager.value &&
+    state.kind !== initial.value.kind &&
+    !deadlineExempt.value &&
+    !kindOpen(state.kind),
+  (refused) => {
+    if (refused) state.kind = initial.value.kind;
+  },
+);
+watch(
+  () =>
+    !manager.value &&
+    state.agendaItemId !== initial.value.agendaItemId &&
+    moveClosesKind(state.kind),
+  (refused) => {
+    if (refused) state.agendaItemId = initial.value.agendaItemId;
+  },
+);
 
 /** Long titles wrap instead of being cut, in the list and in the field. */
 const agendaSelectUi = {
@@ -723,7 +806,9 @@ async function doPersist(notify: boolean): Promise<boolean> {
     return true;
   } catch (error) {
     notifyError(error, "document.metadata.saveError");
-    if (isConflict(error)) {
+    // A calendar rule (its reason, worded by notifyError) is not a stale
+    // read: the form keeps what was written.
+    if (isConflict(error) && !errorReasonKey(error)) {
       conflictNotice.value = true;
       resyncNext = true;
       emit("stale");

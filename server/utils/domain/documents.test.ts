@@ -30,6 +30,8 @@ const {
   deleteBlocker,
   isExpectedDocument,
   presentationClosed,
+  presentationItemAfterMove,
+  requirePresentationChangeOpen,
   requireNotOthersAutoItem,
   toDocumentSummaryDto,
 } = await import("./documents");
@@ -182,7 +184,7 @@ describe("presentationClosed", () => {
   it("reopens presentation after a correction request, past the deadline", () => {
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: at },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: at },
         open,
         milestones,
         after,
@@ -193,7 +195,7 @@ describe("presentationClosed", () => {
   it("follows documents_close for documents members chose to present", () => {
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: null },
         open,
         milestones,
         at,
@@ -201,7 +203,7 @@ describe("presentationClosed", () => {
     ).toBe(false);
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: null },
         open,
         milestones,
         after,
@@ -212,7 +214,7 @@ describe("presentationClosed", () => {
   it("lets an expected document be presented after documents_close", () => {
     expect(
       presentationClosed(
-        { dueAt: at, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: at, correctionRequestedAt: null },
         open,
         milestones,
         after,
@@ -226,7 +228,7 @@ describe("presentationClosed", () => {
     expect(isExpectedDocument({ dueAt: null }, reserved)).toBe(true);
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: null },
         reserved,
         milestones,
         after,
@@ -241,7 +243,7 @@ describe("presentationClosed", () => {
     expect(isExpectedDocument({ dueAt: null }, automatic)).toBe(false);
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: null },
         automatic,
         milestones,
         at,
@@ -249,7 +251,7 @@ describe("presentationClosed", () => {
     ).toBe(false);
     expect(
       presentationClosed(
-        { dueAt: null, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: null, correctionRequestedAt: null },
         automatic,
         milestones,
         after,
@@ -262,12 +264,154 @@ describe("presentationClosed", () => {
     expect(isExpectedDocument({ dueAt: at }, automatic)).toBe(true);
     expect(
       presentationClosed(
-        { dueAt: at, correctionRequestedAt: null },
+        { kind: "resolution", dueAt: at, correctionRequestedAt: null },
         automatic,
         milestones,
         after,
       ),
     ).toBe(false);
+  });
+
+  it("follows each kind's own deadline (presentationDeadlinePassed)", () => {
+    const calendar = {
+      documents_close: new Date("2026-11-02T10:00:00Z"),
+      reports_close: new Date("2026-11-04T10:00:00Z"),
+      candidacies_close: new Date("2026-11-05T10:00:00Z"),
+    };
+    // Past documents_close, before candidacies_close: a candidacy still goes.
+    expect(
+      presentationClosed(
+        { kind: "candidacy", dueAt: null, correctionRequestedAt: null },
+        open,
+        calendar,
+        after,
+      ),
+    ).toBe(false);
+    // A report past reports_close no longer goes.
+    expect(
+      presentationClosed(
+        { kind: "report", dueAt: null, correctionRequestedAt: null },
+        open,
+        calendar,
+        new Date("2026-11-04T10:01:00Z"),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("requirePresentationChangeOpen", () => {
+  const calendar = {
+    documents_close: new Date("2026-11-02T10:00:00Z"),
+    candidacies_close: new Date("2026-11-05T10:00:00Z"),
+  };
+  // Past documents_close, before candidacies_close.
+  const between = new Date("2026-11-03T10:00:00Z");
+  const open = { acceptsSubmissions: true, generatedForDocumentId: null };
+  const reserved = { acceptsSubmissions: false, generatedForDocumentId: null };
+  const automatic = { acceptsSubmissions: false, generatedForDocumentId: "d1" };
+  // What insertAutoItem returns: bindAutoItem sets generatedForDocumentId
+  // only after the checks, so the row alone reads as `reserved`.
+  const inserted = { acceptsSubmissions: false, generatedForDocumentId: null };
+  const candidacy = {
+    kind: "candidacy" as const,
+    dueAt: null,
+    correctionRequestedAt: null,
+  };
+  const resolution = { ...candidacy, kind: "resolution" as const };
+  const refused = {
+    statusCode: 409,
+    message: "El plazo de presentación de documentos ha terminado",
+    data: { reason: "documents_deadline_passed" },
+  };
+  type Change = Parameters<typeof requirePresentationChangeOpen>[1];
+  const check =
+    (document: typeof candidacy | typeof resolution, change: Change) => () =>
+      requirePresentationChangeOpen(document, change, calendar, between);
+
+  it("refuses a kind whose deadline has passed, as creating it", () => {
+    for (const item of [open, automatic]) {
+      expect(
+        check(candidacy, { kind: "resolution", before: item, after: item }),
+      ).toThrow(expect.objectContaining(refused));
+    }
+  });
+
+  it("refuses a kind change made with a move into a new automatic sub-item", () => {
+    // The move binds the new sub-item to the document: never read as
+    // reserved, so the deadline still applies.
+    const after = presentationItemAfterMove("d1", open, inserted);
+    expect(after).toEqual(automatic);
+    expect(
+      check(candidacy, { kind: "resolution", before: automatic, after }),
+    ).toThrow(expect.objectContaining(refused));
+  });
+
+  it("refuses a move out of a reserved item past the kind's deadline", () => {
+    // The Secretaría expected it there; a move to an item that takes
+    // submissions would leave a draft the member cannot send.
+    expect(
+      check(resolution, {
+        kind: "resolution",
+        before: reserved,
+        after: presentationItemAfterMove("d1", open, inserted),
+      }),
+    ).toThrow(expect.objectContaining(refused));
+  });
+
+  it("moves a draft already closed, or still open after the move", () => {
+    const after = presentationItemAfterMove("d1", open, inserted);
+    // A resolution past documents_close in an automatic sub-item: it could
+    // not be sent before either.
+    expect(
+      check(resolution, { kind: "resolution", before: automatic, after }),
+    ).not.toThrow();
+    // A candidacy before candidacies_close, out of a reserved item too.
+    for (const before of [automatic, reserved]) {
+      expect(
+        check(candidacy, { kind: "candidacy", before, after }),
+      ).not.toThrow();
+    }
+    // Into an item reserved to the Secretaría (managers move it there).
+    expect(
+      check(resolution, {
+        kind: "resolution",
+        before: automatic,
+        after: presentationItemAfterMove("d1", reserved, null),
+      }),
+    ).not.toThrow();
+  });
+
+  it("takes a kind still in its deadline, and always keeps the current one", () => {
+    expect(
+      check(resolution, { kind: "venue", before: open, after: open }),
+    ).not.toThrow();
+    // A resolution past documents_close stays a resolution (title, summary).
+    expect(
+      check(resolution, { kind: "resolution", before: open, after: open }),
+    ).not.toThrow();
+  });
+
+  it("leaves expected documents and corrections free, as presentationClosed", () => {
+    const moved = presentationItemAfterMove("d1", open, inserted);
+    const exempt = [
+      { document: { ...candidacy, dueAt: at }, before: open, after: moved },
+      { document: candidacy, before: reserved, after: reserved },
+      {
+        document: { ...candidacy, correctionRequestedAt: at },
+        before: open,
+        after: moved,
+      },
+    ];
+    for (const { document, before, after } of exempt) {
+      expect(() =>
+        requirePresentationChangeOpen(
+          document,
+          { kind: "resolution", before, after },
+          calendar,
+          between,
+        ),
+      ).not.toThrow();
+    }
   });
 });
 

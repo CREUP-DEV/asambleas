@@ -35,6 +35,7 @@ import type { AssemblyType } from "../constants/assemblyTypes";
 import type { DocumentKind, DocumentStatus } from "../constants/domain";
 import type { Block, Mark } from "../types/content";
 import { ASSEMBLY_NAMES } from "./content/approvalLine";
+import { formatLongDate } from "./dates";
 import {
   isItemVotedDocument,
   isUnanimousVote,
@@ -349,16 +350,6 @@ function electedAs(title: string): string | null {
 
 function sentence(negative: boolean, verb: string, object: string): string {
   return `${negative ? "No se" : "Se"} ${verb} ${object}`.trim();
-}
-
-/** The date in Madrid, «18 de noviembre de 2026». */
-function longDate(date: Date | string): string {
-  return new Intl.DateTimeFormat("es-ES", {
-    timeZone: "Europe/Madrid",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(date));
 }
 
 /** The city of «Universidad de León (León)», or the place as written. */
@@ -823,7 +814,7 @@ export function agreementsRecordBlocks(
   const association = `${CREUP_LEGAL.name}-${CREUP_LEGAL.acronym}`;
   const registry = `${CREUP_LEGAL.registry},`;
   const opening = `Por medio de la presente, ${name}, en calidad de ${office} de la ${association}, NIF ${CREUP_LEGAL.nif} e inscrita en el Registro nacional de Asociaciones con el número ${registry} certifica:`;
-  const convened = `Que conforme a la normativa interna de la Asociación fue convocada para el ${longDate(assembly.startDate)} la ${assembly.number}.ª ${ASSEMBLY_NAMES[assembly.type]} en ${city}.`;
+  const convened = `Que conforme a la normativa interna de la Asociación fue convocada para el ${formatLongDate(assembly.startDate, "es-ES")} la ${assembly.number}.ª ${ASSEMBLY_NAMES[assembly.type]} en ${city}.`;
   const quorum =
     "Que, habiendo quorum, se tomaron los acuerdos que constan a continuación:";
 

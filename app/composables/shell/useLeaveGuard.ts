@@ -13,15 +13,22 @@ import { routeUpdateLeavesPage } from "./leaveGuard";
  *
  * `hasWork` says whether something would be lost; `question` is the
  * screen's own wording of the question. `confirmLeaving` asks the same
- * question for a leave the page makes by itself (`sala.vue`).
+ * question for a leave the page makes by itself (`sala.vue`). `onDiscard`
+ * runs when the question was asked and the answer was to leave: the work is
+ * given up, so a composer drops its local copy (`useDraftCopy`). A reload
+ * never calls it (the browser's own question gives no answer), so the copy
+ * is still there afterwards.
  */
 export function useLeaveGuard(
   hasWork: () => boolean,
   question: () => string,
+  onDiscard?: () => void,
 ): { confirmLeaving: () => boolean } {
   function confirmLeaving(): boolean {
     if (!hasWork()) return true;
-    return window.confirm(question());
+    const leaving = window.confirm(question());
+    if (leaving) onDiscard?.();
+    return leaving;
   }
 
   onBeforeRouteLeave(confirmLeaving);

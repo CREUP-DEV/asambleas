@@ -7,11 +7,9 @@ import type {
   MemberRef,
   PartialDocumentAmendmentsDto,
 } from "~~/shared/types/api";
-import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import { requireCurrentAssembly } from "../assembly/useCurrentAssembly";
 import { affectsDocumentAmendments } from "../assembly/-liveFilters";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
-import { trailingRefresh } from "../fetch/trailingRefresh";
-import { useAssemblyLive } from "../live/useAssemblyLive";
 import { seedOrRead, settledForHandover } from "./documentHandover";
 import { partialAmendmentsRefetch } from "./partialAmendments";
 import {
@@ -36,8 +34,9 @@ export interface UseDocumentAmendmentsOptions {
   /** Document slug or id, for the API url. */
   document: MaybeRefOrGetter<string | undefined>;
   /**
-   * Assembly id (not the slug), for a stream of its own when this runs
-   * outside the assembly hub. Inside the hub its stream is reused.
+   * Unused: it named the stream of its own this opened outside the assembly
+   * hub, which it no longer does (it runs only inside the hub). Kept until
+   * its callers stop passing it.
    */
   assemblyId?: MaybeRefOrGetter<string | undefined>;
   /** Document id, to recognise the live events that concern it. */
@@ -73,7 +72,8 @@ export interface UseDocumentAmendmentsOptions {
  * derives from them: text order, overlap clusters (`groups`, the list on
  * screen, grouped by the main presenter's answer once public:
  * `byAnswer`), gutter markers, filters
- * and the actor's drafts. Refreshes itself on live events for the document.
+ * and the actor's drafts. Refreshes itself on live events for the document,
+ * through the assembly hub's stream: it runs only inside the hub.
  *
  * The main list leaves drafts out; `mine` holds the actor's drafts and
  * every amendment their member presents, whatever its review state.
@@ -283,8 +283,8 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     return amendmentRelationsOf(id, relations.value);
   }
 
-  // One stream per tab: reuse the hub's when this runs inside it.
-  const hub = inject(CURRENT_ASSEMBLY_KEY, null);
+  // One stream per tab, the hub's (useCurrentAssembly): never one of its own.
+  const hub = requireCurrentAssembly("useDocumentAmendments");
   const nuxtApp = useNuxtApp();
 
   /**
@@ -340,22 +340,20 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   }
 
   /**
-   * Reads the whole list again after a live batch, never joining a read
-   * that may have left before it: one run per batch for every reader of
-   * the key inside the hub (liveRefresh), a trailing one of its own
-   * outside it.
-   */
-  const ownRefresh = trailingRefresh(() => refresh({ dedupe: "cancel" }));
-  /**
    * Live reads asked for and not settled yet: one starts a microtask later
-   * (trailingRefresh), and the list must not be handed over meanwhile.
+   * (the hub's liveRefresh), and the list must not be handed over meanwhile.
    */
   let liveReads = 0;
+  /**
+   * Reads the whole list again after a live batch, never joining a read
+   * that may have left before it: one run per batch for every reader of
+   * the key (the hub's liveRefresh).
+   */
   function refreshAll(): Promise<unknown> {
     liveReads += 1;
-    const read = hub
-      ? hub.liveRefresh(fetchKey.value, () => refresh({ dedupe: "cancel" }))
-      : ownRefresh();
+    const read = hub.liveRefresh(fetchKey.value, () =>
+      refresh({ dedupe: "cancel" }),
+    );
     return read.finally(() => {
       liveReads -= 1;
     });
@@ -397,12 +395,8 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     }
   }
 
-  const live = hub
-    ? (hub.onLive(handleLiveEvents), hub.live)
-    : useAssemblyLive(
-        () => (options.assemblyId ? toValue(options.assemblyId) : undefined),
-        handleLiveEvents,
-      );
+  hub.onLive(handleLiveEvents);
+  const live = hub.live;
 
   /**
    * The list when the next page can take it over (documentHandover): read,

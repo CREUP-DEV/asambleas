@@ -26,6 +26,7 @@ import {
   type ElectionInput,
   type ElectionRecord,
 } from "~~/shared/utils/election";
+import { STATUS_BOX } from "~/utils/statusTone";
 
 /**
  * Vote on an agenda item itself (a ratification, an election), for an item
@@ -597,10 +598,10 @@ async function record(): Promise<void> {
           class="rounded-lg border p-3 outline-none focus-visible:ring-2 focus-visible:ring-primary"
           :class="
             expected === 'approved'
-              ? 'border-success/50 bg-success/10'
+              ? STATUS_BOX.success
               : goesToRunoff
                 ? 'border-warning/50 bg-warning/10'
-                : 'border-error/50 bg-error/10'
+                : STATUS_BOX.error
           "
         >
           <p class="text-highlighted font-semibold">

@@ -6,6 +6,7 @@ import { db } from "../../db";
 import { documentImages, documents } from "../../db/schema";
 import { AUDIT_ACTIONS } from "../../../shared/constants/activity";
 import { IMAGE_ASSET_PATTERN } from "../../../shared/types/content";
+import { ASSEMBLY_TIME_ZONE } from "../../../shared/utils/calendar";
 import { logError, logInfo } from "../core/logger";
 import { recordAudit } from "./audit";
 import { getImageDir, imageFileName } from "./documentImages";
@@ -22,7 +23,6 @@ import { getImageDir, imageFileName } from "./documentImages";
 export const IMAGE_CLEANUP_QUEUE = "document-images-cleanup";
 /** 04:45 Madrid time, before the intranet jobs. */
 const IMAGE_CLEANUP_CRON = "45 4 * * *";
-const IMAGE_CLEANUP_TIMEZONE = "Europe/Madrid";
 export const IMAGE_GRACE_DAYS = 14;
 
 /** Whether any version or amendment of the image's document shows it. */
@@ -184,7 +184,7 @@ export async function setupImageCleanupSchedule(
     deleteAfterSeconds: 30 * 24 * 3600,
   });
   await boss.schedule(IMAGE_CLEANUP_QUEUE, IMAGE_CLEANUP_CRON, null, {
-    tz: IMAGE_CLEANUP_TIMEZONE,
+    tz: ASSEMBLY_TIME_ZONE,
     // A server that was down at 04:45 runs it once when it comes back.
     missed: "once",
   });

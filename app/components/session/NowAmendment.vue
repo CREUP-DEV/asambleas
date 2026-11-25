@@ -16,7 +16,10 @@ import {
   sessionSourcesAwaitingAdmission,
   sessionSupersededSourceIds,
   sessionTransactionalRejectors,
+  type SessionAmendmentStage,
 } from "~/composables/session/sessionModel";
+import { SESSION_STAGE_COLORS, type StatusColor } from "~/utils/statusColors";
+import { STATUS_BOX } from "~/utils/statusTone";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { useSessionPosition } from "~/composables/session/useSessionPosition";
@@ -221,15 +224,28 @@ const outcomeNote = computed(() =>
     : props.amendment.outcomeNote,
 );
 
-const STAGE_TONE: Record<string, string> = {
-  open: "border-info/40 bg-info/5",
-  acceptances: "border-warning/50 bg-warning/5",
-  superseded: "border-warning/50 bg-warning/5",
-  late: "border-warning/50 bg-warning/5",
-  incorporated: "border-success/50 bg-success/10",
-  approved: "border-success/50 bg-success/10",
-  rejected: "border-error/50 bg-error/10",
-};
+/**
+ * The stages whose status box takes the tint of their colour
+ * (SESSION_STAGE_COLORS); the rest stay plain.
+ */
+const TINTED_STAGES: ReadonlySet<SessionAmendmentStage> = new Set([
+  "open",
+  "acceptances",
+  "superseded",
+  "late",
+  "incorporated",
+  "approved",
+  "rejected",
+]);
+
+const STAGE_BOX: Partial<Record<StatusColor, string>> = STATUS_BOX;
+
+const stageTone = computed(
+  () =>
+    (TINTED_STAGES.has(stage.value) &&
+      STAGE_BOX[SESSION_STAGE_COLORS[stage.value]]) ||
+    "border-default bg-elevated/40",
+);
 
 const showJustification = ref(false);
 watch(id, () => {
@@ -403,10 +419,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
     </div>
 
     <!-- Where it stands, and what comes next. -->
-    <div
-      class="rounded-lg border px-3 py-2"
-      :class="STAGE_TONE[stage] ?? 'border-default bg-elevated/40'"
-    >
+    <div class="rounded-lg border px-3 py-2" :class="stageTone">
       <p class="text-highlighted font-medium">
         <AmendmentLinkedText
           :text="statusText"

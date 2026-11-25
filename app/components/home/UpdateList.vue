@@ -5,6 +5,7 @@ import {
   type HomeWorkUpdateKind,
 } from "~/components/home/-work";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
+import { statusLabelKey } from "~/utils/statusColors";
 
 /**
  * Where the user's documents and amendments stand when there is nothing for
@@ -72,7 +73,7 @@ function sentence(update: HomeWorkUpdate): string {
   if (update.kind !== "amendment_other") {
     return t(`home.work.updates.${update.kind}`);
   }
-  const key = `common.status.amendment.${update.amendment?.status ?? ""}`;
+  const key = statusLabelKey("amendment", update.amendment?.status ?? "");
   return t("home.work.updates.amendment_other", {
     status: te(key) ? t(key) : (update.amendment?.status ?? ""),
   });

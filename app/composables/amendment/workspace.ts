@@ -26,6 +26,7 @@ import type {
 } from "~~/shared/types/content";
 import {
   compareAmendmentAnswers,
+  compareAmendmentCodes,
   type AmendmentOrderOptions,
 } from "~~/shared/utils/amendmentOrder";
 import { consolidate } from "~~/shared/utils/content/consolidate";
@@ -81,18 +82,8 @@ export function amendmentShortLabel(
   return amendment.number !== null ? String(amendment.number) : null;
 }
 
-/**
- * Order of two amendment codes ("CEUM 4", "CEA 12", "T 3"): by acronym, then
- * by the number as a number, so "CEA 2" comes before "CEA 10". The codes of
- * every executive area share the acronym "CEA" and one count per document,
- * so they reach two digits sooner. A missing code sorts first.
- */
-export function compareAmendmentCodes(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
-  return (a ?? "").localeCompare(b ?? "", undefined, { numeric: true });
-}
+/** The order of two amendment codes, shared with the annotated PDF's annex. */
+export { compareAmendmentCodes };
 
 // Review by the Secretaría -------------------------------------------------------
 
@@ -737,10 +728,16 @@ function timeOf(value: string | null | undefined): number {
 }
 
 /**
- * Text order: position in the base, then number, then submission time.
- * Once the document's answers are public (`byAnswer`), grouped first
- * by the main presenter's answer: accepted, transactions, rejected, the
- * rest (shared/utils/amendmentOrder.ts).
+ * The one debate order of every amendment list (AGENTS.md, Domain Rules;
+ * sortAmendments here, sortSessionAmendments in the console, Directo, the
+ * control sheet and the admission proposal). Text order: position in the
+ * base, then presentation order: the number, then a transactional's code
+ * (T1, T2… in the order they were first presented; transactionals take no
+ * number), both kept when an amendment is presented again, then the time
+ * it was presented, then its id. Without a number or a code it goes last.
+ * Once the document's answers are public (`byAnswer`), grouped first by
+ * the main presenter's answer: accepted, transactions, rejected, the rest
+ * (shared/utils/amendmentOrder.ts).
  */
 export function compareAmendments(
   a: AmendmentLike,
@@ -753,6 +750,12 @@ export function compareAmendments(
   const na = a.number ?? Number.POSITIVE_INFINITY;
   const nb = b.number ?? Number.POSITIVE_INFINITY;
   if (na !== nb) return na - nb;
+  if (a.code !== b.code) {
+    if (a.code === null) return 1;
+    if (b.code === null) return -1;
+    const codes = compareAmendmentCodes(a.code, b.code);
+    if (codes !== 0) return codes;
+  }
   const ta = timeOf(a.submittedAt);
   const tb = timeOf(b.submittedAt);
   if (ta !== tb) return ta - tb;

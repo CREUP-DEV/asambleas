@@ -7,6 +7,7 @@ import {
 } from "../auth/accessRecheck";
 import { getIntranetApiBaseUrl } from "./intranet";
 import { syncIntranetRoster, type RosterSyncOutcome } from "./sync";
+import { ASSEMBLY_TIME_ZONE } from "../../../shared/utils/calendar";
 
 /**
  * The daily intranet jobs, two pg-boss schedules on one instance:
@@ -28,15 +29,14 @@ import { syncIntranetRoster, type RosterSyncOutcome } from "./sync";
  */
 
 export const ROSTER_SYNC_QUEUE = "members-roster-sync";
-/** Every day at 05:00, in ROSTER_SYNC_TIMEZONE. */
+/** Every day at 05:00, in the assemblies' time zone. */
 export const ROSTER_SYNC_CRON = "0 5 * * *";
-export const ROSTER_SYNC_TIMEZONE = "Europe/Madrid";
 /** Retries after a failed run (the intranet was down): a few, well spaced. */
 export const ROSTER_SYNC_RETRY_LIMIT = 2;
 const ROSTER_SYNC_RETRY_DELAY_SECONDS = 15 * 60;
 
 export const ACCESS_RECHECK_QUEUE = "users-access-recheck";
-/** Every day at 05:30, after the roster sync, in ROSTER_SYNC_TIMEZONE. */
+/** Every day at 05:30, after the roster sync, in the assemblies' time zone. */
 export const ACCESS_RECHECK_CRON = "30 5 * * *";
 /** Retries after a run the Intranet cut short. */
 export const ACCESS_RECHECK_RETRY_LIMIT = 2;
@@ -173,7 +173,7 @@ export async function setupRosterSyncSchedule(
   }
 
   await boss.schedule(ROSTER_SYNC_QUEUE, ROSTER_SYNC_CRON, null, {
-    tz: ROSTER_SYNC_TIMEZONE,
+    tz: ASSEMBLY_TIME_ZONE,
     // A server that was down at 05:00 runs it once when it comes back.
     missed: "once",
   });
@@ -208,7 +208,7 @@ export async function setupAccessRecheckSchedule(
   }
 
   await boss.schedule(ACCESS_RECHECK_QUEUE, ACCESS_RECHECK_CRON, null, {
-    tz: ROSTER_SYNC_TIMEZONE,
+    tz: ASSEMBLY_TIME_ZONE,
     missed: "once",
   });
   await boss.work<unknown>(
@@ -244,13 +244,13 @@ export function startIntranetSchedules(): Promise<PgBoss | null> {
       logInfo("members.schedule", {
         state,
         cron: ROSTER_SYNC_CRON,
-        timezone: ROSTER_SYNC_TIMEZONE,
+        timezone: ASSEMBLY_TIME_ZONE,
       });
       const recheck = await setupAccessRecheckSchedule(boss);
       logInfo("access.schedule", {
         state: recheck,
         cron: ACCESS_RECHECK_CRON,
-        timezone: ROSTER_SYNC_TIMEZONE,
+        timezone: ASSEMBLY_TIME_ZONE,
       });
       if (state === "disabled" && recheck === "disabled") {
         await boss.stop({ graceful: false });

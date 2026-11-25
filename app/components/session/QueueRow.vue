@@ -4,11 +4,12 @@ import {
   isSessionAwaitingValidation,
   isSessionDebatable,
   isSessionUnpublished,
-  type SessionAmendmentStage,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel";
 import { amendmentSheetKind } from "~/components/control-sheet/-model";
+import { SESSION_STAGE_COLORS } from "~/utils/statusColors";
+import { STATUS_DOT } from "~/utils/statusTone";
 
 /**
  * One amendment of the queue, kept to a single line: its code, who presents
@@ -63,27 +64,6 @@ function onBlocClick(event: MouseEvent): void {
 
 const open = ref(false);
 const detailsId = computed(() => `session-row-${id.value}-details`);
-
-const STAGE_DOT: Record<SessionAmendmentStage, string> = {
-  turned_down: "bg-(--ui-text-dimmed)",
-  closed: "bg-(--ui-text-dimmed)",
-  superseded: "bg-warning",
-  awaiting_authors: "bg-(--ui-text-dimmed)",
-  awaiting_validation: "bg-(--ui-text-dimmed)",
-  correction_requested: "bg-(--ui-text-dimmed)",
-  late: "bg-warning",
-  sources_admission: "bg-warning",
-  acceptances: "bg-warning",
-  open: "bg-info",
-  incorporated: "bg-success",
-  approved: "bg-success",
-  rejected: "bg-error",
-  inadmissible: "bg-error",
-  withdrawn: "bg-(--ui-text-dimmed)",
-  lapsed: "bg-(--ui-text-dimmed)",
-  transacted: "bg-secondary",
-  draft: "bg-(--ui-text-dimmed)",
-};
 
 const stageText = useSessionStageLabel();
 const stageLabel = computed(() => stageText(stage.value, props.amendment));
@@ -200,7 +180,7 @@ function focusRow(): void {
           <span
             v-else
             class="size-2 shrink-0 rounded-full"
-            :class="STAGE_DOT[stage]"
+            :class="STATUS_DOT[SESSION_STAGE_COLORS[stage]]"
           />
           <span class="truncate">{{ rowStatus }}</span>
         </span>

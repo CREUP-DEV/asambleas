@@ -29,24 +29,21 @@ import type {
 } from "~~/shared/constants/domain";
 import {
   amendmentAcceptBlocked,
-  compareAmendmentCodes,
+  amendmentMainAuthor,
+  compareAmendments,
 } from "~/composables/amendment/workspace";
-import { cellFillOf } from "~~/shared/constants/cellFills";
-import { cellLayoutKey } from "~~/shared/utils/content/tables";
 import {
   answerableAfterDecision,
   rejectedByAnswer,
 } from "~~/shared/utils/positions";
 import {
   amendmentAnswerRank,
-  compareAmendmentAnswers,
   type AmendmentOrderOptions,
 } from "~~/shared/utils/amendmentOrder";
 import {
   agendaChildGroups,
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
-import { consolidate } from "~~/shared/utils/content/consolidate";
 import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import {
   amendmentsMeet,
@@ -63,8 +60,12 @@ import {
   ELECTION_CANDIDATE_MAX_LENGTH,
   ELECTION_MAX_CANDIDATES,
 } from "~~/shared/utils/election";
-import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
-import { touchedBlockIds } from "~~/shared/utils/content/ops";
+import {
+  sameBlockContent,
+  sameIdSet,
+  transactionalSeed,
+  type TransactionalSeed,
+} from "~~/shared/utils/content/transactionalSeed";
 import { findOverlaps } from "~~/shared/utils/content/overlaps";
 import {
   ballotKeysOf,
@@ -146,21 +147,6 @@ export function isSessionAwaitingAuthors(amendment: AmendmentDto): boolean {
     amendment.reviewState === "pending_authors" &&
     (amendment.status === "submitted" || amendment.status === "draft")
   );
-}
-
-/**
- * The main author of an amendment: the one that answers the transactionals
- * proposed over it. `mainAuthorId` names it; without it the first author
- * (authors come main author first) is taken.
- */
-export function sessionMainAuthor(amendment: AmendmentDto): MemberRef | null {
-  if (amendment.mainAuthorId) {
-    const named = amendment.authors.find(
-      (author) => author.id === amendment.mainAuthorId,
-    );
-    if (named) return named;
-  }
-  return amendment.authors[0] ?? null;
 }
 
 /**
@@ -796,25 +782,17 @@ export function isSessionPositionByMesa(
 }
 
 /**
- * Text order (as positionKey encodes it), then number. Once the document's
- * answers are public (`byAnswer`), grouped first by the main
- * presenter's answer: accepted, transactions, rejected, the rest,
- * rejected formal ones last
+ * The debate order of every amendment list (compareAmendments: text order,
+ * then presentation order). Once the document's answers are public
+ * (`byAnswer`), grouped first by the main presenter's answer: accepted,
+ * transactions, rejected, the rest, rejected formal ones last
  * (shared/utils/amendmentOrder.ts).
  */
 export function sortSessionAmendments(
   list: AmendmentDto[],
   options: AmendmentOrderOptions = {},
 ): AmendmentDto[] {
-  return [...list].sort(
-    (a, b) =>
-      compareAmendmentAnswers(a, b, options) ||
-      a.positionKey - b.positionKey ||
-      (a.number ?? Number.MAX_SAFE_INTEGER) -
-        (b.number ?? Number.MAX_SAFE_INTEGER) ||
-      compareAmendmentCodes(a.code, b.code) ||
-      a.id.localeCompare(b.id),
-  );
+  return [...list].sort((a, b) => compareAmendments(a, b, options));
 }
 
 // Queue ----------------------------------------------------------------------
@@ -1978,158 +1956,25 @@ export function sessionWordingSeed(
 
 // Transactional composer -----------------------------------------------------
 
-export interface SessionTransactionalSeed {
-  /** The contiguous run of base blocks the sources touch. */
-  passage: Block[];
-  /** The base block right before the passage, null at the start. */
-  anchorBefore: string | null;
-  /**
-   * The base blocks before the passage, which the sources leave alone:
-   * diffPassage reads the seed's list numbers against them.
-   */
-  before: Block[];
-  /**
-   * The passage with the sources applied, ready for the editor. Its ordered
-   * items carry the numbers they show in the text (seedListStarts), so a
-   * passage from "k)" does not start at "a)".
-   */
-  seed: Block[];
-  /** Sources that could not be applied together with earlier ones. */
-  skipped: string[];
-}
+/**
+ * The starting text of a transactional and whether it was edited: one
+ * implementation for the Mesa's composer and the members'
+ * (shared/utils/content/transactionalSeed.ts). The composers import it from
+ * there; these names, and sessionSameIds and sessionSameBlocks, stay only
+ * for the tests that still use them.
+ */
+export type SessionTransactionalSeed = TransactionalSeed;
+export const sessionTransactionalSeed = transactionalSeed;
+
+/** Same ids, in any order and ignoring repeats (sameIdSet). */
+export const sessionSameIds = sameIdSet;
 
 /**
- * Starting point of a transactional: the passage touched by its sources,
- * with the sources applied in the given order. When two sources collide the
- * first applicable one wins, as `consolidate` does. Blocks the sources
- * insert get fresh ids, so they never clash with the sources' own. Diff
- * the edited text with
- * `diffPassage(passage, edited, anchorBefore, newId, before)`, so the list
- * numbers the seed carries are no change.
+ * Whether two block lists hold the same text and formatting, ids left out
+ * (sameBlockContent). Tells whether the Mesa has edited a transactional
+ * draft.
  */
-export function sessionTransactionalSeed(
-  base: Block[],
-  sources: AmendmentInput[],
-  newId: () => string,
-  /**
-   * Paragraphs taken in before and after what the sources touch (user's
-   * decision of 2026-11-20): a transactional may need to change text
-   * around them too. None by default.
-   */
-  widen: { before: number; after: number } = { before: 0, after: 0 },
-): SessionTransactionalSeed {
-  const index = new Map(base.map((block, i) => [block.id, i]));
-  const positions: number[] = [];
-  for (const source of sources) {
-    for (const id of touchedBlockIds(source.ops)) {
-      const position = index.get(id);
-      if (position !== undefined) positions.push(position);
-    }
-    if (
-      source.ops.some((op) => op.op === "insert" && op.afterBlockId === null)
-    ) {
-      positions.push(0);
-    }
-  }
-  if (positions.length === 0 || base.length === 0) {
-    return {
-      passage: [],
-      anchorBefore: null,
-      before: [],
-      seed: [],
-      skipped: [],
-    };
-  }
-
-  const lo = Math.max(0, Math.min(...positions) - Math.max(0, widen.before));
-  const hi = Math.min(
-    base.length - 1,
-    Math.max(...positions) + Math.max(0, widen.after),
-  );
-  const result = consolidate(base, sources);
-
-  const seed: Block[] = [];
-  let current = -1;
-  for (const block of result.annotated) {
-    if (block.status === "inserted") {
-      const inside =
-        (current >= lo || (lo === 0 && current === -1)) && current <= hi;
-      if (!inside) continue;
-    } else {
-      current = index.get(block.id) ?? current;
-      if (block.status === "deleted" || current < lo || current > hi) continue;
-    }
-    const clean: Block = {
-      id: block.status === "inserted" ? newId() : block.id,
-      type: block.type,
-      text: block.segments
-        .filter((segment) => !segment.removed)
-        .map((segment) => segment.text)
-        .join(""),
-      marks: block.marks,
-    };
-    seed.push(copyShape(block, clean));
-  }
-  const before = base.slice(0, lo);
-
-  return {
-    passage: base.slice(lo, hi + 1),
-    anchorBefore: lo > 0 ? base[lo - 1]!.id : null,
-    before,
-    seed: seedListStarts(before, seed),
-    skipped: result.conflicts.map((conflict) => conflict.amendmentId),
-  };
-}
-
-/** Same ids, in any order and ignoring repeats. */
-export function sessionSameIds(a: string[], b: string[]): boolean {
-  const left = new Set(a);
-  const right = new Set(b);
-  return left.size === right.size && [...left].every((id) => right.has(id));
-}
-
-/**
- * A cell as the comparison reads it: `shade` (content from before the
- * palette) and the fill "beige" are the same, as the editor returns them.
- */
-function cellContent(cell: NonNullable<Block["cell"]>): unknown[] {
-  return [
-    cell.table,
-    cell.row,
-    cell.cell,
-    cell.header ?? false,
-    cellFillOf(cell) ?? null,
-    cell.colspan ?? 1,
-    cell.rowspan ?? 1,
-    ...cellLayoutKey(cell),
-  ];
-}
-
-function blockContent(block: Block): string {
-  return JSON.stringify([
-    block.type,
-    block.text,
-    block.level ?? null,
-    block.list ?? null,
-    block.marker ?? null,
-    block.start ?? null,
-    block.cell ? cellContent(block.cell) : null,
-    block.align ?? null,
-    block.marks,
-  ]);
-}
-
-/**
- * Whether two block lists hold the same text and formatting. Ids are left
- * out: the editor may give a block a new id without changing its content.
- * Used to tell whether the Mesa has edited a transactional draft.
- */
-export function sessionSameBlocks(a: Block[], b: Block[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every((block, index) => blockContent(block) === blockContent(b[index]!))
-  );
-}
+export const sessionSameBlocks = sameBlockContent;
 
 export interface SessionParty {
   member: MemberRef;
@@ -2139,7 +1984,7 @@ export interface SessionParty {
 
 /**
  * Parties that must accept a transactional before it replaces its sources:
- * the main author of each source (sessionMainAuthor), once each, in the
+ * the main author of each source (amendmentMainAuthor), once each, in the
  * order of the sources. With the document's amendments (`byId`), a source
  * that is itself a transactional counts by what it combines, down to the
  * originals, as the server asks (user's decision of 2026-11-20). A preview
@@ -2166,7 +2011,7 @@ export function sessionTransactionalParties(
       }
       return;
     }
-    const main = sessionMainAuthor(source);
+    const main = amendmentMainAuthor(source);
     if (!main) return;
     const party = parties.get(main.id);
     if (party) party.sourceIds.push(source.id);
@@ -2178,7 +2023,8 @@ export function sessionTransactionalParties(
 
 /**
  * The sources of a transactional a party answers for: those whose main
- * author it is. Sources not loaded are left out.
+ * author it is (amendmentMainAuthor, the rule transactionalPartySources
+ * reads too). Sources not loaded are left out.
  */
 export function sessionPartySourceIds(
   transactional: AmendmentDto,
@@ -2187,7 +2033,7 @@ export function sessionPartySourceIds(
 ): string[] {
   return transactional.sourceIds.filter((id) => {
     const source = byId.get(id);
-    return source !== undefined && sessionMainAuthor(source)?.id === memberId;
+    return source !== undefined && amendmentMainAuthor(source)?.id === memberId;
   });
 }
 

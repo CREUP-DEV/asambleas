@@ -17,6 +17,7 @@ import {
   type AmendmentQuickFilter,
   type AmendmentReviewFilter,
 } from "~/composables/amendment/workspace";
+import { statusLabelKey } from "~/utils/statusColors";
 
 /**
  * What the amendments panel lists, in one row to keep the list tall: the
@@ -103,7 +104,7 @@ function patch(change: Partial<AmendmentFilters>): void {
 const statusItems = computed(() =>
   AMENDMENT_STATUSES.filter((status) => status !== "draft").map(
     (status): { label: string; value: AmendmentStatus } => ({
-      label: t(`common.status.amendment.${status}`),
+      label: t(statusLabelKey("amendment", status)),
       value: status,
     }),
   ),

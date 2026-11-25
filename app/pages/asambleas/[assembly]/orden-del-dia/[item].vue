@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { isPastDeadline } from "~~/shared/utils/calendar";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AgendaItemDto, DocumentSummaryDto } from "~~/shared/types/api";
 import { isDocumentLeft } from "~~/shared/utils/readMarks";
@@ -218,14 +217,19 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
 
 const addDocument = useAddDocument(agenda);
 
-// The shared clock, so the button goes away with the deadline.
-const now = useAppNow();
-const documentsClosed = computed(() => {
-  const close = assembly.value?.milestones.find(
-    (milestone) => milestone.key === "documents_close",
-  );
-  return Boolean(close && isPastDeadline(close.at, now.value));
-});
+/** The kinds the item takes from the user's member. */
+const memberKindsHere = computed(() =>
+  item.value ? memberSubmissionKinds(item.value, me.member.value?.kind) : [],
+);
+
+/**
+ * Every kind the item takes from the member is past its own deadline
+ * (presentationDeadlinePassed, on the shared clock, so the button goes away
+ * with the deadline): a candidacy still goes after `documents_close`.
+ */
+const documentsClosed = computed(() =>
+  memberKindsHere.value.every((kind) => !addDocument.kindOpen(kind)),
+);
 
 /**
  * A member acting for a member, where the item takes a kind that member may
@@ -233,10 +237,7 @@ const documentsClosed = computed(() => {
  */
 const memberMaySubmitHere = computed(
   () =>
-    Boolean(
-      item.value &&
-      memberSubmissionKinds(item.value, me.member.value?.kind).length > 0,
-    ) &&
+    memberKindsHere.value.length > 0 &&
     Boolean(assembly.value?.can.createDocuments) &&
     Boolean(me.member.value) &&
     !canCreateDocument.value,

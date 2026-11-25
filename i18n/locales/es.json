@@ -2026,6 +2026,11 @@
         "discard": "Salir sin guardar",
         "confirm": "Tienes cambios sin guardar. ¿Quieres salir y perderlos?"
       },
+      "copy": {
+        "notice": "Este navegador guardó una copia de lo que escribías aquí ({when}).",
+        "recover": "Recuperar",
+        "discard": "Descartar"
+      },
       "sameParagraphs": {
         "notice": "Ya hay {count} enmienda sobre lo que cambias. Verla | Ya hay {count} enmiendas sobre lo que cambias. Verlas",
         "hint": "Enmiendas presentadas y sin decidir que tocan los mismos párrafos que la tuya. Léelas antes de enviarla, por si ya proponen lo mismo."
@@ -3569,6 +3574,8 @@
       "title": "Añadir varios documentos",
       "intro": "Escribe un documento en cada línea. Se crean todos a la vez, como borradores.",
       "containerHint": "Cada uno tendrá su propio subpunto dentro de este punto.",
+      "dueAtHelp": "La misma para todos: hasta cuándo tiene quien presenta cada uno para enviarlo a Secretaría.",
+      "pastWarning": "Esa fecha ya ha pasado: el documento aparecerá como fuera de plazo en cuanto lo crees. | Esa fecha ya ha pasado: los documentos aparecerán como fuera de plazo en cuanto los crees.",
       "row": "Documento {n}",
       "removeRow": "Quitar",
       "removeRowN": "Quitar el documento {n}",
@@ -4226,6 +4233,7 @@
       },
       "title": "Votación de {code}",
       "description": "Las enmiendas se deciden por mayoría simple salvo que la Mesa indique otra.",
+      "descriptionReform": "En una reforma de Estatutos o reglamentos, las enmiendas se deciden por mayoría absoluta (RRI art. 65.5) salvo que la Mesa indique otra.",
       "method": "Método",
       "majority": "Mayoría",
       "counts": "Recuento",

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
+import { statusLabelKey } from "~/utils/statusColors";
 import type {
   AssemblyListDto,
   ReadState,
@@ -189,22 +190,27 @@ function memberAcronym(id: string | null): string | null {
   return id ? (membersById.value.get(id)?.acronym ?? null) : null;
 }
 
-const OUTCOME_COLORS = {
-  approved: "success",
-  rejected: "error",
-  transacted: "info",
-  submitted: "neutral",
-  withdrawn: "neutral",
-  lapsed: "neutral",
-  inadmissible: "warning",
-} as const;
+/**
+ * The order of a member's amendment outcomes; each badge in the colour of
+ * its status everywhere else (CommonStatusBadge).
+ */
+const OUTCOME_ORDER: readonly (keyof StatsAmendmentOutcomes)[] = [
+  "approved",
+  "rejected",
+  "transacted",
+  "submitted",
+  "withdrawn",
+  "lapsed",
+  "inadmissible",
+];
 
 function outcomes(
   values: StatsAmendmentOutcomes,
 ): { status: keyof StatsAmendmentOutcomes; count: number }[] {
-  return (Object.keys(OUTCOME_COLORS) as (keyof StatsAmendmentOutcomes)[])
-    .map((status) => ({ status, count: values[status] }))
-    .filter((entry) => entry.count > 0);
+  return OUTCOME_ORDER.map((status) => ({
+    status,
+    count: values[status],
+  })).filter((entry) => entry.count > 0);
 }
 
 const STATE_COLORS: Record<ReadState, "success" | "warning" | "neutral"> = {
@@ -631,13 +637,12 @@ const detailSections = computed(() => {
 
         <template #outcomes-cell="{ row }">
           <div class="flex max-w-56 flex-wrap gap-1">
-            <UBadge
+            <CommonStatusBadge
               v-for="entry in outcomes(row.original.amendmentOutcomes)"
               :key="entry.status"
-              :label="`${t(`common.status.amendment.${entry.status}`)} ${entry.count}`"
-              :color="OUTCOME_COLORS[entry.status]"
-              variant="subtle"
-              size="md"
+              kind="amendment"
+              :value="entry.status"
+              :label="`${t(statusLabelKey('amendment', entry.status))} ${entry.count}`"
             />
           </div>
         </template>

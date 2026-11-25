@@ -1,8 +1,7 @@
-import type { InjectionKey, MaybeRefOrGetter, Ref } from "vue";
+import type { InjectionKey, MaybeRefOrGetter } from "vue";
 import type { ElectionInput } from "~~/shared/utils/election";
 import type {
   AdmissionBody,
-  AgendaDto,
   AlternativesVoteBody,
   AlternativesVoteDto,
   BlocVoteBody,
@@ -65,19 +64,20 @@ import type {
   AlternativesWinnerOutcome,
 } from "~~/shared/utils/alternativesVote";
 import type { VoteBallotInput } from "~~/shared/utils/rollCall";
-import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import {
+  requireCurrentAssembly,
+  useAssemblyAgenda,
+} from "../assembly/useCurrentAssembly";
 import { cancelStaleRead } from "../fetch/cancelStaleRead";
 import {
   keepLastGoodData,
   onlyForKey,
   useStaleDataNotice,
 } from "../fetch/lastGoodData";
-import { useAssemblyLive } from "../live/useAssemblyLive";
 import { followLiveState } from "../live/-liveState";
 import {
   affectsDocumentAmendments,
   affectsDocumentDto,
-  keepsAgendaSummary,
 } from "../assembly/-liveFilters";
 import SessionConfirmDialog from "~/components/session/ConfirmDialog.vue";
 import {
@@ -123,7 +123,6 @@ import {
   type SessionLivePointer,
   type SessionSettleAction,
 } from "./sessionModel";
-import { agendaWithTitles } from "~/utils/agendaTitles";
 import { numberedAgendaTitle } from "~/utils/agendaTree";
 import { staleSheetRow } from "~/components/control-sheet/-model";
 import { sessionMarkAction } from "~~/shared/utils/sessionProgress";
@@ -286,14 +285,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const { t } = useI18n();
   const alternativesText = useAlternativesVoteText();
 
-  // Inside the assembly hub (app/pages/asambleas/[assembly].vue) the hub
-  // already holds the assembly and the one live stream of the tab; on its
-  // own the console fetches and listens by itself.
-  const hub = inject(CURRENT_ASSEMBLY_KEY, null);
+  // The console runs only inside the assembly hub
+  // (app/pages/asambleas/[assembly].vue), which holds the assembly and the
+  // one live stream of the tab: it never fetches or listens by itself.
+  const hub = requireCurrentAssembly("useSessionConsole");
 
   const param = computed(() => toValue(assemblyParam));
   const assemblyUrl = computed(() =>
-    hub?.assembly.value
+    hub.assembly.value
       ? hub.apiBase.value
       : `/api/assemblies/${encodeURIComponent(param.value)}`,
   );
@@ -301,40 +300,29 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // Data ----------------------------------------------------------------------
 
   // Every fetch below keeps its last good data when a refresh fails (venue
-  // Wi-Fi, a server restart), so the console never empties mid-session.
-  const standalone = hub
-    ? null
-    : useFetch<AssemblyDto>(() => assemblyUrl.value, {
-        key: computed(() => `assembly-${param.value}`),
-      });
-  const standaloneAssembly = standalone
-    ? keepLastGoodData(standalone, { resetOn: param })
-    : null;
-
+  // Wi-Fi, a server restart), so the console never empties mid-session; the
+  // hub keeps the assembly the same way.
   const assembly = computed<AssemblyDto | null>(
-    () => (hub ? hub.assembly.value : standaloneAssembly?.data.value) ?? null,
+    () => hub.assembly.value ?? null,
   );
-  const assemblyPending = computed(() =>
-    hub ? hub.pending.value : standalone?.status.value === "pending",
-  );
-  const refreshAssembly = (): Promise<void> =>
-    hub ? hub.refresh() : (standalone?.refresh() ?? Promise.resolve());
+  const assemblyPending = computed(() => hub.pending.value);
 
-  const agendaFetch = useAsyncData(
-    () => `session-agenda-${param.value}`,
-    () => api.get<AgendaDto>(`${assemblyUrl.value}/agenda`),
-  );
+  // The agenda every page of the hub shares (useAssemblyAgenda): one key per
+  // assembly, refetched on the agenda pages' live filter
+  // (shouldRefetchAgenda, a poll included), its titles filled in and its
+  // stale notice shown. Not awaited, as the console never was.
+  const sharedAgenda = useAssemblyAgenda();
   const {
+    data: agenda,
     status: agendaStatus,
     error: agendaError,
-    refresh: refreshAgenda,
-  } = agendaFetch;
-  const { data: fetchedAgenda, stale: agendaStale } = keepLastGoodData(
-    agendaFetch,
-    { resetOn: param },
-  );
-  // An item sent without its title gets a neutral one (titleHidden).
-  const agenda = agendaWithTitles(fetchedAgenda, () => t("agenda.hiddenTitle"));
+  } = sharedAgenda;
+  /**
+   * Reads the agenda again after this console's own change, replacing a read
+   * on its way that may have left before it (the shared fetch defers).
+   */
+  const refreshAgenda = (): Promise<void> =>
+    sharedAgenda.refresh({ dedupe: "cancel" });
 
   /**
    * The live state in order (`updatedAt`): pushed on the stream after each
@@ -543,12 +531,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // One shared "showing the last data received" toast (same id as the hub).
   useStaleDataNotice(
     computed(
-      () =>
-        agendaStale.value ||
-        liveStale.value ||
-        documentStale.value ||
-        amendmentsStale.value ||
-        Boolean(standaloneAssembly?.stale.value),
+      () => liveStale.value || documentStale.value || amendmentsStale.value,
     ),
   );
 
@@ -1106,7 +1089,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   function refreshAll(): Promise<unknown> {
     return Promise.all([
-      refreshAssembly(),
+      hub.refresh(),
       refreshAgenda(),
       refreshLive(),
       refreshDocument(),
@@ -1125,24 +1108,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       // Changes were missed, maybe a restart: ask who holds control now,
       // and put the open form's count back on screen.
       void control.refresh().then(resendFormTally);
-      // The hub refreshes the assembly itself on poll events.
-      void (hub
-        ? Promise.all([
-            refreshAgenda(),
-            refreshLive(),
-            refreshDocument(),
-            refreshAmendments(),
-            refreshItemVotes(),
-            refreshProgress(),
-          ])
-        : refreshAll());
+      // The hub refreshes the assembly itself on poll events, and the
+      // shared agenda follows them on its own (useAssemblyAgenda).
+      void Promise.all([
+        refreshLive(),
+        refreshDocument(),
+        refreshAmendments(),
+        refreshItemVotes(),
+        refreshProgress(),
+      ]);
       return;
     }
     const current = documentId.value;
     const finalVoteId = document.value?.finalVote?.id ?? null;
     let live = false;
-    let assemblyChanged = false;
-    let agendaChanged = false;
     let amendmentsChanged = false;
     let itemVotesChanged = false;
     let progressChanged = false;
@@ -1174,44 +1153,21 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         // unanimity): read the live state again for its new copy.
         if (event.entityId === projectedVoteId) live = true;
       }
-      if (event.entityType === "assembly") {
-        assemblyChanged = true;
-        agendaChanged = true;
-      }
-      if (
-        event.entityType === "agenda_item" ||
-        (event.entityType === "document" && !keepsAgendaSummary(event))
-      ) {
-        agendaChanged = true;
-      }
       // As the room reads it (affectsDocumentAmendments): its document, and
       // the assembly opening or closing, which changes what may be done.
       const touchesCurrent = affectsDocumentAmendments([event], current);
       if (touchesCurrent) amendmentsChanged = true;
     }
     if (live) void refreshLive();
-    if (assemblyChanged && !hub) void refreshAssembly();
-    if (agendaChanged) void refreshAgenda();
     if (documentChanged) void refreshDocument();
     if (amendmentsChanged) void refreshAmendments();
     if (itemVotesChanged) void refreshItemVotes();
     if (progressChanged) void refreshProgress();
   }
 
-  let connected: Readonly<Ref<boolean>>;
-  let polling: Readonly<Ref<boolean>>;
-  let statePushed: () => boolean;
-  if (hub) {
-    hub.onLive(onLive);
-    hub.onLiveState(liveFollower.pushed);
-    ({ connected, polling, statePushed } = hub.live);
-  } else {
-    ({ connected, polling, statePushed } = useAssemblyLive(
-      () => assembly.value?.id,
-      onLive,
-      { onState: liveFollower.pushed },
-    ));
-  }
+  const { connected, polling, statePushed } = hub.live;
+  hub.onLive(onLive);
+  hub.onLiveState(liveFollower.pushed);
 
   // Until the first connection is ready the console is connecting, not
   // offline: the badge must not alarm the Mesa while the page opens.

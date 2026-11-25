@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { isPastDeadline } from "~~/shared/utils/calendar";
 import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type { MeWorkDto } from "~~/shared/types/api";
 import { isDocumentLeft, readNeighbours } from "~~/shared/utils/readMarks";
@@ -69,24 +68,26 @@ const {
 
 const addDocument = useAddDocument(agenda);
 
-/** The calendar's deadline for presenting documents, if set. */
-const documentsClose = computed(
-  () =>
-    assembly.value?.milestones.find(
-      (milestone) => milestone.key === "documents_close",
-    )?.at ?? null,
-);
+/**
+ * Every kind is past its own deadline (presentationSchedule, the same rule
+ * as useAddDocument's button; for a member, the kinds it may present):
+ * only managers still get the card, and it says when the last deadline
+ * closed instead of counting down. A candidacy still goes after
+ * `documents_close`, so until then the card stays open for whoever may
+ * present one.
+ */
+const documentsClosed = computed(() => !addDocument.schedule.value.open);
 
 /**
- * The deadline has passed: only managers still get the card (useAddDocument),
- * and it says the deadline closed instead of counting down to it.
+ * The date the card names: while open, the nearest deadline still ahead
+ * (what it counts down to); once closed, the last one. Null without any.
  */
+const documentsClose = computed(() => {
+  const { next, last } = addDocument.schedule.value;
+  return documentsClosed.value ? last : next;
+});
+
 const now = useAppNow();
-const documentsClosed = computed(
-  () =>
-    documentsClose.value !== null &&
-    isPastDeadline(documentsClose.value, now.value),
-);
 
 async function onDocumentCreated(): Promise<void> {
   await Promise.all([refreshAgenda(), refreshWork()]);

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { AmendmentDto, MemberDto, MemberRef } from "~~/shared/types/api";
 import {
-  LIVE_STATE_COLORS,
   liveNoteMentions,
+  type LiveAmendmentState,
 } from "~/components/live-view/-model";
+import { CONTROL_SHEET_STATE_COLORS } from "~/utils/statusColors";
 import {
   DEFAULT_AMENDMENT_SORT,
   type AmendmentSortKey,
@@ -100,14 +101,13 @@ const KIND_BADGES = {
 
 /**
  * «Pendiente» as in «General», in amber; «Decaído» then in grey, so the
- * two never look alike.
+ * two never look alike (CONTROL_SHEET_OVERRIDES).
  */
-function stateBadge(state: keyof typeof LIVE_STATE_COLORS) {
-  if (state === "pending")
-    return { color: "warning", variant: "subtle" } as const;
-  if (state === "lapsed")
-    return { color: "neutral", variant: "subtle" } as const;
-  return { color: LIVE_STATE_COLORS[state], variant: "subtle" } as const;
+function stateBadge(state: LiveAmendmentState) {
+  return {
+    color: CONTROL_SHEET_STATE_COLORS[state],
+    variant: "subtle",
+  } as const;
 }
 
 /** The main author, then the rest by acronym (shown as «+N»). */

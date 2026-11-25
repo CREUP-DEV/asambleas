@@ -38,6 +38,7 @@ import { agendaWithTitles } from "~/utils/agendaTitles";
 import { AMENDMENT_CHANGE_SELECTOR } from "~/utils/amendmentChange";
 import { formatMoment, formatTime } from "~/utils/format";
 import { applyScrollAnchor } from "~/utils/scrollAnchor";
+import { OUTCOME_TEXT } from "~/utils/statusTone";
 import {
   EMPTY_POINTER_STATE,
   applyPointerEvents,
@@ -1562,8 +1563,8 @@ useHead(() => ({
               ? 'text-[clamp(1.75rem,3.5vw,3.75rem)] leading-tight font-bold'
               : 'text-[clamp(2.25rem,5vw,5.5rem)] leading-none font-extrabold tracking-tight uppercase',
             vote.result === 'approved'
-              ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
-              : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)',
+              ? OUTCOME_TEXT.success
+              : OUTCOME_TEXT.error,
           ]"
         >
           {{ voteHeadline }}
@@ -1997,7 +1998,8 @@ useHead(() => ({
                 v-if="
                   entry.outcome === 'approved' || entry.outcome === 'admitted'
                 "
-                class="text-[0.85em] font-bold text-(--ui-color-success-800) uppercase dark:text-(--ui-color-success-300)"
+                class="text-[0.85em] font-bold uppercase"
+                :class="OUTCOME_TEXT.success"
               >
                 {{
                   entry.outcome === "admitted"
@@ -2113,8 +2115,8 @@ useHead(() => ({
               class="text-[clamp(1.125rem,1.8vw,2rem)] font-bold"
               :class="
                 document.finalVote.result === 'approved'
-                  ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
-                  : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
+                  ? OUTCOME_TEXT.success
+                  : OUTCOME_TEXT.error
               "
             >
               {{

@@ -15,23 +15,21 @@ import {
   ASSEMBLY_TIME_ZONE,
   assemblyDayOffset,
 } from "~~/shared/utils/calendar";
+import {
+  assemblyDateFormatter,
+  formatLongDate,
+  toIntlLocale,
+} from "~~/shared/utils/dates";
 
 export const APP_TIME_ZONE = ASSEMBLY_TIME_ZONE;
 
 export type DateInput = Date | string | number | null | undefined;
 
-const INTL_LOCALES: Record<string, string> = {
-  es: "es-ES",
-  en: "en-GB",
-};
-
-const formatterCache = new Map<string, Intl.DateTimeFormat>();
 const relativeCache = new Map<string, Intl.RelativeTimeFormat>();
 
 /** The Intl locale for an app locale code ("es" -> "es-ES"). */
 export function intlLocale(locale?: string): string {
-  const code = locale ?? activeLocale();
-  return INTL_LOCALES[code] ?? code;
+  return toIntlLocale(locale ?? activeLocale());
 }
 
 function activeLocale(): string {
@@ -46,22 +44,6 @@ export function toDate(value: DateInput): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function dateFormatter(
-  locale: string,
-  options: Intl.DateTimeFormatOptions,
-): Intl.DateTimeFormat {
-  const key = `${locale}|${JSON.stringify(options)}`;
-  let formatter = formatterCache.get(key);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(locale, {
-      timeZone: APP_TIME_ZONE,
-      ...options,
-    });
-    formatterCache.set(key, formatter);
-  }
-  return formatter;
-}
-
 export interface FormatOptions {
   /** App locale code ("es", "en"). Defaults to the active i18n locale. */
   locale?: string;
@@ -74,14 +56,14 @@ export function formatDate(
 ): string {
   const date = toDate(value);
   if (!date) return "";
+  const locale = intlLocale(options.locale);
   const style = options.style ?? "long";
+  if (style === "long") return formatLongDate(date, locale);
   const intlOptions: Intl.DateTimeFormatOptions =
     style === "short"
       ? { day: "2-digit", month: "2-digit", year: "numeric" }
-      : style === "medium"
-        ? { day: "numeric", month: "short", year: "numeric" }
-        : { day: "numeric", month: "long", year: "numeric" };
-  return dateFormatter(intlLocale(options.locale), intlOptions).format(date);
+      : { day: "numeric", month: "short", year: "numeric" };
+  return assemblyDateFormatter(locale, intlOptions).format(date);
 }
 
 /** "14 nov 2026, 10:30" / "14 Nov 2026, 10:30". */
@@ -108,7 +90,9 @@ export function formatDateTime(
           hour: "2-digit",
           minute: "2-digit",
         };
-  return dateFormatter(intlLocale(options.locale), intlOptions).format(date);
+  return assemblyDateFormatter(intlLocale(options.locale), intlOptions).format(
+    date,
+  );
 }
 
 /** "10:30". */
@@ -118,7 +102,7 @@ export function formatTime(
 ): string {
   const date = toDate(value);
   if (!date) return "";
-  return dateFormatter(intlLocale(options.locale), {
+  return assemblyDateFormatter(intlLocale(options.locale), {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
@@ -256,9 +240,9 @@ export function formatDayMonth(
   if (!date) return "";
   const now = toDate(options.now) ?? new Date();
   const locale = intlLocale(options.locale);
-  const year = dateFormatter(locale, { year: "numeric" });
+  const year = assemblyDateFormatter(locale, { year: "numeric" });
   const sameYear = year.format(date) === year.format(now);
-  return dateFormatter(
+  return assemblyDateFormatter(
     locale,
     sameYear
       ? { day: "numeric", month: "short" }

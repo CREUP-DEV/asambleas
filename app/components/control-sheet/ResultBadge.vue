@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ControlSheetResult } from "~~/shared/utils/controlSheet";
+import { CONTROL_SHEET_RESULT_COLORS } from "~/utils/statusColors";
 
 /**
  * The result of a row of «General»: the outcome of its votes, or what
@@ -11,23 +12,10 @@ const props = defineProps<{
 
 const { t } = useI18n();
 
-const COLORS: Record<
-  ControlSheetResult,
-  "success" | "error" | "warning" | "neutral" | "secondary"
-> = {
-  approved: "success",
-  approved_unanimous: "success",
-  rejected: "error",
-  mixed: "secondary",
-  withdrawn: "neutral",
-  // Grey, so neither looks like «Pendiente» (amber).
-  lapsed: "neutral",
-  postponed: "neutral",
-  not_applicable: "neutral",
-};
-
-/** «Pendiente» in amber: nothing settled yet. */
-const color = computed(() => (props.result ? COLORS[props.result] : "warning"));
+/** «Pendiente» (null) in amber: nothing settled yet. */
+const color = computed(
+  () => CONTROL_SHEET_RESULT_COLORS[props.result ?? "pending"],
+);
 </script>
 
 <template>

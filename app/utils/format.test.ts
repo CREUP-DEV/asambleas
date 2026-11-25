@@ -1,10 +1,12 @@
 import { CalendarDateTime } from "@internationalized/date";
 import { describe, expect, it } from "vitest";
 import {
+  formatDate,
   formatDayMonth,
   formatMoment,
   formatRelative,
   fromAppWallTime,
+  intlLocale,
   memberHighlight,
   memberLabel,
   memberNameRepeatsAcronym,
@@ -134,6 +136,38 @@ describe("formatRelative", () => {
     expect(formatRelative(end, { locale: "en", now: start })).toBe(
       "in 24 hours",
     );
+  });
+});
+
+describe("formatDate", () => {
+  // 23:30 UTC on 14 November is already 15 November in Madrid.
+  const lateEvening = new Date("2026-11-14T23:30:00.000Z");
+
+  it("maps app locales to their Intl locales and passes others through", () => {
+    expect(intlLocale("es")).toBe("es-ES");
+    expect(intlLocale("en")).toBe("en-GB");
+    expect(intlLocale("fr-FR")).toBe("fr-FR");
+  });
+
+  it("writes the long date in the assemblies' time zone", () => {
+    expect(formatDate(lateEvening, { locale: "es" })).toBe(
+      "15 de noviembre de 2026",
+    );
+    expect(formatDate(lateEvening, { locale: "en" })).toBe("15 November 2026");
+  });
+
+  it("keeps the short and medium styles", () => {
+    expect(formatDate(lateEvening, { locale: "es", style: "short" })).toBe(
+      "15/11/2026",
+    );
+    expect(formatDate(lateEvening, { locale: "en", style: "medium" })).toBe(
+      "15 Nov 2026",
+    );
+  });
+
+  it("is empty for a missing or invalid value", () => {
+    expect(formatDate(null)).toBe("");
+    expect(formatDate("not a date")).toBe("");
   });
 });
 

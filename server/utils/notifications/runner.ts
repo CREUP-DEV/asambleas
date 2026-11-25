@@ -10,6 +10,7 @@ import {
   sendImmediate,
 } from "./sender";
 import { NOTIFICATION_DIGEST_CRON } from "~~/shared/constants/notifications";
+import { ASSEMBLY_TIME_ZONE } from "~~/shared/utils/calendar";
 
 /**
  * Runs the email sender in the app process (server/plugins/notifications.ts):
@@ -25,7 +26,6 @@ const SWEEP_MS = 30_000;
 const DEBOUNCE_MS = 1_500;
 
 export const NOTIFICATION_DIGEST_QUEUE = "notifications-digest";
-const TIMEZONE = "Europe/Madrid";
 const PG_BOSS_SCHEMA = "pgboss";
 const START_ATTEMPTS = 20;
 
@@ -86,7 +86,7 @@ async function startDigestSchedule(): Promise<void> {
       NOTIFICATION_DIGEST_CRON,
       null,
       // A server that was down at that hour sends them once it is back.
-      { tz: TIMEZONE, missed: "once" },
+      { tz: ASSEMBLY_TIME_ZONE, missed: "once" },
     );
     await instance.work<unknown>(
       NOTIFICATION_DIGEST_QUEUE,
@@ -100,7 +100,7 @@ async function startDigestSchedule(): Promise<void> {
     logInfo("email.digest", {
       state: "scheduled",
       cron: NOTIFICATION_DIGEST_CRON,
-      timezone: TIMEZONE,
+      timezone: ASSEMBLY_TIME_ZONE,
     });
   } catch (error) {
     logError("email.digest", error);

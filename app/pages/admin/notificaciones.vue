@@ -189,7 +189,7 @@ function kindLabel(kind: string): string {
     : t(`admin.notifications.kinds.${kind}.title`);
 }
 
-const STATUS_COLORS = {
+const DELIVERY_STATUS_COLORS = {
   pending: "neutral",
   sending: "info",
   sent: "success",
@@ -507,7 +507,7 @@ useLeaveGuard(
                   </p>
                 </div>
                 <UBadge
-                  :color="STATUS_COLORS[delivery.status]"
+                  :color="DELIVERY_STATUS_COLORS[delivery.status]"
                   variant="subtle"
                   :label="
                     delivery.status === 'skipped' && delivery.reason

@@ -24,6 +24,7 @@ import {
   memberSubmissionKinds,
   presenterKindGroups,
 } from "~/composables/document/documentKinds";
+import { usePresentationDeadlines } from "~/composables/document/usePresentationDeadlines";
 import {
   choicePresenterIds,
   coPresentersDroppedWithoutLead,
@@ -59,6 +60,10 @@ import {
  *   sub-item of its own (the server creates it), which the form says. Such
  *   an item may name the kinds it takes: members are offered only those
  *   (one kind alone comes chosen). Automatic sub-items are never offered.
+ *   Members are offered only the kinds still in their own deadline
+ *   (presentationDeadlinePassed: a candidacy until `candidacies_close`, a
+ *   report until `reports_close`, the rest until `documents_close`), as the
+ *   server checks when it creates the draft and when it is sent.
  * - The type and the title are proposed from the item (proposeFromItem):
  *   "Aprobación, si procede, del Posicionamiento sobre X" gives a
  *   positioning titled "Posicionamiento sobre X". Choosing another item
@@ -202,7 +207,16 @@ type DocumentFormState = Omit<DocumentForm, "kind"> & {
 
 type AgendaItemOption = (typeof props.items)[number];
 
-/** The kinds the user's member may present under an item (members). */
+/**
+ * Members: whether a document of this kind may still be presented, by its
+ * own deadline (presentationDeadlinePassed) on the shared clock.
+ */
+const { kindOpen } = usePresentationDeadlines();
+
+/**
+ * The kinds the user's member may present under an item (members), among
+ * the ones still in their deadline.
+ */
 function kindsTakenBy(item: AgendaItemOption): DocumentKind[] {
   return memberSubmissionKinds(
     {
@@ -210,7 +224,7 @@ function kindsTakenBy(item: AgendaItemOption): DocumentKind[] {
       submissionKinds: item.submissionKinds ?? [],
     },
     member.value?.kind,
-  );
+  ).filter(kindOpen);
 }
 
 /**
@@ -316,6 +330,16 @@ watch(
         state.kind = next.kind ?? undefined;
       }
     }
+  },
+);
+
+// Members: a type whose deadline passes with the modal open is no longer
+// offered (its card goes away), and the server would refuse it: the choice
+// is cleared, so the user picks again instead of meeting a 409 on submit.
+watch(
+  () => !isManager.value && !!state.kind && !kindOpen(state.kind),
+  (closed) => {
+    if (closed) state.kind = undefined;
   },
 );
 
@@ -479,15 +503,22 @@ const kindItems = computed(() =>
     value: kind,
   })),
 );
-/** Members: the types their member usually presents, as cards. */
-const memberKindGroups = computed(() =>
-  presenterKindGroups({
+/**
+ * Members: the types their member usually presents, as cards, among the
+ * ones still in their deadline (kindOpen).
+ */
+const memberKindGroups = computed(() => {
+  const groups = presenterKindGroups({
     memberKind: member.value?.kind,
     accepted: selectedItem.value?.acceptsSubmissions
       ? selectedItem.value.submissionKinds
       : null,
-  }),
-);
+  });
+  return {
+    common: groups.common.filter(kindOpen),
+    others: groups.others.filter(kindOpen),
+  };
+});
 /**
  * Managers: text or PDF, two cards. A text says it can be amended only when
  * the type takes amendments.

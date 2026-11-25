@@ -15,6 +15,7 @@ import {
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
 import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
+import { STATUS_BOX } from "~/utils/statusTone";
 
 /**
  * Final vote on the whole text. The document's majority is the default, and
@@ -344,9 +345,7 @@ async function record(): Promise<void> {
           role="status"
           class="rounded-lg border p-3 outline-none focus-visible:ring-2 focus-visible:ring-primary"
           :class="
-            expected === 'approved'
-              ? 'border-success/50 bg-success/10'
-              : 'border-error/50 bg-error/10'
+            expected === 'approved' ? STATUS_BOX.success : STATUS_BOX.error
           "
         >
           <p class="text-highlighted font-semibold">

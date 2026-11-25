@@ -10,7 +10,6 @@ import {
 } from "./actor";
 import { bindAutoItem, insertAutoItem, lockAssembly } from "./agendaWrites";
 import {
-  documentsDeadlinePassed,
   FILE_FORMAT_REFUSED_MESSAGE,
   hashBlocks,
   loadMilestones,
@@ -23,6 +22,7 @@ import {
 } from "./documents";
 import {
   ASSEMBLY_CLOSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_MESSAGE,
   DOCUMENTS_DEADLINE_PASSED_REASON,
 } from "./documentRefusals";
 import { recordEvent } from "./events";
@@ -46,6 +46,7 @@ import {
   FILE_FORMAT_REFUSED_REASON,
   fileFormatRefused,
 } from "~~/shared/utils/documentFormat";
+import { presentationDeadlinePassed } from "~~/shared/utils/documentDeadline";
 
 /**
  * Creating documents (POST .../documents and the bulk POST
@@ -98,9 +99,19 @@ async function requireMemberMayCreate(
       reason: ASSEMBLY_CLOSED_REASON,
     });
   }
-  if (documentsDeadlinePassed(await loadMilestones(assembly.id))) {
-    fail(409, "El plazo de presentación de documentos ha terminado", {
-      reason: DOCUMENTS_DEADLINE_PASSED_REASON,
+  // Each document by its own deadline (presentationDeadlinePassed): a
+  // candidacy until candidacies_close, a report until reports_close.
+  const milestones = await loadMilestones(assembly.id);
+  const now = new Date();
+  for (const [index, input] of inputs.entries()) {
+    await withIndex(inputs.length > 1 ? index : null, () => {
+      if (
+        presentationDeadlinePassed(input.kind, (key) => milestones[key], now)
+      ) {
+        fail(409, DOCUMENTS_DEADLINE_PASSED_MESSAGE, {
+          reason: DOCUMENTS_DEADLINE_PASSED_REASON,
+        });
+      }
     });
   }
 }
@@ -198,8 +209,11 @@ async function planDocument(
  * and may set an internal deadline (`dueAt`): an expected document starts
  * as an empty draft that its member fills in and presents. Members with
  * document:create present them under agenda items that accept submissions,
- * of a kind the item takes (422 `submission_kind` otherwise), until
- * documents_close, with the kind defaults, always among its presenters:
+ * of a kind the item takes (422 `submission_kind` otherwise), until the
+ * kind's own deadline (presentationDeadlinePassed: `candidacies_close` for
+ * candidacies and venues, `reports_close` for reports, `documents_close`
+ * for the rest and for a kind whose own milestone the assembly lacks), with
+ * the kind defaults, always among its presenters:
  * they may add co-presenters and name the main presenter, their own member
  * or another one (planPresenters). For everyone, no presenter may be barred
  * from the kind (a sectorial never presents an internal motion). Members

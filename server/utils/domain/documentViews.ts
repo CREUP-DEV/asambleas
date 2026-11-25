@@ -9,10 +9,11 @@ import {
   READING_BEAT_MAX_SECONDS,
   READING_SLACK_SECONDS,
 } from "~~/shared/utils/documentViews";
+import { ASSEMBLY_TIME_ZONE } from "~~/shared/utils/calendar";
 import type { DocumentRouteContext } from "./documents";
 
 /** The day a view counts on: the association's, not the server's. */
-const TODAY = sql`(now() at time zone 'Europe/Madrid')::date`;
+const TODAY = sql`(now() at time zone ${ASSEMBLY_TIME_ZONE}::text)::date`;
 
 /**
  * A beat of an open published document (docs/design.md, "Statistics"):

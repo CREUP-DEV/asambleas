@@ -2,7 +2,11 @@
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { isPastDeadline } from "~~/shared/utils/calendar";
-import { lateNeedsAssembly } from "~~/shared/utils/documentDeadline";
+import type { MilestoneKey } from "~~/shared/constants/domain";
+import {
+  documentDeadlineKey,
+  lateNeedsAssembly,
+} from "~~/shared/utils/documentDeadline";
 import { errorStatus } from "~/composables/api/useApi";
 import {
   formatMemberList,
@@ -538,13 +542,19 @@ const deadlineExempt = computed(() => {
   return item?.acceptsSubmissions === false && !item.auto;
 });
 
-/** The calendar's deadline for presenting documents, when it applies. */
-const documentsClose = computed(() =>
-  deadlineExempt.value
-    ? null
-    : (assembly.value?.milestones.find((m) => m.key === "documents_close")
-        ?.at ?? null),
-);
+/**
+ * The calendar's deadline for presenting this document, when it applies:
+ * its kind's own (documentDeadlineKey), or `documents_close` when the
+ * assembly lacks it, as presentationDeadlinePassed reads it on the server.
+ */
+const documentsClose = computed(() => {
+  const current = document.value;
+  if (deadlineExempt.value || !current) return null;
+  const milestones = assembly.value?.milestones ?? [];
+  const at = (key: MilestoneKey) =>
+    milestones.find((m) => m.key === key)?.at ?? null;
+  return at(documentDeadlineKey(current.kind)) ?? at("documents_close");
+});
 
 /**
  * The calendar's deadline has passed for this presenter (presentationClosed

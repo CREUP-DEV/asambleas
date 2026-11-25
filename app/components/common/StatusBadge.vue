@@ -1,97 +1,14 @@
-<script lang="ts">
-import type {
-  AcceptanceDecision,
-  AdmissionStatus,
-  AmendmentStatus,
-  AssemblyStatus,
-  DocumentStatus,
-  ProponentPosition,
-  VoteResult,
-} from "~~/shared/constants/domain";
-
-export type StatusKind =
-  | "assembly"
-  | "document"
-  | "amendment"
-  | "admission"
-  | "position"
-  | "vote"
-  | "acceptance";
-
-export type StatusColor =
-  | "primary"
-  | "secondary"
-  | "success"
-  | "info"
-  | "warning"
-  | "error"
-  | "neutral";
-
-/** Badge colour of every status value, per kind. */
-export const STATUS_COLORS: {
-  assembly: Record<AssemblyStatus, StatusColor>;
-  document: Record<DocumentStatus, StatusColor>;
-  amendment: Record<AmendmentStatus, StatusColor>;
-  admission: Record<AdmissionStatus, StatusColor>;
-  position: Record<ProponentPosition, StatusColor>;
-  vote: Record<VoteResult, StatusColor>;
-  acceptance: Record<AcceptanceDecision, StatusColor>;
-} = {
-  assembly: {
-    draft: "neutral",
-    convened: "info",
-    in_session: "success",
-    closed: "neutral",
-  },
-  document: {
-    draft: "neutral",
-    submitted: "info",
-    published: "success",
-    withdrawn: "neutral",
-    postponed: "warning",
-  },
-  amendment: {
-    draft: "neutral",
-    submitted: "info",
-    inadmissible: "error",
-    withdrawn: "neutral",
-    transacted: "secondary",
-    lapsed: "warning",
-    approved: "success",
-    rejected: "error",
-  },
-  admission: {
-    pending: "warning",
-    admitted: "success",
-    inadmissible: "error",
-  },
-  position: {
-    pending: "neutral",
-    accept: "success",
-    reject: "error",
-    transact: "secondary",
-  },
-  vote: {
-    approved: "success",
-    rejected: "error",
-  },
-  acceptance: {
-    pending: "warning",
-    accepted: "success",
-    rejected: "error",
-  },
-};
-
-/** i18n key of a status label: `common.status.<kind>.<value>`. */
-export function statusLabelKey(kind: StatusKind, value: string): string {
-  return `common.status.${kind}.${value}`;
-}
-</script>
-
 <script setup lang="ts">
+import {
+  statusColor,
+  statusLabelKey,
+  type StatusKind,
+} from "~/utils/statusColors";
+
 /**
  * Coloured badge for a domain status (assembly, document, amendment,
- * admission, proponent position, vote result, transactional acceptance).
+ * admission, proponent position, vote result, transactional acceptance),
+ * in the colour of the one status map (`app/utils/statusColors.ts`).
  * Unknown values fall back to a neutral badge with the raw value. `label`
  * words it otherwise (who answered, say), keeping the status colour. At
  * 12px (`md`) unless the caller asks otherwise: the theme's `sm` and `xs`
@@ -112,10 +29,7 @@ const props = withDefaults(
 
 const { t, te } = useI18n();
 
-const color = computed<StatusColor>(() => {
-  const colors = STATUS_COLORS[props.kind] as Record<string, StatusColor>;
-  return colors[props.value] ?? "neutral";
-});
+const color = computed(() => statusColor(props.kind, props.value));
 
 const resolvedLabel = computed(() => {
   if (props.label) return props.label;

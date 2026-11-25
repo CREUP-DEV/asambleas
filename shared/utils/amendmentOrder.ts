@@ -100,3 +100,18 @@ export function compareAmendmentAnswers(
 ): number {
   return amendmentOrderRank(a, options) - amendmentOrderRank(b, options);
 }
+
+/**
+ * Order of two amendment codes ("UGR1", "CEA12", "T3", or "CEUM 4" from
+ * before): by prefix, then by the number as a number, so "CEA2" comes before
+ * "CEA10" and "T2" before "T10". Every office of the CEA shares the prefix
+ * "CEA" and one count per document, so it reaches two digits sooner. A
+ * missing code sorts first. The screen (compareAmendments) and the annotated
+ * PDF's annex (inDebateOrder) break a tie in presentation order with it.
+ */
+export function compareAmendmentCodes(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  return (a ?? "").localeCompare(b ?? "", undefined, { numeric: true });
+}

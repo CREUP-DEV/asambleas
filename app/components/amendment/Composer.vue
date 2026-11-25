@@ -40,6 +40,11 @@ import {
   type AmendmentComposerMode,
 } from "~/composables/amendment/workspace";
 import { useLeaveGuard } from "~/composables/shell/useLeaveGuard";
+import {
+  isAmendmentComposerCopy,
+  type AmendmentComposerCopy,
+} from "~/composables/amendment/draftCopy";
+import { useDraftCopy } from "~/composables/amendment/useDraftCopy";
 
 /**
  * Presents an amendment. It takes the place of the text and the list (the
@@ -79,7 +84,10 @@ import { useLeaveGuard } from "~/composables/shell/useLeaveGuard";
  * chooses: load the stored version (`reload`, the parent remounts the
  * composer) or overwrite it with theirs after confirming.
  *
- * Leaving with changes that were not saved asks first.
+ * Leaving with changes that were not saved asks first. Until they are
+ * saved or sent, this browser keeps a copy of them (`useDraftCopy`): a phone
+ * that discards the tab loses nothing, and reopening the composer offers
+ * «Recuperar» once.
  */
 const props = withDefaults(
   defineProps<{
@@ -358,6 +366,7 @@ function loadRemote(): void {
   reloading.value = true;
   // The author chose the stored version over theirs: nothing to ask.
   finished = true;
+  discardCopy();
   emit("reload");
 }
 
@@ -777,6 +786,7 @@ async function present(): Promise<void> {
       icon: "i-lucide-send",
     });
     finished = true;
+    discardCopy();
     emit("submitted", submitted);
   } catch (error) {
     handleError(error, "amendment.composer.submitFailed");
@@ -801,11 +811,114 @@ function requestClose(): void {
 function discardAndClose(): void {
   leaveOpen.value = false;
   finished = true;
+  discardCopy();
   emit("close");
 }
 
-// Leaving the page, another document, "atrás", reloading: asked first.
-useLeaveGuard(hasUnsavedChanges, () => t("amendment.composer.leave.confirm"));
+// The copy in this browser ---------------------------------------------------------
+// What has not been saved, kept until it is saved, sent or discarded.
+
+/** What the copy keeps now; null when nothing would be lost. */
+function copySnapshot(): AmendmentComposerCopy | null {
+  if (finished || JSON.stringify(draftBody()) === savedSnapshot) return null;
+  return {
+    ops: mode === "document" ? ops.value : [],
+    find: find.value,
+    replace: replacement.value,
+    kind: kind.value,
+    justification: justification.value,
+    withOthers: withOthers.value,
+    coAuthorIds: [...coAuthorIds.value],
+    mainAuthorId: mainAuthorId.value ?? null,
+    onBehalfOfMemberId: onBehalfOfMemberId.value ?? null,
+  };
+}
+
+/**
+ * A copy fits while it holds something to recover and its operations still
+ * apply to the base.
+ */
+function copyFits(data: unknown): data is AmendmentComposerCopy {
+  if (!isAmendmentComposerCopy(data)) return false;
+  const written =
+    data.justification.trim() !== "" ||
+    (mode === "global" ? data.find.trim() !== "" : data.ops.length > 0);
+  if (!written) return false;
+  if (mode === "global" || data.ops.length === 0) return true;
+  try {
+    return validateOps(props.base, data.ops).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+const {
+  offer: copyOffer,
+  open: openCopy,
+  recover: takeCopy,
+  discard: discardCopy,
+  dismiss: dismissCopy,
+} = useDraftCopy<AmendmentComposerCopy>({
+  composer: "amendment",
+  documentId: () => props.document.id,
+  // A new amendment's copy is per way to amend; a stored draft's, its own.
+  scope: () => draftId.value ?? `new-${mode}`,
+  // Saved for the first time: the copy under `new-…` goes, and the draft's
+  // own key keeps what comes next.
+  renamed: (from) => from === `new-${mode}`,
+  stamp: () => ({
+    baseVersionId: props.document.baseVersion?.id ?? null,
+    token: updatedAt.value,
+  }),
+  snapshot: copySnapshot,
+  track: [
+    ops,
+    find,
+    replacement,
+    kind,
+    justification,
+    withOthers,
+    coAuthorIds,
+    mainAuthorId,
+    onBehalfOfMemberId,
+    draftId,
+    updatedAt,
+  ],
+  settle: refreshOps,
+  accept: copyFits,
+});
+
+/** Puts the kept work back, over what the composer opened with. */
+function recoverCopy(): void {
+  const data = takeCopy();
+  if (!data) return;
+  // Whatever the editor still holds goes first, so it cannot land on top.
+  editorRef.value?.flush();
+  if (mode === "document") {
+    edited.value = composerDocumentSeed(props.base, data.ops);
+  } else {
+    find.value = data.find;
+    replacement.value = data.replace;
+  }
+  kind.value = data.kind;
+  justification.value = data.justification;
+  withOthers.value = data.withOthers;
+  coAuthorIds.value = [...data.coAuthorIds];
+  mainAuthorId.value = data.mainAuthorId ?? undefined;
+  if (canActOnBehalf.value && data.onBehalfOfMemberId) {
+    onBehalfOfMemberId.value = data.onBehalfOfMemberId;
+    onBehalfOpen.value = true;
+  }
+  ops.value = computeOps();
+}
+
+// Leaving the page, another document, "atrás", reloading: asked first. A
+// confirmed leave gives the work up, copy included; a reload keeps it.
+useLeaveGuard(
+  hasUnsavedChanges,
+  () => t("amendment.composer.leave.confirm"),
+  discardCopy,
+);
 
 // The questions' own scroll (wide screens) ---------------------------------------
 
@@ -928,6 +1041,7 @@ watch(
 );
 
 onMounted(() => {
+  openCopy();
   // The composer is as tall as the hub's scroll area: bring all of it in.
   root.value?.scrollIntoView({ block: isDesktop.value ? "nearest" : "start" });
   // The button that opened the composer is gone: the heading takes the
@@ -970,6 +1084,14 @@ const questionClass = "text-highlighted text-sm font-semibold";
         @click="requestClose"
       />
     </header>
+
+    <!-- Work this browser kept from an earlier visit: offered once. -->
+    <AmendmentDraftCopyNotice
+      v-if="copyOffer && !showSync"
+      :saved-at="copyOffer.savedAt"
+      @recover="recoverCopy"
+      @discard="dismissCopy"
+    />
 
     <!-- What the Secretaría asked to fix. -->
     <UAlert

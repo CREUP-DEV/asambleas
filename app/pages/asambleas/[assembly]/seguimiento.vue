@@ -53,16 +53,22 @@ const groups = computed(() =>
 /**
  * Agenda items in agenda order, for the "add" form. The automatic sub-item
  * of a document is that document's alone, never a place for another one.
+ * `hasDocuments` keeps the form from proposing a title for an item that
+ * already shows documents.
  */
-const agendaOptions = computed(() =>
-  flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? []))
+const agendaOptions = computed(() => {
+  const withDocuments = new Set(
+    documents.value.map((document) => document.agendaItemId),
+  );
+  return flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? []))
     .filter((node) => !node.item.auto)
     .map((node) => ({
       id: node.item.id,
       number: node.number,
       title: node.item.title,
-    })),
-);
+      hasDocuments: withDocuments.has(node.item.id),
+    }));
+});
 
 const hasDrafts = computed(() =>
   documents.value.some((document) => document.status === "draft"),

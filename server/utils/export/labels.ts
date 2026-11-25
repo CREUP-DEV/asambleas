@@ -5,6 +5,12 @@ import {
   EXPORT_LOCALES,
   type ExportLocale,
 } from "../../../shared/utils/schemas/export";
+import {
+  ASSEMBLY_INTL_LOCALES,
+  assemblyDateFormatter,
+  assemblyDayKey,
+  formatLongDate,
+} from "../../../shared/utils/dates";
 
 /**
  * Server-side labels for PDF exports. The worker has no request and no
@@ -14,12 +20,9 @@ import {
 
 export { EXPORT_LOCALES, type ExportLocale };
 
-export const EXPORT_INTL_LOCALES: Record<ExportLocale, string> = {
-  es: "es-ES",
-  en: "en-GB",
-};
-
-export const EXPORT_TIME_ZONE = "Europe/Madrid";
+/** The Intl locale of each export locale (the platform's own table). */
+export const EXPORT_INTL_LOCALES: Readonly<Record<ExportLocale, string>> =
+  ASSEMBLY_INTL_LOCALES;
 
 type Messages = Record<string, unknown>;
 
@@ -86,28 +89,16 @@ export function createFormatLabeller(
   };
 }
 
+/** «21 de noviembre de 2026» / «21 November 2026», in Madrid. */
 export function formatExportDate(date: Date, locale: ExportLocale): string {
-  return new Intl.DateTimeFormat(EXPORT_INTL_LOCALES[locale], {
-    timeZone: EXPORT_TIME_ZONE,
-    dateStyle: "long",
-  }).format(date);
+  return formatLongDate(date, EXPORT_INTL_LOCALES[locale]);
 }
 
+/** «21 de noviembre de 2026 a las 16:40» / «21 November 2026 at 16:40». */
 export function formatExportDateTime(date: Date, locale: ExportLocale): string {
-  return new Intl.DateTimeFormat(EXPORT_INTL_LOCALES[locale], {
-    timeZone: EXPORT_TIME_ZONE,
+  return assemblyDateFormatter(EXPORT_INTL_LOCALES[locale], {
     dateStyle: "long",
     timeStyle: "short",
-  }).format(date);
-}
-
-/** Calendar day in Madrid, to decide whether a range spans one day. */
-function madridDay(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: EXPORT_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
   }).format(date);
 }
 
@@ -118,7 +109,7 @@ export function formatExportDateRange(
   locale: ExportLocale,
   t: Translate,
 ): string {
-  if (madridDay(start) === madridDay(end))
+  if (assemblyDayKey(start) === assemblyDayKey(end))
     return formatExportDate(start, locale);
   return t("dateRange", {
     start: formatExportDate(start, locale),

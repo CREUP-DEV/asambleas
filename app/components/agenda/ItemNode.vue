@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { InjectionKey, Ref } from "vue";
+import type { DocumentKind } from "~~/shared/constants/domain";
 import type { AgendaItemDto, DocumentSummaryDto } from "~~/shared/types/api";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 import {
@@ -29,6 +30,11 @@ export interface AgendaTreeContext {
   canCreateDocument: Readonly<Ref<boolean>>;
   /** The actor may present a document as a member right now. */
   canSubmitDocument: Readonly<Ref<boolean>>;
+  /**
+   * Whether members may still present a document of this kind, by its own
+   * deadline (usePresentationDeadlines).
+   */
+  kindOpen: (kind: DocumentKind) => boolean;
   /** Item with a request in flight. */
   busyId: Readonly<Ref<string | null>>;
   documentsFor: (itemId: string) => DocumentSummaryDto[];
@@ -163,13 +169,14 @@ const foldLabel = computed(() =>
 
 /**
  * A member may present a document here right now: the item takes a kind
- * their member may present (a sectorial, never an internal motion).
+ * their member may present (a sectorial, never an internal motion) whose
+ * deadline has not passed (a candidacy until `candidacies_close`).
  */
 const { member } = useMe();
 const showMemberSubmit = computed(
   () =>
     !organizing.value &&
-    memberSubmissionKinds(item.value, member.value?.kind).length > 0 &&
+    memberSubmissionKinds(item.value, member.value?.kind).some(ctx.kindOpen) &&
     !ctx.canCreateDocument.value &&
     ctx.canSubmitDocument.value,
 );

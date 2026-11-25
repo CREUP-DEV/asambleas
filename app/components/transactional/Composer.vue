@@ -14,20 +14,30 @@ import { diffPassage } from "~~/shared/utils/content/diff";
 import { firstTouchedBlockId, validateOps } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
+  sameBlockContent,
+  sameIdSet,
+  transactionalSeed,
+  type TransactionalSeed,
+} from "~~/shared/utils/content/transactionalSeed";
+import {
   amendmentErrorKey,
   amendmentErrorReasons,
   composerMainAuthor,
 } from "~/composables/amendment/workspace";
 import { useLeaveGuard } from "~/composables/shell/useLeaveGuard";
+import {
+  draftCopyFingerprint,
+  isTransactionalComposerCopy,
+  sameIdList,
+  type TransactionalComposerCopy,
+} from "~/composables/amendment/draftCopy";
+import { useDraftCopy } from "~/composables/amendment/useDraftCopy";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   isLateAwaitingAdmission,
   transactionalAuthorsToAsk,
-  transactionalComposerSeed,
   transactionalMemberList,
   transactionalNextSteps,
-  transactionalSameBlocks,
-  transactionalSameIds,
   transactionalSourceBlockers,
   transactionalSourceCandidates,
   transactionalSourceEligible,
@@ -36,7 +46,6 @@ import {
   transactionalStandIn,
   widenedEdit,
   presentsOriginal,
-  type TransactionalComposerSeed,
   type TransactionalNextStep,
 } from "~/composables/amendment/transactional";
 
@@ -55,7 +64,9 @@ import {
  * the Mesa names several proposers, one must be the main author.
  *
  * What was typed is never dropped silently: changing the amendments,
- * resetting the text, closing or leaving the page ask first.
+ * resetting the text, closing or leaving the page ask first. Until it is
+ * sent, this browser keeps a copy of it (`useDraftCopy`), offered back once
+ * when the composer opens again on the same document.
  *
  * The send button stays enabled while something is missing: pressing it
  * says what (no amendment chosen, too many, the text unchanged, no
@@ -285,7 +296,7 @@ const sourceItems = computed(() => {
 
 // Text -----------------------------------------------------------------------------
 
-const seed = shallowRef<TransactionalComposerSeed | null>(null);
+const seed = shallowRef<TransactionalSeed | null>(null);
 const edited = ref<Block[]>([]);
 const editorKey = ref(0);
 /**
@@ -294,17 +305,31 @@ const editorKey = ref(0);
  */
 const widen = ref({ before: 0, after: 0 });
 
-/** What the seed applies: the transactional and what it adds, or the sources. */
-function seedSources() {
+/**
+ * What the seed applies for a choice of amendments: the transactional and
+ * what it adds, or the amendments in order of presentation.
+ */
+function seedSourcesOf(ids: string[]) {
+  const chosen = (list: string[]) =>
+    list
+      .map((id) => byId.value.get(id))
+      .filter((amendment) => amendment !== undefined);
   return props.revise
     ? [
         { id: props.revise.id, ops: props.revise.ops },
-        ...addedIds.value
-          .map((id) => byId.value.get(id))
-          .filter((amendment) => amendment !== undefined)
-          .map(({ id, ops }) => ({ id, ops })),
+        ...chosen(ids.filter((id) => !fixedIds.value.has(id))).map(
+          ({ id, ops }) => ({ id, ops }),
+        ),
       ]
-    : sources.value.map(({ id, ops }) => ({ id, ops }));
+    : transactionalSourcesInOrder(chosen(ids)).map(({ id, ops }) => ({
+        id,
+        ops,
+      }));
+}
+
+/** What the seed applies now. */
+function seedSources() {
+  return seedSourcesOf(sourceIds.value);
 }
 
 /** Where the passage sits in the text: whether there is more around it. */
@@ -324,12 +349,7 @@ function widenPassage(side: "before" | "after"): void {
   const previous = seed.value;
   if (!previous) return;
   const next = { ...widen.value, [side]: widen.value[side] + 1 };
-  const wider = transactionalComposerSeed(
-    props.base,
-    seedSources(),
-    createId,
-    next,
-  );
+  const wider = transactionalSeed(props.base, seedSources(), createId, next);
   const kept = widenedEdit(previous, wider, edited.value);
   if (!kept) return;
   widen.value = next;
@@ -345,7 +365,7 @@ function widenPassage(side: "before" | "after"): void {
 function reseed(): void {
   // An inclusion starts from the transactional's text as it is, with the
   // amendments it adds applied.
-  seed.value = transactionalComposerSeed(
+  seed.value = transactionalSeed(
     props.base,
     seedSources(),
     createId,
@@ -367,8 +387,7 @@ reseed();
 function textEdited(): boolean {
   editor.value?.flush();
   return (
-    seed.value !== null &&
-    !transactionalSameBlocks(edited.value, seed.value.seed)
+    seed.value !== null && !sameBlockContent(edited.value, seed.value.seed)
   );
 }
 
@@ -409,7 +428,7 @@ function onSourcesChange(value: unknown): void {
     ...fixedIds.value,
     ...picked.filter((id) => !fixedIds.value.has(id)),
   ];
-  if (transactionalSameIds(next, sourceIds.value)) {
+  if (sameIdSet(next, sourceIds.value)) {
     sourceIds.value = next;
     return;
   }
@@ -703,6 +722,7 @@ async function send(): Promise<void> {
         `${props.amendmentsUrl}/${encodeURIComponent(props.revise.id)}/revisions`,
         { body },
       );
+      discardCopy();
       emit("created", result);
       toast.add({
         title: t("transactional.composer.revise.sent"),
@@ -745,6 +765,7 @@ async function send(): Promise<void> {
       { body },
     );
     created.value = result;
+    discardCopy();
     emit("created", result);
     toast.add({
       title: t("transactional.composer.sent.toast"),
@@ -809,20 +830,149 @@ function hasWork(): boolean {
   return textEdited() || justification.value.trim() !== "";
 }
 
+/**
+ * The work is given up: its copy goes. Only when there is work of this
+ * visit to give up (`copySnapshot`, after `hasWork` flushed the editor): an
+ * inclusion counts its own unchanged justification as work, and a copy
+ * offered from an earlier visit and not answered yet stays offered.
+ */
+function giveUpCopy(): void {
+  if (copySnapshot() !== null) discardCopy();
+}
+
 function requestClose(): void {
-  if (
-    hasWork() &&
-    !window.confirm(t("transactional.composer.discardConfirm"))
-  ) {
-    return;
+  if (hasWork()) {
+    if (!window.confirm(t("transactional.composer.discardConfirm"))) return;
+    giveUpCopy();
   }
   emit("close");
 }
 
-// Leaving the page, another document, "atrás", reloading: asked first.
-useLeaveGuard(hasWork, () => t("transactional.composer.discardConfirm"));
+// Leaving the page, another document, "atrás", reloading: asked first. A
+// confirmed leave gives the work up, copy included; a reload keeps it.
+useLeaveGuard(
+  hasWork,
+  () => t("transactional.composer.discardConfirm"),
+  giveUpCopy,
+);
+
+// The copy in this browser ---------------------------------------------------------
+
+/**
+ * What the copy keeps now; null when nothing was written. Unlike hasWork it
+ * never flushes the editor (it runs on every change), and an inclusion's
+ * justification only counts once it differs from the one it starts with.
+ */
+function copySnapshot(): TransactionalComposerCopy | null {
+  const current = seed.value;
+  if (created.value || !current) return null;
+  const textChanged = !sameBlockContent(edited.value, current.seed);
+  const whyChanged =
+    justification.value.trim() !== (props.revise?.justification ?? "").trim();
+  if (!textChanged && !whyChanged) return null;
+  return {
+    sourceIds: [...sourceIds.value],
+    widen: { ...widen.value },
+    passageIds: current.passage.map((block) => block.id),
+    edited: edited.value,
+    justification: justification.value,
+    authorIds: [...authorIds.value],
+    authorsTouched: authorsTouched.value,
+    executiveAuthorIds: [...executiveAuthorIds.value],
+    mainAuthorId: mainAuthorId.value ?? null,
+  };
+}
+
+/**
+ * A copy fits while its amendments can still be combined (an inclusion's
+ * own parents among them) and they still give the passage it was written
+ * over.
+ */
+function copyFits(data: unknown): data is TransactionalComposerCopy {
+  if (!isTransactionalComposerCopy(data)) return false;
+  if (props.revise?.sourceIds.some((id) => !data.sourceIds.includes(id))) {
+    return false;
+  }
+  const added = data.sourceIds.filter((id) => !fixedIds.value.has(id));
+  if (
+    added.length === 0 ||
+    transactionalSourceLimit(data.sourceIds).over ||
+    transactionalSourceBlockers(added, byId.value).length > 0
+  ) {
+    return false;
+  }
+  try {
+    const again = transactionalSeed(
+      props.base,
+      seedSourcesOf(data.sourceIds),
+      createId,
+      data.widen,
+    );
+    return sameIdList(
+      again.passage.map((block) => block.id),
+      data.passageIds,
+    );
+  } catch {
+    return false;
+  }
+}
+
+const {
+  offer: copyOffer,
+  open: openCopy,
+  recover: takeCopy,
+  discard: discardCopy,
+  dismiss: dismissCopy,
+} = useDraftCopy<TransactionalComposerCopy>({
+  composer: "transactional",
+  documentId: () => props.document.id,
+  scope: () => (props.revise ? `revise-${props.revise.id}` : "new"),
+  // An inclusion builds on the transactional's text as it is now.
+  stamp: () => ({
+    baseVersionId: props.document.baseVersion?.id ?? null,
+    token: props.revise ? draftCopyFingerprint(props.revise.ops) : null,
+  }),
+  snapshot: copySnapshot,
+  track: [
+    edited,
+    justification,
+    sourceIds,
+    widen,
+    authorIds,
+    executiveAuthorIds,
+    mainAuthorId,
+    created,
+  ],
+  settle: () => editor.value?.flush(),
+  accept: copyFits,
+});
+
+/** Puts the kept work back: its amendments, passage, text and answers. */
+function recoverCopy(): void {
+  const data = takeCopy();
+  if (!data) return;
+  sourceIds.value = [...data.sourceIds];
+  widen.value = { ...data.widen };
+  serverReasons.value = [];
+  attempted.value = false;
+  standInNotice.value = [];
+  choosing.value = false;
+  if (data.authorsTouched) {
+    authorIds.value = [...data.authorIds];
+    authorsTouched.value = true;
+  }
+  executiveAuthorIds.value = [...data.executiveAuthorIds];
+  mainAuthorId.value = data.mainAuthorId ?? undefined;
+  justification.value = data.justification;
+  // The editor is mounted again (reseed) with the kept text in it, a fresh
+  // copy read from storage.
+  reseed();
+  edited.value = data.edited;
+}
 
 onMounted(() => {
+  // Never before the amendments are read: a copy that does not fit is dropped.
+  if (props.amendments.length > 0) openCopy();
   void nextTick(() => {
     if (hasPassage.value) editor.value?.focus();
     else heading.value?.focus();
@@ -938,6 +1088,14 @@ const stepBadge =
         @click="requestClose"
       />
     </header>
+
+    <!-- Work this browser kept from an earlier visit: offered once. -->
+    <AmendmentDraftCopyNotice
+      v-if="copyOffer"
+      :saved-at="copyOffer.savedAt"
+      @recover="recoverCopy"
+      @discard="dismissCopy"
+    />
 
     <!-- Step: which amendments -->
     <section class="flex flex-col gap-2" :aria-labelledby="`${formId}-sources`">

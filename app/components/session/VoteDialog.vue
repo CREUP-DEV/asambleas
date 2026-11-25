@@ -9,6 +9,7 @@ import {
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import type { LiveTallyAnnounce } from "~/composables/session/liveTally";
+import { statusLabelKey } from "~/utils/statusColors";
 
 /**
  * Records the vote on one amendment. It proposes the majority of the
@@ -35,6 +36,15 @@ const proposedMajority = computed(() =>
     ? amendmentVoteMajority(session.document.value.kind)
     : "simple",
 );
+/**
+ * Says the majority the form proposes: absolute in a reform (RRI art.
+ * 65.5), simple otherwise; never «simple» over an absolute proposal.
+ */
+const description = computed(() =>
+  proposedMajority.value === "absolute"
+    ? t("session.vote.descriptionReform")
+    : t("session.vote.description"),
+);
 const vote = ref<VoteInput>(sessionEmptyVote(proposedMajority.value));
 /** This form is recording the vote: the amendment it decides is its own. */
 const recording = ref(false);
@@ -60,7 +70,7 @@ const decided = computed(
 /** Its code and status, as the queue names them. */
 const decidedLine = computed(() =>
   amendment.value
-    ? `${session.label(amendment.value.id)} · ${t(`common.status.amendment.${amendment.value.status}`)}`
+    ? `${session.label(amendment.value.id)} · ${t(statusLabelKey("amendment", amendment.value.status))}`
     : "",
 );
 
@@ -110,7 +120,7 @@ async function submit(): Promise<void> {
         code: amendment ? session.label(amendment.id) : '',
       })
     "
-    :description="t('session.vote.description')"
+    :description="description"
     :ui="{ content: 'sm:max-w-2xl' }"
   >
     <template #body>

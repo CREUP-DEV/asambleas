@@ -6,6 +6,8 @@ import {
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 import { thirdCount, voteTextKey } from "~~/shared/utils/votes";
+import { PROJECTION_STATE_COLORS } from "~/utils/statusColors";
+import { OUTCOME_TEXT } from "~/utils/statusTone";
 
 /**
  * The amendments of the document in debate as the projection shows them
@@ -33,20 +35,17 @@ const alternativesText = useAlternativesVoteText();
 /** Undecided rows say nothing: the highlight already marks the one debated. */
 const QUIET: ReadonlySet<LiveAmendmentState> = new Set(["debating", "pending"]);
 
+/**
+ * A decided row's state in its colour (PROJECTION_STATE_COLORS: lapsed grey,
+ * as closed); the colours without a result text (transacted, turned down,
+ * withdrawn, the undecided ones) dimmed.
+ */
 function stateClass(row: LiveAmendmentRow): string {
   if (row.current) return "text-inverted";
-  switch (row.state) {
-    case "approved":
-    case "incorporated":
-      return "text-(--ui-color-success-800) dark:text-(--ui-color-success-300)";
-    case "rejected":
-    case "inadmissible":
-      return "text-(--ui-color-error-700) dark:text-(--ui-color-error-300)";
-    case "late":
-      return "text-(--ui-color-warning-800) dark:text-(--ui-color-warning-300)";
-    default:
-      return "text-dimmed";
-  }
+  const color = PROJECTION_STATE_COLORS[row.state];
+  return color in OUTCOME_TEXT
+    ? OUTCOME_TEXT[color as keyof typeof OUTCOME_TEXT]
+    : "text-dimmed";
 }
 
 const STATE_ICONS: Partial<Record<LiveAmendmentState, string>> = {

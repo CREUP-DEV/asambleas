@@ -328,6 +328,17 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
 }
 
 /**
+ * The hub's context, for the section composables that follow its one live
+ * stream (useDocument, useDocumentAmendments, useSessionConsole): throws
+ * outside the hub instead of falling back as useCurrentAssembly does.
+ */
+export function requireCurrentAssembly(who: string): CurrentAssemblyContext {
+  const injected = inject(CURRENT_ASSEMBLY_KEY, null);
+  if (!injected) throw new Error(`${who} runs only inside the assembly hub`);
+  return injected;
+}
+
+/**
  * useState key of the assemblies (by id) whose shared agenda a page kept
  * without following every event the agenda pages follow (Directo): the
  * next useAssemblyAgenda refetches it in the background.

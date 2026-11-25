@@ -319,7 +319,7 @@ function opsOf(correction: FormCorrectionDto) {
   return diffPassage(correction.before, correction.blocks, null, createId);
 }
 
-const STATUS_COLORS = {
+const CORRECTION_STATUS_COLORS = {
   pending: "warning",
   applied: "success",
   rejected: "error",
@@ -474,7 +474,7 @@ function when(value: string | null): string {
       >
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <UBadge
-            :color="STATUS_COLORS[correction.status]"
+            :color="CORRECTION_STATUS_COLORS[correction.status]"
             variant="subtle"
             size="md"
             :label="t(`workspace.formCorrections.status.${correction.status}`)"

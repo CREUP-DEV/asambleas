@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { isPastDeadline } from "~~/shared/utils/calendar";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AgendaDto,
@@ -14,6 +13,7 @@ import {
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import { ORGANIZE_QUERY } from "~/composables/document/agendaReturn";
 import { useAddDocument } from "~/composables/document/useAddDocument";
+import { usePresentationDeadlines } from "~/composables/document/usePresentationDeadlines";
 import type {
   AgendaFoldState,
   AgendaMove,
@@ -128,14 +128,12 @@ const canCreateDocument = computed(() =>
 );
 
 // The shared clock, so "Presentar documento" closes with the deadline even
-// in a tab that stays open for days.
-const now = useAppNow();
-const documentsClosed = computed(() => {
-  const close = assembly.value?.milestones.find(
-    (milestone) => milestone.key === "documents_close",
-  );
-  return Boolean(close && isPastDeadline(close.at, now.value));
-});
+// in a tab that stays open for days. Each kind keeps its own deadline
+// (presentationDeadlinePassed): the page closes once none is open, and
+// each item once none of the kinds it takes for the member is
+// (AgendaItemNode, through `kindOpen`).
+const { kindOpen, schedule } = usePresentationDeadlines(assembly);
+const documentsClosed = computed(() => !schedule.value.open);
 
 const submitBlockedReason = computed<string | null>(() => {
   const value = assembly.value;
@@ -572,6 +570,7 @@ const context: AgendaTreeContext = {
   toggleFold,
   canCreateDocument,
   canSubmitDocument,
+  kindOpen,
   busyId,
   documentsFor: (itemId) => documentsByItem.value.get(itemId) ?? [],
   documentPath,

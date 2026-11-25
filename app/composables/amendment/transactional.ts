@@ -18,12 +18,13 @@ import type {
   AmendmentDto,
   MemberRef,
 } from "~~/shared/types/api";
-import type { AmendmentInput, Block } from "~~/shared/types/content";
-import { cellFillOf } from "~~/shared/constants/cellFills";
-import { cellLayoutKey } from "~~/shared/utils/content/tables";
-import { consolidate } from "~~/shared/utils/content/consolidate";
-import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
-import { touchedBlockIds } from "~~/shared/utils/content/ops";
+import type { Block } from "~~/shared/types/content";
+import {
+  sameBlockContent,
+  sameIdSet,
+  transactionalSeed,
+  type TransactionalSeed,
+} from "~~/shared/utils/content/transactionalSeed";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
 import { sessionReplacingIds } from "~/composables/session/sessionModel";
 import {
@@ -165,108 +166,15 @@ export function transactionalSourceBlockers(
 
 // Composer seed ------------------------------------------------------------------
 
-export interface TransactionalComposerSeed {
-  /** The contiguous run of base blocks the sources touch. */
-  passage: Block[];
-  /** The base block right before the passage, null at the start. */
-  anchorBefore: string | null;
-  /**
-   * The base blocks before the passage, which the sources leave alone:
-   * diffPassage reads the seed's list numbers against them.
-   */
-  before: Block[];
-  /**
-   * The passage with the sources applied, ready for the editor. Its ordered
-   * items carry the numbers they show in the text (seedListStarts), so a
-   * passage from "k)" does not start at "a)".
-   */
-  seed: Block[];
-  /** Sources that could not be applied together with earlier ones. */
-  skipped: string[];
-}
-
 /**
- * Starting point of a transactional: the passage touched by its sources,
- * with the sources applied in the given order. When two sources collide the
- * first applicable one wins, as `consolidate` does. Blocks the sources insert
- * get fresh ids, so they never clash with the sources' own. (Same rules as
- * the session console's composer.) Diff the edited text with
- * `diffPassage(passage, edited, anchorBefore, newId, before)`, so the list
- * numbers the seed carries are no change.
+ * The starting text of a transactional and whether it was edited: one
+ * implementation for this composer and the Mesa's
+ * (shared/utils/content/transactionalSeed.ts). The composers import it from
+ * there; these names, and transactionalSameBlocks and transactionalSameIds,
+ * stay only for the tests that still use them.
  */
-export function transactionalComposerSeed(
-  base: Block[],
-  sources: AmendmentInput[],
-  newId: () => string,
-  /**
-   * Paragraphs taken in before and after what the sources touch (user's
-   * decision of 2026-11-20): a transactional may need to change text
-   * around them too. None by default.
-   */
-  widen: { before: number; after: number } = { before: 0, after: 0 },
-): TransactionalComposerSeed {
-  const index = new Map(base.map((block, i) => [block.id, i]));
-  const positions: number[] = [];
-  for (const source of sources) {
-    for (const id of touchedBlockIds(source.ops)) {
-      const position = index.get(id);
-      if (position !== undefined) positions.push(position);
-    }
-    if (
-      source.ops.some((op) => op.op === "insert" && op.afterBlockId === null)
-    ) {
-      positions.push(0);
-    }
-  }
-  if (positions.length === 0 || base.length === 0) {
-    return {
-      passage: [],
-      anchorBefore: null,
-      before: [],
-      seed: [],
-      skipped: [],
-    };
-  }
-
-  const lo = Math.max(0, Math.min(...positions) - Math.max(0, widen.before));
-  const hi = Math.min(
-    base.length - 1,
-    Math.max(...positions) + Math.max(0, widen.after),
-  );
-  const result = consolidate(base, sources);
-
-  const seed: Block[] = [];
-  let current = -1;
-  for (const block of result.annotated) {
-    if (block.status === "inserted") {
-      const inside =
-        (current >= lo || (lo === 0 && current === -1)) && current <= hi;
-      if (!inside) continue;
-    } else {
-      current = index.get(block.id) ?? current;
-      if (block.status === "deleted" || current < lo || current > hi) continue;
-    }
-    const clean: Block = {
-      id: block.status === "inserted" ? newId() : block.id,
-      type: block.type,
-      text: block.segments
-        .filter((segment) => !segment.removed)
-        .map((segment) => segment.text)
-        .join(""),
-      marks: block.marks.map((mark) => ({ ...mark })),
-    };
-    seed.push(copyShape(block, clean));
-  }
-  const before = base.slice(0, lo);
-
-  return {
-    passage: base.slice(lo, hi + 1),
-    anchorBefore: lo > 0 ? base[lo - 1]!.id : null,
-    before,
-    seed: seedListStarts(before, seed),
-    skipped: result.conflicts.map((conflict) => conflict.amendmentId),
-  };
-}
+export type TransactionalComposerSeed = TransactionalSeed;
+export const transactionalComposerSeed = transactionalSeed;
 
 /**
  * The text after taking in more paragraphs around the passage (user's
@@ -276,8 +184,8 @@ export function transactionalComposerSeed(
  * the start or the end).
  */
 export function widenedEdit(
-  previous: Pick<TransactionalComposerSeed, "passage">,
-  wider: Pick<TransactionalComposerSeed, "passage" | "seed">,
+  previous: Pick<TransactionalSeed, "passage">,
+  wider: Pick<TransactionalSeed, "passage" | "seed">,
   edited: Block[],
 ): Block[] | null {
   const had = new Set(previous.passage.map((block) => block.id));
@@ -306,54 +214,13 @@ export function widenedEdit(
 }
 
 /**
- * A cell as the comparison reads it: `shade` (content from before the
- * palette) and the fill "beige" are the same, as the editor returns them.
+ * Whether two block lists hold the same text and formatting, ids left out
+ * (sameBlockContent). Tells whether the author has edited the starting text.
  */
-function cellContent(cell: NonNullable<Block["cell"]>): unknown[] {
-  return [
-    cell.table,
-    cell.row,
-    cell.cell,
-    cell.header ?? false,
-    cellFillOf(cell) ?? null,
-    cell.colspan ?? 1,
-    cell.rowspan ?? 1,
-    ...cellLayoutKey(cell),
-  ];
-}
+export const transactionalSameBlocks = sameBlockContent;
 
-function blockContent(block: Block): string {
-  return JSON.stringify([
-    block.type,
-    block.text,
-    block.level ?? null,
-    block.list ?? null,
-    block.marker ?? null,
-    block.start ?? null,
-    block.cell ? cellContent(block.cell) : null,
-    block.align ?? null,
-    block.marks,
-  ]);
-}
-
-/**
- * Whether two block lists hold the same text and formatting (ids left out:
- * the editor may renew one without changing its content). Tells whether the
- * author has edited the starting text.
- */
-export function transactionalSameBlocks(a: Block[], b: Block[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every((block, index) => blockContent(block) === blockContent(b[index]!))
-  );
-}
-
-/** Same ids, in any order and ignoring repeats. */
-export function transactionalSameIds(a: string[], b: string[]): boolean {
-  const left = new Set(a);
-  const right = new Set(b);
-  return left.size === right.size && [...left].every((id) => right.has(id));
-}
+/** Same ids, in any order and ignoring repeats (sameIdSet). */
+export const transactionalSameIds = sameIdSet;
 
 // Progress ---------------------------------------------------------------------------
 

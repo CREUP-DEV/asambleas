@@ -72,6 +72,7 @@ import type {
   MarkType,
 } from "../shared/types/content";
 import { defaultMilestones, type Milestones } from "../shared/utils/calendar";
+import { assemblyYear } from "../shared/utils/dates";
 import { INITIAL_CALENDAR_RULES } from "../shared/constants/calendarRules";
 import { ALL_ASSEMBLY_TYPES } from "../shared/constants/assemblyTypes";
 import { diffText } from "../shared/utils/content/diff";
@@ -1222,13 +1223,6 @@ export function buildDemoContent(
 
 type EventRow = typeof schema.events.$inferInsert;
 
-function referenceYear(at: Date): string {
-  return new Intl.DateTimeFormat("en", {
-    timeZone: "Europe/Madrid",
-    year: "numeric",
-  }).format(at);
-}
-
 /** Next free reference for the kind, numbered per prefix and year as on publication. */
 async function nextReference(
   tx: Tx,
@@ -1237,7 +1231,7 @@ async function nextReference(
 ): Promise<string | null> {
   const prefix = DOCUMENT_KIND_DEFAULTS[kind].referencePrefix;
   if (!prefix) return null;
-  const year = referenceYear(at);
+  const year = assemblyYear(at);
   const rows = await tx
     .select({ reference: schema.documents.reference })
     .from(schema.documents)

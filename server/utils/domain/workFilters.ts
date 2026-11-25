@@ -30,8 +30,9 @@ export function isShelvedDocument(document: {
 /**
  * Whether one of the member's documents is still something to do on the
  * home page. A draft is not once its presentation is closed for the actor
- * (presentationClosed, which submitDocument checks): past documents_close,
- * not expected by the Secretaría and not sent back for a correction.
+ * (presentationClosed, which submitDocument checks): past its kind's own
+ * deadline (presentationDeadlinePassed), not expected by the Secretaría and
+ * not sent back for a correction.
  * Managers are not bound by the deadline, and a document whose agenda item
  * is gone is not checked (as in submitDocument). Other statuses always stay:
  * they are where the document stands, not a task.

@@ -187,7 +187,19 @@ Members of the other kinds read the same for everyone.
 The assembly overview and the agenda offer "Añadir documento" to managers
 until the assembly closes, whatever the calendar says, and "Presentar
 documento" to members while documents can be presented (the assembly is not
-closed and `documents_close` has not passed). The modal starts with the
+closed and some kind their member may present under an item is still in its
+own deadline, `presentationDeadlinePassed`: a candidacy until
+`candidacies_close`, a report until `reports_close`, the rest until
+`documents_close`); the modal offers members only the kinds still in their
+deadline, the same rule the server applies to creating and to sending the
+draft, and to changing its kind or its item (the document's form offers no
+other kind, but keeps its own, and no move that would leave it past its
+deadline, such as out of an item reserved to the Secretaría; a choice whose
+deadline passes with the modal or the form open is dropped). An agenda item
+tells a member the deadline passed only once every kind it takes from them
+has, and the overview's card says presentation closed only once no kind that
+member may present is open, counting down to the nearest of those deadlines
+ahead until then. The modal starts with the
 agenda item and proposes the kind and the title from it (`proposeFromItem`:
 "Aprobación, si procede, del Posicionamiento sobre X" gives a positioning
 titled "Posicionamiento sobre X"; an item that names several documents gets
@@ -624,7 +636,8 @@ replace or remove the PDF, from its "Más" menu.
   those who do receive it, shows as "Sin publicar" and never shifts its
   siblings (`numberAgendaItems`). A
   document in an automatic sub-item is not "expected" for that reason alone:
-  `documents_close` binds it like any document a member chose to present.
+  its kind's deadline (`presentationDeadlinePassed`) binds it like any
+  document a member chose to present.
 - Deleting an agenda item removes its sub-items and every document under
   them, each with its own event and the same clean-up as a single delete
   (votes, projection, PDF and images). Amendments keep it: one
@@ -764,8 +777,13 @@ the assembly until the Secretaría has checked it.
 **Expected documentation.** The Secretaría can create a document in advance
 for the member that has to provide it (a CEA report, a resolution) with an
 internal deadline (`dueAt`). It starts as an empty draft that the member fills
-in. The tracking panel lists, per agenda item, every document with who presents
-it, its deadline and where it stands: to do (no content yet), in preparation,
+in. «Añadir varios documentos», on an agenda item, takes one optional internal
+deadline for all of them, and «Añadir documento esperado», in the tracking
+panel, proposes the type and title from the item and, after one is added,
+keeps its item, type, format and deadline for the next one (in memory, not in
+the browser's storage). The tracking panel lists, per agenda item, every
+document with who presents it, its deadline and where it stands: to do (no
+content yet), in preparation,
 presented (waiting for validation), correction requested, or published.
 Overdue ones stand out.
 
@@ -813,7 +831,8 @@ back; read only when opened, so it carries no count), and finally the late
 ones in "Fuera de plazo"
 (`splitReviewParts` in `app/components/review/-queue.ts`). Neither lists
 work that cannot go ahead (`server/utils/domain/workFilters.ts`): a
-member's draft past `documents_close` that is not expected nor sent back
+member's draft past its kind's deadline (`presentationDeadlinePassed`) that
+is not expected nor sent back
 (`presentationClosed`) and amendment drafts on a document that no longer
 takes amendments leave the home page, and the amendments of withdrawn or
 postponed documents leave the inbox and its counts until the document is
@@ -1582,7 +1601,14 @@ themselves stay per browser (the locale cookie, the colour mode and
       correction notices, and "Guardar borrador" and "Enviar". The document's
       reading bar (previous, next, "Marcar como leído") hides while it is
       open. Leaving with changes that were not saved asks first, going to
-      another document of the assembly included.
+      another document of the assembly included. Until they are saved or
+      sent, the browser keeps a copy of them (`localStorage`, per account,
+      document and draft, for a week), so a phone that discards the tab or a
+      browser that crashes loses nothing: reopening the composer offers
+      «Recuperar» once, in one quiet line, and only while the copy still
+      applies to the same base and nobody saved the draft since. The two
+      transactional composers (the members' and the Mesa's) keep the same
+      copy until the transactional is created.
   - Changing a word everywhere is an entry of the "Más" menu, with a
     sentence, and opens the same composer with its own form in place of the
     editor.

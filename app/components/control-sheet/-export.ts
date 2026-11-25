@@ -1,4 +1,6 @@
 import type { VoteDto } from "~~/shared/types/api";
+import { assemblyClockKey, assemblyDayKey } from "~~/shared/utils/dates";
+import { formatDate, formatTime } from "~/utils/format";
 import { isUnanimousVote } from "~~/shared/utils/controlSheet";
 import { shownVoteCounts } from "~~/shared/utils/votes";
 import type {
@@ -19,6 +21,11 @@ import {
   type AmendmentSheetRow,
   type GeneralSheetRow,
 } from "./-model";
+import {
+  CONTROL_SHEET_RESULT_COLORS,
+  CONTROL_SHEET_STATE_COLORS,
+  XLSX_STYLE_OF_COLOR,
+} from "~/utils/statusColors";
 
 /**
  * The control sheet as an Excel workbook (user's decision of 2026-11-21):
@@ -57,44 +64,17 @@ const TAB_DOCUMENT = "8C8C8C";
 export function resultCellStyle(
   result: ControlSheetResult | null,
 ): XlsxCellStyle {
-  switch (result) {
-    case "approved":
-    case "approved_unanimous":
-      return "success";
-    case "rejected":
-      return "danger";
-    case "mixed":
-      return "info";
-    case null:
-      return "warning";
-    default:
-      return "neutral";
-  }
+  return XLSX_STYLE_OF_COLOR[CONTROL_SHEET_RESULT_COLORS[result ?? "pending"]];
 }
 
 /**
  * The colour of an amendment's state, as its badge in «Enmiendas» has it
- * (LIVE_STATE_COLORS, with pending amber and lapsed grey).
+ * (CONTROL_SHEET_STATE_COLORS: pending amber and lapsed grey).
  */
 export function amendmentStateCellStyle(
   state: AmendmentSheetRow["state"],
 ): XlsxCellStyle {
-  switch (state) {
-    case "approved":
-    case "incorporated":
-      return "success";
-    case "rejected":
-    case "inadmissible":
-      return "danger";
-    case "pending":
-    case "late":
-      return "warning";
-    case "debating":
-    case "transacted":
-      return "info";
-    default:
-      return "neutral";
-  }
+  return XLSX_STYLE_OF_COLOR[CONTROL_SHEET_STATE_COLORS[state]];
 }
 
 /** The colour of a presenter's answer. */
@@ -116,22 +96,14 @@ export function useControlSheetExport() {
   const electionText = useElectionText();
   const alternativesText = useAlternativesVoteText();
 
-  /** «21 de noviembre de 2026» and «16:40», in Madrid. */
+  /**
+   * «21 de noviembre de 2026» and «16:40», in Madrid, as the page writes
+   * them («21 November 2026» in English).
+   */
   function moment(at: Date): { date: string; time: string } {
-    const zone = "Europe/Madrid";
     return {
-      date: new Intl.DateTimeFormat(locale.value, {
-        timeZone: zone,
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }).format(at),
-      time: new Intl.DateTimeFormat(locale.value, {
-        timeZone: zone,
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      }).format(at),
+      date: formatDate(at, { locale: locale.value }),
+      time: formatTime(at, { locale: locale.value }),
     };
   }
 
@@ -370,24 +342,13 @@ export function useControlSheetExport() {
 
   /** «hoja-de-control-80-ago-2026-11-21-1640.xlsx», in Madrid time. */
   function fileName(input: ControlSheetExportInput): string {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Madrid",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(input.exportedAt);
-    const part = (type: string) =>
-      parts.find((entry) => entry.type === type)?.value ?? "";
     const assembly = input.assemblyLabel
       .normalize("NFD")
       .replace(/\p{Diacritic}/gu, "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
-    return `${t("controlSheet.export.filePrefix")}-${assembly}-${part("year")}-${part("month")}-${part("day")}-${part("hour")}${part("minute")}.xlsx`;
+    return `${t("controlSheet.export.filePrefix")}-${assembly}-${assemblyDayKey(input.exportedAt)}-${assemblyClockKey(input.exportedAt)}.xlsx`;
   }
 
   return { workbook, fileName, voteText };

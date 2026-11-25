@@ -5,6 +5,7 @@ import { liveAssentKey } from "~/components/live-view/-model";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
+import { STATUS_BOX } from "~/utils/statusTone";
 
 /**
  * The text as it stands: the base with every approved amendment applied in
@@ -189,8 +190,8 @@ const awaitingValidation = computed(
           class="rounded-lg border p-3"
           :class="
             finalVote.result === 'approved'
-              ? 'border-success/50 bg-success/10'
-              : 'border-error/50 bg-error/10'
+              ? STATUS_BOX.success
+              : STATUS_BOX.error
           "
           role="status"
         >

@@ -677,10 +677,21 @@ each sub-item `agenda_item_created`.
 for any members (see presenters below) and with no content. Members with
 `document:create` (Asociado, Sectorial and CEA accounts) can create one under
 an agenda item that has `acceptsSubmissions`, of a kind the item takes
-(`submissionKinds`; 422 `submission_kind` otherwise), until the
-`documents_close` milestone (409 `data.reason` `documents_deadline_passed`;
-`assembly_closed` once the assembly is closed), always as one of its
-presenters. Under such an
+(`submissionKinds`; 422 `submission_kind` otherwise), until its kind's
+deadline (`presentationDeadlinePassed`: `candidacies_close` for candidacies
+and venues, `reports_close` for reports, `documents_close` for the rest and
+for a kind whose own milestone the assembly lacks; 409 `data.reason`
+`documents_deadline_passed`; `assembly_closed` once the assembly is closed), always as one of its
+presenters. The same deadline binds sending it (`POST .../submit`), so a
+member never holds a draft it can no longer send, and changing its kind or
+its item (`PUT`): a member's change that leaves the document past its kind's
+deadline where it ends up hanging, when it was not before, gets the same 409
+`documents_deadline_passed` (`requirePresentationChangeOpen`). That covers a
+kind whose deadline has passed, moved along or not, and a move out of an item
+reserved to the Secretaría, which takes away the exemption of an expected
+document. An internal deadline or a correction requested exempt the change
+wherever the document goes, and a draft already past its deadline, or still
+within it after the change, moves and changes freely. Under such an
 item the document gets its own automatic sub-item (see Agenda), whoever
 creates it.
 
@@ -778,8 +789,9 @@ has a `dueAt` or hangs from an agenda item that does not accept submissions
 (only a manager could have created it there, such as a CEA report without an
 internal deadline). An automatic sub-item does not count as such an item: a
 document in one was presented under an item that accepts submissions, so
-without a `dueAt` it is not expected and `documents_close` binds it. The `documents_close` milestone does not bind an expected
-document: its `dueAt`, if any, is the deadline, and an overdue one can still
+without a `dueAt` it is not expected and its kind's deadline
+(`presentationDeadlinePassed`) binds it. That deadline does not bind an
+expected document: its `dueAt`, if any, is the deadline, and an overdue one can still
 be presented (the tracking panel flags it).
 
 **Summary fields.** `DocumentSummaryDto` carries what the tracking panel needs:
@@ -795,7 +807,8 @@ rest of the assembly until the Secretaría has checked it.
 - `POST .../submit` sends a draft with content (422 otherwise) to the
   Secretaría (`submitted`, `submittedAt`). Presenting it again after a
   correction clears `correctionNote` and `correctionRequestedAt`. Members
-  must do it before `documents_close` unless the document is expected (see
+  must do it before its kind's deadline (`presentationDeadlinePassed`)
+  unless the document is expected (see
   above; 409 `data.reason` `documents_deadline_passed`); managers are not
   bound by it. Nobody sends one once the assembly is closed (409
   `assembly_closed`).
@@ -1787,7 +1800,8 @@ managers and the Mesa), soonest first:
 - `documents`: the documents the actor's member presents, as main presenter
   or co-presenter, that are `draft` (expected ones included), `submitted` or
   `published`. A draft whose presentation is closed for the actor
-  (`presentationClosed`: past `documents_close`, not expected, not sent back
+  (`presentationClosed`: past its kind's deadline
+  (`presentationDeadlinePassed`), not expected, not sent back
   for a correction; managers are not bound by it) is left out, since
   `POST .../submit` would refuse it;
 - `amendments`: the amendments the actor's member authored that are still

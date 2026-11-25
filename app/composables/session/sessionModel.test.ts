@@ -9,6 +9,12 @@ import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
+  transactionalComposerSeed,
+  transactionalSameBlocks,
+  transactionalSameIds,
+} from "~/composables/amendment/transactional";
+import { sortAmendments } from "~/composables/amendment/workspace";
+import {
   sessionAdmissionTransactionalEffects,
   sessionSourcesAwaitingAdmission,
   buildSessionQueue,
@@ -43,7 +49,6 @@ import {
   isSessionReplacing,
   isSessionSuperseded,
   sessionSupersededSourceIds,
-  sessionMainAuthor,
   sessionPartySourceIds,
   sessionReplacedIds,
   sessionReplacingIds,
@@ -216,6 +221,27 @@ describe("session model", () => {
     const r2 = am("r2", { positionKey: 0.6, position: answer("reject") });
     const list = [c1, r2, n1, t1, p1, r1];
     const ids = (sorted: AmendmentDto[]) => sorted.map((x) => x.id);
+
+    it("orders a passage's transactionals by code, as the document page", () => {
+      const transactional = (id: string, code: string, submittedAt: string) =>
+        am(id, {
+          kind: "transactional",
+          number: null,
+          code,
+          positionKey: 0.7,
+          submittedAt,
+        });
+      const tied = [
+        // T1 presented again: its time is the latest, its place stays.
+        transactional("x1", "T1", "2026-03-01T00:00:00Z"),
+        transactional("x10", "T10", "2026-01-03T00:00:00Z"),
+        transactional("x2", "T2", "2026-01-02T00:00:00Z"),
+      ];
+      expect(ids(sortSessionAmendments(tied))).toEqual(["x1", "x2", "x10"]);
+      expect(ids(sortSessionAmendments(tied))).toEqual(
+        ids(sortAmendments(tied)),
+      );
+    });
 
     it("keeps text order until the answers are public", () => {
       const text = ["r1", "p1", "n1", "t1", "c1", "r2"];
@@ -739,27 +765,12 @@ describe("session model", () => {
     ).not.toHaveProperty("unanimous");
   });
 
-  it("compares drafts and source sets", () => {
-    expect(sessionSameIds(["a", "b"], ["b", "a", "a"])).toBe(true);
-    expect(sessionSameIds(["a"], ["a", "b"])).toBe(false);
-    expect(sessionSameIds([], [])).toBe(true);
-
-    const renamed = base.map((block, i) => ({ ...block, id: `n${i}` }));
-    expect(sessionSameBlocks(base, renamed)).toBe(true);
-    expect(
-      sessionSameBlocks(base, [
-        base[0]!,
-        { ...base[1]!, text: "La casa es pequeña." },
-        base[2]!,
-      ]),
-    ).toBe(false);
-    expect(sessionSameBlocks(base, base.slice(0, 2))).toBe(false);
-    expect(
-      sessionSameBlocks(
-        [base[0]!],
-        [{ ...base[0]!, marks: [{ type: "bold", from: 0, to: 2 }] }],
-      ),
-    ).toBe(false);
+  it("seeds and compares drafts as the members' composer does", () => {
+    // One implementation (shared/utils/content/transactionalSeed.ts, tested
+    // there), so the two composers never seed or compare differently.
+    expect(sessionTransactionalSeed).toBe(transactionalComposerSeed);
+    expect(sessionSameBlocks).toBe(transactionalSameBlocks);
+    expect(sessionSameIds).toBe(transactionalSameIds);
   });
 
   describe("transactionals and their main authors", () => {
@@ -1521,23 +1532,7 @@ describe("session model", () => {
       kind: "asociado" as const,
     });
 
-    it("names the main author", () => {
-      expect(sessionMainAuthor(am("x", {}))).toBe(null);
-      expect(
-        sessionMainAuthor(am("x", { authors: [m("A"), m("B")] }))?.id,
-      ).toBe("A");
-      expect(
-        sessionMainAuthor(
-          am("x", { authors: [m("A"), m("B")], mainAuthorId: "B" }),
-        )?.id,
-      ).toBe("B");
-      // A stale id falls back to the first author.
-      expect(
-        sessionMainAuthor(am("x", { authors: [m("A")], mainAuthorId: "Z" }))
-          ?.id,
-      ).toBe("A");
-    });
-
+    // The main author itself: amendmentMainAuthor (workspace.test.ts).
     it("lists the main author of each source as a party", () => {
       const x = am("x", { authors: [m("A"), m("B")] });
       const y = am("y", { authors: [m("B"), m("C")], mainAuthorId: "C" });

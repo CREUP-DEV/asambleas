@@ -43,6 +43,7 @@ const after = new Date("2026-11-11T09:00:00Z");
 const milestones = { documents_close: close };
 
 const draft = {
+  kind: "resolution" as const,
   status: "draft" as const,
   dueAt: null,
   correctionRequestedAt: null,

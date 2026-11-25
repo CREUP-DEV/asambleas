@@ -5,6 +5,7 @@ import {
   liveVoteAmendments,
   liveVoteCounts,
 } from "~/components/live-view/-model";
+import { OUTCOME_TEXT } from "~/utils/statusTone";
 
 /**
  * The last vote the Mesa recorded, for the live view: what was voted (and,
@@ -86,11 +87,7 @@ const assentKey = computed(() => liveAssentKey(props.vote));
     </p>
     <p
       class="text-2xl font-bold"
-      :class="
-        approved
-          ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
-          : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
-      "
+      :class="approved ? OUTCOME_TEXT.success : OUTCOME_TEXT.error"
     >
       <template v-if="alternatives">
         {{ alternativesText.outcome(vote) }}

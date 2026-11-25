@@ -1,6 +1,7 @@
 import type { AssemblyType } from "../../constants/assemblyTypes";
 import type { Majority, VoteMethod } from "../../constants/domain";
 import type { Block, Mark } from "../../types/content";
+import { formatLongDate } from "../dates";
 
 /**
  * The approval line of CREUP's Word templates: "Aprobada por [Mayoría] en la
@@ -112,16 +113,6 @@ function approvedBy(vote: ApprovalFill["vote"]): string {
   return MAJORITY_NAMES[vote.majority];
 }
 
-/** "21 de noviembre de 2026", the day in Madrid. */
-function voteDay(date: Date): string {
-  return new Intl.DateTimeFormat("es-ES", {
-    timeZone: "Europe/Madrid",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
 /**
  * The line written again with the vote's data, keeping its own opening
  * ("Aprobada", "Modificado parcialmente"): "Aprobada por mayoría simple en
@@ -135,7 +126,7 @@ export function filledApprovalText(text: string, fill: ApprovalFill): string {
     "Aprobado";
   const assembly = `${fill.assembly.number}.ª ${ASSEMBLY_NAMES[fill.assembly.type]}`;
   const by = /^aprobad/i.test(opening) ? ` por ${approvedBy(fill.vote)}` : "";
-  return `${opening}${by} en la ${assembly} el ${voteDay(fill.vote.recordedAt)}.`;
+  return `${opening}${by} en la ${assembly} el ${formatLongDate(fill.vote.recordedAt, "es-ES")}.`;
 }
 
 /** The marks that covered the whole old line, stretched over the new one. */

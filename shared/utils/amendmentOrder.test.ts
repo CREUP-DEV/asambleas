@@ -4,6 +4,7 @@ import {
   amendmentAnswerRank,
   amendmentOrderRank,
   compareAmendmentAnswers,
+  compareAmendmentCodes,
   type AmendmentOrderSubject,
 } from "./amendmentOrder";
 
@@ -105,5 +106,23 @@ describe("compareAmendmentAnswers", () => {
         {},
       ),
     ).toBe(0);
+  });
+});
+
+describe("compareAmendmentCodes", () => {
+  it("orders by prefix, then by the number as a number", () => {
+    expect(["T10", "T2", "CEA10", "CEA2"].sort(compareAmendmentCodes)).toEqual([
+      "CEA2",
+      "CEA10",
+      "T2",
+      "T10",
+    ]);
+    expect(compareAmendmentCodes("CEA 2", "CEA 10")).toBeLessThan(0);
+  });
+
+  it("gives 0 for the same code and sorts a missing one first", () => {
+    expect(compareAmendmentCodes("T3", "T3")).toBe(0);
+    expect(compareAmendmentCodes(null, undefined)).toBe(0);
+    expect(compareAmendmentCodes(null, "T1")).toBeLessThan(0);
   });
 });

@@ -36,6 +36,9 @@ import {
  * - The type starts on the only kind the item takes, or on what its title
  *   suggests (proposeFromItem); a new line repeats the type and the format
  *   of the one above. A sectorial is never offered for an internal motion.
+ * - One optional internal deadline («Fecha límite interna») goes to every
+ *   document (`dueAt`), so the expected ones are not left without one to
+ *   set one by one.
  * - Lines left blank are not sent. Every line is checked first; then one
  *   request creates all the documents or none (POST .../agenda/[item]/
  *   documents), each with its own sub-item when the item takes documents
@@ -78,6 +81,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
+const now = useAppNow();
 
 type Row = BulkRow<File>;
 
@@ -114,6 +118,13 @@ function firstRow(): Row {
 }
 
 const rows = ref<Row[]>([firstRow()]);
+/** The internal deadline of every document created; none by default. */
+const dueAt = ref<string | null>(null);
+/** Lower bound of the picker: typed dates may still be earlier. */
+const minDue = computed(() => new Date(now.value).toISOString());
+const dueInPast = computed(
+  () => dueAt.value !== null && new Date(dueAt.value).getTime() <= now.value,
+);
 /** The title the list opened with (proposed from the item), not typed. */
 const startTitle = ref(rows.value[0]?.title ?? "");
 const full = computed(() => rows.value.length >= BULK_DOCUMENTS_MAX);
@@ -152,6 +163,7 @@ function onTitleEnter(event: KeyboardEvent, index: number): void {
 /** Something was typed or chosen that closing the dialog would lose. */
 const dirty = computed(
   () =>
+    dueAt.value !== null ||
     rows.value.length > 1 ||
     rows.value.some(
       (row) =>
@@ -326,6 +338,7 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     rows.value = [firstRow()];
+    dueAt.value = null;
     startTitle.value = rows.value[0]?.title ?? "";
     attempted.value = false;
     refusedKey.value = null;
@@ -358,6 +371,7 @@ async function submit(): Promise<void> {
       kind: row.kind as DocumentKind,
       format: row.format,
       proponentMemberId: row.proponentMemberId,
+      ...(dueAt.value ? { dueAt: dueAt.value } : {}),
     })),
   };
   saving.value = true;
@@ -550,6 +564,33 @@ function editorPath(document: BulkCreatedDocumentDto): string {
             {{ t("agenda.bulk.containerHint") }}
           </template>
         </p>
+
+        <UFormField
+          :label="t('agenda.newDocument.dueAt')"
+          :hint="t('agenda.newDocument.optional')"
+          :help="t('agenda.bulk.dueAtHelp')"
+          name="dueAt"
+        >
+          <DocumentDateTimeInput
+            v-model="dueAt"
+            name="dueAt"
+            :aria-label="t('agenda.newDocument.dueAt')"
+            :min="minDue"
+            :disabled="saving"
+          />
+          <p
+            v-if="dueInPast"
+            class="text-warning mt-2 flex items-start gap-1.5 text-sm"
+            role="status"
+          >
+            <UIcon
+              name="i-lucide-triangle-alert"
+              class="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ t("agenda.bulk.pastWarning", sendCount) }}</span>
+          </p>
+        </UFormField>
 
         <ol class="space-y-3" :aria-label="t('agenda.bulk.title')">
           <li v-for="(row, index) in rows" :key="row.key">

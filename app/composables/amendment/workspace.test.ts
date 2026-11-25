@@ -572,6 +572,37 @@ describe("markers and groups", () => {
       );
     });
 
+    it("breaks a tie by number, then a transactional's code, then time", () => {
+      const transactional = (id: string, extra: Partial<AmendmentDto>) =>
+        amendment(id, [], { kind: "transactional", positionKey: 1, ...extra });
+      const list = [
+        // T1 was presented again (back from a correction): it keeps its
+        // code and its place, though its time is now the latest.
+        transactional("t1", { code: "T1", submittedAt: "2026-03-01T00:00Z" }),
+        transactional("t10", { code: "T10", submittedAt: "2026-01-03T00:00Z" }),
+        transactional("t2", { code: "T2", submittedAt: "2026-01-02T00:00Z" }),
+        transactional("draft", {}),
+        amendment("n5", [], { positionKey: 1, number: 5, code: "CEUM 2" }),
+        amendment("late", [], {
+          positionKey: 1,
+          submittedAt: "2026-01-02T00:00Z",
+        }),
+        amendment("early", [], {
+          positionKey: 1,
+          submittedAt: "2026-01-01T00:00Z",
+        }),
+      ];
+      expect(sortAmendments(list).map((x) => x.id)).toEqual([
+        "n5",
+        "t1",
+        "t2",
+        "t10",
+        "early",
+        "late",
+        "draft",
+      ]);
+    });
+
     it("keeps text order before they are public", () => {
       const groups = groupAmendmentsByOverlap([rejected, accepted, a], {
         byAnswer: false,

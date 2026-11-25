@@ -1,16 +1,16 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
 import type { DocumentDto, LiveEventDto } from "~~/shared/types/api";
 import { affectsDocumentDto } from "../assembly/-liveFilters";
-import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import { requireCurrentAssembly } from "../assembly/useCurrentAssembly";
 import { seedOrRead, settledForHandover } from "../amendment/documentHandover";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
-import { useAssemblyLive } from "../live/useAssemblyLive";
 
 export interface UseDocumentOptions {
   /**
-   * Refetch on live events of this document (default true). Inside the
-   * assembly hub it subscribes to the hub's stream (`onLive`); elsewhere it
-   * opens its own. Pass false to wire `handleLiveEvents` by hand.
+   * Refetch on live events of this document (default true), through the
+   * assembly hub's stream (`onLive`): it then runs only inside the hub, and
+   * throws elsewhere. Pass false for a frozen text, or to wire
+   * `handleLiveEvents` by hand.
    */
   live?: boolean;
   /**
@@ -46,25 +46,6 @@ export interface UseDocumentReturn {
    * read, not failed, no read on its way; null otherwise.
    */
   handoverData: () => DocumentDto | null;
-}
-
-/**
- * Whether a live batch concerns the document with this id: any event of
- * the document or of one of its amendments. What its amendments list
- * follows; the DocumentDto itself changes far less often
- * (affectsDocumentDto).
- */
-export function isDocumentLiveBatch(
-  events: LiveEventDto[],
-  documentId: string | undefined,
-): boolean {
-  return events.some(
-    (event) =>
-      event.type === "poll" ||
-      (documentId !== undefined &&
-        (event.documentId === documentId ||
-          (event.entityType === "document" && event.entityId === documentId))),
-  );
 }
 
 /**
@@ -129,13 +110,8 @@ export function useDocument(
   }
 
   if (options.live !== false) {
-    // One stream per tab: reuse the hub's when this runs inside it.
-    const hub = inject(CURRENT_ASSEMBLY_KEY, null);
-    if (hub) {
-      hub.onLive(handleLiveEvents);
-    } else {
-      useAssemblyLive(() => assemblyParam.value || undefined, handleLiveEvents);
-    }
+    // One stream per tab, the hub's (useCurrentAssembly): never one of its own.
+    requireCurrentAssembly("useDocument").onLive(handleLiveEvents);
   }
 
   const result: UseDocumentReturn = {

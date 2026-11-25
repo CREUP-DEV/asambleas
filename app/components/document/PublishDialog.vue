@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { DOCUMENT_KIND_DEFAULTS } from "~~/shared/constants/domain";
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
+import { isPastDeadline } from "~~/shared/utils/calendar";
+import { assemblyYear } from "~~/shared/utils/dates";
+import { documentDeadlineKey } from "~~/shared/utils/documentDeadline";
 import { formatDateTime, toDate } from "~/utils/format";
 
 /**
@@ -151,17 +154,23 @@ const contentCheck = computed<Check>(() => {
       };
 });
 
+/**
+ * The document's presentation deadline: its kind's own (documentDeadlineKey),
+ * or `documents_close` when the assembly lacks it, as the server reads it
+ * (presentationDeadlinePassed).
+ */
 const deadlineCheck = computed<Check>(() => {
-  const close = milestone("documents_close");
-  const closeDate = toDate(close);
-  if (!closeDate) {
+  const close =
+    milestone(documentDeadlineKey(props.document.kind)) ??
+    milestone("documents_close");
+  if (!close || !toDate(close)) {
     return {
       key: "deadline",
       state: "info",
       title: t("document.publish.checks.noDeadline"),
     };
   }
-  if (closeDate.getTime() < now.value) {
+  if (isPastDeadline(close, now.value)) {
     return {
       key: "deadline",
       state: props.manager ? "warning" : "error",
@@ -268,10 +277,8 @@ const referenceCheck = computed<Check>(() => {
       title: t("document.publish.checks.referenceNone"),
     };
   }
-  const year = new Intl.DateTimeFormat("en", {
-    timeZone: "Europe/Madrid",
-    year: "numeric",
-  }).format(new Date());
+  // The year the server will number it in (assignReference).
+  const year = assemblyYear(new Date());
   return {
     key: "reference",
     state: "info",

@@ -18,7 +18,6 @@ vi.mock("./agendaWrites", () => ({
   lockAssembly: vi.fn(),
 }));
 vi.mock("./documents", () => ({
-  documentsDeadlinePassed: vi.fn(() => false),
   FILE_FORMAT_REFUSED_MESSAGE: "format",
   hashBlocks: vi.fn(),
   loadMilestones: vi.fn(async () => ({})),
@@ -38,6 +37,7 @@ vi.mock("./presenters", () => ({
 }));
 
 const documentHelpers = await import("./documents");
+const { resolveBodyMembers } = await import("./executiveMembers");
 const { createDocuments } = await import("./documentCreate");
 const { ASSEMBLY_CLOSED_REASON, DOCUMENTS_DEADLINE_PASSED_REASON } =
   await import("./documentRefusals");
@@ -50,16 +50,35 @@ const member = {
   can: () => true,
 } as unknown as Ctx["actor"];
 
-function create(status: string) {
+type Input = Parameters<typeof createDocuments>[1][number];
+
+function create(status: string, kinds: Input["kind"][] = ["resolution"]) {
   return createDocuments(
     { actor: member, assembly: { id: "a1", status }, agendaItemId: "i1" },
-    [{ title: "Resolución" } as Parameters<typeof createDocuments>[1][0]],
+    kinds.map((kind) => ({ title: "Documento", kind }) as Input),
   );
 }
 
+/**
+ * documents_close passed two days ago; reports_close (in a day) and
+ * candidacies_close (in two) still ahead.
+ */
+function betweenDeadlines() {
+  const now = Date.now();
+  vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({
+    documents_close: new Date(now - 2 * 86_400_000),
+    reports_close: new Date(now + 86_400_000),
+    candidacies_close: new Date(now + 2 * 86_400_000),
+  });
+}
+
+/** Stops right after the deadline checks: nothing is planned or written. */
+const PLANNED = new Error("planned");
+
 describe("createDocuments by a member", () => {
   beforeEach(() => {
-    vi.mocked(documentHelpers.documentsDeadlinePassed).mockReturnValue(false);
+    vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({});
+    vi.mocked(resolveBodyMembers).mockRejectedValue(PLANNED);
   });
 
   it("names a closed assembly, not a stale read", async () => {
@@ -70,10 +89,51 @@ describe("createDocuments by a member", () => {
   });
 
   it("names a past documents_close, not a stale read", async () => {
-    vi.mocked(documentHelpers.documentsDeadlinePassed).mockReturnValue(true);
+    betweenDeadlines();
     await expect(create("published")).rejects.toMatchObject({
       statusCode: 409,
       data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON },
+    });
+  });
+
+  it("takes a candidacy or a venue until candidacies_close", async () => {
+    betweenDeadlines();
+    await expect(create("published", ["candidacy"])).rejects.toBe(PLANNED);
+    await expect(create("published", ["venue"])).rejects.toBe(PLANNED);
+  });
+
+  it("takes a report past documents_close until its own deadline", async () => {
+    betweenDeadlines();
+    await expect(create("published", ["report"])).rejects.toBe(PLANNED);
+  });
+
+  it("refuses a report past reports_close", async () => {
+    vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({
+      reports_close: new Date(Date.now() - 86_400_000),
+    });
+    await expect(create("published", ["report"])).rejects.toMatchObject({
+      statusCode: 409,
+      data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON },
+    });
+  });
+
+  it("refuses a candidacy past candidacies_close", async () => {
+    vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({
+      candidacies_close: new Date(Date.now() - 86_400_000),
+    });
+    await expect(create("published", ["candidacy"])).rejects.toMatchObject({
+      statusCode: 409,
+      data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON },
+    });
+  });
+
+  it("names the row of several that is past its deadline", async () => {
+    betweenDeadlines();
+    await expect(
+      create("published", ["candidacy", "resolution"]),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON, index: 1 },
     });
   });
 });

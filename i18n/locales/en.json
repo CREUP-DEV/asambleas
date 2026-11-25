@@ -2026,6 +2026,11 @@
         "discard": "Leave without saving",
         "confirm": "You have unsaved changes. Do you want to leave and lose them?"
       },
+      "copy": {
+        "notice": "This browser kept a copy of what you were writing here ({when}).",
+        "recover": "Recover",
+        "discard": "Discard"
+      },
       "sameParagraphs": {
         "notice": "There is already {count} amendment on what you change. See it | There are already {count} amendments on what you change. See them",
         "hint": "Presented, undecided amendments that touch the same paragraphs as yours. Read them before sending it, in case they already propose the same."
@@ -3569,6 +3574,8 @@
       "title": "Add several documents",
       "intro": "Write one document on each line. They are all created at once, as drafts.",
       "containerHint": "Each one gets its own sub-item under this item.",
+      "dueAtHelp": "The same for all of them: the date by which whoever presents each one has to send it to the Secretariat.",
+      "pastWarning": "That date has already passed: the document will show as overdue as soon as you create it. | That date has already passed: the documents will show as overdue as soon as you create them.",
       "row": "Document {n}",
       "removeRow": "Remove",
       "removeRowN": "Remove document {n}",
@@ -4226,6 +4233,7 @@
       },
       "title": "Vote on {code}",
       "description": "Amendments are decided by simple majority unless the Mesa sets another one.",
+      "descriptionReform": "In a reform of the Estatutos or a regulation, amendments are decided by absolute majority (RRI art. 65.5) unless the Mesa sets another one.",
       "method": "Method",
       "majority": "Majority",
       "counts": "Count",

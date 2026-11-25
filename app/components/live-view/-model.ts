@@ -260,23 +260,8 @@ export const LIVE_AMENDMENT_STATES: readonly LiveAmendmentState[] = [
   "inadmissible",
 ];
 
-/** Badge colour of each state, in line with the amendment status badges. */
-export const LIVE_STATE_COLORS: Record<
-  LiveAmendmentState,
-  "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral"
-> = {
-  debating: "primary",
-  pending: "info",
-  late: "warning",
-  approved: "success",
-  incorporated: "success",
-  rejected: "error",
-  transacted: "secondary",
-  turned_down: "neutral",
-  withdrawn: "neutral",
-  lapsed: "warning",
-  inadmissible: "error",
-};
+/** Badge colour of each state: the one status colour map has it. */
+export { LIVE_STATE_COLORS } from "~/utils/statusColors";
 
 export interface LiveAmendmentRow {
   amendment: AmendmentDto;
