@@ -83,7 +83,7 @@ import {
   SHELVED_DOCUMENT_STATUSES,
   acceptsAmendmentDrafts,
   isShelvedDocument,
-  isWorkDocumentOpen,
+  workDocumentClosedAt,
 } from "./workFilters";
 
 /**
@@ -325,8 +325,9 @@ function byAssemblyOrder<T extends { assembly: MeWorkAssemblyRef }>(
 /**
  * Documents the actor's member presents, as main presenter or co-presenter,
  * with where each one stands. A draft whose presentation is closed for the
- * actor is left out (isWorkDocumentOpen): the server would refuse to
- * submit it, so it is no task.
+ * actor (isWorkDocumentOpen) is no task, since the server would refuse to
+ * submit it: it carries the deadline that passed (`presentationClosedAt`,
+ * workDocumentClosedAt) and the home page names it in a quiet line.
  */
 async function loadWorkDocuments(
   actor: Actor,
@@ -377,26 +378,22 @@ async function loadWorkDocuments(
       : []
     ).map((item) => [item.id, item]),
   );
-  const visible = seen.filter((row) =>
-    isWorkDocumentOpen(
-      row,
-      items.get(row.agendaItemId),
-      milestones.get(row.assemblyId) ?? {},
-      manager,
-      now,
-    ),
-  );
-  const summaries = await buildDocumentSummaries(
-    actor,
-    visible,
-    milestones,
-    now,
-  );
+  const summaries = await buildDocumentSummaries(actor, seen, milestones, now);
   return byAssemblyOrder(
-    visible.map((row, index) => ({
-      assembly: assemblyRef(byId.get(row.assemblyId)!),
-      document: summaries[index]!,
-    })),
+    seen.map((row, index) => {
+      const closedAt = workDocumentClosedAt(
+        row,
+        items.get(row.agendaItemId),
+        milestones.get(row.assemblyId) ?? {},
+        manager,
+        now,
+      );
+      return {
+        assembly: assemblyRef(byId.get(row.assemblyId)!),
+        document: summaries[index]!,
+        ...(closedAt ? { presentationClosedAt: closedAt.toISOString() } : {}),
+      };
+    }),
     assemblyRows,
   );
 }

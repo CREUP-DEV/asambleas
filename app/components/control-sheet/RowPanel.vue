@@ -996,11 +996,11 @@ function historyDetail(
             />
           </div>
         </div>
-        <!-- Without the observations, the answer keeps its own save. -->
         <div
           v-else-if="positionAnswer?.editable"
           class="flex min-h-8 justify-end"
         >
+          <!-- Without the observations, the answer keeps its own save. -->
           <UButton
             v-if="anyDirty || anySaving"
             size="sm"

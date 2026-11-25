@@ -590,8 +590,7 @@ const acceptClashes = computed(() =>
   incorporatedClashIds(
     props.amendment,
     props.document.acceptedAmendments,
-    props.overlaps,
-    byId.value,
+    byId.value.values(),
   ).map((id) => props.labelOf(id)),
 );
 const acceptWithdraws = computed(() =>
@@ -1141,7 +1140,7 @@ async function remove(): Promise<void> {
                 v-if="amendment.late"
                 color="warning"
                 variant="subtle"
-                size="sm"
+                size="md"
                 icon="i-lucide-clock-alert"
                 :label="
                   amendment.admission === 'admitted'
@@ -1159,7 +1158,7 @@ async function remove(): Promise<void> {
                 :key="change"
                 color="neutral"
                 variant="soft"
-                size="sm"
+                size="md"
                 :label="t(`amendment.changeKinds.${change}`)"
               />
             </div>
@@ -1201,8 +1200,8 @@ async function remove(): Promise<void> {
               })
             }}
           </p>
-          <!-- Replaced: which transactional took its place. -->
           <p v-else-if="amendment.status === 'transacted'" class="text-sm">
+            <!-- Replaced: which transactional took its place. -->
             <!-- The transactional that replaced it opens, with a preview. -->
             <i18n-t
               v-if="replacedBy.length > 0"

@@ -480,7 +480,6 @@ const pendingChange = ref<{
   /** An Admin changing their own role: they give up the Admin role. */
   self: boolean;
 } | null>(null);
-const statusMessage = ref("");
 
 // Re-mounts the role selects when a change is cancelled, so they show the
 // stored role again instead of the one picked.
@@ -546,7 +545,6 @@ async function confirmRoleChange(): Promise<void> {
       user: change.userName,
       role: change.roleName,
     });
-    statusMessage.value = message;
     toast.add({ title: message, color: "success", icon: "i-lucide-check" });
     if (change.self) await afterOwnRoleChange();
     else await refreshUsers();
@@ -618,7 +616,6 @@ async function confirmMemberLink(): Promise<void> {
           member: change.memberName,
         })
       : t("admin.users.memberUnlinked", { user: change.userName });
-    statusMessage.value = message;
     toast.add({ title: message, color: "success", icon: "i-lucide-check" });
     await refreshUsers();
   } catch (error) {
@@ -844,7 +841,6 @@ async function savePermissions(): Promise<void> {
     const message = t("admin.users.permissions.saved", {
       user: displayName(user),
     });
-    statusMessage.value = message;
     toast.add({ title: message, color: "success", icon: "i-lucide-check" });
     permissionsSaving.value = false;
     permissionsTarget.value = null;
@@ -1079,9 +1075,6 @@ function goToPage(next: number): void {
         icon="i-lucide-lock"
         :title="t('admin.impersonationReadOnly')"
       />
-      <p class="sr-only" aria-live="polite" aria-atomic="true">
-        {{ statusMessage }}
-      </p>
 
       <DefineRowActions v-slot="{ user }">
         <div class="flex items-center gap-1">
@@ -1115,6 +1108,12 @@ function goToPage(next: number): void {
         </div>
       </DefineRowActions>
 
+      <!-- The table, unless loading failed (said here: a comment between
+           v-if and v-else breaks hydration). Below lg it takes its full
+           height and the panel scrolls: shrunk into the box under the
+           filters it showed a row or none on a phone. From lg it scrolls in
+           its own box under a header that stays (z-2: above the pinned
+           cells, also z-1), and "Acciones" stays at its right edge. -->
       <UAlert
         v-if="usersError"
         color="error"
@@ -1130,11 +1129,6 @@ function goToPage(next: number): void {
           },
         ]"
       />
-
-      <!-- Below lg the table takes its full height and the panel scrolls:
-           shrunk into the box under the filters it showed a row or none on
-           a phone. From lg it scrolls in its own box under a header that
-           stays, and "Acciones" stays at its right edge. -->
       <UTable
         v-else
         sticky
@@ -1145,13 +1139,13 @@ function goToPage(next: number): void {
         :aria-label="t('admin.users.title')"
         class="border-default rounded-lg border max-lg:shrink-0"
         :ui="{
-          thead: 'bg-default',
-          th: 'data-[pinned=right]:bg-default',
-          td: 'align-middle whitespace-normal data-[pinned=right]:bg-default',
+          thead: 'bg-default z-2',
+          th: 'max-sm:px-2 data-[pinned=right]:bg-default',
+          td: 'max-sm:px-2 align-middle whitespace-normal data-[pinned=right]:bg-default',
         }"
       >
         <template #name-cell="{ row }">
-          <div class="flex max-w-md min-w-48 items-center gap-3">
+          <div class="flex max-w-md min-w-0 items-center gap-3 sm:min-w-48">
             <CommonAccountAvatar
               :src="row.original.image"
               :alt="displayName(row.original)"
@@ -1182,7 +1176,7 @@ function goToPage(next: number): void {
                   :label="t('admin.users.access.revoked')"
                   color="error"
                   variant="subtle"
-                  size="sm"
+                  size="md"
                   icon="i-lucide-user-x"
                 />
                 <span class="text-muted text-xs">
@@ -1259,12 +1253,12 @@ function goToPage(next: number): void {
         </template>
 
         <template #member-cell="{ row }">
-          <div class="max-w-64 min-w-40 space-y-1">
+          <div class="max-w-80 min-w-40 space-y-1">
             <div
               v-if="row.original.member"
               class="flex flex-wrap items-center gap-1.5"
             >
-              <CommonMemberBadge :member="row.original.member" show-name />
+              <CommonMemberBadge :member="row.original.member" show-name wrap />
               <UBadge
                 v-if="!row.original.member.active"
                 color="neutral"
@@ -1447,7 +1441,7 @@ function goToPage(next: number): void {
                   :label="t('admin.users.access.revoked')"
                   color="error"
                   variant="subtle"
-                  size="sm"
+                  size="md"
                   icon="i-lucide-user-x"
                   class="mt-1"
                 />

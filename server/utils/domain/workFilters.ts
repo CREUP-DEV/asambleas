@@ -1,5 +1,6 @@
 import type { DocumentStatus } from "~~/shared/constants/domain";
 import type { Milestones } from "~~/shared/utils/calendar";
+import { presentationDeadlineAt } from "~~/shared/utils/documentDeadline";
 import { documentAmendable, documentVoted } from "./amendments";
 import { presentationClosed, type PresentationItem } from "./documents";
 
@@ -48,6 +49,25 @@ export function isWorkDocumentOpen(
 ): boolean {
   if (document.status !== "draft" || manager || !item) return true;
   return !presentationClosed(document, item, milestones, now);
+}
+
+/**
+ * For one of the member's drafts no longer open (isWorkDocumentOpen): the
+ * deadline that passed (presentationDeadlineAt), which the home page names
+ * in a quiet line instead of a task. Null for anything still open.
+ */
+export function workDocumentClosedAt(
+  document: Parameters<typeof isWorkDocumentOpen>[0],
+  item: PresentationItem | undefined,
+  milestones: Milestones,
+  manager: boolean,
+  now = new Date(),
+): Date | null {
+  if (isWorkDocumentOpen(document, item, milestones, manager, now)) {
+    return null;
+  }
+  const at = presentationDeadlineAt(document.kind, (key) => milestones[key]);
+  return at === null ? null : new Date(at);
 }
 
 /**

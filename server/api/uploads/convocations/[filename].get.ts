@@ -5,11 +5,9 @@ import {
   getRequestHeader,
   getRouterParam,
   sendNoContent,
-  sendStream,
   setResponseHeaders,
 } from "h3";
 import { eq } from "drizzle-orm";
-import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../../db";
@@ -19,6 +17,7 @@ import {
   fileEtag,
   REVALIDATED_FILE_CACHE_CONTROL,
 } from "../../../utils/core/fileValidators";
+import { sendFileRange } from "../../../utils/core/byteRange";
 import { getUploadDir } from "../../../utils/core/uploadPaths";
 import { requireActor } from "../../../utils/domain/actor";
 import { CONVOCATION_URL_PREFIX } from "../../../utils/domain/convocation";
@@ -77,6 +76,7 @@ export default defineEventHandler(async (event) => {
   setResponseHeaders(event, {
     "Cache-Control": REVALIDATED_FILE_CACHE_CONTROL,
     ETag: etag,
+    "Accept-Ranges": "bytes",
     "X-Content-Type-Options": "nosniff",
   });
   if (etagMatches(getRequestHeader(event, "if-none-match"), etag)) {
@@ -90,5 +90,7 @@ export default defineEventHandler(async (event) => {
     ),
   });
 
-  return sendStream(event, createReadStream(filePath));
+  // pdf.js asks a long PDF in parts (`rangeChunkSize`): the pages it
+  // draws first come before the rest of the file.
+  return sendFileRange(event, filePath, fileStat.size, etag);
 });

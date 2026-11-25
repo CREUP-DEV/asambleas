@@ -79,6 +79,7 @@
       "forbidden": "No tienes permiso para realizar esta acción.",
       "notFound": "No se ha encontrado lo que buscas. Puede que se haya eliminado.",
       "conflict": "Alguien ha modificado estos datos mientras tanto. Se cargará la versión actual; revisa tus cambios y vuelve a intentarlo.",
+      "conflictState": "Esta acción no está disponible en el estado actual. Se cargará la versión actual.",
       "tooLarge": "El archivo es demasiado grande.",
       "rateLimited": "Demasiadas peticiones seguidas. Espera un momento y vuelve a intentarlo.",
       "server": "Error del servidor. Inténtalo de nuevo en unos minutos.",
@@ -248,6 +249,7 @@
       "placeholder": "Escribe aquí el texto",
       "label": "Editor de contenido",
       "toolbar": "Formato del texto",
+      "more": "Más formato",
       "image": {
         "insert": "Insertar imagen",
         "altTitle": "Describe la imagen",
@@ -468,7 +470,7 @@
       "dates": "Fechas",
       "location": "Lugar",
       "nextMilestone": "Próximo plazo",
-      "liveOn": "En directo",
+      "liveOn": "En sesión",
       "liveOffline": "Sin conexión en directo",
       "sessionExpired": "Sesión caducada",
       "sessionExpiredDescription": "Tu sesión ha caducado y la página ya no se actualiza. Vuelve a entrar para seguir.",
@@ -540,6 +542,7 @@
       "agendaTitle": "Orden del día",
       "calendarTitle": "Calendario",
       "openAgenda": "Ver el orden del día completo",
+      "openAgendaMore": "Ver 1 punto más en el orden del día | Ver {count} puntos más en el orden del día",
       "editCalendar": "Editar el calendario",
       "calendarWarnings": "Ningún plazo del calendario por revisar | 1 plazo del calendario por revisar | {count} plazos del calendario por revisar",
       "review": {
@@ -732,7 +735,8 @@
   "document": {
     "pdfPages": {
       "failed": "No se ha podido mostrar el PDF.",
-      "open": "Abrir el archivo"
+      "open": "Abrir el archivo",
+      "retry": "Reintentar"
     },
     "title": "Documentos",
     "create": "Crear documento",
@@ -1531,6 +1535,7 @@
       "search": "Buscar enmiendas por código, miembro o justificación",
       "button": "Filtros",
       "buttonActive": "Filtros en uso: {count}",
+      "buttonNamed": "Filtros: {shown}",
       "chipsLabel": "Qué enmiendas ver",
       "chips": {
         "content": "Contenido",
@@ -2022,8 +2027,11 @@
       "leave": {
         "title": "¿Salir sin guardar?",
         "description": "Si sales ahora, pierdes los cambios que no has guardado.",
+        "titleSave": "¿Guardar antes de salir?",
+        "descriptionSave": "Tienes cambios sin guardar: guárdalos como borrador o sal sin guardarlos.",
         "stay": "Seguir editando",
         "discard": "Salir sin guardar",
+        "save": "Guardar y salir",
         "confirm": "Tienes cambios sin guardar. ¿Quieres salir y perderlos?"
       },
       "copy": {
@@ -3114,6 +3122,8 @@
       "emptyNoMember": "Para presentar documentos o enmiendas, tu cuenta tiene que estar vinculada a un miembro."
     },
     "readOnly": "Esta cuenta no está vinculada a ningún miembro: puedes consultar las asambleas, sus documentos y sus enmiendas, pero no presentar nada. Si representas a un miembro, entra con la cuenta de Google que usas en la Intranet o escribe a la Secretaría.",
+    "readOnlyAccount": "Has entrado como {email}.",
+    "switchAccount": "Cambiar de cuenta",
     "next": {
       "title": "Lo siguiente",
       "when": "{assembly}, el {date}",
@@ -3188,7 +3198,9 @@
         "amendment_published": "Publicada. Se debatirá en la asamblea.",
         "amendment_other": "Estado: {status}.",
         "amendment_authors": "Espera a que la acepten los autores principales de las enmiendas que sustituiría. Después la revisará Secretaría.",
-        "amendment_late": "Fuera de plazo: falta que la asamblea decida tratarla."
+        "amendment_late": "Fuera de plazo: falta que la asamblea decida tratarla.",
+        "document_closed": "El plazo terminó el {date}. Solo Secretaría puede presentarlo fuera de plazo, y la asamblea decide si lo trata.",
+        "document_closedReport": "El plazo terminó el {date}. Solo Secretaría puede presentarlo fuera de plazo."
       },
       "transactional": "Transaccional {code}",
       "transactionalBy": "Transaccional {code} de {member}",
@@ -3242,6 +3254,7 @@
         "transacted": "Una transaccional sustituye a {amendment} y se debate en su lugar.",
         "lapsed": "Ha decaído {amendment}: ya no se vota.",
         "withdrawn": "Se ha retirado {amendment}: ya no se debatirá.",
+        "withdrawnReplacing": "Se ha retirado {amendment}, que ya sustituía a tu enmienda: tu enmienda sigue sustituida y no vuelve al debate.",
         "reopened": "Se ha reabierto {amendment}: vuelve a estar pendiente de decisión.",
         "other": "Hay cambios en {amendment}.",
         "validatedLate": "Se ha validado {amendment}, pero llegó fuera de plazo: falta que la asamblea decida tratarla.",
@@ -6302,7 +6315,6 @@
       "save": "Guardar plazo",
       "clear": "Quitar plazo",
       "saved": "Plazo de «{title}» actualizado",
-      "savedShort": "Plazo actualizado",
       "cleared": "«{title}» ya no tiene plazo",
       "error": "No se ha podido cambiar el plazo",
       "titleNew": "Poner plazo",

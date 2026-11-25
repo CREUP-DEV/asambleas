@@ -669,16 +669,12 @@ function duration(turn: SpeakingTurnDto): string | null {
               {{ index + 1 }}
             </span>
             <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              <LiveViewSpeakerName
-                :turn="turn"
-                badge-size="sm"
-                class="text-default text-sm"
-              />
+              <LiveViewSpeakerName :turn="turn" class="text-default text-sm" />
               <UBadge
                 v-if="turn.priority"
                 color="warning"
                 variant="subtle"
-                size="sm"
+                size="md"
                 icon="i-lucide-zap"
                 :label="t('session.speakers.priority')"
               />

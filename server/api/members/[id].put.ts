@@ -12,7 +12,10 @@ import { recordAudit } from "../../utils/domain/audit";
 import { throwMutationError } from "../../utils/errors";
 import { toMemberDto } from "../../utils/members/dto";
 import { memberAuditState } from "../../utils/members/sync";
-import { buildOptimisticLockCondition } from "../../utils/optimisticLock";
+import {
+  buildOptimisticLockCondition,
+  staleWriteError,
+} from "../../utils/optimisticLock";
 import { validateCuid } from "../../utils/validation";
 
 /**
@@ -86,11 +89,9 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
         )
         .returning();
       if (!row) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "El miembro ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
-        });
+        throw staleWriteError(
+          "El miembro ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
+        );
       }
 
       await recordAudit(tx, {

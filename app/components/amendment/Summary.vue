@@ -139,7 +139,7 @@ const sources = computed(() =>
         v-if="amendment.kind !== 'partial'"
         color="neutral"
         variant="outline"
-        size="xs"
+        size="md"
         :label="t(`amendment.kinds.${amendment.kind}`)"
       />
       <UBadge
@@ -147,14 +147,14 @@ const sources = computed(() =>
         :key="change"
         color="neutral"
         variant="soft"
-        size="xs"
+        size="md"
         :label="t(`amendment.changeKinds.${change}`)"
       />
       <UBadge
         v-if="amendment.late"
         color="warning"
         variant="subtle"
-        size="xs"
+        size="md"
         :label="t('amendment.late')"
       />
     </div>

@@ -748,8 +748,7 @@ const currentClashIds = computed(() =>
     ? incorporatedClashIds(
         current.value.amendment,
         acceptedRule.value,
-        list.overlaps.value.get(current.value.id) ?? [],
-        list.byId.value,
+        list.byId.value.values(),
       )
     : [],
 );
@@ -849,41 +848,43 @@ useHead({
       <USkeleton aria-hidden="true" class="h-80 w-full max-w-4xl" />
     </div>
 
-    <!-- Error -->
-    <CommonEmptyState
-      v-else-if="!document || !assembly"
-      :icon="
-        errorStatusCode === 404
-          ? 'i-lucide-file-question'
-          : 'i-lucide-cloud-off'
-      "
-      :title="
-        errorStatusCode === 404
-          ? t('workspace.notFound')
-          : t('workspace.loadError')
-      "
-      :description="
-        errorStatusCode === 404
-          ? t('workspace.notFoundDescription')
-          : t('workspace.loadErrorDescription')
-      "
-    >
-      <!-- The way back is the breadcrumb row, above -->
-      <template v-if="errorStatusCode !== 404" #action>
-        <UButton
-          icon="i-lucide-refresh-ccw"
-          :label="t('workspace.retry')"
-          @click="refreshAll"
-        />
-      </template>
-    </CommonEmptyState>
+    <template v-else-if="!document || !assembly">
+      <!-- Error -->
+      <CommonEmptyState
+        :icon="
+          errorStatusCode === 404
+            ? 'i-lucide-file-question'
+            : 'i-lucide-cloud-off'
+        "
+        :title="
+          errorStatusCode === 404
+            ? t('workspace.notFound')
+            : t('workspace.loadError')
+        "
+        :description="
+          errorStatusCode === 404
+            ? t('workspace.notFoundDescription')
+            : t('workspace.loadErrorDescription')
+        "
+      >
+        <!-- The way back is the breadcrumb row, above -->
+        <template v-if="errorStatusCode !== 404" #action>
+          <UButton
+            icon="i-lucide-refresh-ccw"
+            :label="t('workspace.retry')"
+            @click="refreshAll"
+          />
+        </template>
+      </CommonEmptyState>
+    </template>
 
     <template v-else>
       <header class="space-y-1">
         <!-- The way back to the document is the breadcrumb row, above.
              The title shares its row with the shortcuts (desktop) or the
-             list (below lg), so the change starts higher on the screen. -->
-        <div class="flex items-start justify-between gap-2">
+             list (below lg, only its icon on a phone so the title keeps to
+             one line), so the change starts higher on the screen. -->
+        <div class="flex items-center justify-between gap-2">
           <h2 class="text-highlighted min-w-0 text-xl font-bold sm:text-2xl">
             {{ t("proponentReview.title") }}
           </h2>
@@ -898,11 +899,12 @@ useHead({
               size="sm"
               icon="i-lucide-list"
               :label="t('proponentReview.list.open')"
+              :ui="{ label: 'max-sm:sr-only' }"
               @click="listOpen = true"
             />
           </template>
         </div>
-        <p class="text-muted text-sm">
+        <p class="text-muted text-sm max-sm:truncate">
           <span v-if="document.reference" class="tabular-nums">
             {{ document.reference }} ·
           </span>
@@ -919,30 +921,32 @@ useHead({
         variant="outline"
       />
 
-      <!-- Not published yet -->
-      <CommonEmptyState
-        v-else-if="!isPublished"
-        icon="i-lucide-file-clock"
-        :title="t('proponentReview.unpublished.title')"
-        :description="t('proponentReview.unpublished.description')"
-        variant="outline"
-      />
+      <template v-else-if="!isPublished">
+        <!-- Not published yet -->
+        <CommonEmptyState
+          icon="i-lucide-file-clock"
+          :title="t('proponentReview.unpublished.title')"
+          :description="t('proponentReview.unpublished.description')"
+          variant="outline"
+        />
+      </template>
 
-      <!-- Neither one of its presenters nor the Mesa -->
-      <CommonEmptyState
-        v-else-if="!mayReview"
-        icon="i-lucide-lock"
-        :title="t('proponentReview.noAccess.title')"
-        :description="t('proponentReview.noAccess.description')"
-        variant="outline"
-      />
+      <template v-else-if="!mayReview">
+        <!-- Neither one of its presenters nor the Mesa -->
+        <CommonEmptyState
+          icon="i-lucide-lock"
+          :title="t('proponentReview.noAccess.title')"
+          :description="t('proponentReview.noAccess.description')"
+          variant="outline"
+        />
+      </template>
 
-      <!-- Amendments loading -->
       <div
         v-else-if="list.pending.value && !list.data.value"
         class="flex max-w-4xl flex-col gap-4"
         role="status"
       >
+        <!-- Amendments loading -->
         <span class="sr-only">{{ t("proponentReview.loading") }}</span>
         <USkeleton aria-hidden="true" class="h-5 w-48" />
         <USkeleton aria-hidden="true" class="h-80 w-full" />
@@ -968,41 +972,46 @@ useHead({
         ]"
       />
 
-      <!-- Voted: what was answered, nothing to change -->
-      <ProponentReviewSummary
-        v-else-if="readOnly"
-        :counts="summaryCounts"
-        :accepted-amendments="acceptedRule"
-        :document-to="documentPath()"
-        read-only
-        class="max-w-4xl"
-      />
+      <template v-else-if="readOnly">
+        <!-- Voted: what was answered, nothing to change -->
+        <ProponentReviewSummary
+          :counts="summaryCounts"
+          :accepted-amendments="acceptedRule"
+          :document-to="documentPath()"
+          read-only
+          class="max-w-4xl"
+        />
+      </template>
 
-      <!-- Withdrawn or postponed: nothing to answer any more -->
-      <CommonEmptyState
-        v-else-if="closed"
-        icon="i-lucide-archive"
-        :title="t('proponentReview.closed.title')"
-        :description="t('proponentReview.closed.description')"
-        variant="outline"
-      />
+      <template v-else-if="closed">
+        <!-- Withdrawn or postponed: nothing to answer any more -->
+        <CommonEmptyState
+          icon="i-lucide-archive"
+          :title="t('proponentReview.closed.title')"
+          :description="t('proponentReview.closed.description')"
+          variant="outline"
+        />
+      </template>
 
-      <!-- Nothing to answer -->
-      <CommonEmptyState
-        v-else-if="items.length === 0"
-        icon="i-lucide-message-square-dashed"
-        :title="t('proponentReview.empty.title')"
-        :description="emptyDescription"
-        variant="outline"
-      >
-        <ProponentReviewWaiting :counts="waiting" class="text-start" />
-      </CommonEmptyState>
+      <template v-else-if="items.length === 0">
+        <!-- Nothing to answer -->
+        <CommonEmptyState
+          icon="i-lucide-message-square-dashed"
+          :title="t('proponentReview.empty.title')"
+          :description="emptyDescription"
+          variant="outline"
+        >
+          <ProponentReviewWaiting :counts="waiting" class="text-start" />
+        </CommonEmptyState>
+      </template>
 
-      <!-- Review -->
       <template v-else>
-        <!-- The count says the progress: no bar repeating it, so the change
-             starts higher on the screen. -->
-        <div class="max-w-4xl space-y-1">
+        <!-- Review -->
+        <!-- The count says the progress: no bar repeating it, and what
+             still waits goes in the same row (below lg only with the
+             summary, not over a step), so the change starts higher on the
+             screen. -->
+        <div class="max-w-4xl">
           <div
             class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
           >
@@ -1021,12 +1030,17 @@ useHead({
                 }}
               </p>
             </div>
+            <ProponentReviewWaiting
+              :counts="waiting"
+              inline
+              class="min-w-0 basis-full sm:basis-auto"
+              :class="showSummary || !current ? '' : 'max-lg:hidden'"
+            />
             <USwitch
               v-model="onlyPending"
               :label="t('proponentReview.onlyPending')"
             />
           </div>
-          <ProponentReviewWaiting :counts="waiting" />
         </div>
 
         <div

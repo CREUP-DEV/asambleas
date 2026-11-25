@@ -308,7 +308,7 @@ async function submit(): Promise<void> {
                 v-if="amendment.late"
                 color="warning"
                 variant="subtle"
-                size="sm"
+                size="md"
                 :label="t('session.queue.late')"
               />
               <CommonStatusBadge

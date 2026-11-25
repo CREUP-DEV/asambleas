@@ -105,7 +105,7 @@ const help = computed(() => {
             v-if="item.value === usual"
             color="neutral"
             variant="soft"
-            size="sm"
+            size="md"
             :label="t('document.acceptedRule.usual')"
           />
         </span>

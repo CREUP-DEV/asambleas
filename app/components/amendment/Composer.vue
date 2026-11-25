@@ -815,6 +815,34 @@ function discardAndClose(): void {
   emit("close");
 }
 
+/** Leaving may save the draft first when nothing stops it from saving. */
+const canSaveOnLeave = computed(() => !blocked.value && kind.value !== null);
+
+/**
+ * «Guardar y salir» (UXM-6): saves the draft as «Guardar borrador» does and
+ * closes. When saving fails (a conflict, a problem with the text) the
+ * dialog closes and the composer stays, with what went wrong on view.
+ */
+async function saveAndClose(): Promise<void> {
+  if (busy.value !== null) return;
+  busy.value = "save";
+  try {
+    const saved = await persist();
+    leaveOpen.value = false;
+    if (!saved) return;
+    finished = true;
+    discardCopy();
+    toast.add({
+      title: t("amendment.composer.saved"),
+      color: "success",
+      icon: "i-lucide-save",
+    });
+    emit("close");
+  } finally {
+    busy.value = null;
+  }
+}
+
 // The copy in this browser ---------------------------------------------------------
 // What has not been saved, kept until it is saved, sent or discarded.
 
@@ -918,6 +946,24 @@ useLeaveGuard(
   hasUnsavedChanges,
   () => t("amendment.composer.leave.confirm"),
   discardCopy,
+);
+
+// The editor's height below lg ----------------------------------------------------
+// The text's box takes what the panel shows, less the chrome around it (the
+// navbar, the hub's row of sections, about 3rem, the banner, the pill) and
+// the bar at the foot (measured: it wraps, and grows with the notice about
+// others' amendments), and leaves a strip of the panel of about 5rem above
+// that bar, so the page still scrolls past the text (M-062). Never under
+// 12rem: on a landscape phone the page scrolls instead.
+
+const editFoot = useTemplateRef<HTMLElement>("editFoot");
+const { height: editFootHeight } = useElementSize(editFoot, undefined, {
+  box: "border-box",
+});
+const gridStyle = computed(() =>
+  editFootHeight.value > 0
+    ? { "--composer-foot": `${Math.round(editFootHeight.value)}px` }
+    : undefined,
 );
 
 // The questions' own scroll (wide screens) ---------------------------------------
@@ -1215,6 +1261,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
          the foot of the screen while the composer is on it. -->
     <div
       class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-y-0 xl:grid-cols-[minmax(0,1fr)_22rem]"
+      :style="gridStyle"
     >
       <!-- Writing: kept mounted while reviewing, so the editor keeps its
            cursor and its undo history. -->
@@ -1224,7 +1271,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
         class="min-h-0 min-w-0 overflow-y-auto p-0.5 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-full"
         :class="
           mode === 'document'
-            ? 'max-lg:h-[calc(70dvh-4rem)] max-lg:scroll-pb-16'
+            ? 'max-lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-banner-height,0px)-var(--shell-breadcrumb-height,0px)-var(--shell-session-pill-room,0px)-var(--composer-foot,4rem)-8rem)] max-lg:min-h-48 max-lg:scroll-pb-16'
             : ''
         "
       >
@@ -1243,8 +1290,8 @@ const questionClass = "text-highlighted text-sm font-semibold";
           </template>
         </ClientOnly>
 
-        <!-- One word everywhere -->
         <div v-else class="flex flex-col gap-3">
+          <!-- One word everywhere -->
           <div class="grid gap-3 sm:grid-cols-2">
             <UFormField :label="t('amendment.composer.find')" required>
               <UInput
@@ -1670,6 +1717,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
              them. -->
       <div
         v-if="stage === 'edit'"
+        ref="editFoot"
         class="border-default bg-default -mx-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t p-3 max-lg:sticky max-lg:bottom-0 max-lg:z-20 sm:-mx-4 sm:p-4 lg:col-start-2 lg:row-start-2 lg:mx-0 lg:rounded-b-md lg:border"
       >
         <p
@@ -1755,20 +1803,44 @@ const questionClass = "text-highlighted text-sm font-semibold";
     <!-- Leaving with changes that were not saved -->
     <UModal
       v-model:open="leaveOpen"
-      :title="t('amendment.composer.leave.title')"
-      :description="t('amendment.composer.leave.description')"
+      :title="
+        t(
+          canSaveOnLeave
+            ? 'amendment.composer.leave.titleSave'
+            : 'amendment.composer.leave.title',
+        )
+      "
+      :description="
+        t(
+          canSaveOnLeave
+            ? 'amendment.composer.leave.descriptionSave'
+            : 'amendment.composer.leave.description',
+        )
+      "
     >
       <template #footer>
         <div class="flex w-full flex-wrap justify-end gap-2">
           <UButton
             color="neutral"
             variant="ghost"
+            :disabled="busy !== null"
             :label="t('amendment.composer.leave.discard')"
             @click="discardAndClose"
           />
           <UButton
+            :color="canSaveOnLeave ? 'neutral' : 'primary'"
+            :variant="canSaveOnLeave ? 'outline' : 'solid'"
+            :disabled="busy !== null"
             :label="t('amendment.composer.leave.stay')"
             @click="leaveOpen = false"
+          />
+          <UButton
+            v-if="canSaveOnLeave"
+            icon="i-lucide-save"
+            :loading="busy === 'save'"
+            :disabled="busy !== null"
+            :label="t('amendment.composer.leave.save')"
+            @click="saveAndClose"
           />
         </div>
       </template>

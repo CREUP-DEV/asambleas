@@ -582,12 +582,12 @@ function pick(slug: unknown): void {
             :open-button="false"
           />
 
-          <!-- The text keeps the editor's measure, centred -->
           <div
             v-else-if="blocks.length > 0"
             class="mx-auto max-w-[52rem]"
             data-testid="item-reader-text"
           >
+            <!-- The text keeps the editor's measure, centred -->
             <!-- For whoever may amend, a right click on the text offers
                  "Hacer enmienda aquí", which opens the document's editor. -->
             <!-- The PDF page being read, kept in view as it scrolls. -->

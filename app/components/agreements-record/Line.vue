@@ -27,8 +27,13 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-/** The actions show their names below sm: no tooltip there. */
-const wide = useMediaQuery("(min-width: 640px)");
+/**
+ * The actions show their names below sm: no tooltip there. Read only once
+ * mounted, so the server and the hydrating client agree.
+ */
+const mounted = useMounted();
+const smQuery = useMediaQuery("(min-width: 640px)");
+const wide = computed(() => mounted.value && smQuery.value);
 
 const editing = ref(false);
 const draft = ref("");

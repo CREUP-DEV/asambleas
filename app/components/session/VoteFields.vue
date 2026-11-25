@@ -646,13 +646,14 @@ const denominatorText = computed(() =>
         </div>
       </div>
 
-      <!-- A registered vote: each delegation of the latest headcount. -->
-      <SessionRollCallBallots
-        v-else-if="rollCall"
-        v-model="rollCallBallots"
-        :voters="rollCallList"
-        :choices="rollCallChoices"
-      />
+      <template v-else-if="rollCall">
+        <!-- A registered vote: each delegation of the latest headcount. -->
+        <SessionRollCallBallots
+          v-model="rollCallBallots"
+          :voters="rollCallList"
+          :choices="rollCallChoices"
+        />
+      </template>
 
       <div
         v-else

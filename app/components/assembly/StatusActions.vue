@@ -133,7 +133,6 @@ function iconOf(transition: TransitionAction): string {
 const pending = ref<TransitionAction | null>(null);
 const confirmOpen = ref(false);
 const busy = ref(false);
-const statusMessage = ref("");
 
 function ask(transition: TransitionAction) {
   pending.value = transition;
@@ -159,9 +158,8 @@ async function apply(transition: TransitionAction): Promise<boolean> {
       },
     );
     setAssembly(updated);
-    statusMessage.value = t(`assembly.transitions.${transition.key}.done`);
     toast.add({
-      title: statusMessage.value,
+      title: t(`assembly.transitions.${transition.key}.done`),
       color: "success",
       icon: "i-lucide-check",
     });
@@ -200,9 +198,6 @@ async function apply(transition: TransitionAction): Promise<boolean> {
       :label="t(`assembly.transitions.${transition.key}.label`)"
       @click="ask(transition)"
     />
-    <p class="sr-only" aria-live="polite" role="status">
-      {{ statusMessage }}
-    </p>
 
     <UModal
       v-model:open="adjournOpen"

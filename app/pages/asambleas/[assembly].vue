@@ -350,7 +350,7 @@ watch(() => route.path, revealActiveSection);
               <UBadge
                 color="warning"
                 variant="soft"
-                size="sm"
+                size="md"
                 icon="i-lucide-wifi-off"
               >
                 <span class="hidden sm:inline">{{
@@ -367,7 +367,7 @@ watch(() => route.path, revealActiveSection);
               "
               color="success"
               variant="soft"
-              size="sm"
+              size="md"
               icon="i-lucide-radio"
               class="hidden sm:inline-flex"
               :label="t('assembly.hub.liveOn')"
@@ -408,27 +408,28 @@ watch(() => route.path, revealActiveSection);
         <USkeleton aria-hidden="true" class="h-72 w-full" />
       </div>
 
-      <!-- Error (only when it never loaded: later failures keep the data) -->
-      <UAlert
-        v-else-if="!assembly"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :title="t('assembly.hub.loadError')"
-        :description="t('assembly.hub.loadErrorDescription')"
-        :actions="[
-          {
-            label: t('assembly.hub.retry'),
-            icon: 'i-lucide-refresh-ccw',
-            color: 'neutral',
-            variant: 'outline',
-            onClick: () => {
-              void refresh();
+      <template v-else-if="!assembly">
+        <!-- Error (only when it never loaded: later failures keep the data) -->
+        <UAlert
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="t('assembly.hub.loadError')"
+          :description="t('assembly.hub.loadErrorDescription')"
+          :actions="[
+            {
+              label: t('assembly.hub.retry'),
+              icon: 'i-lucide-refresh-ccw',
+              color: 'neutral',
+              variant: 'outline',
+              onClick: () => {
+                void refresh();
+              },
             },
-          },
-        ]"
-        role="alert"
-      />
+          ]"
+          role="alert"
+        />
+      </template>
 
       <template v-else>
         <!-- The next deadline on small screens. Not on a document's pages

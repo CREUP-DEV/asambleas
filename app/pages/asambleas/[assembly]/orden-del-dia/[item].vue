@@ -306,42 +306,44 @@ async function onDeleted() {
       />
     </div>
 
-    <!-- Error -->
-    <UAlert
-      v-else-if="error && !agenda"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
-      :title="t('agenda.loadError')"
-      :actions="[
-        {
-          label: t('agenda.retry'),
-          icon: 'i-lucide-refresh-ccw',
-          color: 'neutral',
-          variant: 'outline',
-          onClick: () => {
-            void refresh();
+    <template v-else-if="error && !agenda">
+      <!-- Error -->
+      <UAlert
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('agenda.loadError')"
+        :actions="[
+          {
+            label: t('agenda.retry'),
+            icon: 'i-lucide-refresh-ccw',
+            color: 'neutral',
+            variant: 'outline',
+            onClick: () => {
+              void refresh();
+            },
           },
-        },
-      ]"
-      role="alert"
-    />
+        ]"
+        role="alert"
+      />
+    </template>
 
-    <!-- Deleted while the page was open -->
-    <CommonEmptyState
-      v-else-if="!node || !item"
-      icon="i-lucide-list-x"
-      :title="t('agenda.item.gone.title')"
-      variant="outline"
-    >
-      <template #action>
-        <UButton
-          icon="i-lucide-list-tree"
-          :label="t('agenda.item.gone.back')"
-          :to="sectionPath('orden-del-dia')"
-        />
-      </template>
-    </CommonEmptyState>
+    <template v-else-if="!node || !item">
+      <!-- Deleted while the page was open -->
+      <CommonEmptyState
+        icon="i-lucide-list-x"
+        :title="t('agenda.item.gone.title')"
+        variant="outline"
+      >
+        <template #action>
+          <UButton
+            icon="i-lucide-list-tree"
+            :label="t('agenda.item.gone.back')"
+            :to="sectionPath('orden-del-dia')"
+          />
+        </template>
+      </CommonEmptyState>
+    </template>
 
     <template v-else>
       <!-- Reading the documents one after another, as on a document's page:
@@ -515,13 +517,13 @@ async function onDeleted() {
           <p v-if="node.children.length > 0" class="text-muted text-sm">
             {{ t("agenda.item.noOwnDocuments") }}
           </p>
-          <!-- Nothing else on the page: say so in the open space -->
           <div
             v-else
             class="border-default flex flex-col items-center gap-4 rounded-lg border border-dashed px-4 py-16 text-center sm:py-24"
             role="status"
             data-testid="agenda-item-empty"
           >
+            <!-- Nothing else on the page: say so in the open space -->
             <UIcon
               name="i-lucide-file-x"
               class="text-dimmed size-16 sm:size-24"

@@ -606,8 +606,8 @@ async function onDeleted(): Promise<void> {
       <USkeleton aria-hidden="true" class="h-64 w-full" />
     </div>
 
-    <!-- Loading -->
     <div v-else-if="!document && pending" class="space-y-4" role="status">
+      <!-- Loading -->
       <span class="sr-only">{{ t("document.authoring.loading") }}</span>
       <USkeleton aria-hidden="true" class="h-4 w-32" />
       <USkeleton aria-hidden="true" class="h-8 w-3/4 max-w-xl" />
@@ -621,37 +621,38 @@ async function onDeleted(): Promise<void> {
       </div>
     </div>
 
-    <!-- Error -->
-    <CommonEmptyState
-      v-else-if="!document"
-      :icon="
-        loadErrorStatus === 404
-          ? 'i-lucide-file-question'
-          : 'i-lucide-cloud-off'
-      "
-      :title="
-        loadErrorStatus === 404
-          ? t('document.authoring.notFound')
-          : t('document.authoring.loadError')
-      "
-      :description="
-        loadErrorStatus === 404
-          ? t('document.authoring.notFoundDescription')
-          : t('document.authoring.loadErrorDescription')
-      "
-    >
-      <!-- The way back is the breadcrumb row, above -->
-      <template v-if="loadErrorStatus !== 404" #action>
-        <UButton
-          icon="i-lucide-refresh-ccw"
-          :label="t('document.authoring.retry')"
-          @click="refetch"
-        />
-      </template>
-    </CommonEmptyState>
+    <template v-else-if="!document">
+      <!-- Error -->
+      <CommonEmptyState
+        :icon="
+          loadErrorStatus === 404
+            ? 'i-lucide-file-question'
+            : 'i-lucide-cloud-off'
+        "
+        :title="
+          loadErrorStatus === 404
+            ? t('document.authoring.notFound')
+            : t('document.authoring.loadError')
+        "
+        :description="
+          loadErrorStatus === 404
+            ? t('document.authoring.notFoundDescription')
+            : t('document.authoring.loadErrorDescription')
+        "
+      >
+        <!-- The way back is the breadcrumb row, above -->
+        <template v-if="loadErrorStatus !== 404" #action>
+          <UButton
+            icon="i-lucide-refresh-ccw"
+            :label="t('document.authoring.retry')"
+            @click="refetch"
+          />
+        </template>
+      </CommonEmptyState>
+    </template>
 
-    <!-- Redirecting anyone who can neither edit nor manage -->
     <div v-else-if="!canAccess || !assembly" class="space-y-3" role="status">
+      <!-- Redirecting anyone who can neither edit nor manage -->
       <span class="sr-only">{{ t("document.authoring.redirecting") }}</span>
       <USkeleton aria-hidden="true" class="h-8 w-2/3" />
       <USkeleton aria-hidden="true" class="h-64 w-full" />
@@ -1008,8 +1009,8 @@ async function onDeleted(): Promise<void> {
         </section>
       </div>
 
-      <!-- Secretaría: the text across the page, the data in a drawer -->
       <div v-else>
+        <!-- Secretaría: the text across the page, the data in a drawer -->
         <div class="min-w-0 space-y-4">
           <!-- A PDF says so above it; a text offers the switch beside the
                editor's buttons -->
@@ -1045,12 +1046,12 @@ async function onDeleted(): Promise<void> {
               />
             </template>
           </DocumentDraftEditor>
-          <!-- Published text: frozen, changed only through amendments -->
           <section
             v-else-if="isStructured"
             class="space-y-3"
             aria-labelledby="document-text-frozen"
           >
+            <!-- Published text: frozen, changed only through amendments -->
             <div class="min-w-0">
               <h3
                 id="document-text-frozen"

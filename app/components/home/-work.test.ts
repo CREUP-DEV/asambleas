@@ -391,6 +391,35 @@ describe("home work", () => {
     ).not.toContain("document-pub");
   });
 
+  it("names a draft past its deadline as an update, never a task", () => {
+    const closed = (id: string, kind: DocumentSummaryDto["kind"]) => ({
+      ...doc(id, { kind }),
+      presentationClosedAt: "2026-11-03T22:59:00Z",
+    });
+    const work = empty({
+      documents: [
+        closed("res", "resolution"),
+        closed("rep", "report"),
+        doc("open"),
+      ],
+    });
+    expect(homeWorkDocumentTask(closed("res", "resolution"))).toBe(null);
+    // Not counted, not overdue, never the primary button.
+    expect(homeWorkTasks(work, NOW).map((task) => task.key)).toEqual([
+      "document-open",
+    ]);
+    const updates = homeWorkUpdates(work);
+    expect(updates.map((update) => [update.key, update.kind])).toEqual([
+      ["document-rep", "document_closed"],
+      ["document-res", "document_closed"],
+    ]);
+    // A report is treated however late it comes.
+    expect(updates.map((update) => update.closed)).toEqual([
+      { at: "2026-11-03T22:59:00Z", needsAssembly: false },
+      { at: "2026-11-03T22:59:00Z", needsAssembly: true },
+    ]);
+  });
+
   it("summarises the Secretaría's pending review", () => {
     const busy = review({ documentsToValidate: 2, documentsOverdue: 1 });
     const quiet = review({ assembly: age });
@@ -669,6 +698,16 @@ describe("home work", () => {
       });
       // Withdrawn by whoever proposed it or by the Mesa: no value.
       expect(closed(null, true).sentence).toEqual({
+        key: "home.news.amendment.withdrawn",
+        params: {},
+      });
+      // Withdrawn once it had replaced the party's amendment: it stays
+      // replaced. Its own authors read the plain withdrawal.
+      expect(words(closed("replaced", false))).toMatchObject({
+        sentence: "home.news.amendment.withdrawnReplacing",
+        phrase: ["home.news.phrase.transactional", { code: "T2" }],
+      });
+      expect(closed("replaced", true).sentence).toEqual({
         key: "home.news.amendment.withdrawn",
         params: {},
       });

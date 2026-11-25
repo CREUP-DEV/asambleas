@@ -162,7 +162,7 @@ function focusRow(): void {
         <UBadge
           color="neutral"
           :variant="kind === 'formal' ? 'outline' : 'subtle'"
-          size="sm"
+          size="md"
           class="shrink-0"
           :label="kindLabel"
           aria-hidden="true"
@@ -190,7 +190,7 @@ function focusRow(): void {
         v-if="notAccepted"
         color="neutral"
         variant="outline"
-        size="sm"
+        size="md"
         class="shrink-0"
         :label="t('session.bloc.notAccepted')"
       />
@@ -198,7 +198,7 @@ function focusRow(): void {
         v-if="debated"
         color="primary"
         variant="solid"
-        size="sm"
+        size="md"
         icon="i-lucide-radio"
         class="shrink-0"
       >

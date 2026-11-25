@@ -64,7 +64,6 @@ const keepsCurrent = computed(() =>
 
 const open = ref(false);
 const saving = ref(false);
-const statusMessage = ref("");
 
 async function confirm(): Promise<void> {
   if (saving.value) return;
@@ -81,7 +80,6 @@ async function confirm(): Promise<void> {
     open.value = false;
     emit("updated", updated);
     const done = t(`document.formatSwitch.done.${target.value}`);
-    statusMessage.value = done;
     toast.add({ title: done, color: "success", icon: "i-lucide-check" });
   } catch (error) {
     notifyError(error, "document.formatSwitch.error");
@@ -147,9 +145,6 @@ async function confirm(): Promise<void> {
       :disabled="disabled || pending || saving"
       @click="open = true"
     />
-    <p class="sr-only" role="status" aria-live="polite">
-      {{ statusMessage }}
-    </p>
 
     <UModal
       v-model:open="open"

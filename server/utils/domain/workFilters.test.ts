@@ -35,6 +35,7 @@ const {
   isShelvedDocument,
   isWorkDocumentOpen,
   SHELVED_DOCUMENT_STATUSES,
+  workDocumentClosedAt,
 } = await import("./workFilters");
 
 const close = new Date("2026-11-10T22:59:00Z");
@@ -113,6 +114,34 @@ describe("isWorkDocumentOpen", () => {
 
   it("keeps a draft when the assembly has no documents_close", () => {
     expect(isWorkDocumentOpen(draft, openItem, {}, false, after)).toBe(true);
+  });
+});
+
+describe("workDocumentClosedAt", () => {
+  it("names the deadline a member's closed draft missed", () => {
+    expect(
+      workDocumentClosedAt(draft, openItem, milestones, false, after),
+    ).toEqual(close);
+    // A report past reports_close: its own deadline.
+    const reportsClose = new Date("2026-11-08T22:59:00Z");
+    expect(
+      workDocumentClosedAt(
+        { ...draft, kind: "report" as const },
+        openItem,
+        { ...milestones, reports_close: reportsClose },
+        false,
+        after,
+      ),
+    ).toEqual(reportsClose);
+  });
+
+  it("is null while the draft is still open", () => {
+    expect(
+      workDocumentClosedAt(draft, openItem, milestones, false, before),
+    ).toBeNull();
+    expect(
+      workDocumentClosedAt(draft, openItem, milestones, true, after),
+    ).toBeNull();
   });
 });
 

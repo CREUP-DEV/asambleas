@@ -40,7 +40,7 @@ import {
 import { getUploadDir } from "../core/uploadPaths";
 import { endLiveTally } from "../live/scroll";
 import { logError } from "../core/logger";
-import { assertOptimisticLock } from "../optimisticLock";
+import { assertOptimisticLock, STALE_WRITE_DATA } from "../optimisticLock";
 import {
   canCorrectForm,
   canManageAssemblies,
@@ -1772,7 +1772,7 @@ export async function updateDocument(
       !writesAgenda &&
       (changed.includes("title") || changed.includes("agendaItemId"))
     ) {
-      fail(409, STALE_DOCUMENT_MESSAGE);
+      fail(409, STALE_DOCUMENT_MESSAGE, STALE_WRITE_DATA);
     }
     // Published text (or PDF) is what amendments and the vote refer to.
     if (changed.includes("format") && isTextFrozen(current)) {
@@ -2178,9 +2178,7 @@ export async function updateDocumentContent(
       fail(
         409,
         "El texto ha cambiado desde que lo abriste. Recarga la página",
-        {
-          stale: true,
-        },
+        { stale: true, ...STALE_WRITE_DATA },
       );
     }
     if (contentHash === body.baseHash) return;

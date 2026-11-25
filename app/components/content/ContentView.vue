@@ -785,8 +785,8 @@ defineExpose({
       @keydown="onKeydown"
       v-html="html"
     />
-    <!-- eslint-enable vue/no-v-html -->
     <slot v-else name="empty">
+      <!-- eslint-enable vue/no-v-html -->
       <p class="text-muted text-sm">{{ t("common.content.empty") }}</p>
     </slot>
     <ClientOnly>

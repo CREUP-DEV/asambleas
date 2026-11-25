@@ -814,8 +814,8 @@ const transform = computed(() => viewMatrix(viewport.view.value));
             />
           </template>
 
-          <!-- Empty: a loose chair is square, a table's seat round -->
           <template v-else-if="!seat.occupant">
+            <!-- Empty: a loose chair is square, a table's seat round -->
             <rect
               v-if="isChair(seat)"
               class="seat-empty"
@@ -835,9 +835,9 @@ const transform = computed(() => viewMatrix(viewport.view.value));
             />
           </template>
 
-          <!-- «Asistentes»: the photo, the initials or a silhouette. In
-               «Cuentas» the account's block, drawn below, shows it. -->
           <template v-else-if="view === 'people'">
+            <!-- «Asistentes»: the photo, the initials or a silhouette. In
+                 «Cuentas» the account's block, drawn below, shows it. -->
             <circle
               :cx="seatPoint(seat).x"
               :cy="seatPoint(seat).y"
@@ -1074,9 +1074,19 @@ const transform = computed(() => viewMatrix(viewport.view.value));
   fill: var(--ui-bg-accented);
 }
 
-/* The CEA's base, in the primary tint of SEATING_COLOUR_STYLES (-model.ts). */
+/* The CEA's base pairs a primary edge with the primary tint, as a place
+   card pairs its ring with its tint (SEATING_COLOUR_STYLES, -model.ts): the
+   tint alone lands at the delegates' fill in dark mode, where the edge, at
+   3:1 or more on the floor, is what sets it apart. Dark mode mixes more of
+   the primary into the fill so it also moves away from --ui-bg-elevated
+   (E-112). */
 .table-cea {
   fill: color-mix(in oklab, var(--ui-primary) 14%, var(--ui-bg));
+  stroke: var(--ui-primary);
+}
+
+.dark .table-cea {
+  fill: color-mix(in oklab, var(--ui-primary) 28%, var(--ui-bg));
 }
 
 .plan-text {

@@ -150,11 +150,11 @@ export function resetExportQueueForTests(): void {
 export const EXPORT_WORKER_STALL_MS = 5 * 60_000;
 
 /**
- * Whether the export instance's workers have stopped working: the document
- * export or the package has no worker (the worker plugin failed to start and
- * a request created the instance without them), or an idle worker has not
- * fetched for `stallMs` (a database that stays unreachable). A worker busy
- * with a job is not judged: a package build takes minutes.
+ * Whether the export instance's workers have stopped working: a required
+ * queue has no worker (REQUIRED_WORKER_QUEUES: its starter failed, see
+ * onExportQueueStart), or an idle worker has not fetched for `stallMs` (a
+ * database that stays unreachable). A worker busy with a job is not judged:
+ * a package build takes minutes.
  */
 export function exportWorkersStalled(
   workers: readonly Pick<
@@ -164,8 +164,9 @@ export function exportWorkersStalled(
   now: number,
   stallMs: number = EXPORT_WORKER_STALL_MS,
 ): boolean {
-  const required = [EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT, PACKAGE_QUEUE_NAME];
-  if (required.some((name) => !workers.some((w) => w.name === name))) {
+  if (
+    REQUIRED_WORKER_QUEUES.some((name) => !workers.some((w) => w.name === name))
+  ) {
     return true;
   }
   return workers.some(
@@ -190,6 +191,21 @@ export const EXPORT_QUEUE_NAMES = {
 
 /** The documentation package of an assembly (package/build.ts). */
 export const PACKAGE_QUEUE_NAME = "assembly-package";
+
+/**
+ * The queues whose worker must be up on the export instance: the document
+ * export and the package (server/plugins/export-worker.ts), the room's
+ * images (seating/images.ts), the accounts' photos (auth/avatars.ts) and the
+ * images' clean-up (domain/imageCleanup.ts). Written out, not imported:
+ * seating/images.ts and auth/avatars.ts import this module.
+ */
+const REQUIRED_WORKER_QUEUES = [
+  EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT,
+  PACKAGE_QUEUE_NAME,
+  "seating-images",
+  "user-avatars",
+  "document-images-cleanup",
+] as const;
 
 export type ExportQueueName =
   (typeof EXPORT_QUEUE_NAMES)[keyof typeof EXPORT_QUEUE_NAMES];

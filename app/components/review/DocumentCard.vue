@@ -62,6 +62,26 @@ const submittedAbsolute = computed(() =>
     style: "long",
   }),
 );
+/**
+ * The hour beside the relative text, with the day only when that text does
+ * not already name it: "hace 3 horas (15:20)", "ayer (18:45)", but "hace 9
+ * horas (ayer, 23:10)" for a late send under a day ago, and the date before
+ * that ("hace 5 días (17 nov 2026, 18:45)"). formatRelative words a past
+ * day ("ayer") only from 24 hours back.
+ */
+const submittedMoment = computed(() => {
+  const submittedAt = props.document.submittedAt;
+  const options = { locale: locale.value, now: now.value };
+  const moment = formatMoment(submittedAt, options);
+  const date = toDate(submittedAt);
+  const dayWorded =
+    moment.dayOffset === -1 &&
+    date !== null &&
+    now.value - date.getTime() >= 24 * 60 * 60 * 1000;
+  return moment.today || dayWorded
+    ? formatTime(submittedAt, options)
+    : moment.text;
+});
 </script>
 
 <template>
@@ -103,6 +123,8 @@ const submittedAbsolute = computed(() =>
           </template>
           <template v-if="document.submittedAt">
             <span aria-hidden="true">·</span>
+            <!-- The day and the hour shown too: a touch screen has no
+                 hover for the title. -->
             <span>
               {{ t("review.documents.sent") }}
               <time
@@ -110,13 +132,14 @@ const submittedAbsolute = computed(() =>
                 :title="submittedAbsolute"
                 >{{ submittedRelative }}</time
               >
+              <span class="text-dimmed">({{ submittedMoment }})</span>
             </span>
           </template>
           <UBadge
             v-if="late"
             color="warning"
             variant="subtle"
-            size="sm"
+            size="md"
             icon="i-lucide-clock-alert"
             :label="t('review.documents.late')"
           />

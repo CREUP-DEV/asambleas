@@ -37,13 +37,13 @@ import {
  * sections under them (HomeFold): the news, the user's documents and
  * amendments and their account; the administration pages hang from the
  * sidebar only. A read-only account (Otro, Invitado) with nothing to
- * do reads one sentence saying the account can only read, instead of an
- * empty "Tareas pendientes".
+ * do reads one sentence saying the account can only read, with the account
+ * in use and «Cambiar de cuenta», instead of an empty "Tareas pendientes".
  */
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
-const { me, member } = useMe();
+const { me, member, impersonation } = useMe();
 
 useHead({ title: () => t("home.title") });
 
@@ -131,6 +131,26 @@ const readOnly = computed(
     !member.value &&
     nothingToDo.value,
 );
+
+/**
+ * Under that sentence, the account in use and «Cambiar de cuenta»: it signs
+ * out to the login page, where Google offers its account picker
+ * (`prompt: "select_account"`), so whoever entered with a personal account
+ * can come back with the one the Intranet knows. Not while an Admin acts as
+ * this account: signing out would end the Admin's own session (the user
+ * menu offers «Volver a mi cuenta» instead).
+ */
+const { signOut } = useAuth();
+const switchingAccount = ref(false);
+async function switchAccount(): Promise<void> {
+  if (switchingAccount.value) return;
+  switchingAccount.value = true;
+  try {
+    await signOut();
+  } finally {
+    switchingAccount.value = false;
+  }
+}
 /**
  * With nothing to do, "Tareas pendientes" (or the read-only sentence) goes
  * to the end of the page, in the DOM too, so the reading order follows
@@ -262,7 +282,7 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
 
         <!-- 1. What the user has to do: first, or last once there is nothing -->
         <DefineTodo>
-          <p
+          <div
             v-if="readOnly && !workLoading && !(workError && !work)"
             class="border-default text-default flex items-start gap-3 rounded-lg border p-4 text-sm"
             data-testid="home-read-only"
@@ -272,8 +292,29 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
               class="text-muted mt-0.5 size-4 shrink-0"
               aria-hidden="true"
             />
-            <span>{{ t("home.readOnly") }}</span>
-          </p>
+            <div class="min-w-0 space-y-2">
+              <p>{{ t("home.readOnly") }}</p>
+              <div
+                v-if="!impersonation"
+                class="flex flex-wrap items-center gap-x-3 gap-y-1"
+              >
+                <span class="text-muted wrap-anywhere">{{
+                  t("home.readOnlyAccount", { email: me?.email ?? "" })
+                }}</span>
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="link"
+                  class="px-0"
+                  icon="i-lucide-log-out"
+                  :loading="switchingAccount"
+                  :label="t('home.switchAccount')"
+                  data-testid="home-switch-account"
+                  @click="switchAccount"
+                />
+              </div>
+            </div>
+          </div>
 
           <section
             v-else

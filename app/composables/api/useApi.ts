@@ -24,13 +24,18 @@ export interface ApiSendOptions {
 
 type QueryValue = string | number | boolean | null | undefined;
 
-/** i18n key per HTTP status. Anything else falls back to the caller's key. */
+/**
+ * i18n key per HTTP status. Anything else falls back to the caller's key. A
+ * 409 without a reason or key is a rule of the current state, worded
+ * neutrally; the optimistic lock's «Alguien ha modificado…» needs its
+ * reason (`stale_write`, REASON_KEYS).
+ */
 const STATUS_KEYS: Record<number, string> = {
   400: "common.errors.validation",
   401: "common.errors.unauthorized",
   403: "common.errors.forbidden",
   404: "common.errors.notFound",
-  409: "common.errors.conflict",
+  409: "common.errors.conflictState",
   413: "common.errors.tooLarge",
   422: "common.errors.validation",
   429: "common.errors.rateLimited",
@@ -90,6 +95,9 @@ export function errorMessageKey(error: unknown): string | null {
  * the rest are worded by the form that causes them.
  */
 const REASON_KEYS: Record<string, string> = {
+  // The row changed since the page read it (server/utils/optimisticLock.ts,
+  // STALE_WRITE_REASON).
+  stale_write: "common.errors.conflict",
   // An account that does not see the executive areas named the CEA.
   executive_member: "common.errors.executiveMember",
   // It chose the CEA as main author or presenter and the server cannot tell
@@ -120,8 +128,7 @@ const REASON_KEYS: Record<string, string> = {
   seating_seats_occupied: "common.errors.seatingSeatsOccupied",
   // A group, a person or a whole room that is no longer there (or an AGET).
   seating_not_found: "common.errors.seatingNotFound",
-  // Calendar rules, not a stale read (server/utils/domain/documentRefusals.ts):
-  // the conflict text stays for the optimistic lock.
+  // Calendar rules, not a stale read (server/utils/domain/documentRefusals.ts).
   assembly_closed: "common.errors.assemblyClosed",
   documents_deadline_passed: "common.errors.documentsDeadlinePassed",
 };

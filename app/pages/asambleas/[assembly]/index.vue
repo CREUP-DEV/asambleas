@@ -32,7 +32,9 @@ import { formatDateTime } from "~/utils/format";
  *    which opens the first document with something left; each item says
  *    how much of that is under it. It is part of this block, never a
  *    fourth one. The header also offers "Descargar documentación", the
- *    package of everything published (ExportPackageDialog).
+ *    package of everything published (ExportPackageDialog). On phones it
+ *    lists the first six items, and its footer says how many more the full
+ *    agenda holds, so the calendar under it stays near the top.
  * 3. Beside it on large screens, under it on phones, the calendar: the next
  *    milestone and its countdown in the header, then every milestone (with
  *    its warnings for managers). The key figures follow it in the same
@@ -182,6 +184,16 @@ const tree = computed(() => buildAgendaTree(agenda.value?.items ?? []));
  * is left of its sub-items, and the footer opens the whole agenda.
  */
 const rows = computed(() => tree.value);
+/**
+ * On a phone the list stacks above the calendar, so it shows the first
+ * items only and the footer says how many more the full agenda holds: the
+ * next deadline, in the calendar's header, stays within a screen or two.
+ * Large screens list every root item, with the calendar beside them.
+ */
+const PHONE_ROWS = 6;
+const rowsHiddenOnPhone = computed(() =>
+  Math.max(0, rows.value.length - PHONE_ROWS),
+);
 
 /** Documents and amendments of every item, including its sub-items. */
 const totals = computed(() =>
@@ -508,7 +520,7 @@ const warnedKeys = computed(() =>
                 v-if="!assembly.agendaFinalizedAt"
                 color="neutral"
                 variant="subtle"
-                size="sm"
+                size="md"
                 :label="t('agenda.provisional')"
               />
             </div>
@@ -601,13 +613,22 @@ const warnedKeys = computed(() =>
             />
           </template>
         </CommonEmptyState>
-        <!-- Counters under the title, or in a column of their own when the
-             list is wide enough for both -->
         <ol v-else class="divide-default @container -my-2 divide-y">
+          <!-- Counters under the title, or in a column of their own when
+               the list is wide enough for both. Kept inside the list: a
+               comment between v-if branches becomes part of the next branch
+               on the client and not on the server (a hydration mismatch). -->
           <li
-            v-for="row in rows"
+            v-for="(row, index) in rows"
             :key="row.item.id"
             class="hover:bg-elevated/50 focus-within:bg-elevated/50 relative -mx-2 grid items-start gap-x-3 gap-y-1 px-2 py-2 @xl:grid-cols-[minmax(0,1fr)_auto]"
+            :class="
+              index >= PHONE_ROWS
+                ? 'max-lg:hidden'
+                : index === PHONE_ROWS - 1
+                  ? 'max-lg:border-b-0'
+                  : ''
+            "
           >
             <!-- The link covers its row, so the whole row opens the item;
                  the focus ring stays on the title -->
@@ -678,10 +699,20 @@ const warnedKeys = computed(() =>
           <UButton
             variant="link"
             trailing-icon="i-lucide-arrow-right"
-            :label="t('assembly.overview.openAgenda')"
             :to="sectionPath('orden-del-dia')"
             class="px-0"
-          />
+          >
+            <span v-if="rowsHiddenOnPhone > 0" class="lg:hidden">{{
+              t(
+                "assembly.overview.openAgendaMore",
+                { count: rowsHiddenOnPhone },
+                rowsHiddenOnPhone,
+              )
+            }}</span>
+            <span :class="rowsHiddenOnPhone > 0 ? 'max-lg:hidden' : ''">{{
+              t("assembly.overview.openAgenda")
+            }}</span>
+          </UButton>
         </template>
       </UCard>
 

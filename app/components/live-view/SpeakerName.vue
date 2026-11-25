@@ -73,9 +73,9 @@ const university = computed(() => {
     <span v-else-if="university" class="min-w-0" :class="fit">
       {{ university }}
     </span>
-    <!-- The badge already gives screen readers the member's name; a name
-         that only repeats the acronym is not shown twice. -->
     <template v-else-if="turn.member">
+      <!-- The badge already gives screen readers the member's name; a name
+           that only repeats the acronym is not shown twice. -->
       <span
         v-if="!memberNameRepeatsAcronym(turn.member)"
         class="min-w-0"

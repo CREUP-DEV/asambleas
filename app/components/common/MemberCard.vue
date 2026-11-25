@@ -120,7 +120,6 @@ const detail = computed(() => {
         <CommonMemberBadge
           v-if="tag"
           :member="member"
-          size="sm"
           :tooltip="false"
           class="shrink-0"
         />

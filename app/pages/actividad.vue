@@ -147,6 +147,31 @@ function revealActiveTab(): void {
 }
 onMounted(revealActiveTab);
 watch(() => filters.value.tab, revealActiveTab);
+
+/**
+ * Below sm the row fades on each side that has more tabs past it, as a hint
+ * that it scrolls. Until mounted (and on the server) it reads as scrolled to
+ * the start, so both renders agree; the list is measured once mounted and
+ * whenever its size changes.
+ */
+const tabList = computed<HTMLElement | null>(() => {
+  const root = activityTabs.value?.$el;
+  if (!(root instanceof Element)) return null;
+  return root.querySelector<HTMLElement>('[role="tablist"]');
+});
+const { arrivedState: tabListEdges, measure: measureTabList } =
+  useScroll(tabList);
+useResizeObserver(tabList, () => measureTabList());
+const tabListFade = computed(() => {
+  const left = !tabListEdges.left;
+  const right = !tabListEdges.right;
+  if (left && right) {
+    return "max-sm:mask-l-from-[calc(100%-1rem)] max-sm:mask-r-from-[calc(100%-1.5rem)]";
+  }
+  if (left) return "max-sm:mask-l-from-[calc(100%-1rem)]";
+  if (right) return "max-sm:mask-r-from-[calc(100%-1.5rem)]";
+  return "";
+});
 </script>
 
 <template>
@@ -180,7 +205,10 @@ watch(() => filters.value.tab, revealActiveTab);
           :items="tabItems"
           :content="false"
           class="w-full"
-          :ui="{ list: 'overflow-x-auto', trigger: 'shrink-0 max-sm:py-2.5' }"
+          :ui="{
+            list: `overflow-x-auto ${tabListFade}`,
+            trigger: 'shrink-0 max-sm:py-2.5',
+          }"
           :aria-label="t('activity.tabs.label')"
         />
 
@@ -227,26 +255,27 @@ watch(() => filters.value.tab, revealActiveTab);
             ]"
           />
 
-          <!-- A page can come back empty but unfinished ("member": others'
-               acts on what this account cannot see are left out), so the
-               empty state waits until nothing is left to load. -->
-          <CommonEmptyState
-            v-else-if="items.length === 0 && !hasMore"
-            :icon="hasFilters ? 'i-lucide-filter-x' : TAB_ICONS[filters.tab]"
-            :title="emptyTitle"
-            :description="emptyDescription"
-          >
-            <template v-if="hasFilters" #action>
-              <UButton
-                color="neutral"
-                variant="outline"
-                icon="i-lucide-filter-x"
-                @click="clearFilters"
-              >
-                {{ t("activity.filters.clear") }}
-              </UButton>
-            </template>
-          </CommonEmptyState>
+          <template v-else-if="items.length === 0 && !hasMore">
+            <!-- A page can come back empty but unfinished ("member": others'
+                 acts on what this account cannot see are left out), so the
+                 empty state waits until nothing is left to load. -->
+            <CommonEmptyState
+              :icon="hasFilters ? 'i-lucide-filter-x' : TAB_ICONS[filters.tab]"
+              :title="emptyTitle"
+              :description="emptyDescription"
+            >
+              <template v-if="hasFilters" #action>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-filter-x"
+                  @click="clearFilters"
+                >
+                  {{ t("activity.filters.clear") }}
+                </UButton>
+              </template>
+            </CommonEmptyState>
+          </template>
 
           <div v-else class="flex flex-col gap-4" :aria-busy="refreshing">
             <p v-if="items.length === 0" class="text-muted text-sm">

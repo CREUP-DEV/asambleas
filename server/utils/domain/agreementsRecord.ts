@@ -28,7 +28,7 @@ import type {
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { logError } from "../core/logger";
-import { assertOptimisticLock } from "../optimisticLock";
+import { assertOptimisticLock, STALE_WRITE_DATA } from "../optimisticLock";
 import { loadPublishedAgenda } from "../export/buildData";
 import { canManageDocuments, type Actor } from "./actor";
 import type { AssemblyRow } from "./assemblies";
@@ -509,6 +509,7 @@ export async function regenerateApprovedRecord(
       fail(
         409,
         "El acta ha cambiado mientras tanto. Recarga e inténtalo de nuevo",
+        STALE_WRITE_DATA,
       );
     }
     if ((await inForceHash(tx, current)) === contentHash) return null;
@@ -653,7 +654,7 @@ export async function saveAgreementRecordText(
       .for("update");
     // Null means there was none: a row someone wrote meanwhile is stale too.
     if (current ? !body.updatedAt : body.updatedAt) {
-      fail(409, STALE_TEXT_MESSAGE);
+      fail(409, STALE_TEXT_MESSAGE, STALE_WRITE_DATA);
     }
     if (current) {
       assertOptimisticLock(

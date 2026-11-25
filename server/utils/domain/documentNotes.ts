@@ -12,7 +12,10 @@ import type {
   DocumentNoteUpdateBody,
 } from "~~/shared/types/api";
 import { DOCUMENT_NOTES_MAX } from "~~/shared/utils/documentNotes";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
+import {
+  getOptimisticLockTimestampMs,
+  staleWriteError,
+} from "../optimisticLock";
 import type { Actor } from "./actor";
 import { recordAudit } from "./audit";
 import type { DocumentRouteContext } from "./documents";
@@ -160,10 +163,7 @@ export async function updateDocumentNote(
       getOptimisticLockTimestampMs(body.updatedAt) !==
       getOptimisticLockTimestampMs(current.updatedAt)
     ) {
-      throw createError({
-        statusCode: 409,
-        message: "La nota ha cambiado desde que la abriste",
-      });
+      throw staleWriteError("La nota ha cambiado desde que la abriste");
     }
     const [row] = await tx
       .update(documentNotes)

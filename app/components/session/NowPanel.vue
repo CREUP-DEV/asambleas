@@ -554,8 +554,8 @@ const announcement = computed(() => {
       <USkeleton aria-hidden="true" class="h-6 w-full" />
     </div>
 
-    <!-- Nothing under debate yet. -->
     <template v-else-if="mode === 'idle'">
+      <!-- Nothing under debate yet. -->
       <h3 class="text-highlighted text-2xl font-bold">
         {{ t("session.now.idle") }}
       </h3>
@@ -585,8 +585,8 @@ const announcement = computed(() => {
       />
     </template>
 
-    <!-- This device is looking at another document. -->
     <template v-else-if="mode === 'elsewhere'">
+      <!-- This device is looking at another document. -->
       <h3 class="text-highlighted text-2xl font-bold">
         {{ liveDocumentSummary?.title ?? t("session.now.otherDocument") }}
       </h3>
@@ -605,8 +605,8 @@ const announcement = computed(() => {
       />
     </template>
 
-    <!-- An amendment. -->
     <template v-else-if="mode === 'amendment'">
+      <!-- An amendment. -->
       <SessionNowAmendment
         v-if="session.debatedAmendment.value"
         :amendment="session.debatedAmendment.value"
@@ -636,13 +636,13 @@ const announcement = computed(() => {
       </template>
     </template>
 
-    <!-- An agenda item, with or without one of its documents in debate. -->
     <template
       v-else-if="
         (mode === 'item' || mode === 'document') &&
         (liveRow || cardDocuments.length > 0)
       "
     >
+      <!-- An agenda item, with or without one of its documents in debate. -->
       <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
         {{
           liveRow

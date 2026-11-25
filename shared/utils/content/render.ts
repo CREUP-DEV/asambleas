@@ -771,9 +771,30 @@ export function renderAnnotated(
   return wrapBlocks(items, options.headings, gapHtml(options.omitted));
 }
 
+/** How long a heading may be in a block's label before it is shortened. */
+const LABEL_HEADING_MAX = 80;
+
+/**
+ * A heading as a block's label names it: whitespace collapsed and, past
+ * LABEL_HEADING_MAX characters, cut at the last word that fits (at the limit
+ * when no space falls in its second half) and closed with «…», so a cut
+ * never reads as the whole heading.
+ */
+export function labelHeading(text: string): string | null {
+  const heading = text.trim().replace(/\s+/g, " ");
+  if (!heading) return null;
+  if (heading.length <= LABEL_HEADING_MAX) return heading;
+  const head = heading.slice(0, LABEL_HEADING_MAX);
+  // One character more: a space right after the limit ends a whole word.
+  const space = heading.slice(0, LABEL_HEADING_MAX + 1).lastIndexOf(" ");
+  const cut = space >= LABEL_HEADING_MAX / 2 ? heading.slice(0, space) : head;
+  return `${cut.replace(/[\s.,;:·–-]+$/u, "")}…`;
+}
+
 /**
  * Human references for blocks: the nearest preceding heading and the
  * paragraph's ordinal under it, e.g. { heading: "3. Devolución", paragraph: 2 }.
+ * A long heading is shortened with «…» (labelHeading).
  */
 export function blockLabels(
   blocks: Block[],
@@ -786,7 +807,7 @@ export function blockLabels(
   let paragraph = 0;
   for (const block of blocks) {
     if (block.type === "heading") {
-      heading = block.text.trim().slice(0, 80) || null;
+      heading = labelHeading(block.text);
       paragraph = 0;
       labels.set(block.id, { heading, paragraph: 0 });
       continue;

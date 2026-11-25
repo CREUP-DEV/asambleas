@@ -72,7 +72,8 @@ async function upload(selected: File): Promise<void> {
       body,
     });
     emit("uploaded", updated);
-    statusMessage.value = t("document.file.uploaded");
+    // The toast says it; the line only clears «Subiendo…».
+    statusMessage.value = "";
     toast.add({
       title: t("document.file.uploaded"),
       color: "success",

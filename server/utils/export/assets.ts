@@ -1,6 +1,6 @@
 import { create as createFont } from "fontkit";
 import { BRAND_FILES, type ExportBrand } from "./brand";
-import { RALEWAY_FILES, type RalewayFile } from "./pdfmake";
+import { PDF_FONT_FILES, RALEWAY_FILES, type RalewayFile } from "./pdfmake";
 
 /**
  * The files every export lays out with: Raleway for the render process and
@@ -39,10 +39,10 @@ export async function loadBrand(): Promise<ExportBrand> {
   return brand;
 }
 
-/** Raleway for the render process, read once. */
+/** Raleway and its latin-ext cut for the render process, read once. */
 export async function loadPdfFonts(): Promise<Record<RalewayFile, Buffer>> {
   if (fonts) return fonts;
-  const names = Object.values(RALEWAY_FILES);
+  const names = PDF_FONT_FILES;
   const buffers = await Promise.all(names.map(readServerFont));
   fonts = Object.fromEntries(
     names.map((name, i) => [name, buffers[i]!]),

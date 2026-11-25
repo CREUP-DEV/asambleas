@@ -18,7 +18,7 @@ import {
   type PendingPassage,
 } from "~~/shared/utils/content/pendingPassages";
 import { approvedRows, loadPassageWordings, wordingInputs } from "./wordings";
-import { assertOptimisticLock } from "../optimisticLock";
+import { assertOptimisticLock, STALE_WRITE_DATA } from "../optimisticLock";
 import {
   canCorrectForm,
   canManageDocuments,
@@ -258,7 +258,7 @@ export async function createFormCorrection(
       fail(403, "No puedes corregir el texto aprobado de este documento");
     }
     if (document.consolidatedVersionId !== body.fromVersionId) {
-      fail(409, STALE_MESSAGE, { stale: true });
+      fail(409, STALE_MESSAGE, { stale: true, ...STALE_WRITE_DATA });
     }
     const [from] = await tx
       .select({
@@ -720,7 +720,7 @@ export async function createConciliation(
       fail(403, "No puedes conciliar el texto aprobado de este documento");
     }
     if (document.consolidatedVersionId !== body.fromVersionId) {
-      fail(409, STALE_MESSAGE, { stale: true });
+      fail(409, STALE_MESSAGE, { stale: true, ...STALE_WRITE_DATA });
     }
     const text = await conciliatedText(tx, document, body);
     const direct = mode === "direct";

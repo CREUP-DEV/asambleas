@@ -170,7 +170,7 @@ const rows = computed<Row[]>(() =>
           v-if="row.impersonatedBy"
           color="warning"
           variant="subtle"
-          size="sm"
+          size="md"
           icon="i-lucide-venetian-mask"
           class="mt-1 max-w-full whitespace-normal"
           :label="row.impersonatedBy"

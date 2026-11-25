@@ -1631,11 +1631,11 @@ useHead(() => ({
             </div>
           </dl>
         </div>
-        <!-- Alternatives: each option's codes and votes. -->
         <dl
           v-else-if="voteAlternatives"
           class="mt-[clamp(0.5rem,1vw,1rem)] flex flex-wrap gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2"
         >
+          <!-- Alternatives: each option's codes and votes. -->
           <div
             v-for="option in voteAlternatives"
             :key="option.name"
@@ -1762,18 +1762,19 @@ useHead(() => ({
         </p>
       </section>
 
-      <!-- An election being counted takes the screen alone: no document,
-           amendment nor agenda beside its count (E-122). -->
-      <template v-else-if="electionCounting" />
+      <template v-else-if="electionCounting">
+        <!-- An election being counted takes the screen alone: no document,
+             amendment nor agenda beside its count (E-122). -->
+      </template>
 
-      <!-- An amendment, or a bloc of them, takes most of the screen; beside
-           it, a narrow column names the agenda item, counts and lists the
-           document's amendments: the one on screen highlighted, or those
-           of the bloc marked (user's decisions of 2026-11-20). -->
       <section
         v-else-if="(mode === 'amendment' && debated) || mode === 'bloc'"
         class="grid min-h-0 flex-1 gap-[clamp(1rem,2.5vw,2.5rem)] lg:grid-cols-[minmax(0,1fr)_clamp(15rem,21vw,26rem)]"
       >
+        <!-- An amendment, or a bloc of them, takes most of the screen; beside
+             it, a narrow column names the agenda item, counts and lists the
+             document's amendments: the one on screen highlighted, or those
+             of the bloc marked (user's decisions of 2026-11-20). -->
         <div
           v-if="mode === 'amendment' && debated"
           class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
@@ -1848,13 +1849,13 @@ useHead(() => ({
             </div>
           </AmendmentGlobalReplace>
         </div>
-        <!-- A bloc: the codes, large, each with its main author (and what a
-             transactional transacts); each turns green as it is approved. -->
         <div
           v-else
           class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
           aria-live="polite"
         >
+          <!-- A bloc: the codes, large, each with its main author (and what a
+               transactional transacts); each turns green as it is approved. -->
           <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
             <div class="min-w-0">
               <h1
@@ -2204,14 +2205,14 @@ useHead(() => ({
         <p v-if="rows.length === 0" class="text-muted">
           {{ agenda ? t("projection.agendaEmpty") : t("agenda.loadError") }}
         </p>
-        <!-- Its own box at the screen's height, the item in debate in the
-             middle: a long agenda never runs off the screen. -->
         <nav
           v-else
           ref="agendaNav"
           :aria-label="t('projection.agenda')"
           class="projection-scroll min-h-0 flex-1 overflow-y-auto"
         >
+          <!-- Its own box at the screen's height, the item in debate in the
+               middle: a long agenda never runs off the screen. -->
           <SessionProjectionAgenda
             :rows="rows"
             :current-id="live?.agendaItemId ?? null"

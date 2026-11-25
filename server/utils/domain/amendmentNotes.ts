@@ -12,7 +12,10 @@ import type {
   AmendmentNoteUpdateBody,
 } from "~~/shared/types/api";
 import { AMENDMENT_NOTES_MAX } from "~~/shared/utils/amendmentNotes";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
+import {
+  getOptimisticLockTimestampMs,
+  staleWriteError,
+} from "../optimisticLock";
 import type { Actor } from "./actor";
 import type { AmendmentContext } from "./amendments";
 import { recordAudit } from "./audit";
@@ -151,10 +154,7 @@ export async function updateAmendmentNote(
       getOptimisticLockTimestampMs(body.updatedAt) !==
       getOptimisticLockTimestampMs(current.updatedAt)
     ) {
-      throw createError({
-        statusCode: 409,
-        message: "La nota ha cambiado desde que la abriste",
-      });
+      throw staleWriteError("La nota ha cambiado desde que la abriste");
     }
     const [row] = await tx
       .update(amendmentNotes)

@@ -12,7 +12,10 @@ import {
   type UploadedFile,
 } from "./documents";
 import { recordEvent } from "./events";
-import { buildOptimisticLockCondition } from "../optimisticLock";
+import {
+  buildOptimisticLockCondition,
+  staleWriteError,
+} from "../optimisticLock";
 
 /**
  * The signed convocatoria of an assembly, uploaded as a PDF by Secretaría.
@@ -82,7 +85,7 @@ export async function attachConvocationFile(
         )
         .returning({ id: assemblies.id });
       if (!row) {
-        throw createError({ statusCode: 409, message: STALE_ASSEMBLY_MESSAGE });
+        throw staleWriteError(STALE_ASSEMBLY_MESSAGE);
       }
       await recordEvent(tx, {
         assemblyId: assembly.id,
@@ -137,7 +140,7 @@ export async function removeConvocationFile(
       )
       .returning({ id: assemblies.id });
     if (!row) {
-      throw createError({ statusCode: 409, message: STALE_ASSEMBLY_MESSAGE });
+      throw staleWriteError(STALE_ASSEMBLY_MESSAGE);
     }
     await recordEvent(tx, {
       assemblyId: assembly.id,

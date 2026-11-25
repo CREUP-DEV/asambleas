@@ -96,11 +96,17 @@ describe("errorReasonKey", () => {
     for (const key of [
       "common.errors.assemblyClosed",
       "common.errors.documentsDeadlinePassed",
+      "common.errors.conflict",
+      "common.errors.conflictState",
     ]) {
       expect(messageIn(es, key)).toBeTypeOf("string");
       expect(messageIn(en, key)).toBeTypeOf("string");
     }
-    // The lock's own 409 names no reason and keeps the conflict text.
+    // The lock's own 409 keeps the conflict text; one with no reason reads
+    // the neutral status text.
+    expect(errorReasonKey(fetchError(409, { reason: "stale_write" }))).toBe(
+      "common.errors.conflict",
+    );
     expect(errorReasonKey(fetchError(409))).toBeNull();
   });
 

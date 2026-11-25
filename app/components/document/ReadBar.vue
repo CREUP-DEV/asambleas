@@ -24,7 +24,8 @@ import { readNeighbours } from "~~/shared/utils/readMarks";
  *
  * Below md it takes two rows: the arrows at the ends with the position and
  * the mark between them, and what is left underneath. From md, one row.
- * Where an arrow leads is in its name and in a tooltip.
+ * Where an arrow leads is in its name and in a tooltip, and from xl beside
+ * it.
  */
 const props = withDefaults(
   defineProps<{
@@ -141,6 +142,8 @@ const note = computed<"changed" | "amendments" | null>(() => {
       :aria-label="label ?? t('readMarks.bar.label')"
       data-testid="document-read-bar"
     >
+      <!-- A finger's target on a phone (the bar after the text); the folded
+           header only shows it from lg. -->
       <UTooltip :text="previousLabel" :disabled="!position.previous">
         <UButton
           icon="i-lucide-chevron-left"
@@ -148,6 +151,7 @@ const note = computed<"changed" | "amendments" | null>(() => {
           variant="ghost"
           size="sm"
           rel="prev"
+          class="max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center"
           :to="position.previous ? pathOf(position.previous) : undefined"
           :disabled="!position.previous"
           :aria-label="previousLabel"
@@ -169,6 +173,7 @@ const note = computed<"changed" | "amendments" | null>(() => {
           variant="ghost"
           size="sm"
           rel="next"
+          class="max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center"
           :to="position.next ? pathOf(position.next) : undefined"
           :disabled="!position.next"
           :aria-label="nextLabel"
@@ -187,14 +192,16 @@ const note = computed<"changed" | "amendments" | null>(() => {
         >{{ position.next.title }}</ULink
       >
     </nav>
-    <!-- Below md: ‹ | position over the mark | ›, then what is left.
-         From md: ‹ | position | what is left | mark | ›. -->
     <nav
       v-else
       class="border-default bg-elevated/40 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1.5 rounded-lg border p-1.5 text-sm md:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] md:gap-x-3 md:px-2"
       :aria-label="label ?? t('readMarks.bar.label')"
       data-testid="document-read-bar"
     >
+      <!-- Below md: ‹ | position over the mark | ›, then what is left.
+           From md: ‹ | position | what is left | mark | ›. From xl each
+           arrow also shows where it leads, muted and cut short; its name
+           already says it, so that title is not read twice. -->
       <UTooltip :text="previousLabel" :disabled="!position.previous">
         <UButton
           icon="i-lucide-chevron-left"
@@ -209,6 +216,12 @@ const note = computed<"changed" | "amendments" | null>(() => {
           data-testid="read-bar-previous"
         >
           <span class="hidden xl:inline">{{ t("common.previous") }}</span>
+          <span
+            v-if="position.previous"
+            class="text-muted hidden max-w-[16ch] truncate font-normal xl:block"
+            aria-hidden="true"
+            >{{ position.previous.title }}</span
+          >
         </UButton>
       </UTooltip>
 
@@ -224,9 +237,12 @@ const note = computed<"changed" | "amendments" | null>(() => {
       </span>
 
       <!-- Each «·» goes with the words after it, never alone at a line's end;
-           the first one only from md, where the position stands before it. -->
+           the first one only from md, where the position stands before it.
+           Below sm it keeps the placeholder's two lines whatever the text
+           takes, so the page never moves when the marks arrive. -->
       <div
         class="text-muted col-span-3 col-start-1 row-start-3 min-w-0 text-center md:col-span-1 md:col-start-3 md:row-start-1 md:text-start"
+        :class="{ 'max-sm:min-h-10 max-sm:content-center': waiting || loaded }"
       >
         <template v-if="waiting">
           <USkeleton
@@ -276,7 +292,7 @@ const note = computed<"changed" | "amendments" | null>(() => {
             >
               <ULink
                 :to="pathOf(position.nextLeft)"
-                class="text-primary hover:underline"
+                class="text-primary hover:underline max-sm:py-1.5"
                 data-testid="read-bar-left"
                 >{{ t("readMarks.bar.left", { items: left }) }}</ULink
               >
@@ -318,6 +334,12 @@ const note = computed<"changed" | "amendments" | null>(() => {
           :aria-label="nextLabel"
           data-testid="read-bar-next"
         >
+          <span
+            v-if="position.next"
+            class="text-muted hidden max-w-[16ch] truncate font-normal xl:block"
+            aria-hidden="true"
+            >{{ position.next.title }}</span
+          >
           <span class="hidden xl:inline">{{ t("common.next") }}</span>
         </UButton>
       </UTooltip>

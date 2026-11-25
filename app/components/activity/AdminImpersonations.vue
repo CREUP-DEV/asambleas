@@ -49,13 +49,18 @@ function minutes(item: AdminImpersonationDto): number | null {
 
 <template>
   <UTable
+    sticky
     :data="props.items"
     :columns="columns"
     :loading="props.loading"
     :aria-label="t('activity.admin.impersonations.label')"
     :get-row-id="(row: AdminImpersonationDto) => row.id"
-    class="border-default rounded-lg border"
-    :ui="{ td: 'align-top whitespace-normal', th: 'whitespace-nowrap' }"
+    class="border-default rounded-lg border max-lg:shrink-0 lg:min-h-96"
+    :ui="{
+      thead: 'bg-default',
+      td: 'align-top whitespace-normal',
+      th: 'whitespace-nowrap',
+    }"
   >
     <template #startedAt-cell="{ row }">
       <time
@@ -103,7 +108,7 @@ function minutes(item: AdminImpersonationDto): number | null {
             v-if="row.original.target.member"
             :member="row.original.target.member"
           />
-          <ShellRoleBadge :role="row.original.target.role" size="sm" />
+          <ShellRoleBadge :role="row.original.target.role" />
         </div>
       </div>
       <span v-else class="text-muted text-sm italic">
@@ -123,7 +128,7 @@ function minutes(item: AdminImpersonationDto): number | null {
           v-if="row.original.active"
           color="error"
           variant="subtle"
-          size="sm"
+          size="md"
           icon="i-lucide-radio"
           :label="
             t('activity.admin.impersonations.activeUntil', {
@@ -135,7 +140,7 @@ function minutes(item: AdminImpersonationDto): number | null {
           <UBadge
             color="neutral"
             variant="subtle"
-            size="sm"
+            size="md"
             :label="
               row.original.endReason
                 ? t(`activity.endReasons.${row.original.endReason}`)

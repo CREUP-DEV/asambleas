@@ -62,6 +62,11 @@ import {
  *   groups was settled or replaced by another one (isAutomaticClosure),
  *   and coming back by itself, because what closed it was reopened
  *   (isAutomaticRestore).
+ * - For the authors of an amendment a transactional replaced: that
+ *   transactional withdrawn once in force (amendment_withdrawn with
+ *   `replacedSources`, by the Mesa or by an author whose own amendments
+ *   were the only ones), since their amendment stays replaced
+ *   (isReplacingWithdrawal).
  * - For the presenters of a document (main and co-presenters): what the
  *   Secretaría, the Mesa or the assembly settled about it
  *   (NEWS_DOCUMENT_TYPES), with no amendment.
@@ -175,6 +180,20 @@ export function isAutomaticAnswer(
   );
 }
 
+/**
+ * A transactional withdrawn after it had replaced what it groups
+ * (`replacedSources`, from replacesSourcesNow: withdrawAmendment, or the
+ * Mesa's withdrawal from the console in recordAmendmentOutcome): those
+ * amendments stay `transacted`, so their authors are told although someone
+ * decided it.
+ */
+export function isReplacingWithdrawal(
+  type: string,
+  payload: Record<string, unknown>,
+): boolean {
+  return type === "amendment_withdrawn" && payload.replacedSources === true;
+}
+
 /** A transactional that closed or came back by itself. */
 export function isAutomaticChange(
   type: string,
@@ -226,7 +245,12 @@ export function isNewsEvent(
   if (type === "amendment_withdrawn" && payload.by === "author_rejection") {
     return false;
   }
-  return scope.authored || (scope.overOwn && isAutomaticChange(type, payload));
+  return (
+    scope.authored ||
+    (scope.overOwn &&
+      (isAutomaticChange(type, payload) ||
+        isReplacingWithdrawal(type, payload)))
+  );
 }
 
 /**
@@ -235,9 +259,10 @@ export function isNewsEvent(
  * the Secretaría did not admit while reviewing it, how an amendment was
  * approved, the code of the transactional that replaced it (or that
  * replaced first what a lapsed transactional grouped), the code of the
- * amendment whose fate closed a transactional, the result of a document's
- * final vote or the status a document moved to. Null when the type says it
- * all.
+ * amendment whose fate closed a transactional, "replaced" for a
+ * transactional withdrawn after it replaced what it groups
+ * (isReplacingWithdrawal), the result of a document's final vote or the
+ * status a document moved to. Null when the type says it all.
  */
 export function newsValue(
   type: string,
@@ -273,7 +298,8 @@ export function newsValue(
     case "transactional_source_dropped":
       return text(payload.sourceCode);
     case "amendment_withdrawn":
-      return payload.by === "sources_closed" ? text(payload.sourceCode) : null;
+      if (payload.by === "sources_closed") return text(payload.sourceCode);
+      return isReplacingWithdrawal(type, payload) ? "replaced" : null;
     case "amendment_reopened":
       return payload.reason === "source_reopened"
         ? text(payload.sourceCode)

@@ -225,6 +225,13 @@ const AVATAR_IMAGE_RULES: Record<string, string> = {
     "/api/uploads/avatars/*",
 };
 
+const PDF_FILE_RULES: Record<string, string> = {
+  "/api/uploads/documents/0f8c3e2a-5b1d-4c7e-9a6f-2d4b8e1c7a90.pdf":
+    "/api/uploads/documents/*",
+  "/api/uploads/convocations/0f8c3e2a-5b1d-4c7e-9a6f-2d4b8e1c7a90.pdf":
+    "/api/uploads/convocations/*",
+};
+
 const SEATING_SYNC_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/seating/sync": "/api/assemblies/*/seating/sync",
   "/api/assemblies/xk3j8q2m1n0p9o8i7u6y5t4r/seating/sync":
@@ -302,6 +309,18 @@ describe("rate limiter", () => {
     (path, rule) => {
       expect(resolveRules(path).rateLimiter).toMatchObject({
         tokensPerInterval: 10_000,
+        interval: 300_000,
+        driver: { name: "lruCache" },
+      });
+      expect(resolveBucket(path)).toBe(rule);
+    },
+  );
+
+  it.each(Object.entries(PDF_FILE_RULES))(
+    "gives the PDFs, read in parts by the whole room, a bucket of their own: %s",
+    (path, rule) => {
+      expect(resolveRules(path).rateLimiter).toMatchObject({
+        tokensPerInterval: 20_000,
         interval: 300_000,
         driver: { name: "lruCache" },
       });

@@ -70,16 +70,71 @@ const documentApi = computed(() =>
 /** The editor of a correction of form is open (it shows the text itself). */
 const correcting = ref(false);
 const formCorrections = useTemplateRef<{
-  start: () => void;
+  start: (blockId?: string | null) => void;
   load: () => Promise<void>;
 }>("formCorrections");
-function startCorrection(): void {
-  formCorrections.value?.start();
+/**
+ * Opens the correction editor at `blockId` (where the reader was), or at
+ * its start: then the view goes to the corrections' heading, since nothing
+ * else brings the editor into view.
+ */
+function startCorrection(blockId: string | null = null): void {
+  formCorrections.value?.start(blockId);
+  if (blockId) return;
   void nextTick(() =>
     globalThis.document
       ?.getElementById("form-corrections")
       ?.scrollIntoView({ block: "start" }),
   );
+}
+
+// Where the reader is in the text ------------------------------------------------
+// «Corregir la forma» sits above the text: a reader who saw an erratum on
+// page 23 goes back up to press it, so the editor opens at the last block
+// they rested on (as «Presentar enmienda» does on the document's page).
+
+const textRoot = useTemplateRef<HTMLElement>("textRoot");
+/** The blocks the correction editor holds: the text in force. */
+const correctableIds = computed(
+  () =>
+    new Set(
+      (document.value?.consolidatedVersion?.blocks ?? []).map(
+        (block) => block.id,
+      ),
+    ),
+);
+const isCorrectable = (id: string) => correctableIds.value.has(id);
+/**
+ * The last block of the text the reader rested on (`READING_REST_MS`), inside
+ * it: going back up to the button passes over every block above it.
+ */
+let lastReadBlockId: string | null = null;
+const noteReadingPosition = useDebounceFn(() => {
+  const root = textRoot.value;
+  if (!root || correcting.value || !scrolledIntoText(root)) return;
+  lastReadBlockId = blockAtReadingTop(root, isCorrectable) ?? lastReadBlockId;
+}, READING_REST_MS);
+useEventListener("scroll", noteReadingPosition, {
+  capture: true,
+  passive: true,
+});
+watch(
+  () => document.value?.id,
+  () => {
+    lastReadBlockId = null;
+  },
+);
+/** Where the button opens the editor (`amendStartBlockId`). */
+function readingBlockId(): string | null {
+  const root = textRoot.value;
+  if (!root) return lastReadBlockId;
+  return amendStartBlockId({
+    selected: null,
+    current: blockAtReadingTop(root, isCorrectable),
+    lastRead: lastReadBlockId,
+    // The header and the text scroll together here.
+    atHeader: !scrolledIntoText(root),
+  });
 }
 // Arriving from the document's «Más» menu (`?corregir`) opens the editor
 // once the text is loaded, and drops the query so a reload does not.
@@ -325,15 +380,14 @@ watch(popoverOpen, (open) => {
 
 <template>
   <div class="flex flex-col gap-6">
-    <!-- Loading -->
+    <!-- Loading, then the error, then the text (no comment between the
+         branches: Vue folds it into the next one, and hydration breaks). -->
     <div v-if="pending" class="flex flex-col gap-4" role="status">
       <span class="sr-only">{{ t("workspace.loading") }}</span>
       <USkeleton aria-hidden="true" class="h-4 w-32" />
       <USkeleton aria-hidden="true" class="h-8 w-3/4 max-w-xl" />
       <USkeleton aria-hidden="true" class="h-96 w-full" />
     </div>
-
-    <!-- Error -->
     <CommonEmptyState
       v-else-if="!document || !assembly"
       :icon="
@@ -401,10 +455,11 @@ watch(popoverOpen, (open) => {
       />
 
       <template v-else>
-        <!-- Status of the text -->
+        <!-- Status of the text. On a phone the sections take no box of
+             their own, so the text starts higher (M-041). -->
         <section
           v-if="document.finalVote"
-          class="border-default flex flex-col gap-3 rounded-lg border p-4 sm:p-5"
+          class="sm:border-default flex flex-col gap-3 sm:rounded-lg sm:border sm:p-5"
           aria-labelledby="consolidated-final-vote"
         >
           <h2
@@ -531,21 +586,24 @@ watch(popoverOpen, (open) => {
         </UAlert>
 
         <!-- Text -->
-        <!-- The text keeps the editor's measure (`main.css`), centred. -->
+        <!-- The text keeps the editor's measure (`main.css`), centred. Its
+             heading names the section for screen readers (the page's title
+             already says what it is); the row above the text shows only for
+             the correction's button. -->
         <section
           v-if="!correcting"
-          class="border-default rounded-lg border p-4 sm:p-6 lg:px-[max(1.5rem,calc((100%_-_52rem)/2))]"
+          ref="textRoot"
+          class="sm:border-default sm:rounded-lg sm:border sm:p-6 lg:px-[max(1.5rem,calc((100%_-_52rem)/2))]"
           aria-labelledby="consolidated-text"
         >
-          <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-            <h2
-              id="consolidated-text"
-              class="text-highlighted text-base font-semibold"
-            >
-              {{ t("workspace.consolidatedView.text") }}
-            </h2>
+          <h2 id="consolidated-text" class="sr-only">
+            {{ t("workspace.consolidatedView.text") }}
+          </h2>
+          <div
+            v-if="document.can.correctForm && document.consolidatedVersion"
+            class="mb-4 flex justify-end"
+          >
             <UButton
-              v-if="document.can.correctForm && document.consolidatedVersion"
               size="sm"
               color="neutral"
               variant="outline"
@@ -555,18 +613,8 @@ watch(popoverOpen, (open) => {
                   ? t('workspace.formCorrections.edit')
                   : t('workspace.formCorrections.propose')
               "
-              @click="startCorrection"
+              @click="startCorrection(readingBlockId())"
             />
-            <p
-              v-if="
-                !corrected &&
-                provenanceMatches &&
-                consolidation.applied.length > 0
-              "
-              class="text-muted text-sm"
-            >
-              {{ t("workspace.consolidatedView.legend") }}
-            </p>
           </div>
 
           <!-- The PDF page being read, kept in view as the text scrolls. -->
@@ -591,6 +639,12 @@ watch(popoverOpen, (open) => {
             />
           </template>
           <template v-else-if="provenanceMatches">
+            <p
+              v-if="consolidation.applied.length > 0"
+              class="text-muted mb-4 text-sm"
+            >
+              {{ t("workspace.consolidatedView.legend") }}
+            </p>
             <div
               @click.capture="rememberFragment"
               @keydown.capture="rememberFragment"
@@ -743,7 +797,7 @@ watch(popoverOpen, (open) => {
                 <UBadge
                   color="neutral"
                   variant="soft"
-                  size="xs"
+                  size="md"
                   :label="String(group.amendments.length)"
                 />
               </h3>

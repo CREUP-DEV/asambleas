@@ -153,6 +153,13 @@ const leadValue = computed<string>({
 const changed = computed(
   () => props.active > 0 || !isDefaultSort(sort.value, props.fallback),
 );
+
+/**
+ * The bar's buttons keep their compact desktop size from lg up and, below
+ * it, reach 40px with 14px text, as a finger needs (M-087); a class rather
+ * than a size, so the server renders the same at every width.
+ */
+const TOUCH = "max-lg:min-h-10 max-lg:text-sm";
 </script>
 
 <template>
@@ -169,6 +176,7 @@ const changed = computed(
           v-for="entry in views"
           :key="entry.value"
           size="sm"
+          :class="TOUCH"
           :color="view === entry.value ? 'primary' : 'neutral'"
           :variant="view === entry.value ? 'subtle' : 'outline'"
           :aria-pressed="view === entry.value"
@@ -194,6 +202,7 @@ const changed = computed(
             color="neutral"
             variant="outline"
             size="sm"
+            :class="TOUCH"
             :label="t('controlSheet.filters.button')"
             :aria-label="
               chosen > 0
@@ -202,7 +211,9 @@ const changed = computed(
             "
           >
             <template v-if="chosen > 0" #trailing>
-              <UBadge size="xs" color="primary" :label="String(chosen)" />
+              <!-- 12px like every count, without the vertical padding, so
+                   the sm button keeps its 28px line on desktop. -->
+              <UBadge color="primary" class="py-0" :label="String(chosen)" />
             </template>
           </UButton>
           <template #content>
@@ -243,7 +254,7 @@ const changed = computed(
             color="neutral"
             variant="outline"
             size="sm"
-            class="max-w-full"
+            :class="['max-w-full', TOUCH]"
             :label="sortButtonLabel"
           />
           <template #content>
@@ -265,6 +276,7 @@ const changed = computed(
                   v-for="dir in ['asc', 'desc'] as const"
                   :key="dir"
                   size="sm"
+                  :class="TOUCH"
                   :color="sort.dir === dir ? 'primary' : 'neutral'"
                   :variant="sort.dir === dir ? 'subtle' : 'outline'"
                   :aria-pressed="sort.dir === dir"
@@ -303,6 +315,7 @@ const changed = computed(
           color="neutral"
           variant="ghost"
           size="sm"
+          :class="TOUCH"
           :label="t('controlSheet.filters.reset')"
           @click="emit('reset')"
         />
@@ -323,6 +336,7 @@ const changed = computed(
       <li v-for="chip in chips" :key="chip.id">
         <UButton
           size="xs"
+          :class="TOUCH"
           color="primary"
           variant="soft"
           trailing-icon="i-lucide-x"

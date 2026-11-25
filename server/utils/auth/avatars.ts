@@ -322,14 +322,17 @@ export async function processUserAvatarJob(
 /**
  * Queues photo jobs. One queued job per account (singletonKey, policy
  * `short`): it reads the account when it runs. Never throws: a missing
- * queue only means the photo comes with a later sign-in or boot.
+ * queue only means the photo comes with a later sign-in or boot. The boot
+ * backfill passes the instance it starts on (`started`): asking
+ * getExportQueue for it there would wait for the start it is part of.
  */
 export async function enqueueUserAvatars(
   userIds: readonly string[],
+  started?: PgBoss,
 ): Promise<void> {
   if (userIds.length === 0) return;
   try {
-    const boss = await getExportQueue();
+    const boss = started ?? (await getExportQueue());
     await boss.insert(
       USER_AVATARS_QUEUE,
       userIds.map((userId) => ({ data: { userId }, singletonKey: userId })),
@@ -362,9 +365,10 @@ export async function refreshUserAvatar(userId: string): Promise<void> {
 /**
  * Once per boot: queues every account whose picture is not stored yet and
  * drops the photos of accounts that no longer have one to show. Accounts
- * without access are never fetched.
+ * without access are never fetched. `boss`: the instance the worker
+ * starts on (enqueueUserAvatars).
  */
-export async function backfillUserAvatars(): Promise<{
+export async function backfillUserAvatars(boss?: PgBoss): Promise<{
   queued: number;
   dropped: number;
 }> {
@@ -405,7 +409,7 @@ export async function backfillUserAvatars(): Promise<{
       dropped += 1;
     }
   }
-  await enqueueUserAvatars(toFetch);
+  await enqueueUserAvatars(toFetch, boss);
   return { queued: toFetch.length, dropped };
 }
 
@@ -445,6 +449,11 @@ export async function startUserAvatars(boss: PgBoss): Promise<void> {
       }
     },
   );
-  const backfill = await backfillUserAvatars();
-  logInfo("auth.avatars", { message: "worker started", ...backfill });
+  // Not awaited: the instance is handed out once every starter is done
+  // (onExportQueueStart), and the backfill's query is no reason to hold it.
+  void backfillUserAvatars(boss)
+    .then((backfill) =>
+      logInfo("auth.avatars", { message: "worker started", ...backfill }),
+    )
+    .catch((error) => logAvatarError(error, { action: "backfill" }));
 }

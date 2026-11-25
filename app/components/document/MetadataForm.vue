@@ -1019,9 +1019,8 @@ defineExpose({ reset: resetForm, check, save, saving });
         </template>
       </UCollapsible>
     </template>
-
-    <!-- Managers: where it goes, who presents it and by when -->
     <template v-else>
+      <!-- Managers: where it goes, who presents it and by when -->
       <UFormField
         name="agendaItemId"
         :label="t('document.metadata.agendaItem')"

@@ -248,11 +248,11 @@ const summary = computed(() =>
         </template>
       </CommonEmptyState>
 
-      <!-- Each turn, in the order it took the floor -->
       <div
         v-else-if="view === 'list'"
         class="border-default relative overflow-x-auto rounded-lg border"
       >
+        <!-- Each turn, in the order it took the floor -->
         <table class="w-full min-w-[44rem] text-left text-sm">
           <caption class="sr-only">
             {{
@@ -297,7 +297,7 @@ const summary = computed(() =>
                 {{ itemLabel(row.item) }}
               </td>
               <td class="text-highlighted px-3 py-2">
-                <LiveViewSpeakerName :turn="row.turn" badge-size="sm" />
+                <LiveViewSpeakerName :turn="row.turn" />
               </td>
               <td class="px-3 py-2 text-end tabular-nums">
                 <span
@@ -326,11 +326,11 @@ const summary = computed(() =>
         </table>
       </div>
 
-      <!-- The totals per member, longest first -->
       <div
         v-else
         class="border-default relative overflow-x-auto rounded-lg border"
       >
+        <!-- The totals per member, longest first -->
         <table class="w-full min-w-[36rem] text-left text-sm">
           <caption class="sr-only">
             {{
@@ -359,13 +359,12 @@ const summary = computed(() =>
                 <span class="inline-flex flex-wrap items-center gap-2">
                   <LiveViewSpeakerName
                     :turn="{ member: total.member, speaker: total.speaker }"
-                    badge-size="sm"
                   />
                   <UBadge
                     v-if="total.speaking"
                     color="primary"
                     variant="subtle"
-                    size="sm"
+                    size="md"
                     icon="i-lucide-mic"
                     :label="t('controlSheet.turns.speaking')"
                   />

@@ -40,7 +40,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   undone: [amendment: AmendmentDto];
-  announce: [message: string];
 }>();
 
 const { t } = useI18n();
@@ -209,7 +208,6 @@ async function undo(): Promise<void> {
       label: labelOf(amendment),
     });
     const description = t("amendment.validationUndo.undoneHidden");
-    emit("announce", `${title}. ${description}`);
     toast.add({
       title,
       description,

@@ -1,17 +1,15 @@
-import { logError } from "../utils/core/logger";
 import { setupImageCleanupSchedule } from "../utils/domain/imageCleanup";
-import { getExportQueue } from "../utils/export/queue";
+import { onExportQueueStart } from "../utils/export/queue";
 
 /**
  * The daily clean-up of document images nothing uses
- * (server/utils/domain/imageCleanup.ts), on the pg-boss instance the export
- * worker starts. Without DATABASE_URL there is no pg-boss (export-worker.ts
+ * (server/utils/domain/imageCleanup.ts), on the export queue's pg-boss
+ * instance, registered through its shared start (onExportQueueStart): it
+ * comes up with the instance whoever starts it, and a starter that fails is
+ * logged there. Without DATABASE_URL there is no pg-boss (export-worker.ts
  * already warns).
  */
 export default defineNitroPlugin(() => {
   if (!process.env.DATABASE_URL) return;
-  // Not awaited: Nitro does not await plugins; problems are logged.
-  void getExportQueue({ attempts: 5 })
-    .then((boss) => setupImageCleanupSchedule(boss))
-    .catch((error) => logError("imageCleanup.schedule", error));
+  onExportQueueStart("image-cleanup", setupImageCleanupSchedule);
 });

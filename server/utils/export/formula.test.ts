@@ -8,7 +8,7 @@ import { buildDocumentDocx } from "./docxWriter";
 import { formulaToDocx } from "./formulaDocx";
 import { formulaSvg } from "./formulaSvg";
 import {
-  RALEWAY_FILES,
+  PDF_FONT_FILES,
   pdfmake,
   registerPdfFonts,
   type RalewayFile,
@@ -19,7 +19,7 @@ const FONTS_DIR = resolve(__dirname, "../../assets/fonts");
 beforeAll(() => {
   registerPdfFonts(
     Object.fromEntries(
-      Object.values(RALEWAY_FILES).map((name) => [
+      PDF_FONT_FILES.map((name) => [
         name,
         readFileSync(resolve(FONTS_DIR, name)),
       ]),

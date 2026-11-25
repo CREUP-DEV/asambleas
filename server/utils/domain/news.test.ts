@@ -93,6 +93,13 @@ describe("newsValue", () => {
       }),
     ).toBe("CEUM 4");
     expect(newsValue("amendment_withdrawn", { by: "author" })).toBeNull();
+    // Withdrawn after it replaced what it groups.
+    expect(
+      newsValue("amendment_withdrawn", {
+        by: "moderator",
+        replacedSources: true,
+      }),
+    ).toBe("replaced");
   });
 
   it("says how a document was settled", () => {
@@ -533,6 +540,31 @@ describe("isNewsEvent", () => {
       isNewsEvent(onAmendment("amendment_lapsed", { by: "moderator" }), party),
     ).toBe(false);
     expect(isNewsEvent(onAmendment("amendment_approved"), party)).toBe(false);
+  });
+
+  it("tells the parties of a transactional in force that it was withdrawn", () => {
+    const party = { ...none, overOwn: true };
+    // The Mesa withdraws one that already replaced their amendments: they
+    // stay replaced.
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", {
+          by: "moderator",
+          replacedSources: true,
+        }),
+        party,
+      ),
+    ).toBe(true);
+    // A pending one its proposer withdraws leaves their amendments open.
+    expect(
+      isNewsEvent(onAmendment("amendment_withdrawn", { by: "author" }), party),
+    ).toBe(false);
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", { by: "moderator" }),
+        party,
+      ),
+    ).toBe(false);
   });
 
   it("tells presenters what was settled about their document", () => {

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { createError, type H3Event } from "h3";
+import type { H3Event } from "h3";
 import { db } from "../../db";
 import { notificationSettings } from "../../db/schema";
 import type { Executor } from "../domain/events";
@@ -14,6 +14,7 @@ import {
 import {
   assertOptimisticLock,
   buildOptimisticLockCondition,
+  staleWriteError,
 } from "../optimisticLock";
 
 /** The one row of notification_settings. */
@@ -67,7 +68,7 @@ export async function updateNotificationSettings(input: {
     let saved: typeof notificationSettings.$inferSelect | undefined;
     if (!current) {
       if (input.updatedAt !== null) {
-        throw createError({ statusCode: 409, message: CONFLICT });
+        throw staleWriteError(CONFLICT);
       }
       [saved] = await tx
         .insert(notificationSettings)
@@ -80,7 +81,7 @@ export async function updateNotificationSettings(input: {
         .returning();
     } else {
       if (input.updatedAt === null) {
-        throw createError({ statusCode: 409, message: CONFLICT });
+        throw staleWriteError(CONFLICT);
       }
       assertOptimisticLock(input.updatedAt, current.updatedAt, CONFLICT);
       [saved] = await tx
@@ -97,7 +98,7 @@ export async function updateNotificationSettings(input: {
         )
         .returning();
     }
-    if (!saved) throw createError({ statusCode: 409, message: CONFLICT });
+    if (!saved) throw staleWriteError(CONFLICT);
 
     await recordAudit(tx, {
       event: input.event,

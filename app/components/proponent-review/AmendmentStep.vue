@@ -291,14 +291,14 @@ defineExpose({
 </script>
 
 <template>
-  <article class="space-y-6" :aria-labelledby="titleId">
+  <article class="space-y-4 lg:space-y-6" :aria-labelledby="titleId">
     <header class="space-y-2">
       <div class="flex flex-wrap items-center gap-2">
         <h3
           :id="titleId"
           ref="heading"
           tabindex="-1"
-          class="text-highlighted text-2xl font-bold tabular-nums outline-none"
+          class="text-highlighted text-xl font-bold tabular-nums outline-none lg:text-2xl"
         >
           {{ label }}
         </h3>

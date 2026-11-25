@@ -1,15 +1,51 @@
 <script lang="ts">
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import legacyWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { scrollParentOf } from "~/utils/scrollAnchor";
 import { createPdfCache, type LoadedPdf, type PdfLease } from "./-pdfCache";
 
+type PdfJs = typeof import("pdfjs-dist");
+
+let pdfjsLoad: Promise<PdfJs> | null = null;
+/**
+ * pdf.js, once per tab, with its worker set. The modern build calls
+ * `Promise.withResolvers`, which Safari only has from 17.4 (every browser
+ * on an iPhone with iOS 16): there the legacy build goes, with its own
+ * worker (the modern worker calls it too), which brings the polyfills.
+ * Everything else takes the modern one. Its text layer (`TextLayer`)
+ * comes from the same module as the document. A failed import is
+ * forgotten, so «Reintentar» tries it again.
+ */
+function loadPdfjs(): Promise<PdfJs> {
+  pdfjsLoad ??= (async () => {
+    const legacy =
+      typeof (Promise as { withResolvers?: unknown }).withResolvers !==
+      "function";
+    // The same API: only the classes' private fields tell the two builds'
+    // types apart.
+    const pdfjs = legacy
+      ? ((await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJs)
+      : await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = legacy ? legacyWorkerUrl : workerUrl;
+    return pdfjs;
+  })().catch((error: unknown) => {
+    pdfjsLoad = null;
+    throw error;
+  });
+  return pdfjsLoad;
+}
+
 /** Reads a PDF and the size of every page, asked of the worker side by side. */
 async function openPdf(url: string): Promise<LoadedPdf<PDFDocumentProxy>> {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-  const document = await pdfjs.getDocument({ url, isEvalSupported: false })
-    .promise;
+  const pdfjs = await loadPdfjs();
+  // The server answers Range requests: a long PDF comes in 1 MB parts, the
+  // ones the first pages need before the rest.
+  const document = await pdfjs.getDocument({
+    url,
+    isEvalSupported: false,
+    rangeChunkSize: 1 << 20,
+  }).promise;
   try {
     const pages = await Promise.all(
       Array.from({ length: document.numPages }, (_, index) =>
@@ -57,7 +93,8 @@ const pdfDocuments = createPdfCache<PDFDocumentProxy>({
  * - With `textLayer` (the default) every page also gets pdf.js's text layer,
  *   transparent over the drawing, so its text can be selected, copied,
  *   found with the browser's search and read by a screen reader, and its
- *   links to the web open in a new tab (other links are left out). The
+ *   links to the web open in a new tab (other links are left out): the
+ *   pages near the view first, the rest while the browser is idle. The
  *   session and the projection, which only show the pages, leave both out.
  *
  * - The PDF itself, read and with every page's size, stays loaded in the
@@ -97,10 +134,11 @@ const root = ref<HTMLElement | null>(null);
 const sizes = ref<PageSize[]>([]);
 /**
  * The PDF could not be read. Either this or `drawFailed` shows one line,
- * with a link to the file itself (`fileLink`) that the browser opens in its
- * own viewer: the way out where pdf.js cannot run, such as Safari before
- * 17.4 (every browser on an iPhone with iOS 16), which lacks
- * `Promise.withResolvers`.
+ * with a button to the file itself (`fileLink`) that the browser opens in
+ * its own viewer, the way out where pdf.js cannot run at all, and, when the
+ * read failed, «Reintentar», which reads it again (the tab's PDFs forget a
+ * failed read). A page that failed to draw tries again when it comes back
+ * into view.
  */
 const failed = ref(false);
 const width = ref(0);
@@ -137,6 +175,12 @@ const pdfPages = new Map<number, PDFPageProxy>();
 /** Bumped whenever a page's drawing is started or freed. */
 const pageTokens = new Map<number, number>();
 let loadToken = 0;
+/**
+ * Pages whose text layer is built, or being built, for the PDF on show.
+ * Unlike the drawing, a layer stays once built (it weighs little), so
+ * `free` leaves it.
+ */
+const layered = new Set<number>();
 
 const pageSelector = (number: number) => `[data-page="${number}"]`;
 const pageElement = (number: number) =>
@@ -152,6 +196,7 @@ function load(url: string): void {
   failed.value = false;
   drawFailed.value = false;
   freeAll();
+  layered.clear();
   shown.value = new Set();
   lease?.release();
   pdf = null;
@@ -183,7 +228,7 @@ async function show(
   if (token !== loadToken) return;
   observePages();
   emit("ready");
-  if (props.textLayer) void buildLayers(loaded.document, token);
+  if (props.textLayer) queueLayers(token);
 }
 
 function bumpToken(number: number): number {
@@ -273,8 +318,11 @@ function observePages(): void {
       for (const entry of entries) {
         const number = Number((entry.target as HTMLElement).dataset.page);
         if (!(number > 0)) continue;
-        if (entry.isIntersecting) void draw(number);
-        else free(number);
+        if (entry.isIntersecting) {
+          void draw(number);
+          // Its text and links first: the reader is here.
+          if (props.textLayer) void buildLayer(number, loadToken);
+        } else free(number);
       }
     },
     // A page and a half ahead, so scrolling never shows a blank page; past
@@ -302,55 +350,85 @@ function safeLink(url: unknown): string | null {
 }
 
 /**
- * The text layer and the links of every page, one page after another, at
- * the page's own scale (`--scale-factor` on the page follows the width, so
- * a resize needs nothing here).
+ * The text layer and the links of one page, at the page's own scale
+ * (`--scale-factor` on the page follows the width, so a resize needs
+ * nothing here). Once per page and PDF (`layered`).
  */
-async function buildLayers(
-  document: PDFDocumentProxy,
-  token: number,
-): Promise<void> {
-  const { TextLayer } = await import("pdfjs-dist");
-  for (let number = 1; number <= document.numPages; number++) {
-    if (token !== loadToken) return;
-    try {
-      const page = await document.getPage(number);
-      const element = pageElement(number);
-      const textBox = element?.querySelector<HTMLElement>(".textLayer");
-      const linkBox = element?.querySelector<HTMLElement>(".pdf-links");
-      if (!textBox || !linkBox || token !== loadToken) return;
-      const viewport = page.getViewport({ scale: 1 });
-      const textLayer = new TextLayer({
-        textContentSource: page.streamTextContent(),
-        container: textBox,
-        viewport,
-      });
-      await textLayer.render();
-      for (const annotation of await page.getAnnotations({
-        intent: "display",
-      })) {
-        if (annotation.subtype !== "Link") continue;
-        const href = safeLink(annotation.url);
-        if (!href || !Array.isArray(annotation.rect)) continue;
-        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(
-          annotation.rect,
-        );
-        const link = window.document.createElement("a");
-        link.href = href;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.title = href;
-        link.setAttribute("aria-label", href);
-        link.style.left = `${(100 * Math.min(x1, x2)) / viewport.width}%`;
-        link.style.top = `${(100 * Math.min(y1, y2)) / viewport.height}%`;
-        link.style.width = `${(100 * Math.abs(x2 - x1)) / viewport.width}%`;
-        link.style.height = `${(100 * Math.abs(y2 - y1)) / viewport.height}%`;
-        linkBox.append(link);
-      }
-    } catch {
-      // A page without its text still reads as a drawing.
+async function buildLayer(number: number, token: number): Promise<void> {
+  const document = pdf;
+  if (!document || token !== loadToken || layered.has(number)) return;
+  layered.add(number);
+  try {
+    const { TextLayer } = await loadPdfjs();
+    const page = await document.getPage(number);
+    const element = pageElement(number);
+    const textBox = element?.querySelector<HTMLElement>(".textLayer");
+    const linkBox = element?.querySelector<HTMLElement>(".pdf-links");
+    if (!textBox || !linkBox || token !== loadToken) return;
+    const viewport = page.getViewport({ scale: 1 });
+    const textLayer = new TextLayer({
+      textContentSource: page.streamTextContent(),
+      container: textBox,
+      viewport,
+    });
+    await textLayer.render();
+    for (const annotation of await page.getAnnotations({
+      intent: "display",
+    })) {
+      if (annotation.subtype !== "Link") continue;
+      const href = safeLink(annotation.url);
+      if (!href || !Array.isArray(annotation.rect)) continue;
+      const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(
+        annotation.rect,
+      );
+      const link = window.document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.title = href;
+      link.setAttribute("aria-label", href);
+      link.style.left = `${(100 * Math.min(x1, x2)) / viewport.width}%`;
+      link.style.top = `${(100 * Math.min(y1, y2)) / viewport.height}%`;
+      link.style.width = `${(100 * Math.abs(x2 - x1)) / viewport.width}%`;
+      link.style.height = `${(100 * Math.abs(y2 - y1)) / viewport.height}%`;
+      linkBox.append(link);
     }
+  } catch {
+    // A page without its text still reads as a drawing.
   }
+}
+
+/** Pages whose layers one idle moment builds. */
+const LAYER_BATCH = 5;
+
+/**
+ * The layers of the pages the reader has not reached, a few at a time while
+ * the browser is idle, so the browser's search and a screen reader still
+ * cover the whole PDF; the pages coming into view build theirs at once
+ * (the observer). Stops when another PDF loads or the view goes.
+ */
+function queueLayers(token: number): void {
+  const whenIdle = (callback: () => void): void => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(callback, { timeout: 2000 });
+    } else {
+      // Safari has no idle callback.
+      setTimeout(callback, 200);
+    }
+  };
+  let next = 1;
+  const step = async (): Promise<void> => {
+    const total = pdf?.numPages ?? 0;
+    let built = 0;
+    while (token === loadToken && next <= total && built < LAYER_BATCH) {
+      const number = next++;
+      if (layered.has(number)) continue;
+      await buildLayer(number, token);
+      built++;
+    }
+    if (token === loadToken && next <= total) whenIdle(() => void step());
+  };
+  whenIdle(() => void step());
 }
 
 // A new width draws the pages again, sharp, and the caller scrolls back.
@@ -397,22 +475,35 @@ onBeforeUnmount(() => {
     role="document"
     :aria-label="t('workspace.text.pdfFrame', { title })"
   >
-    <p
+    <div
       v-if="failed || drawFailed"
-      class="text-muted text-sm"
+      class="flex flex-col items-start gap-2"
       data-testid="pdf-pages-failed"
     >
-      {{ t("document.pdfPages.failed") }}
-      <ULink
-        v-if="fileLink"
-        :to="url"
-        external
-        target="_blank"
-        class="text-primary font-medium underline underline-offset-4"
-      >
-        {{ t("document.pdfPages.open") }}
-      </ULink>
-    </p>
+      <p class="text-muted text-sm">{{ t("document.pdfPages.failed") }}</p>
+      <div v-if="fileLink || failed" class="flex flex-wrap gap-2">
+        <UButton
+          v-if="fileLink"
+          :to="url"
+          external
+          target="_blank"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-external-link"
+          class="max-sm:min-h-11"
+          :label="t('document.pdfPages.open')"
+        />
+        <UButton
+          v-if="failed"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-refresh-ccw"
+          class="max-sm:min-h-11"
+          :label="t('document.pdfPages.retry')"
+          @click="load(url)"
+        />
+      </div>
+    </div>
     <div v-if="!failed && sizes.length === 0" class="space-y-3" role="status">
       <span class="sr-only">{{ t("common.loading") }}</span>
       <USkeleton aria-hidden="true" class="aspect-[1/1.414] w-full" />

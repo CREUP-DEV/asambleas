@@ -67,8 +67,6 @@ const emit = defineEmits<{
   removed: [ids: string[]];
   /** Someone changed them meanwhile: refetch the queue. */
   conflict: [];
-  /** A short sentence for the inbox's live region. */
-  announce: [message: string];
 }>();
 
 const { t } = useI18n();
@@ -238,7 +236,6 @@ function busyFor(id: string): ReviewAmendmentAction | null {
 }
 
 function notify(title: string, description?: string) {
-  emit("announce", description ? `${title}. ${description}` : title);
   toast.add({
     title,
     description,

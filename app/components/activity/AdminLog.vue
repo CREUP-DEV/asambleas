@@ -12,6 +12,13 @@ import type { ActivityMemberName } from "~/composables/activity/useActivityText"
  * IP. Names open that account's activity, the impersonation badge opens
  * what was done under it, and each row keeps its raw data behind a
  * "Datos técnicos" disclosure.
+ *
+ * Below lg it keeps its full height and the panel scrolls the page; from
+ * lg it scrolls in its own box (/admin/actividad bounds it) under a header
+ * that stays, opaque (E-115, M-102). That box is never shorter than 24rem:
+ * from lg to xl the filters take about four rows, and on a short window
+ * the bounded box would keep the header and a row or none, so there the
+ * panel scrolls again.
  */
 const props = withDefaults(
   defineProps<{
@@ -84,13 +91,18 @@ function technical(item: ActivityItemDto): string {
 
 <template>
   <UTable
+    sticky
     :data="props.items"
     :columns="columns"
     :loading="props.loading"
     :aria-label="t('activity.admin.logLabel')"
     :get-row-id="(row: ActivityItemDto) => `${row.kind}:${row.id}`"
-    class="border-default rounded-lg border"
-    :ui="{ td: 'align-top whitespace-normal', th: 'whitespace-nowrap' }"
+    class="border-default rounded-lg border max-lg:shrink-0 lg:min-h-96"
+    :ui="{
+      thead: 'bg-default',
+      td: 'align-top whitespace-normal',
+      th: 'whitespace-nowrap',
+    }"
   >
     <template #at-cell="{ row }">
       <time
@@ -130,7 +142,6 @@ function technical(item: ActivityItemDto): string {
           <ShellRoleBadge
             v-if="actorRole(row.original)"
             :role="actorRole(row.original)"
-            size="sm"
           />
         </div>
         <ULink
@@ -147,7 +158,7 @@ function technical(item: ActivityItemDto): string {
           <UBadge
             color="warning"
             variant="subtle"
-            size="sm"
+            size="md"
             icon="i-lucide-venetian-mask"
             class="whitespace-normal"
             :label="
@@ -214,7 +225,7 @@ function technical(item: ActivityItemDto): string {
         :label="sourceLabel(row.original.source)"
         :color="row.original.source === 'user' ? 'neutral' : 'info'"
         variant="subtle"
-        size="sm"
+        size="md"
         class="whitespace-nowrap"
       />
     </template>

@@ -262,11 +262,11 @@ async function answer(decision: AcceptanceBody["decision"]): Promise<void> {
           </div>
         </template>
       </template>
-      <!-- Closed on its own before anyone answered for this amendment. -->
       <p
         v-else-if="notNeeded"
         class="text-muted flex items-start gap-1.5 text-sm"
       >
+        <!-- Closed on its own before anyone answered for this amendment. -->
         <UIcon
           name="i-lucide-info"
           class="mt-0.5 size-4 shrink-0"
@@ -274,17 +274,19 @@ async function answer(decision: AcceptanceBody["decision"]): Promise<void> {
         />
         {{ notNeeded }}
       </p>
-      <!-- Everyone else (co-authors included): who answered, what, when. -->
-      <p v-else-if="showState" class="text-default text-sm">
-        {{
-          t(`transactional.answer.state.${party.decision}`, {
-            member: party.member.acronym,
-          })
-        }}
-        <span v-if="party.decidedAt" class="text-dimmed text-xs">
-          · {{ formatDateTime(party.decidedAt, { locale }) }}
-        </span>
-      </p>
+      <template v-else-if="showState">
+        <!-- Everyone else (co-authors included): who answered, what, when. -->
+        <p class="text-default text-sm">
+          {{
+            t(`transactional.answer.state.${party.decision}`, {
+              member: party.member.acronym,
+            })
+          }}
+          <span v-if="party.decidedAt" class="text-dimmed text-xs">
+            · {{ formatDateTime(party.decidedAt, { locale }) }}
+          </span>
+        </p>
+      </template>
     </template>
   </div>
 </template>

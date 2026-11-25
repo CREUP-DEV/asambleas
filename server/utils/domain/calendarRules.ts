@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { createError, type H3Event } from "h3";
+import type { H3Event } from "h3";
 import { db } from "../../db";
 import { calendarRules } from "../../db/schema";
 import type { Executor } from "./events";
@@ -20,6 +20,7 @@ import {
 import {
   assertOptimisticLock,
   buildOptimisticLockCondition,
+  staleWriteError,
 } from "../optimisticLock";
 
 /**
@@ -121,7 +122,7 @@ export async function updateCalendarRules(input: {
     let before: CalendarRules;
     if (!current) {
       if (input.updatedAt !== null) {
-        throw createError({ statusCode: 409, message: conflict });
+        throw staleWriteError(conflict);
       }
       before = normalizeCalendarRules(INITIAL_CALENDAR_RULES[input.type]);
       [saved] = await tx
@@ -131,7 +132,7 @@ export async function updateCalendarRules(input: {
         .returning();
     } else {
       if (input.updatedAt === null) {
-        throw createError({ statusCode: 409, message: conflict });
+        throw staleWriteError(conflict);
       }
       assertOptimisticLock(input.updatedAt, current.updatedAt, conflict);
       before = normalizeCalendarRules(storedRules(current));
@@ -149,7 +150,7 @@ export async function updateCalendarRules(input: {
         )
         .returning();
     }
-    if (!saved) throw createError({ statusCode: 409, message: conflict });
+    if (!saved) throw staleWriteError(conflict);
 
     await recordAudit(tx, {
       event: input.event,

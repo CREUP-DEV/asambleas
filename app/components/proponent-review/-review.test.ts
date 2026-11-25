@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { computeApprovalWarnings } from "~~/server/utils/domain/amendments";
+import type { AmendmentOp, Block } from "~~/shared/types/content";
 import type {
   AcceptanceDto,
   AmendmentDto,
@@ -1158,20 +1160,60 @@ describe("what accepting sets off", () => {
     expect(acceptIncorporates(approved, "incorporate")).toBe(false);
   });
 
-  it("lists the overlapping amendments already in the text", () => {
-    const byId = new Map<string, Pick<AmendmentDto, "status">>([
-      ["a", approved],
-      ["b", open],
-      ["c", { status: "rejected" }],
-    ]);
-    const overlaps = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "x" }];
-    expect(incorporatedClashIds(open, "incorporate", overlaps, byId)).toEqual([
+  const replace = (from: number, to: number, text: string): AmendmentOp => ({
+    op: "replace",
+    blockId: "b1",
+    from,
+    to,
+    text,
+    baseText: "El texto de base".slice(from, to),
+  });
+  const insertAfter = (id: string): AmendmentOp => ({
+    op: "insert",
+    afterBlockId: "b1",
+    blocks: [{ id, type: "paragraph", text: "Nuevo." } as Block],
+  });
+
+  it("lists the approved amendments it meets, as the server warns", () => {
+    const target = { id: "t", ...open, ops: [replace(0, 2, "Un")] };
+    const others = [
+      // Same text: meets.
+      { id: "a", ...approved, ops: [replace(1, 5, "x")] },
+      // Not approved: left out.
+      { id: "b", ...open, ops: [replace(0, 2, "Lo")] },
+      { id: "c", status: "rejected" as const, ops: [replace(0, 2, "Lo")] },
+      // Text that touches it (`adjacent`): meets, though findOverlaps does
+      // not see a collision.
+      { id: "d", ...approved, ops: [replace(2, 3, "_")] },
+      // New blocks after the same block (`same_position`): never meets.
+      { id: "e", ...approved, ops: [insertAfter("n1")] },
+      target,
+    ];
+    expect(incorporatedClashIds(target, "incorporate", others)).toEqual([
       "a",
+      "d",
     ]);
-    expect(incorporatedClashIds(open, "vote", overlaps, byId)).toEqual([]);
+    expect(incorporatedClashIds(target, "vote", others)).toEqual([]);
     expect(
-      incorporatedClashIds(approved, "incorporate", overlaps, byId),
+      incorporatedClashIds({ ...target, ...approved }, "incorporate", others),
     ).toEqual([]);
+  });
+
+  it("gives the server's answer for adjacent and same-position pairs", () => {
+    const target = {
+      id: "t",
+      ...open,
+      ops: [replace(0, 2, "Un"), insertAfter("n0")],
+    };
+    const approvedOnes = [
+      { id: "adjacent", ...approved, ops: [replace(2, 3, "_")] },
+      { id: "same_position", ...approved, ops: [insertAfter("n1")] },
+    ];
+    const client = incorporatedClashIds(target, "incorporate", approvedOnes);
+    expect(client).toEqual(["adjacent"]);
+    expect(client).toEqual(
+      computeApprovalWarnings(target, approvedOnes, []).overlapsWithApproved,
+    );
   });
 
   it("tells when the answers are still reserved, as the server does", () => {

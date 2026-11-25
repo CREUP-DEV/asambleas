@@ -11,6 +11,7 @@
  * a component; import it explicitly.
  */
 import type { AmendmentKind } from "~~/shared/constants/domain";
+import { lateNeedsAssembly } from "~~/shared/utils/documentDeadline";
 import type {
   MeWorkAcceptanceDto,
   MeWorkAmendmentDto,
@@ -52,6 +53,11 @@ export type HomeWorkTaskKind =
  * not decided yet.
  */
 export type HomeWorkUpdateKind =
+  /**
+   * A draft past its presentation deadline: only the Secretaría may present
+   * it late, so it is no task (MeWorkDocumentDto.presentationClosedAt).
+   */
+  | "document_closed"
   | "document_review"
   | "document_published"
   /** A transactional the user proposed, waiting for the main authors. */
@@ -119,6 +125,12 @@ export interface HomeWorkUpdate {
   assembly: MeWorkAssemblyRef;
   document: HomeWorkDocumentRef;
   amendment: (HomeWorkAmendmentRef & { status: string }) | null;
+  /**
+   * Only for `document_closed`: the deadline that passed, and whether the
+   * assembly must agree to treat it once presented late (lateNeedsAssembly:
+   * not for a report).
+   */
+  closed?: { at: string; needsAssembly: boolean };
 }
 
 function documentRef(entry: MeWorkDocumentDto): HomeWorkDocumentRef {
@@ -141,6 +153,8 @@ export function homeWorkDocumentTask(
 ): HomeWorkTaskKind | null {
   const document = entry.document;
   if (document.status !== "draft") return null;
+  // Past its deadline: an update (document_closed), not a task.
+  if (entry.presentationClosedAt) return null;
   if (document.correctionRequestedAt || document.correctionNote) {
     return "document_correction";
   }
@@ -293,6 +307,8 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
 
 function documentUpdate(entry: MeWorkDocumentDto): HomeWorkUpdateKind | null {
   switch (entry.document.status) {
+    case "draft":
+      return entry.presentationClosedAt ? "document_closed" : null;
     case "submitted":
       return "document_review";
     case "published":
@@ -328,6 +344,7 @@ function amendmentUpdate(entry: MeWorkAmendmentDto): HomeWorkUpdateKind | null {
 
 const UPDATE_RANK: Record<HomeWorkUpdateKind, number> = {
   document_review: 0,
+  document_closed: 1,
   amendment_authors: 0,
   amendment_review: 0,
   amendment_late: 1,
@@ -340,8 +357,9 @@ const UPDATE_RANK: Record<HomeWorkUpdateKind, number> = {
 /**
  * Where the user's documents and amendments stand when there is nothing
  * for them to do: waiting for someone first (the Secretaría, the main
- * authors of what a transactional replaces), then late ones waiting for
- * the assembly and validated ones, then published. A published document
+ * authors of what a transactional replaces), then drafts past their
+ * deadline, late ones waiting for the assembly and validated ones, then
+ * published. A published document
  * whose amendments wait for the user's answer is left out: it is already a
  * task.
  */
@@ -364,6 +382,14 @@ export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
       assembly: entry.assembly,
       document: documentRef(entry),
       amendment: null,
+      ...(kind === "document_closed" && entry.presentationClosedAt
+        ? {
+            closed: {
+              at: entry.presentationClosedAt,
+              needsAssembly: lateNeedsAssembly(entry.document.kind),
+            },
+          }
+        : {}),
     });
   }
   for (const entry of work.amendments) {
@@ -649,11 +675,17 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
           })
         : make("home.news.amendment.lapsed");
     case "amendment_withdrawn":
+      // A transactional withdrawn after it replaced the reader's amendment
+      // (value "replaced"): that amendment stays replaced. Its own authors
+      // read the plain withdrawal.
+      if (news.value === "replaced" && !news.ownAmendment) {
+        return make("home.news.amendment.withdrawnReplacing");
+      }
       // A transactional closed on its own, not withdrawn by anyone: an
       // amendment it groups was settled first, and the value names it. Its
       // proposer and its parties read it ("tu transaccional", "la
       // transaccional").
-      return news.value
+      return news.value && news.value !== "replaced"
         ? make("home.news.amendment.closedBy", "neutral", null, phrase, {
             code: news.value,
           })

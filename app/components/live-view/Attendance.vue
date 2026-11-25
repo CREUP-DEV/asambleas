@@ -11,10 +11,15 @@ import type { LiveAttendance } from "~/components/live-view/-attendance";
  * another day (Europe/Madrid) says its day: in a session of several days the
  * latest count may be yesterday's.
  */
-const props = defineProps<{
-  /** Null before the Mesa's first count. */
-  attendance: LiveAttendance | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** Null before the Mesa's first count. */
+    attendance: LiveAttendance | null;
+    /** Id of the heading, for aria-labelledby. */
+    headingId?: string;
+  }>(),
+  { headingId: "live-attendance-title" },
+);
 
 const { t, locale } = useI18n();
 const now = useAppNow();
@@ -60,11 +65,8 @@ const takenAt = computed(() => {
 </script>
 
 <template>
-  <section aria-labelledby="live-attendance-title" class="flex flex-col gap-3">
-    <h2
-      id="live-attendance-title"
-      class="text-highlighted text-lg font-semibold"
-    >
+  <section :aria-labelledby="headingId" class="flex flex-col gap-3">
+    <h2 :id="headingId" class="text-highlighted text-lg font-semibold">
       {{ t("liveView.attendance.title") }}
     </h2>
 

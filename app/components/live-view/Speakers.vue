@@ -186,10 +186,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Projection: one band, two lines at most. Nobody with the floor says
-         nothing: the screen keeps that room for the document and the
-         agenda. -->
     <div v-else class="flex min-w-0 items-center gap-x-[clamp(1rem,2vw,2rem)]">
+      <!-- Projection: one band, two lines at most. Nobody with the floor says
+           nothing: the screen keeps that room for the document and the
+           agenda. -->
       <div
         class="flex min-w-0 flex-1 flex-col gap-y-[clamp(0.25rem,0.4vw,0.5rem)]"
       >

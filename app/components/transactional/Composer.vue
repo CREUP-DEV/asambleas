@@ -1046,7 +1046,6 @@ const stepBadge =
     </div>
   </section>
 
-  <!-- Composing -->
   <form
     v-else
     :id="formId"
@@ -1055,6 +1054,7 @@ const stepBadge =
     :aria-labelledby="`${formId}-title`"
     @submit.prevent="send"
   >
+    <!-- Composing -->
     <header class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
         <h2
@@ -1506,77 +1506,76 @@ const stepBadge =
         </template>
       </UCollapsible>
 
-      <!-- A member may present it together with offices of the CEA. -->
-      <UCollapsible
-        v-else-if="!revise && executiveItems.length > 0"
-        v-model:open="executiveOpen"
-      >
-        <UButton
-          color="neutral"
-          variant="link"
-          size="sm"
-          class="px-0"
-          :icon="
-            executiveOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-          "
-          :label="t('transactional.composer.executiveOptions')"
-        />
-        <template #content>
-          <div class="border-default mt-2 rounded-md border p-3 sm:p-4">
-            <UFormField
-              :label="t('transactional.composer.executiveAuthors')"
-              :help="
-                seesExecutiveMembers
-                  ? t('transactional.composer.executiveAuthorsOptional')
-                  : t('transactional.composer.executiveAuthorsHint')
-              "
-            >
-              <USelectMenu
-                v-model="executiveAuthorIds"
-                :items="executiveItems"
-                value-key="value"
-                :ui="MEMBER_MENU_UI"
-                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
-                multiple
-                class="w-full"
-                :placeholder="
-                  t('transactional.composer.executiveAuthorsPlaceholder')
-                "
-                :aria-label="
-                  selectMenuLabel(
-                    t('transactional.composer.executiveAuthors'),
-                    executiveItems,
-                    executiveAuthorIds,
-                    t('transactional.composer.executiveAuthorsPlaceholder'),
-                  )
-                "
-                :search-input="labelledSearch(t('common.search'))"
-              />
-            </UFormField>
-            <div v-if="mainAuthor.required" ref="mainAuthorBox" class="mt-4">
+      <template v-else-if="!revise && executiveItems.length > 0">
+        <!-- A member may present it together with offices of the CEA. -->
+        <UCollapsible v-model:open="executiveOpen">
+          <UButton
+            color="neutral"
+            variant="link"
+            size="sm"
+            class="px-0"
+            :icon="
+              executiveOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+            :label="t('transactional.composer.executiveOptions')"
+          />
+          <template #content>
+            <div class="border-default mt-2 rounded-md border p-3 sm:p-4">
               <UFormField
-                :label="t('amendment.composer.mainAuthor')"
-                required
-                :help="t('transactional.composer.mainAuthorHint')"
-                :error="
-                  attempted && mainAuthor.missing
-                    ? t('amendment.composer.mainAuthorRequired')
-                    : undefined
+                :label="t('transactional.composer.executiveAuthors')"
+                :help="
+                  seesExecutiveMembers
+                    ? t('transactional.composer.executiveAuthorsOptional')
+                    : t('transactional.composer.executiveAuthorsHint')
                 "
               >
-                <URadioGroup
-                  v-model="mainAuthorId"
-                  :items="mainAuthorItems"
-                  :legend="t('amendment.composer.mainAuthor')"
-                  :ui="{ legend: 'sr-only' }"
-                  aria-required="true"
-                  size="sm"
+                <USelectMenu
+                  v-model="executiveAuthorIds"
+                  :items="executiveItems"
+                  value-key="value"
+                  :ui="MEMBER_MENU_UI"
+                  :filter-fields="MEMBER_MENU_FILTER_FIELDS"
+                  multiple
+                  class="w-full"
+                  :placeholder="
+                    t('transactional.composer.executiveAuthorsPlaceholder')
+                  "
+                  :aria-label="
+                    selectMenuLabel(
+                      t('transactional.composer.executiveAuthors'),
+                      executiveItems,
+                      executiveAuthorIds,
+                      t('transactional.composer.executiveAuthorsPlaceholder'),
+                    )
+                  "
+                  :search-input="labelledSearch(t('common.search'))"
                 />
               </UFormField>
+              <div v-if="mainAuthor.required" ref="mainAuthorBox" class="mt-4">
+                <UFormField
+                  :label="t('amendment.composer.mainAuthor')"
+                  required
+                  :help="t('transactional.composer.mainAuthorHint')"
+                  :error="
+                    attempted && mainAuthor.missing
+                      ? t('amendment.composer.mainAuthorRequired')
+                      : undefined
+                  "
+                >
+                  <URadioGroup
+                    v-model="mainAuthorId"
+                    :items="mainAuthorItems"
+                    :legend="t('amendment.composer.mainAuthor')"
+                    :ui="{ legend: 'sr-only' }"
+                    aria-required="true"
+                    size="sm"
+                  />
+                </UFormField>
+              </div>
             </div>
-          </div>
-        </template>
-      </UCollapsible>
+          </template>
+        </UCollapsible>
+      </template>
     </template>
 
     <footer

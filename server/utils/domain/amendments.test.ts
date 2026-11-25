@@ -69,6 +69,7 @@ const {
   prepareAmendmentOps,
   reIdInsertedBlocks,
   redactAmendmentEventPayload,
+  replacesSourcesNow,
   requestedDraftAuthorIds,
   sourcesAreOpen,
   toPositionDto,
@@ -505,6 +506,33 @@ describe("amendmentCapabilities", () => {
       expect(amendmentCapabilities(leftBehind).withdraw).toBe(true);
     });
 
+    it("records the replacement only for a transactional in force", () => {
+      // Whoever withdraws it, the author (withdrawAmendment) or the Mesa
+      // from the console (recordAmendmentOutcome): its sources stay
+      // `transacted`, so their authors are told.
+      const party = (decision: "accepted" | "pending" | "rejected") => ({
+        role: "author" as const,
+        decision,
+      });
+      const accepted = [party("accepted"), party("accepted")];
+      expect(replacesSourcesNow("transactional", at, accepted)).toBe(true);
+      expect(replacesSourcesNow("transactional", null, accepted)).toBe(false);
+      expect(
+        replacesSourcesNow("transactional", at, [
+          party("accepted"),
+          party("pending"),
+        ]),
+      ).toBe(false);
+      // The earlier rule's presenter rows do not count.
+      expect(
+        replacesSourcesNow("transactional", at, [
+          ...accepted,
+          { role: "proponent" as const, decision: "pending" as const },
+        ]),
+      ).toBe(true);
+      expect(replacesSourcesNow("partial", at, accepted)).toBe(false);
+    });
+
     it("refuses the author's withdrawal on the server with a reason", async () => {
       vi.mocked(actorHelpers.canModerate).mockReturnValue(false);
       try {
@@ -711,6 +739,28 @@ describe("computeApprovalWarnings", () => {
     ).toEqual({
       overlapsWithApproved: ["a2"],
       incompatible: ["a4"],
+    });
+  });
+
+  it("lists text that only touches it and never new blocks at the same point", () => {
+    const insertAfterB1 = (id: string): AmendmentOp => ({
+      op: "insert",
+      afterBlockId: "b1",
+      blocks: [block(id, "Nuevo.")],
+    });
+    const target = {
+      id: "t",
+      ops: [replace("b1", 0, 2, "Un"), insertAfterB1("n0")],
+    };
+    const approved = [
+      // Adjacent: replaces [2,3) right after the target's [0,2). Meets.
+      { id: "adjacent", ops: [replace("b1", 2, 3, "_")] },
+      // Same position: new blocks after b1, no text changed. Never meets.
+      { id: "same_position", ops: [insertAfterB1("n1")] },
+    ];
+    expect(computeApprovalWarnings(target, approved, [])).toEqual({
+      overlapsWithApproved: ["adjacent"],
+      incompatible: [],
     });
   });
 });

@@ -623,8 +623,8 @@ async function askCorrection(): Promise<void> {
       </div>
     </form>
 
-    <!-- Secretaría: validate, or ask for a correction. -->
     <div v-else-if="canValidate" class="flex flex-col gap-2">
+      <!-- Secretaría: validate, or ask for a correction. -->
       <div class="flex flex-wrap items-center gap-2">
         <UButton
           icon="i-lucide-badge-check"
@@ -664,8 +664,8 @@ async function askCorrection(): Promise<void> {
       </p>
     </div>
 
-    <!-- Secretaría: a draft it sent back that cannot be fixed after all. -->
     <div v-else-if="returned" class="flex flex-col gap-1.5">
+      <!-- Secretaría: a draft it sent back that cannot be fixed after all. -->
       <UButton
         ref="askButton"
         class="self-start"
@@ -682,14 +682,14 @@ async function askCorrection(): Promise<void> {
       </p>
     </div>
 
-    <!--
-      Secretaría: make a validated amendment public. Secretaría or Mesa:
-      record the assembly's decision on a late one.
-    -->
     <div
       v-else-if="canPublish || canAdmit"
       class="flex flex-wrap items-center gap-2"
     >
+      <!--
+        Secretaría: make a validated amendment public. Secretaría or Mesa:
+        record the assembly's decision on a late one.
+      -->
       <UButton
         v-if="canPublish"
         icon="i-lucide-eye"

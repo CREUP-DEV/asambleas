@@ -345,6 +345,13 @@ export interface MeWorkAssemblyRef {
 export interface MeWorkDocumentDto {
   assembly: MeWorkAssemblyRef;
   document: DocumentSummaryDto;
+  /**
+   * A draft of the member whose presentation is closed (past its kind's
+   * deadline, not expected by the Secretaría nor sent back for a
+   * correction): the deadline that passed. Only the Secretaría may present
+   * it late, so it is no task. Absent otherwise.
+   */
+  presentationClosedAt?: IsoDate;
 }
 
 export interface MeWorkAmendmentDto {

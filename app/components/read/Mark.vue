@@ -38,17 +38,17 @@ const shown = computed<ReadState | null>(() => {
     data-testid="read-mark"
     data-state="changed"
   />
-  <!-- The dot and the tick name themselves in a tooltip over a 24 px box
-       (E-031), whose negative margin keeps the footprint of the 8 px dot or
-       the 16 px tick, so rows and pills keep their height. The box takes
-       the pointer back from a strip that lets clicks through (DocumentRow).
-       No tab stop: screen readers hear the sr-only text. -->
   <span
     v-else-if="shown === 'unread'"
     class="inline-flex shrink-0 items-center"
     data-testid="read-mark"
     data-state="unread"
   >
+    <!-- The dot and the tick name themselves in a tooltip over a 24 px box
+         (E-031), whose negative margin keeps the footprint of the 8 px dot or
+         the 16 px tick, so rows and pills keep their height. The box takes
+         the pointer back from a strip that lets clicks through (DocumentRow).
+         No tab stop: screen readers hear the sr-only text. -->
     <UTooltip :text="t(`readMarks.unread.${kind}`)">
       <span
         class="pointer-events-auto -m-2 inline-flex size-6 shrink-0 items-center justify-center"

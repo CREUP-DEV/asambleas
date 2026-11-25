@@ -128,7 +128,10 @@ import { staleSheetRow } from "~/components/control-sheet/-model";
 import { sessionMarkAction } from "~~/shared/utils/sessionProgress";
 import { amendmentRule } from "~~/shared/utils/positions";
 import { useHeadcounts } from "./useSessionHeadcounts";
-import { useSessionSpeakers } from "./useSessionSpeakers";
+import {
+  UNDO_TOAST_DURATION_MS,
+  useSessionSpeakers,
+} from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
 import { useProjectionControl } from "./useProjectionControl";
 import { latestTallySender } from "./liveTally";
@@ -2224,6 +2227,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           title: t(resultKey, { code }),
           color: result.amendment.status === "rejected" ? "warning" : "success",
           icon: "i-lucide-check",
+          ...(action.action === "reopen"
+            ? {}
+            : { duration: UNDO_TOAST_DURATION_MS }),
           actions:
             action.action === "reopen"
               ? undefined
@@ -2427,6 +2433,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         }),
         color: "success",
         icon: "i-lucide-check",
+        duration: UNDO_TOAST_DURATION_MS,
         actions: [
           {
             label: t("session.actions.undo"),
@@ -2716,6 +2723,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         color: reversed ? "warning" : "success",
         icon: reversed ? "i-lucide-triangle-alert" : "i-lucide-check",
         // A mistaken decision is corrected with a new, recorded one.
+        duration: UNDO_TOAST_DURATION_MS,
         actions: [
           {
             label: t("session.actions.undo"),

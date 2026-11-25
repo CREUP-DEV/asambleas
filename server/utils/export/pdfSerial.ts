@@ -137,12 +137,126 @@ export function expandLigatures(text: string): string {
   return text.replace(LIGATURES, (ligature) => ligature.normalize("NFKC"));
 }
 
+/**
+ * The hyphen (U+2010) and the non-breaking hyphen (U+2011): Raleway draws
+ * neither, so they print as the hyphen-minus it has. The non-breaking one
+ * loses its meaning there (accepted, it printed as a box before): pdfmake
+ * may break a line after the hyphen-minus, so «2025‑2026» can wrap at it.
+ */
+const HYPHENS = /[\u2010\u2011]/g;
+
+/** What every string of a definition becomes: letters Raleway draws. */
+export function pdfText(text: string): string {
+  return expandLigatures(text).replace(HYPHENS, "-");
+}
+
+/**
+ * The family of Raleway's latin-ext cut (pdfmake.ts registers it next to
+ * Raleway): the letters the embedded Raleway, a latin subset, has no glyph
+ * for (ć, ł, ő, č, ş...).
+ */
+export const RALEWAY_EXT_FAMILY = "RalewayExt";
+
+/**
+ * The code points the latin-ext cut draws and Raleway does not: the
+ * latin-ext unicode-range of @fontsource/raleway, less the few the latin
+ * file has too (U+0102, U+0131, U+0152-0153). pdfSerial.test.ts checks it
+ * against both files. Raleway has no ≥, ≤ or →: those stay boxes.
+ */
+const LATIN_EXT_SOURCE =
+  "\u0100\u0101\u0103-\u0130\u0132-\u0151\u0154-\u02BA\u02BD-\u02C5\u02C7-\u02CC" +
+  "\u02CE-\u02D7\u02DD-\u02FF\u1D00-\u1DBF\u1E00-\u1E9F\u1EF2-\u1EFF\u2020" +
+  "\u20A0-\u20AB\u20AD-\u20C0\u2113\u2C60-\u2C7F\uA720-\uA7FF";
+export const LATIN_EXT = new RegExp(`[${LATIN_EXT_SOURCE}]`, "u");
+const LATIN_EXT_RUNS = new RegExp(`([${LATIN_EXT_SOURCE}]+)`, "u");
+
+type TextRun = string | { text: string; font: string };
+
+/**
+ * `text` cut where it switches between Raleway and its latin-ext cut: the
+ * plain parts as strings, the others in RALEWAY_EXT_FAMILY. A word cut so
+ * («Gda|ń|sk») stays one word on its line, and a justified line opens no
+ * space inside it (pdfJustify.ts).
+ */
+export function latinExtRuns(text: string): TextRun[] {
+  return text
+    .split(LATIN_EXT_RUNS)
+    .map((part, index): TextRun =>
+      index % 2 === 1 ? { text: part, font: RALEWAY_EXT_FAMILY } : part,
+    )
+    .filter((run) => typeof run !== "string" || run.length > 0);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * An inline of a text array, cut into runs (latinExtRuns) that keep its
+ * properties: pdfmake drops the properties of an inline whose own `text`
+ * is an array, so a bold word must not become one. Only the first run keeps
+ * the `id`, a destination named once.
+ */
+function inlineRuns(inline: unknown): unknown[] {
+  if (typeof inline === "string") {
+    return LATIN_EXT.test(inline) ? latinExtRuns(inline) : [inline];
+  }
+  if (
+    isPlainObject(inline) &&
+    typeof inline.text === "string" &&
+    LATIN_EXT.test(inline.text)
+  ) {
+    const { text, id, ...rest } = inline as { text: string; id?: unknown };
+    return latinExtRuns(text).map((run, index) => ({
+      ...(index === 0 && id !== undefined ? { id } : {}),
+      ...rest,
+      ...(typeof run === "string" ? { text: run } : run),
+    }));
+  }
+  return [withLatinExtFont(inline, null)];
+}
+
+/**
+ * The serialized definition with its letters outside Raleway in its
+ * latin-ext cut: a node's `text` string becomes runs, an inline of a text
+ * array is cut into inlines (inlineRuns), and a bare string where a node
+ * goes (an item of `content`, `stack`, a table row, a list) becomes a node
+ * with runs. Strings under any other key (styles, ids, links, metadata) stay
+ * as they are. What has nothing to change is returned as it was.
+ */
+function withLatinExtFont(value: unknown, key: string | null): unknown {
+  if (typeof value === "string") {
+    if (!LATIN_EXT.test(value)) return value;
+    if (key === "text") return latinExtRuns(value);
+    return key === null ? { text: latinExtRuns(value) } : value;
+  }
+  if (Array.isArray(value)) {
+    const items =
+      key === "text"
+        ? value.flatMap(inlineRuns)
+        : value.map((item) => withLatinExtFont(item, null));
+    return items.length === value.length &&
+      items.every((item, index) => item === value[index])
+      ? value
+      : items;
+  }
+  if (!isPlainObject(value)) return value;
+  let result: Record<string, unknown> | null = null;
+  for (const [entryKey, item] of Object.entries(value)) {
+    const routed = withLatinExtFont(item, entryKey);
+    if (routed === item) continue;
+    result ??= { ...value };
+    result[entryKey] = routed;
+  }
+  return result ?? value;
+}
+
 function toSerial(value: unknown, path: string): unknown {
   if (value === null) return null;
   switch (typeof value) {
     case "string":
       // Every string pdfmake lays out crosses here, in every PDF.
-      return expandLigatures(value);
+      return pdfText(value);
     case "boolean":
       return value;
     case "number":
@@ -198,7 +312,9 @@ function toSerial(value: unknown, path: string): unknown {
 export function serializePdfDefinition(
   definition: TDocumentDefinitions,
 ): string {
-  return JSON.stringify(toSerial(definition, "definition"));
+  return JSON.stringify(
+    withLatinExtFont(toSerial(definition, "definition"), "definition"),
+  );
 }
 
 /**

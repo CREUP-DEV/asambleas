@@ -147,6 +147,10 @@ export async function useActivityPages<
   }
 
   await first;
+  // On the server the immediate watch above ran before the page arrived and
+  // stops there (SSR watchers run once), so the cursor is taken from the
+  // page here: the server renders «Cargar más» as hydration will.
+  if (import.meta.server) reset(first.data.value);
 
   return {
     /** The first page as the server sent it (MeActivityPageDto adds the notice). */

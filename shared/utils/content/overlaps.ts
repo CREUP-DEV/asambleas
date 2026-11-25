@@ -1,5 +1,16 @@
 import type { AmendmentInput, AmendmentOp } from "../../types/content";
 
+/*
+ * How the members' composers, the session's queue and the legacy
+ * `consolidate` see collisions between amendments: the «Mismo pasaje»
+ * grouping, the «Coincide en el texto con» chips and the order a
+ * consolidation applies them in. The approved text and every approval
+ * warning (the server's on approving, `computeApprovalWarnings`, and the
+ * proponent's «Choca con … ya incorporada», `incorporatedClashIds`) follow
+ * `amendmentsMeet` in `passages.ts` instead, which also counts text that
+ * only touches; never use these kinds to decide one of those.
+ */
+
 /**
  * - `same_text`: both change intersecting text of the same block (or insert
  *   at the very same point), so they cannot both be applied as written. A
@@ -92,7 +103,11 @@ function collide(a: Footprint, b: Footprint): OverlapKind | null {
   return null;
 }
 
-/** Hard collisions prevent applying both amendments together. */
+/**
+ * Hard collisions: the composers and the legacy `consolidate` cannot apply
+ * both amendments together as written. Approval warnings do not use it
+ * (`amendmentsMeet` in `passages.ts`).
+ */
 export function isHardOverlap(kind: OverlapKind | null): boolean {
   return kind === "same_text" || kind === "removed_block";
 }

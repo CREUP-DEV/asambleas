@@ -66,15 +66,15 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         v-if="voided"
         color="neutral"
         variant="outline"
-        size="sm"
+        size="md"
         :label="t('controlSheet.itemVotes.voided')"
       />
-      <!-- The size of «Resultado»'s badges, so the cell reads as one. -->
+      <!-- md, like «Resultado»'s badges, so the cell reads as one. -->
       <UBadge
         v-if="vote.election"
         color="neutral"
         variant="subtle"
-        size="sm"
+        size="md"
         icon="i-lucide-vote"
         :label="t('amendment.vote.election.title')"
       />
@@ -82,7 +82,7 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         v-else-if="alternatives"
         color="neutral"
         variant="subtle"
-        size="sm"
+        size="md"
         icon="i-lucide-scale"
         :label="t('amendment.vote.alternatives.title')"
       />

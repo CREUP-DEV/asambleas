@@ -166,6 +166,18 @@ html {
  * - dark: text on the green tint 11.5:1, underline 8.0:1; removed text on
  *   the red tint 6.1:1 (5.1:1 on an elevated surface), strike 5.5:1.
  */
+/*
+ * The measure of text being written (E-059): a length, so `70ch` is worked
+ * out once, in the content's font where it is set (`.content-editor`), and
+ * every block below, a heading in a larger size included, inherits the same
+ * width.
+ */
+@property --content-measure {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 832px;
+}
+
 :root {
   --cx-ins-bg: var(--ui-color-success-100);
   --cx-ins-line: var(--ui-color-success-700);
@@ -608,16 +620,21 @@ html {
   }
 
   /*
-   * In a wide editor the text keeps a comfortable measure (about 90
-   * characters, near a line of the PDF), starting where the toolbar does
-   * (centred, it began far from the edge it is read from), and tables keep
-   * it too; only a table of six columns or more (a balance sheet, landscape
-   * in Word) takes the whole width.
+   * In a wide editor the text keeps a comfortable measure (about 70
+   * characters, `--content-measure`; at 52rem a line ran past 90 on a wide
+   * screen, E-059), starting where the toolbar does (centred, it began far
+   * from the edge it is read from), and tables keep it too; only a table of
+   * six columns or more (a balance sheet, landscape in Word) takes the
+   * whole width.
    */
+  .content-editor.ProseMirror {
+    --content-measure: 70ch;
+  }
+
   .content-editor.ProseMirror > :not(.tableWrapper),
   .content-editor.ProseMirror
     > .tableWrapper:not(:has(> table > tbody > tr > :nth-child(6))) {
-    max-width: 52rem;
+    max-width: var(--content-measure);
     margin-inline: 0 auto;
   }
 
@@ -948,6 +965,34 @@ html {
    * excerpts still follow it. After the rules above, which it overrides.
    */
   @media (width < 40rem) {
+    .rich-text h2 {
+      font-size: 1.375rem;
+    }
+
+    .rich-text h3 {
+      font-size: 1.2rem;
+    }
+
+    .rich-text .cx-heading-2 {
+      font-size: calc(1em * 1.375 / 1.0625);
+    }
+
+    .rich-text .cx-heading-3 {
+      font-size: calc(1em * 1.2 / 1.0625);
+    }
+  }
+
+  /*
+   * The same step down in a narrow column on a wide screen (E-048): the
+   * text beside the amendments at 1024 is under 300 px. ContentView's root
+   * is the container, so the width counts the page marks' and the gutter's
+   * padding (5.25rem together): 36rem leaves about 31rem of text.
+   */
+  .cx-view {
+    container: cx-view / inline-size;
+  }
+
+  @container cx-view (width < 36rem) {
     .rich-text h2 {
       font-size: 1.375rem;
     }

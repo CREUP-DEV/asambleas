@@ -161,7 +161,10 @@ const sectionTitleId = useId();
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-4">
+      <!-- From lg either table scrolls in its own box under a header that
+           stays (both are sticky): this column and the section bound it.
+           Below lg the panel scrolls the page. -->
+      <div class="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
         <p class="text-muted text-sm">
           {{
             isLog
@@ -170,7 +173,10 @@ const sectionTitleId = useId();
           }}
         </p>
 
-        <section :aria-labelledby="sectionTitleId" class="flex flex-col gap-4">
+        <section
+          :aria-labelledby="sectionTitleId"
+          class="flex flex-col gap-4 lg:min-h-0 lg:flex-1"
+        >
           <h2
             :id="sectionTitleId"
             class="text-highlighted text-base font-semibold"

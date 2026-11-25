@@ -537,12 +537,12 @@ function editorPath(document: BulkCreatedDocumentDto): string {
         </ul>
       </div>
 
-      <!-- Uploading the PDFs -->
       <p
         v-else-if="phase === 'uploading'"
         class="text-muted flex items-center gap-2 text-sm"
         role="status"
       >
+        <!-- Uploading the PDFs -->
         <UIcon
           name="i-lucide-loader-circle"
           class="size-4 shrink-0 animate-spin"

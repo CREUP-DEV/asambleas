@@ -72,15 +72,12 @@ const CODE_CLASS =
     <template v-if="part.kind === 'text' || !linked(part.id)">{{
       part.text
     }}</template>
-    <!-- The page previews in a window of its own: the code opens it. -->
-    <button
-      v-else-if="links?.inWindow && links.open"
-      type="button"
-      :class="CODE_CLASS"
-      @click.stop="open(part.id!)"
-    >
-      {{ part.text }}
-    </button>
+    <template v-else-if="links?.inWindow && links.open">
+      <!-- The page previews in a window of its own: the code opens it. -->
+      <button type="button" :class="CODE_CLASS" @click.stop="open(part.id!)">
+        {{ part.text }}
+      </button>
+    </template>
     <UPopover
       v-else-if="links"
       :open="openIndex === index"

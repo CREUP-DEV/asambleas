@@ -44,7 +44,7 @@ const { t } = useI18n();
         v-else
         color="neutral"
         variant="soft"
-        size="sm"
+        size="md"
         :label="speaker.label"
       />
     </li>

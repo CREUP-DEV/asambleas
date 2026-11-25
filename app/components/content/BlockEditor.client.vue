@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
-import type { ContextMenuItem, EditorToolbarItem } from "@nuxt/ui";
+import type {
+  ContextMenuItem,
+  DropdownMenuItem,
+  EditorToolbarItem,
+} from "@nuxt/ui";
 import type { ChainedCommands, Editor, JSONContent } from "@tiptap/core";
 import {
   CELL_SIDES,
@@ -722,6 +726,113 @@ onBeforeUnmount(() => {
   if (stuckFrame) cancelAnimationFrame(stuckFrame);
 });
 
+/**
+ * Below this width of the editor the full toolbar folds its secondary
+ * controls into «Más», so it keeps to one row (E-059, M-062): at 1280 the
+ * composer's editor is about 600 px and its 17 buttons took two rows. What
+ * the page adds at the end (saving) needs room of its own.
+ */
+const FULL_TOOLBAR_MIN_WIDTH = 800;
+const TOOLBAR_END_ROOM = 120;
+const { width: frameWidth } = useElementSize(frame);
+// 0 is a width not measured yet (before mounting, or hidden): the full
+// toolbar stays until a real one arrives.
+const foldToolbar = computed(
+  () =>
+    frameWidth.value > 0 &&
+    frameWidth.value <
+      FULL_TOOLBAR_MIN_WIDTH + (slots["toolbar-end"] ? TOOLBAR_END_ROOM : 0),
+);
+
+/**
+ * A toolbar control as an entry of «Más»: its name shown, its shortcut
+ * beside it, and its own menu (alignment, list marker, formulas) as a
+ * submenu. Its `kind` handlers and active state stay the toolbar's
+ * (moreMenuItems).
+ */
+function menuEntry(item: EditorToolbarItem): EditorToolbarItem {
+  const {
+    tooltip,
+    items,
+    trailingIcon: _trailing,
+    "aria-label": ariaLabel,
+    ...rest
+  } = item as unknown as Record<string, unknown> & {
+    tooltip?: { text?: string; kbds?: string[] };
+    items?: unknown[];
+    trailingIcon?: string;
+    "aria-label"?: string;
+  };
+  return {
+    ...rest,
+    label: tooltip?.text ?? ariaLabel,
+    ...(tooltip?.kbds ? { kbds: tooltip.kbds } : {}),
+    ...(items ? { children: items } : {}),
+  } as unknown as EditorToolbarItem;
+}
+
+/** The toolbar's own checks and runner, which its slots receive. */
+interface ToolbarSlotHandlers {
+  isActive: (item: EditorToolbarItem) => boolean;
+  isDisabled: (item: EditorToolbarItem) => boolean;
+  onClick: (e: MouseEvent, item: EditorToolbarItem) => void;
+}
+
+/** «Más»'s groups, as the toolbar's `more` slot receives them. */
+function moreGroups(item: EditorToolbarItem): EditorToolbarItem[][] {
+  return (item as { items?: EditorToolbarItem[][] }).items ?? [];
+}
+
+/**
+ * «Más»'s entries with what the toolbar's own dropdown would give them: each
+ * `kind` entry marked active or disabled and run by the toolbar's handlers,
+ * its submenu (alignment) too.
+ */
+function moreMenuItems(
+  item: EditorToolbarItem,
+  handlers: ToolbarSlotHandlers,
+): DropdownMenuItem[][] {
+  const wire = (entry: EditorToolbarItem): DropdownMenuItem => {
+    const { children } = entry as { children?: EditorToolbarItem[] };
+    const mapped = children ? { children: children.map(wire) } : {};
+    if (!("kind" in entry)) {
+      return { ...entry, ...mapped } as DropdownMenuItem;
+    }
+    return {
+      ...entry,
+      ...mapped,
+      active: handlers.isActive(entry),
+      disabled: handlers.isDisabled(entry),
+      onSelect: (e: Event) => handlers.onClick(e as MouseEvent, entry),
+    } as DropdownMenuItem;
+  };
+  return moreGroups(item).map((group) => group.map(wire));
+}
+
+/**
+ * «Más» reads as pressed while something it holds applies where the cursor
+ * is (a heading, a list, underlined text); its submenus, such as the
+ * alignment, which always has one active, do not count.
+ */
+function moreActive(
+  item: EditorToolbarItem,
+  handlers: ToolbarSlotHandlers,
+): boolean {
+  return moreGroups(item)
+    .flat()
+    .some((entry) => "kind" in entry && handlers.isActive(entry));
+}
+
+/** «Más» is disabled only when every entry is (the editor read-only). */
+function moreDisabled(
+  item: EditorToolbarItem,
+  handlers: ToolbarSlotHandlers,
+): boolean {
+  return moreGroups(item)
+    .flat()
+    .every((entry) => handlers.isDisabled(entry));
+}
+
 const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   const marks = [
     action(
@@ -851,15 +962,28 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "common.editor.quote",
     ),
   ];
-  const groups = [
-    structure,
-    [alignment],
-    tables,
-    marks,
-    link,
-    [formula],
-    history,
-  ];
+  const groups = foldToolbar.value
+    ? [
+        [
+          {
+            // Drawn in the toolbar's `more` slot: the toolbar's own dropdown
+            // would show the icon of whichever entry is active.
+            slot: "more",
+            items: [
+              structure.slice(0, 4),
+              structure.slice(4),
+              [alignment],
+              marks.slice(2),
+              [formula],
+            ].map((group) => group.map(menuEntry)),
+          } as EditorToolbarItem,
+        ],
+        tables,
+        marks.slice(0, 2),
+        link,
+        history,
+      ]
+    : [structure, [alignment], tables, marks, link, [formula], history];
   // What the page adds at the toolbar's end (saving the text, say).
   if (slots["toolbar-end"]) {
     groups.push([{ slot: "toolbar-end" } as EditorToolbarItem]);
@@ -1570,12 +1694,14 @@ defineExpose({
             :size="toolbarSize"
             :aria-label="t('common.editor.toolbar')"
             :class="[
-              'border-default flex-wrap gap-y-1',
-              // On a phone the full toolbar keeps to one row that scrolls
-              // sideways, so it does not eat the text's height (M-062).
+              'border-default',
+              // The full toolbar keeps to one row (its secondary controls
+              // fold into «Más» in a narrow editor) that scrolls sideways if
+              // it still does not fit, so it does not eat the text's height
+              // (M-062, E-059).
               compact
-                ? 'border-b px-1 py-0.5'
-                : 'sticky top-2 z-10 px-2 py-1 transition-shadow max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[&>*]:shrink-0',
+                ? 'flex-wrap gap-y-1 border-b px-1 py-0.5'
+                : 'sticky top-2 z-10 flex-nowrap overflow-x-auto px-2 py-1 transition-shadow [&>*]:shrink-0',
               !compact &&
                 (stuck
                   ? 'bg-default mx-auto w-fit max-w-full rounded-lg shadow-xl ring ring-(--ui-border-accented)'
@@ -1583,15 +1709,41 @@ defineExpose({
               $slots['toolbar-end'] && !stuck
                 ? '[&>[data-slot=group]:last-child]:ms-auto'
                 : '',
-              // On a phone the row scrolls sideways: what the page adds
-              // (saving) stays in view at its end (M-143).
+              // When the row scrolls sideways, what the page adds (saving)
+              // stays in view at its end (M-143).
               $slots['toolbar-end'] && !compact
-                ? 'max-sm:[&>[data-slot=group]:last-child]:bg-default max-sm:[&>[data-slot=group]:last-child]:sticky max-sm:[&>[data-slot=group]:last-child]:end-0 max-sm:[&>[data-slot=group]:last-child]:z-[1] max-sm:[&>[data-slot=group]:last-child]:ps-1'
+                ? '[&>[data-slot=group]:last-child]:bg-default [&>[data-slot=group]:last-child]:sticky [&>[data-slot=group]:last-child]:end-0 [&>[data-slot=group]:last-child]:z-[1] [&>[data-slot=group]:last-child]:ps-1'
                 : '',
             ]"
           >
             <template v-if="$slots['toolbar-end']" #toolbar-end>
               <slot name="toolbar-end" />
+            </template>
+            <template #more="{ item, isActive, isDisabled, onClick }">
+              <UDropdownMenu
+                :items="moreMenuItems(item, { isActive, isDisabled, onClick })"
+                :content="{ align: 'start' }"
+                :modal="false"
+              >
+                <UTooltip :text="t('common.editor.more')">
+                  <UButton
+                    icon="i-lucide-ellipsis"
+                    trailing-icon="i-lucide-chevron-down"
+                    color="neutral"
+                    variant="ghost"
+                    active-color="primary"
+                    active-variant="soft"
+                    :size="toolbarSize"
+                    :active="
+                      moreActive(item, { isActive, isDisabled, onClick })
+                    "
+                    :disabled="
+                      moreDisabled(item, { isActive, isDisabled, onClick })
+                    "
+                    :aria-label="t('common.editor.more')"
+                  />
+                </UTooltip>
+              </UDropdownMenu>
             </template>
             <template #tableMenu>
               <UDropdownMenu

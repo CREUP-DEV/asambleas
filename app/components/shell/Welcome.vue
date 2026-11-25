@@ -135,7 +135,7 @@ onMounted(() => {
             class="text-muted flex flex-wrap items-center gap-2 text-base"
           >
             {{ t("onboarding.yourRole") }}
-            <ShellRoleBadge :role="me.role" size="md" />
+            <ShellRoleBadge :role="me.role" />
             <span v-if="member">{{ member.acronym }}</span>
           </p>
         </div>

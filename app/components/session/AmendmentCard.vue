@@ -411,7 +411,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           v-if="awaiting"
           color="warning"
           variant="subtle"
-          size="sm"
+          size="md"
           :icon="
             supersededCodes
               ? 'i-lucide-git-pull-request-closed'
@@ -440,7 +440,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             v-if="debated"
             color="primary"
             variant="solid"
-            size="sm"
+            size="md"
             icon="i-lucide-radio"
             :label="t('session.card.inDebate')"
           />
@@ -448,7 +448,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             <UBadge
               color="neutral"
               variant="outline"
-              size="sm"
+              size="md"
               icon="i-lucide-eye-off"
             >
               {{ t("session.card.notPublic") }}
@@ -459,7 +459,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             v-if="amendment.late"
             color="warning"
             variant="outline"
-            size="sm"
+            size="md"
             :label="t('session.queue.late')"
           />
           <CommonStatusBadge
@@ -473,7 +473,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             v-if="rejectors || closedCodes || supersededCodes"
             :color="rejectors || closedCodes ? 'neutral' : 'warning'"
             variant="subtle"
-            size="sm"
+            size="md"
             :icon="
               rejectors
                 ? 'i-lucide-user-round-x'
@@ -720,11 +720,13 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             {{ t("session.card.publishFirst") }}
           </span>
         </template>
-        <!-- Some main author has not answered: their answers come first
-             (with its changes), no decision yet. -->
-        <span v-else-if="missing > 0" class="text-muted text-xs">
-          {{ t("session.card.needsAcceptances") }}
-        </span>
+        <template v-else-if="missing > 0">
+          <!-- Some main author has not answered: their answers come first
+               (with its changes), no decision yet. -->
+          <span class="text-muted text-xs">
+            {{ t("session.card.needsAcceptances") }}
+          </span>
+        </template>
         <template v-else>
           <UTooltip :text="t('session.actions.assentHint')" :kbds="kbdsOf('a')">
             <UButton

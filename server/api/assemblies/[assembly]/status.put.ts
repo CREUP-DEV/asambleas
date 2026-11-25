@@ -18,7 +18,10 @@ import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { markOnScreenAtOpen } from "../../../utils/domain/sessionProgress";
 import { closeSpeakingTurns } from "../../../utils/domain/speakers";
-import { buildOptimisticLockCondition } from "../../../utils/optimisticLock";
+import {
+  buildOptimisticLockCondition,
+  staleWriteError,
+} from "../../../utils/optimisticLock";
 
 /** Moves the assembly along ASSEMBLY_STATUS_TRANSITIONS. */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
@@ -51,11 +54,9 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
         )
         .returning({ id: assemblies.id });
       if (!row) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "La asamblea ha cambiado mientras la editabas. Recarga e inténtalo de nuevo",
-        });
+        throw staleWriteError(
+          "La asamblea ha cambiado mientras la editabas. Recarga e inténtalo de nuevo",
+        );
       }
 
       if (body.status === "in_session") {

@@ -188,17 +188,37 @@ const buttonLabel = computed(() => {
     : t("amendment.filters.button");
 });
 
-/** The button's name for screen readers, with the filters in use. */
-const buttonAria = computed(() =>
-  popoverCount.value > 0
-    ? `${buttonLabel.value}. ${t("amendment.filters.buttonActive", {
+/**
+ * The button's name for screen readers: «Filtros», and what is on show when
+ * the button names a chip («Filtros: Todas»), with the filters in use.
+ */
+const buttonAria = computed(() => {
+  const name =
+    showingMine.value || quick.value
+      ? t("amendment.filters.buttonNamed", { shown: buttonLabel.value })
+      : buttonLabel.value;
+  return popoverCount.value > 0
+    ? `${name}. ${t("amendment.filters.buttonActive", {
         count: popoverCount.value,
       })}`
-    : buttonLabel.value,
-);
+    : name;
+});
 
-function clearAll(): void {
+const panel = useTemplateRef<HTMLElement>("panel");
+
+/**
+ * «Quitar filtros» goes away once pressed, so the focus moves to the chip
+ * now on («Todas») instead of falling to the page.
+ */
+async function clearAll(): Promise<void> {
   filters.value = emptyAmendmentFilters();
+  await nextTick();
+  const box = panel.value;
+  (
+    box?.querySelector<HTMLElement>(
+      '[data-amendment-chip][aria-pressed="true"]',
+    ) ?? box?.querySelector<HTMLElement>("[data-amendment-chip]")
+  )?.focus();
 }
 </script>
 
@@ -227,13 +247,13 @@ function clearAll(): void {
           <template v-if="popoverCount > 0 || mineWaiting > 0" #trailing>
             <UBadge
               v-if="popoverCount > 0"
-              size="xs"
+              size="md"
               color="primary"
               :label="String(popoverCount)"
             />
             <UBadge
               v-if="mineWaiting > 0 && !showingMine"
-              size="xs"
+              size="md"
               :color="mineUrgent ? 'warning' : 'neutral'"
               variant="subtle"
               icon="i-lucide-user-round"
@@ -244,6 +264,7 @@ function clearAll(): void {
 
         <template #content>
           <div
+            ref="panel"
             class="flex max-h-[calc(var(--reka-popover-content-available-height,70dvh)-0.5rem)] w-80 max-w-[90vw] flex-col gap-3 overflow-y-auto p-3"
           >
             <div
@@ -291,7 +312,7 @@ function clearAll(): void {
                 {{ t("amendment.filters.chips.mine") }}
                 <UBadge
                   v-if="mineWaiting > 0"
-                  size="sm"
+                  size="md"
                   :color="mineUrgent ? 'warning' : 'neutral'"
                   variant="subtle"
                   class="tabular-nums"

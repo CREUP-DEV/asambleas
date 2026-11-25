@@ -332,7 +332,7 @@ const awaitingValidation = computed(
               <UBadge
                 :color="PASSAGE_COLORS[passage.status]"
                 variant="subtle"
-                size="sm"
+                size="md"
                 :label="t(`session.wording.status.${passage.status}`)"
               />
               <span class="min-w-0 flex-1">

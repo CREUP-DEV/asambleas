@@ -534,14 +534,15 @@ function amendmentLine(id: string): string {
               @click="project"
             />
           </div>
-          <!-- Without the control, only what the room sees. -->
-          <UBadge
-            v-else-if="onScreen"
-            color="neutral"
-            variant="subtle"
-            icon="i-lucide-monitor"
-            :label="t('session.alternatives.onScreen')"
-          />
+          <template v-else-if="onScreen">
+            <!-- Without the control, only what the room sees. -->
+            <UBadge
+              color="neutral"
+              variant="subtle"
+              icon="i-lucide-monitor"
+              :label="t('session.alternatives.onScreen')"
+            />
+          </template>
           <p
             v-if="splitDiffers"
             class="text-warning flex items-start gap-1.5 text-sm"
@@ -672,13 +673,14 @@ function amendmentLine(id: string): string {
               </div>
             </div>
           </div>
-          <!-- A registered vote: each delegation of the latest headcount. -->
-          <SessionRollCallBallots
-            v-else-if="rollCall"
-            v-model="ballots"
-            :voters="rollCallList"
-            :choices="rollCallChoices"
-          />
+          <template v-else-if="rollCall">
+            <!-- A registered vote: each delegation of the latest headcount. -->
+            <SessionRollCallBallots
+              v-model="ballots"
+              :voters="rollCallList"
+              :choices="rollCallChoices"
+            />
+          </template>
           <div
             v-else-if="!revealPending"
             class="grid grid-cols-2 gap-3 sm:grid-cols-4"

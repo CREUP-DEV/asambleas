@@ -711,50 +711,52 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       />
     </div>
 
-    <!-- Error -->
-    <UAlert
-      v-else-if="error && !agenda"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
-      :title="t('agenda.loadError')"
-      :actions="[
-        {
-          label: t('agenda.retry'),
-          icon: 'i-lucide-refresh-ccw',
-          color: 'neutral',
-          variant: 'outline',
-          onClick: () => {
-            void refresh();
+    <template v-else-if="error && !agenda">
+      <!-- Error -->
+      <UAlert
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('agenda.loadError')"
+        :actions="[
+          {
+            label: t('agenda.retry'),
+            icon: 'i-lucide-refresh-ccw',
+            color: 'neutral',
+            variant: 'outline',
+            onClick: () => {
+              void refresh();
+            },
           },
-        },
-      ]"
-      role="alert"
-    />
+        ]"
+        role="alert"
+      />
+    </template>
 
-    <!-- Empty -->
-    <CommonEmptyState
-      v-else-if="tree.length === 0"
-      icon="i-lucide-list-tree"
-      :title="t('agenda.emptyTitle')"
-      :description="
-        manage
-          ? t('agenda.emptyManagerDescription')
-          : t('agenda.emptyDescription')
-      "
-      variant="outline"
-    >
-      <template v-if="manage" #action>
-        <UButton
-          icon="i-lucide-plus"
-          :label="t('agenda.addFirstItem')"
-          @click="openCreate(null)"
-        />
-      </template>
-    </CommonEmptyState>
+    <template v-else-if="tree.length === 0">
+      <!-- Empty -->
+      <CommonEmptyState
+        icon="i-lucide-list-tree"
+        :title="t('agenda.emptyTitle')"
+        :description="
+          manage
+            ? t('agenda.emptyManagerDescription')
+            : t('agenda.emptyDescription')
+        "
+        variant="outline"
+      >
+        <template v-if="manage" #action>
+          <UButton
+            icon="i-lucide-plus"
+            :label="t('agenda.addFirstItem')"
+            @click="openCreate(null)"
+          />
+        </template>
+      </CommonEmptyState>
+    </template>
 
-    <!-- Tree -->
     <template v-else>
+      <!-- Tree -->
       <div
         v-if="!organizing && foldableCount > 0"
         class="flex flex-wrap items-center justify-end gap-2"

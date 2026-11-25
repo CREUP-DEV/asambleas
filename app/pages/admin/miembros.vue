@@ -143,6 +143,10 @@ function formatDay(value: string | null): string {
 // Sync -------------------------------------------------------------------
 
 const syncing = ref(false);
+/**
+ * Read out while a sync runs, which no toast says; what a toast says is
+ * not written here too, or a screen reader reads it twice (ACC-2).
+ */
 const statusMessage = ref("");
 
 const ROSTER_KINDS: readonly RosterMemberKind[] = [
@@ -236,7 +240,6 @@ async function runSync(
       updated: result.updated,
       deactivated: result.deactivated,
     });
-    statusMessage.value = message;
     toast.add({
       title: t("admin.members.syncDoneTitle"),
       description: message,
@@ -279,14 +282,13 @@ async function runSync(
     const kinds = blockedSyncKinds(error);
     if (kinds) {
       // Nothing changed: ask before deactivating that many members.
-      statusMessage.value = t("admin.members.largeDeactivation.title");
       pendingDeactivation.value = kinds;
       return;
     }
-    statusMessage.value = t("admin.members.syncFailed");
     api.notifyError(error, "admin.members.syncFailed");
   } finally {
     syncing.value = false;
+    statusMessage.value = "";
   }
 }
 
@@ -374,6 +376,7 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
   const current = editing.value;
   saving.value = true;
   try {
+    let saved: string;
     if (current) {
       await api.send<MemberDto>(`/api/members/${current.id}`, {
         method: "PUT",
@@ -387,7 +390,7 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
           updatedAt: current.updatedAt,
         },
       });
-      statusMessage.value = t("admin.members.updated", {
+      saved = t("admin.members.updated", {
         acronym: values.acronym.trim(),
       });
     } else {
@@ -400,12 +403,12 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
           region: optional(values.region),
         },
       });
-      statusMessage.value = t("admin.members.created", {
+      saved = t("admin.members.created", {
         acronym: values.acronym.trim(),
       });
     }
     toast.add({
-      title: statusMessage.value,
+      title: saved,
       color: "success",
       icon: "i-lucide-check",
     });
@@ -510,6 +513,9 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
         {{ statusMessage }}
       </p>
 
+      <!-- The table, unless loading failed (said here: a comment between
+           v-if and v-else breaks hydration). Below lg it takes its full
+           height and the panel scrolls; from lg it scrolls in its own box under a header that stays. -->
       <UAlert
         v-if="loadError"
         color="error"
@@ -525,9 +531,6 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
           },
         ]"
       />
-
-      <!-- Below lg the table takes its full height and the panel scrolls;
-           from lg it scrolls in its own box under a header that stays. -->
       <UTable
         v-else
         sticky

@@ -34,7 +34,10 @@ import {
   resolveAgendaItem,
   resolveAssembly,
 } from "../../../../utils/domain/resolvers";
-import { buildOptimisticLockCondition } from "../../../../utils/optimisticLock";
+import {
+  buildOptimisticLockCondition,
+  staleWriteError,
+} from "../../../../utils/optimisticLock";
 
 /**
  * Edits an item. Changing `parentId` moves it to the end of its new parent.
@@ -157,11 +160,9 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
         )
         .returning();
       if (!row) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "El punto ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
-        });
+        throw staleWriteError(
+          "El punto ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
+        );
       }
 
       await recordEvent(tx, {

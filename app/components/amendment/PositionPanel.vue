@@ -505,10 +505,12 @@ async function save(): Promise<void> {
           {{ amendment.position.comment }}
         </p>
       </div>
-      <!-- Not answerable yet: the review panel says what it waits for. -->
-      <p v-else-if="blocker" class="text-muted text-sm">
-        {{ laterText }}
-      </p>
+      <template v-else-if="blocker">
+        <!-- Not answerable yet: the review panel says what it waits for. -->
+        <p class="text-muted text-sm">
+          {{ laterText }}
+        </p>
+      </template>
       <p v-else-if="answerFirst" class="text-highlighted text-sm font-medium">
         {{ t("amendment.position.yourTurn") }}
       </p>

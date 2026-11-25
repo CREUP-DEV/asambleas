@@ -424,11 +424,13 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
               >
                 {{ row.sheet.observations }}
               </p>
-              <!-- Nothing written: the cell stays empty, said only to
-                   screen readers. -->
-              <span v-else-if="internal" class="sr-only">{{
-                t("controlSheet.noObservations")
-              }}</span>
+              <template v-else-if="internal">
+                <!-- Nothing written: the cell stays empty, said only to
+                     screen readers. -->
+                <span class="sr-only">{{
+                  t("controlSheet.noObservations")
+                }}</span>
+              </template>
               <ControlSheetOwnNotes
                 v-if="ownNotes"
                 :lines="notesOf(row)"

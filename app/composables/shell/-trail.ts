@@ -193,26 +193,49 @@ export interface DocumentChainNode {
   };
 }
 
+/** The document as its own item's step needs it (documentItemCrumbs). */
+export interface DocumentChainOwner {
+  title: string;
+  /** No other document hangs from the document's own item. */
+  aloneInItem: boolean;
+}
+
+/** Two titles read the same: spaces and case aside. */
+function sameTitle(a: string, b: string): boolean {
+  const normalise = (text: string) =>
+    text.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return normalise(a) === normalise(b);
+}
+
 /**
  * The steps of the items a document hangs from, from the root one down to
  * its own: "3. Resoluciones". Its own automatic sub-item (the one created
  * for it) reads as its number alone, «3.12», since its title repeats the
- * document's, which is the next step.
+ * document's, which is the next step. So does its own item when it was
+ * made by hand but holds only this document under the same title (`owner`).
  */
 export function documentItemCrumbs(
   path: readonly DocumentChainNode[],
   documentId: string,
   unlistedMark: string,
+  owner?: DocumentChainOwner,
 ): { id: string; label: string }[] {
-  return path.map((node) => ({
-    id: node.item.slug,
-    label:
-      node.item.auto &&
-      node.item.generatedForDocumentId === documentId &&
-      node.number
-        ? node.number
-        : numberedAgendaTitle(node.number, node.item.title, unlistedMark),
-  }));
+  return path.map((node, index) => {
+    const ownAuto =
+      node.item.auto && node.item.generatedForDocumentId === documentId;
+    const ownTwin =
+      owner !== undefined &&
+      index === path.length - 1 &&
+      owner.aloneInItem &&
+      sameTitle(node.item.title, owner.title);
+    return {
+      id: node.item.slug,
+      label:
+        (ownAuto || ownTwin) && node.number
+          ? node.number
+          : numberedAgendaTitle(node.number, node.item.title, unlistedMark),
+    };
+  });
 }
 
 /** Cuts a long label at a word when it can: "Resolución sobre la…". */

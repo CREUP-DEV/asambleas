@@ -12,7 +12,8 @@ import { statusLabelKey } from "~/utils/statusColors";
  * them to do: one line each, with a sentence that says what happens next
  * (a late amendment says the assembly still has to decide whether to treat
  * it; a transactional the user proposed, that it waits for the main authors
- * of what it replaces). Long lists show the first few and fold the rest
+ * of what it replaces; a draft past its deadline, when it closed and that
+ * only the Secretaría may present it now). Long lists show the first few and fold the rest
  * away.
  */
 const props = withDefaults(
@@ -25,11 +26,12 @@ const props = withDefaults(
   { showAssembly: true, initial: 5 },
 );
 
-const { t, te } = useI18n();
+const { t, te, locale } = useI18n();
 const localePath = useLocalePath();
 
 const UPDATE_ICONS: Record<HomeWorkUpdateKind, { icon: string; tone: string }> =
   {
+    document_closed: { icon: "i-lucide-calendar-x", tone: "text-muted" },
     document_review: { icon: "i-lucide-hourglass", tone: "text-info" },
     amendment_authors: { icon: "i-lucide-handshake", tone: "text-info" },
     amendment_review: { icon: "i-lucide-hourglass", tone: "text-info" },
@@ -70,6 +72,15 @@ function context(update: HomeWorkUpdate): string {
 }
 
 function sentence(update: HomeWorkUpdate): string {
+  if (update.kind === "document_closed" && update.closed) {
+    const date = formatDate(update.closed.at, {
+      locale: locale.value,
+      style: "medium",
+    });
+    return update.closed.needsAssembly
+      ? t("home.work.updates.document_closed", { date })
+      : t("home.work.updates.document_closedReport", { date });
+  }
   if (update.kind !== "amendment_other") {
     return t(`home.work.updates.${update.kind}`);
   }

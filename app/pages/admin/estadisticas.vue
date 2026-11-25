@@ -413,6 +413,28 @@ const memberSorting = ref([{ id: "documentsRead", desc: true }]);
 const accountSorting = ref([{ id: "documentsRead", desc: true }]);
 const documentSorting = ref([{ id: "readerMembers", desc: true }]);
 
+/**
+ * The column that names the row stays in view while the rest scrolls
+ * sideways (E-115). Always the first column, so TanStack's offset is 0.
+ * Below sm the cells scroll with the rest (`max-sm:static` in `tableUi`):
+ * a pinned name, 12-14rem wide, would cover most of a phone's table.
+ */
+const memberPinning = { left: ["member"], right: [] };
+const accountPinning = { left: ["name"], right: [] };
+const documentPinning = { left: ["title"], right: [] };
+
+/**
+ * From lg a table scrolls in its own box under the tabs, with its header
+ * on top (above the pinned cells, which are also `z-1`) and opaque;
+ * below lg it keeps its full height and the panel scrolls (M-102).
+ */
+const tableClass = "border-default rounded-lg border max-lg:shrink-0";
+const tableUi = {
+  thead: "bg-default z-2",
+  th: "max-sm:static data-[pinned=left]:bg-default",
+  td: "max-sm:static align-middle whitespace-normal data-[pinned=left]:bg-default",
+};
+
 // Account detail ----------------------------------------------------------
 
 const detailOpen = ref(false);
@@ -537,13 +559,15 @@ const detailSections = computed(() => {
       <UTable
         v-if="tab === 'members'"
         v-model:sorting="memberSorting"
+        sticky
         :data="memberRows"
         :columns="memberColumns"
+        :column-pinning="memberPinning"
         :loading="status === 'pending'"
         :empty="t('admin.stats.empty')"
         :aria-label="t('admin.stats.tabs.members')"
-        class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle whitespace-normal' }"
+        :class="tableClass"
+        :ui="tableUi"
       >
         <template #member-cell="{ row }">
           <div class="min-w-40">
@@ -554,7 +578,7 @@ const detailSections = computed(() => {
                 :label="t('admin.stats.inactive')"
                 color="neutral"
                 variant="subtle"
-                size="sm"
+                size="md"
               />
             </p>
             <p class="text-muted text-xs">
@@ -691,13 +715,15 @@ const detailSections = computed(() => {
       <UTable
         v-else-if="tab === 'accounts'"
         v-model:sorting="accountSorting"
+        sticky
         :data="accountRows"
         :columns="accountColumns"
+        :column-pinning="accountPinning"
         :loading="status === 'pending'"
         :empty="t('admin.stats.empty')"
         :aria-label="t('admin.stats.tabs.accounts')"
-        class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle whitespace-normal' }"
+        :class="tableClass"
+        :ui="tableUi"
       >
         <template #name-cell="{ row }">
           <div class="flex max-w-xs min-w-48 items-center gap-3">
@@ -811,13 +837,15 @@ const detailSections = computed(() => {
       <UTable
         v-else
         v-model:sorting="documentSorting"
+        sticky
         :data="documentRows"
         :columns="documentColumns"
+        :column-pinning="documentPinning"
         :loading="status === 'pending'"
         :empty="t('admin.stats.empty')"
         :aria-label="t('admin.stats.tabs.documents')"
-        class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle whitespace-normal' }"
+        :class="tableClass"
+        :ui="tableUi"
       >
         <template #title-cell="{ row }">
           <div class="max-w-md min-w-56">
@@ -988,7 +1016,7 @@ const detailSections = computed(() => {
                     "
                     :color="item.own ? 'neutral' : STATE_COLORS[item.state]"
                     variant="subtle"
-                    size="sm"
+                    size="md"
                     class="shrink-0"
                   />
                 </li>

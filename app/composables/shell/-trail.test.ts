@@ -353,4 +353,54 @@ describe("documentItemCrumbs", () => {
       ),
     ).toEqual([{ id: "nuevo", label: "Nuevo (sin publicar)" }]);
   });
+
+  it("names a hand-made item by its number when it holds only the document under its title", () => {
+    expect(
+      documentItemCrumbs(
+        [
+          node("3", "informes", "Informes"),
+          node("3.22", "logistica", "Informe de la Vocalía de Logística"),
+        ],
+        "doc-1",
+        "(sin publicar)",
+        {
+          title: "  informe de la vocalía  de logística ",
+          aloneInItem: true,
+        },
+      ),
+    ).toEqual([
+      { id: "informes", label: "3. Informes" },
+      { id: "logistica", label: "3.22" },
+    ]);
+  });
+
+  it("keeps a hand-made item's title when it differs or holds other documents", () => {
+    const path = [node("3.22", "logistica", "Informe de Logística")];
+    expect(
+      documentItemCrumbs(path, "doc-1", "(sin publicar)", {
+        title: "Informe de la Vocalía de Logística",
+        aloneInItem: true,
+      }),
+    ).toEqual([{ id: "logistica", label: "3.22. Informe de Logística" }]);
+    expect(
+      documentItemCrumbs(path, "doc-1", "(sin publicar)", {
+        title: "Informe de Logística",
+        aloneInItem: false,
+      }),
+    ).toEqual([{ id: "logistica", label: "3.22. Informe de Logística" }]);
+  });
+
+  it("only shortens the document's own item, not an ancestor with the same title", () => {
+    expect(
+      documentItemCrumbs(
+        [node("3", "informe", "Informe"), node("3.1", "otro", "Otro")],
+        "doc-1",
+        "(sin publicar)",
+        { title: "Informe", aloneInItem: true },
+      ),
+    ).toEqual([
+      { id: "informe", label: "3. Informe" },
+      { id: "otro", label: "3.1. Otro" },
+    ]);
+  });
 });

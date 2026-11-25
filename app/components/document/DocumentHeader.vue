@@ -311,7 +311,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
               v-if="pending"
               :color="status.color"
               variant="subtle"
-              size="sm"
+              size="md"
               :label="status.label"
             />
             <CommonStatusBadge

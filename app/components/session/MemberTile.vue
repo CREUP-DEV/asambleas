@@ -113,7 +113,6 @@ const avatarText = computed(() =>
           <CommonMemberBadge
             v-if="member"
             :member="member"
-            size="sm"
             :tooltip="false"
             class="min-w-0"
           />

@@ -11,7 +11,7 @@ import {
   type ExportAssembly,
   type ExportDocumentMeta,
 } from "./pdfBuilder";
-import { RALEWAY_FILES, type RalewayFile } from "./pdfmake";
+import { PDF_FONT_FILES, type RalewayFile } from "./pdfmake";
 import { renderPdf, renderPdfBatch } from "./pdfRender";
 
 /**
@@ -26,10 +26,7 @@ const FONTS_DIR = resolve(__dirname, "../../assets/fonts");
 const ASSETS_DIR = resolve(__dirname, "../../assets");
 
 const fonts = Object.fromEntries(
-  Object.values(RALEWAY_FILES).map((name) => [
-    name,
-    readFileSync(resolve(FONTS_DIR, name)),
-  ]),
+  PDF_FONT_FILES.map((name) => [name, readFileSync(resolve(FONTS_DIR, name))]),
 ) as Record<RalewayFile, Buffer>;
 
 const brand: ExportBrand = {

@@ -96,16 +96,27 @@ describe("exportWorkersStalled", () => {
   const fresh = [
     worker(EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT, now - 2000),
     worker(PACKAGE_QUEUE_NAME, now - 2000),
+    worker("seating-images", now - 2000),
+    worker("user-avatars", now - 2000),
+    worker("document-images-cleanup", now - 2000),
   ];
 
   it("is fine while every worker fetches", () => {
     expect(exportWorkersStalled(fresh, now)).toBe(false);
   });
 
-  it("notices the export or the package without a worker", () => {
+  it("notices a required queue without a worker", () => {
     expect(exportWorkersStalled([], now)).toBe(true);
-    expect(exportWorkersStalled(fresh.slice(1), now)).toBe(true);
-    expect(exportWorkersStalled(fresh.slice(0, 1), now)).toBe(true);
+    // Each one missing: the export, the package, the room's images, the
+    // accounts' photos and the images' clean-up.
+    for (const missing of fresh) {
+      expect(
+        exportWorkersStalled(
+          fresh.filter((entry) => entry !== missing),
+          now,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("notices an idle worker that has not fetched for a while", () => {
@@ -115,7 +126,7 @@ describe("exportWorkersStalled", () => {
     ).toBe(true);
     // Never fetched since it was created, long ago.
     expect(
-      exportWorkersStalled([...fresh, worker("seating-images", null)], now),
+      exportWorkersStalled([...fresh, worker("document-pages", null)], now),
     ).toBe(true);
   });
 
@@ -123,7 +134,10 @@ describe("exportWorkersStalled", () => {
     const stale = now - EXPORT_WORKER_STALL_MS - 1;
     expect(
       exportWorkersStalled(
-        [fresh[0]!, worker(PACKAGE_QUEUE_NAME, stale, 1)],
+        [
+          ...fresh.filter((entry) => entry.name !== PACKAGE_QUEUE_NAME),
+          worker(PACKAGE_QUEUE_NAME, stale, 1),
+        ],
         now,
       ),
     ).toBe(false);

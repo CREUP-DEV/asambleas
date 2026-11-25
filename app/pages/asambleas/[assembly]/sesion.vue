@@ -422,9 +422,9 @@ defineShortcuts({
           </SessionSideRail>
         </div>
 
-        <!-- Phones and tablets: one column, the debate first, then the
-             folded sections, and the queue with the document's text. -->
         <div v-else class="space-y-3 p-3">
+          <!-- Phones and tablets: one column, the debate first, then the
+               folded sections, and the queue with the document's text. -->
           <SessionNowPanel />
           <SessionFoldPanel
             id="speakers"

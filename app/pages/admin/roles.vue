@@ -111,6 +111,10 @@ const draft = ref<Record<string, PermissionKey[]>>({});
 const loadingPermissions = ref(false);
 const permissionsFailed = ref(false);
 const saving = ref(false);
+/**
+ * Read out what no toast says (a discard); a save is said by its toast
+ * alone, or a screen reader reads it twice (ACC-2).
+ */
 const statusMessage = ref("");
 
 async function loadPermissions(): Promise<void> {
@@ -257,7 +261,11 @@ function discard(): void {
   for (const role of editableRoles.value) {
     draft.value[role.id] = [...(saved.value[role.id] ?? [])];
   }
-  statusMessage.value = t("admin.roles.discarded");
+  // Cleared first, so a second discard is read again.
+  statusMessage.value = "";
+  void nextTick(() => {
+    statusMessage.value = t("admin.roles.discarded");
+  });
 }
 
 async function save(): Promise<void> {
@@ -278,7 +286,6 @@ async function save(): Promise<void> {
     }
     // What the user may do follows their role: reload it.
     if (roles.some((role) => role.id === ownRoleId.value)) await refreshMe();
-    statusMessage.value = t("admin.roles.permissionsUpdated");
     toast.add({
       title: t("admin.roles.permissionsUpdated"),
       color: "success",

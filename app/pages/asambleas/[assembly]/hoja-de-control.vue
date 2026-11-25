@@ -2297,7 +2297,9 @@ watch(tabsBar, padUnderTabs, { flush: "post" });
 /**
  * Below sm the tabs scroll sideways in their strip (M-085): the open one is
  * brought into it, centred, by the strip's own scroll alone, so the sheet
- * never moves and following the debate is not stopped.
+ * never moves and following the debate is not stopped. It runs again when a
+ * tab changes size without the bar doing so (Raleway swapping in after the
+ * first measure found no overflow), hence the observer on the triggers.
  */
 function revealActiveTab(): void {
   const list = tabsBar.value?.querySelector<HTMLElement>('[role="tablist"]');
@@ -2310,7 +2312,18 @@ function revealActiveTab(): void {
     active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2,
   );
 }
+const tabTriggers = shallowRef<HTMLElement[]>([]);
+watch(
+  [tabsBar, tabItems],
+  () => {
+    tabTriggers.value = [
+      ...(tabsBar.value?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
+    ];
+  },
+  { flush: "post" },
+);
 useResizeObserver(tabsBar, revealActiveTab);
+useResizeObserver(tabTriggers, revealActiveTab);
 watch([tabsBar, tab], revealActiveTab, { flush: "post" });
 onBeforeUnmount(() => {
   if (scrollWatched) scrollWatched.style.scrollPaddingTop = "";
@@ -2648,7 +2661,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           :ui="{
             list: 'max-sm:overflow-x-auto max-sm:overflow-y-hidden',
             indicator: 'max-sm:bottom-0',
-            trigger: 'max-sm:shrink-0',
+            trigger: 'max-sm:shrink-0 max-lg:min-h-11',
             label: 'max-sm:overflow-visible max-sm:whitespace-nowrap',
           }"
           :aria-label="t('controlSheet.tabs.label')"
@@ -2730,6 +2743,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 color="neutral"
                 variant="ghost"
                 size="sm"
+                class="max-lg:min-h-10 max-lg:text-sm"
                 :label="t('controlSheet.download.button')"
                 :aria-label="t('controlSheet.download.general')"
                 data-testid="sheet-download-general"
@@ -3002,6 +3016,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                   color="neutral"
                   variant="ghost"
                   size="sm"
+                  class="max-lg:min-h-10 max-lg:text-sm"
                   :label="t('controlSheet.download.button')"
                   :aria-label="t('controlSheet.download.amendments')"
                   data-testid="sheet-download-amendments"
@@ -3051,25 +3066,27 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         :items="items"
       />
 
-      <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
-      <Suspense v-else>
-        <ControlSheetHistory
-          :api-base="apiBase"
-          :items="items"
-          :documents="agendaDocuments"
-        />
-        <template #fallback>
-          <div class="space-y-3" role="status">
-            <span class="sr-only">{{ t("controlSheet.loading") }}</span>
-            <USkeleton
-              v-for="n in 4"
-              :key="n"
-              aria-hidden="true"
-              class="h-12 w-full"
-            />
-          </div>
-        </template>
-      </Suspense>
+      <template v-else>
+        <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
+        <Suspense>
+          <ControlSheetHistory
+            :api-base="apiBase"
+            :items="items"
+            :documents="agendaDocuments"
+          />
+          <template #fallback>
+            <div class="space-y-3" role="status">
+              <span class="sr-only">{{ t("controlSheet.loading") }}</span>
+              <USkeleton
+                v-for="n in 4"
+                :key="n"
+                aria-hidden="true"
+                class="h-12 w-full"
+              />
+            </div>
+          </template>
+        </Suspense>
+      </template>
     </template>
 
     <ExportPackageDialog

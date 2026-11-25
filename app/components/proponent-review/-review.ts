@@ -32,6 +32,7 @@ import type {
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
 import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 import { positionRecorderKey } from "~/utils/format";
+import { amendmentsMeet } from "~~/shared/utils/content/passages";
 import {
   amendmentRule,
   positionsArePublic,
@@ -393,25 +394,28 @@ export function acceptIncorporates(
 }
 
 /**
- * The amendments already approved (so in the text) among those it overlaps
- * with (`overlaps`, from amendmentOverlapIndex), while accepting it would
- * incorporate it: "Choca con 12 · CEUM 4, ya incorporada". In the order of
- * `overlaps`; ids `byId` does not hold are left out.
+ * The amendments already approved (so in the text) it meets, while accepting
+ * it would incorporate it: "Choca con 12 · CEUM 4, ya incorporada". Met as
+ * the server warns on approving (computeApprovalWarnings, amendmentsMeet in
+ * passages.ts: one removes the block the other changes, or they change the
+ * same text or text that touches it), not as the members' composers see a
+ * collision (findOverlaps). In the order of `amendments` (the document's).
  */
 export function incorporatedClashIds(
-  amendment: Pick<AmendmentDto, "kind" | "status">,
+  amendment: Pick<AmendmentDto, "id" | "kind" | "status" | "ops">,
   rule: AcceptedAmendmentRule,
-  overlaps: readonly { id: string }[],
-  byId: ReadonlyMap<string, Pick<AmendmentDto, "status">>,
+  amendments: Iterable<Pick<AmendmentDto, "id" | "status" | "ops">>,
 ): string[] {
   if (!acceptIncorporates(amendment, rule)) return [];
   const ids: string[] = [];
-  for (const overlap of overlaps) {
+  for (const other of amendments) {
     if (
-      byId.get(overlap.id)?.status === "approved" &&
-      !ids.includes(overlap.id)
+      other.id !== amendment.id &&
+      other.status === "approved" &&
+      !ids.includes(other.id) &&
+      amendmentsMeet(amendment.ops, other.ops)
     ) {
-      ids.push(overlap.id);
+      ids.push(other.id);
     }
   }
   return ids;

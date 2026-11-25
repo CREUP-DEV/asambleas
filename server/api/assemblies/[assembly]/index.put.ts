@@ -17,7 +17,10 @@ import { diffChanges } from "../../../utils/domain/changes";
 import { assemblySettings } from "../../../utils/domain/documents";
 import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
-import { buildOptimisticLockCondition } from "../../../utils/optimisticLock";
+import {
+  buildOptimisticLockCondition,
+  staleWriteError,
+} from "../../../utils/optimisticLock";
 
 /** Edits the assembly. Settings are merged over the stored ones. */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
@@ -83,11 +86,9 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
         )
         .returning({ id: assemblies.id });
       if (!row) {
-        throw createError({
-          statusCode: 409,
-          message:
-            "La asamblea ha cambiado mientras la editabas. Recarga e inténtalo de nuevo",
-        });
+        throw staleWriteError(
+          "La asamblea ha cambiado mientras la editabas. Recarga e inténtalo de nuevo",
+        );
       }
 
       await recordEvent(tx, {

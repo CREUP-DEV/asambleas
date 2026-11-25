@@ -220,7 +220,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
           <UBadge
             color="neutral"
             variant="outline"
-            size="sm"
+            size="md"
             icon="i-lucide-file-text"
             :label="t('document.formats.file')"
           />

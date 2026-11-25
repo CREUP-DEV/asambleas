@@ -159,7 +159,7 @@ const readMark = computed(() => {
         v-if="kindLabel"
         color="neutral"
         variant="outline"
-        size="xs"
+        size="md"
         :label="kindLabel"
       />
       <span v-if="authors.others.length > 0" class="text-muted text-xs">

@@ -683,8 +683,8 @@ function when(value: string | null): string {
             :ops="opsOf(correction)"
             :context="1"
           />
-          <!-- Only how tables look changed: the diff has no words for it. -->
           <p v-else class="text-muted text-sm">
+            <!-- Only how tables look changed: the diff has no words for it. -->
             {{ t("workspace.formCorrections.tableLookOnly") }}
           </p>
         </div>

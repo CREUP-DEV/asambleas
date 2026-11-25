@@ -18,9 +18,9 @@ import { sessionRestorePlace } from "./removedTurns";
 
 /**
  * A notice that offers «Deshacer» stays at least this long (WCAG 2.2.1),
- * not the toaster's 5 seconds.
+ * not the toaster's 5 seconds: the speakers' and the console's.
  */
-const UNDO_TOAST_DURATION_MS = 10_000;
+export const UNDO_TOAST_DURATION_MS = 10_000;
 
 export interface SessionSpeakersOptions {
   /** The assembly's API base, e.g. `/api/assemblies/{id}`. */

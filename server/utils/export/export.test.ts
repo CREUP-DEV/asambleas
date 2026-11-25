@@ -56,7 +56,7 @@ import {
   type ExportDocumentMeta,
 } from "./pdfBuilder";
 import {
-  RALEWAY_FILES,
+  PDF_FONT_FILES,
   pdfmake,
   registerPdfFonts,
   type RalewayFile,
@@ -84,7 +84,7 @@ const brand: ExportBrand = {
 
 beforeAll(() => {
   const files = Object.fromEntries(
-    Object.values(RALEWAY_FILES).map((name) => [
+    PDF_FONT_FILES.map((name) => [
       name,
       readFileSync(resolve(FONTS_DIR, name)),
     ]),
@@ -1724,7 +1724,7 @@ describe("render process", () => {
   const RENDER_TEST_TIMEOUT = 180_000;
 
   const fonts = Object.fromEntries(
-    Object.values(RALEWAY_FILES).map((name) => [
+    PDF_FONT_FILES.map((name) => [
       name,
       readFileSync(resolve(FONTS_DIR, name)),
     ]),
@@ -1810,6 +1810,26 @@ describe("render process", () => {
           brand,
         ),
     ],
+    [
+      "a justified text whose words change style inside (pdfJustify.ts)",
+      () => ({
+        pageSize: { width: 300, height: 800 },
+        pageMargins: 20,
+        defaultStyle: { font: "Raleway" },
+        content: [
+          {
+            alignment: "justify",
+            text: Array.from({ length: 8 }, () => [
+              "Las ",
+              { text: "pre", bold: true },
+              "enmiendas y las ",
+              { text: "sub", italics: true },
+              "secciones del texto. ",
+            ]).flat(),
+          },
+        ],
+      }),
+    ],
   ];
 
   it.each(cases)(
@@ -1821,6 +1841,27 @@ describe("render process", () => {
       ]);
       expect(there.subarray(0, 5).toString("latin1")).toBe("%PDF-");
       expect(stable(there)).toBe(stable(here));
+    },
+    RENDER_TEST_TIMEOUT,
+  );
+
+  it(
+    "lays out letters Raleway lacks in its latin-ext cut",
+    async () => {
+      const { pdf } = await renderPdf(
+        {
+          content: [
+            { text: "Gwosć y Łódź", bold: true },
+            { text: ["Gdańsk, ", { text: "Plzeň", italics: true }] },
+          ],
+          defaultStyle: { font: "Raleway" },
+        },
+        fonts,
+      );
+      expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      // Both families are embedded, in bold, regular and italics: Raleway
+      // and its latin-ext cut.
+      expect(pdf.toString("latin1").match(/\/FontFile2\b/g)?.length).toBe(6);
     },
     RENDER_TEST_TIMEOUT,
   );

@@ -185,7 +185,8 @@ interface BreadcrumbDocument {
  * error of that load. The document's own step is always its title (cut by
  * the trail when long), never its reference. Its own automatic sub-item,
  * which repeats that title, reads as its number alone above it
- * ("3.12 > <title>"). When the document never loads (the page shows its
+ * ("3.12 > <title>"), and so does a hand-made item that holds only this
+ * document under the same title. When the document never loads (the page shows its
  * error inline), the route's `[document]` param is registered empty, so the
  * row reads "Documentos > Documento" instead of staying a skeleton.
  */
@@ -272,6 +273,16 @@ export function useDocumentBreadcrumb(
           agendaNodePath(buildAgendaTree(items), value.agendaItemId),
           value.id,
           t("agenda.unlisted.inText"),
+          {
+            title: value.title,
+            // The agenda may leave this very document out for the viewer:
+            // only another document under the item counts.
+            aloneInItem: !(agenda.value?.documents ?? []).some(
+              (other) =>
+                other.agendaItemId === value.agendaItemId &&
+                other.id !== value.id,
+            ),
+          },
         );
         return { id: value.id, slug: value.slug, chain };
       },

@@ -1498,51 +1498,54 @@ const failed = computed(() => Boolean(seating.error.value) && !plan.value);
     />
 
     <template v-else>
-      <!-- Header -->
-      <div
-        class="flex flex-wrap items-start justify-between gap-3 lg:flex-nowrap"
-      >
-        <div class="min-w-0 space-y-1 lg:flex-1">
-          <h2 class="text-highlighted text-xl font-semibold">
+      <!-- Header: the action sits beside the title only, so the counts and
+           the sync line keep the full width and do not wrap beside it
+           (E-113). On a phone a long single action drops below the title
+           instead of squeezing it. -->
+      <div class="space-y-1">
+        <div
+          class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-nowrap"
+        >
+          <h2 class="text-highlighted min-w-0 text-xl font-semibold">
             {{ t("seating.title") }}
           </h2>
-          <p
-            v-if="counts && counts.people + counts.notNeeded + counts.gone > 0"
-            class="text-default text-sm tabular-nums"
-          >
-            {{ words.countsText(counts) }}
-          </p>
-          <SeatingSyncLine
-            :sync="plan.sync"
-            :syncing="seating.syncing.value"
-            :can-edit="canEdit"
-            :source-label="sourceLabel"
-            @sync="onSync"
-            @read-other="sourceOpen = true"
-          />
-        </div>
-        <UButton
-          v-if="moreList.length === 1"
-          color="neutral"
-          variant="outline"
-          :icon="moreList[0]!.icon"
-          :label="moreList[0]!.label"
-          class="shrink-0"
-          @click="moreList[0]!.run()"
-        />
-        <UDropdownMenu
-          v-else-if="moreList.length > 1"
-          :items="moreItems"
-          :content="{ align: 'end' }"
-        >
           <UButton
+            v-if="moreList.length === 1"
             color="neutral"
             variant="outline"
-            icon="i-lucide-ellipsis"
-            :label="t('seating.more')"
+            :icon="moreList[0]!.icon"
+            :label="moreList[0]!.label"
             class="shrink-0"
+            @click="moreList[0]!.run()"
           />
-        </UDropdownMenu>
+          <UDropdownMenu
+            v-else-if="moreList.length > 1"
+            :items="moreItems"
+            :content="{ align: 'end' }"
+          >
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-ellipsis"
+              :label="t('seating.more')"
+              class="shrink-0"
+            />
+          </UDropdownMenu>
+        </div>
+        <p
+          v-if="counts && counts.people + counts.notNeeded + counts.gone > 0"
+          class="text-default text-sm tabular-nums"
+        >
+          {{ words.countsText(counts) }}
+        </p>
+        <SeatingSyncLine
+          :sync="plan.sync"
+          :syncing="seating.syncing.value"
+          :can-edit="canEdit"
+          :source-label="sourceLabel"
+          @sync="onSync"
+          @read-other="sourceOpen = true"
+        />
       </div>
 
       <!-- First time: the gallery for editors, a calm note for readers -->

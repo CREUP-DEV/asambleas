@@ -10,7 +10,8 @@ import { z } from "zod/v4";
 import { logError, logWarn } from "../core/logger";
 import { PAGE_TAG_PREFIX, type RawPages } from "./pageMap";
 import { PDF_FUNCTIONS_SCRIPT, serializePdfDefinition } from "./pdfSerial";
-import { RALEWAY_FILES, type RalewayFile } from "./pdfmake";
+import { installWordJustify, wordJustifyShifts } from "./pdfJustify";
+import { PDF_FONT_FILES, pdfFontFamilies, type RalewayFile } from "./pdfmake";
 
 /**
  * pdfmake lays a PDF out synchronously: about 1.5 s plus 0.15 s a page, 20 s
@@ -131,6 +132,19 @@ function dropTagDestinations() {
     return false;
   }
 }
+// Justified lines open space only between words (pdfJustify.ts, the same
+// functions registerPdfFonts installs in the app's process).
+const wordJustifyShifts = ${wordJustifyShifts.toString()};
+const installWordJustify = ${installWordJustify.toString()};
+function justifyWordsOnly() {
+  try {
+    const path = require("node:path");
+    const loaded = require(path.join(path.dirname(entry), "ElementWriter.js"));
+    return installWordJustify(loaded.default || loaded, wordJustifyShifts);
+  } catch {
+    return false;
+  }
+}
 // The tagged nodes of a definition pdfmake laid out, in order: each one's
 // block, first and last page (null when unknown) and whether it sits in a
 // header row. In a table's row only the first position of a node with an
@@ -205,6 +219,8 @@ process.stdin.on("end", () => {
   // Without the patch, the ids go before rendering: no page from a table's
   // row then, but the same PDF.
   const untag = !dropTagDestinations();
+  // Without it, pdfmake justifies as it always did.
+  justifyWordsOnly();
   (async () => {
     const pdfs = [];
     const pages = [];
@@ -344,12 +360,9 @@ function renderInput(
 ): Buffer {
   const setup = {
     fonts: Object.fromEntries(
-      Object.values(RALEWAY_FILES).map((name) => [
-        name,
-        fonts[name].toString("base64"),
-      ]),
+      PDF_FONT_FILES.map((name) => [name, fonts[name].toString("base64")]),
     ),
-    families: { Raleway: { ...RALEWAY_FILES } },
+    families: pdfFontFamilies(),
     ...(pages ? { pages: true } : {}),
   };
   return Buffer.from(

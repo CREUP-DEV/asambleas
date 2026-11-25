@@ -46,7 +46,11 @@ The usual AGENTS.md handler order applies:
   its entry in `nuxt.config.ts`.
 - **Optimistic locking.** Shared PUT, PATCH and POST mutations of existing
   rows take `updatedAt` and use `buildOptimisticLockCondition`, so the write is
-  atomic. A conflict returns 409.
+  atomic. A conflict returns 409 with `data.reason: "stale_write"`
+  (`STALE_WRITE_DATA` / `staleWriteError` in `server/utils/optimisticLock.ts`;
+  `assertOptimisticLock` adds it). Any other 409 is a rule of the current
+  state: it carries its own reason or `messageKey`, or none, and the client
+  then shows a neutral text (`common.errors.conflictState`).
 - **Row locks.** Transactions lock rows in one order: assembly, document,
   amendments (by id), acceptances, `live_state`. A path that settles an
   amendment locks the transactionals over it in the same amendment pass,
@@ -417,20 +421,20 @@ gets 403 with the next step: ask the Secretaría to link it.
 
 ## Assemblies and calendar
 
-| Method | Path                                          | Who                | Notes                                                                                                                                                                                    |
-| ------ | --------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/assemblies`                             | any                | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                                                                    |
-| POST   | `/api/assemblies`                             | `assembly:create`  | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` with the calendar rules of the type, unless told not to.                                                             |
-| GET    | `/api/assemblies/[assembly]`                  | visible            | `AssemblyDto`, including the milestones, the type's `calendarRules` and the warnings from `checkCalendar`.                                                                               |
-| PUT    | `/api/assemblies/[assembly]`                  | `assembly:manage`  | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                                                                   |
-| DELETE | `/api/assemblies/[assembly]`                  | `assembly:manage`  | Only in `draft`.                                                                                                                                                                         |
-| PUT    | `/api/assemblies/[assembly]/status`           | `assembly:manage`  | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns).                                         |
-| PUT    | `/api/assemblies/[assembly]/calendar`         | `assembly:manage`  | `CalendarBody`. Upserts or deletes the milestones. Returns `AssemblyDto`.                                                                                                                |
-| POST   | `/api/assemblies/[assembly]/convocation`      | `assembly:manage`  | The signed convocatoria: multipart `file` (PDF up to 20 MB, type and signature checked) and `updatedAt`. Replaces the one before. Records `convocation_uploaded`. Returns `AssemblyDto`. |
-| DELETE | `/api/assemblies/[assembly]/convocation`      | `assembly:manage`  | `?updatedAt=`. Removes the signed convocatoria and its file. Records `convocation_removed`. Returns `AssemblyDto`.                                                                       |
-| GET    | `/api/uploads/convocations/[filename]`        | visible            | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. Drawn in the page by pdf.js, never framed.                                                     |
-| GET    | `/api/assemblies/[assembly]/review`           | see notes          | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.                                                |
-| GET    | `/api/assemblies/[assembly]/review/validated` | `amendment:review` | `ReviewValidatedDto`: validated and published amendments still undecided whose validation can be taken back. See "Review and work" below.                                                |
+| Method | Path                                          | Who                | Notes                                                                                                                                                                                                                                                                                                                                                                 |
+| ------ | --------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies`                             | any                | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                                                                                                                                                                                                                                                 |
+| POST   | `/api/assemblies`                             | `assembly:create`  | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` with the calendar rules of the type, unless told not to.                                                                                                                                                                                                                                          |
+| GET    | `/api/assemblies/[assembly]`                  | visible            | `AssemblyDto`, including the milestones, the type's `calendarRules` and the warnings from `checkCalendar`.                                                                                                                                                                                                                                                            |
+| PUT    | `/api/assemblies/[assembly]`                  | `assembly:manage`  | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                                                                                                                                                                                                                                                |
+| DELETE | `/api/assemblies/[assembly]`                  | `assembly:manage`  | Only in `draft`.                                                                                                                                                                                                                                                                                                                                                      |
+| PUT    | `/api/assemblies/[assembly]/status`           | `assembly:manage`  | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns).                                                                                                                                                                                                                      |
+| PUT    | `/api/assemblies/[assembly]/calendar`         | `assembly:manage`  | `CalendarBody`. Upserts or deletes the milestones. Returns `AssemblyDto`.                                                                                                                                                                                                                                                                                             |
+| POST   | `/api/assemblies/[assembly]/convocation`      | `assembly:manage`  | The signed convocatoria: multipart `file` (PDF up to 20 MB, type and signature checked) and `updatedAt`. Replaces the one before. Records `convocation_uploaded`. Returns `AssemblyDto`.                                                                                                                                                                              |
+| DELETE | `/api/assemblies/[assembly]/convocation`      | `assembly:manage`  | `?updatedAt=`. Removes the signed convocatoria and its file. Records `convocation_removed`. Returns `AssemblyDto`.                                                                                                                                                                                                                                                    |
+| GET    | `/api/uploads/convocations/[filename]`        | visible            | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. Drawn in the page by pdf.js, never framed. Revalidated by ETag (304), and a single `Range` answers 206 (416 past the end; `If-Range` must name the current ETag), in a rate limiter bucket of its own, as the documents' PDFs (`GET /api/uploads/documents/[filename]`) do. |
+| GET    | `/api/assemblies/[assembly]/review`           | see notes          | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.                                                                                                                                                                                                                             |
+| GET    | `/api/assemblies/[assembly]/review/validated` | `amendment:review` | `ReviewValidatedDto`: validated and published amendments still undecided whose validation can be taken back. See "Review and work" below.                                                                                                                                                                                                                             |
 
 **Calendar warnings.** `calendarWarnings` comes from `checkCalendar` with the
 calendar rules of the assembly's type. For managers, `calendarDocuments` lists
@@ -983,7 +987,7 @@ otherwise.
 | PUT    | `/[amendment]`                                 | author while the amendment is a draft                            | `AmendmentUpdateBody`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | DELETE | `/[amendment]`                                 | author while the amendment is a draft                            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/submit`                          | author                                                           | See submission rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it. A transactional already in force over amendments of members other than the author's is the Mesa's to withdraw: 409 to its authors (`withdrawNeedsMesa`).                                                                                                                                                                                                                                                                                                                    |
+| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it. A transactional already in force over amendments of members other than the author's is the Mesa's to withdraw: 409 to its authors (`withdrawNeedsMesa`). Records `amendment_withdrawn` with `{ by: "author" \| "moderator", replacedSources?: true }`: `replacedSources`when it withdraws a transactional in force (validated and accepted by every main author,`replacesSourcesNow`), whose replaced amendments stay `transacted` and whose authors read it in their news. |
 | POST   | `/validate`                                    | `amendment:review`                                               | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | POST   | `/publish`                                     | `amendment:review`                                               | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/correction`                      | `amendment:review`                                               | `AmendmentCorrectionBody`. See validation below. Returns `AmendmentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -1802,8 +1806,11 @@ managers and the Mesa), soonest first:
   `published`. A draft whose presentation is closed for the actor
   (`presentationClosed`: past its kind's deadline
   (`presentationDeadlinePassed`), not expected, not sent back
-  for a correction; managers are not bound by it) is left out, since
-  `POST .../submit` would refuse it;
+  for a correction; managers are not bound by it) is listed with
+  `presentationClosedAt` (the deadline that passed, `workDocumentClosedAt`
+  from the kind's `presentationDeadlineAt`), and the home page shows it as a
+  quiet update (`document_closed`), not a task, since `POST .../submit` would
+  refuse it;
 - `amendments`: the amendments the actor's member authored that are still
   `draft` or `submitted`, newest change first, drafts only while their
   document still takes amendments (published, structured, amendable, with a
@@ -1866,6 +1873,14 @@ managers and the Mesa), soonest first:
     `amendment_withdrawn` with `by: "sources_closed"` and
     `amendment_lapsed` with `reason: "sources_transacted"`, and coming back
     by itself: `amendment_reopened` with `reason: "source_reopened"`;
+  - for the authors of the amendments a transactional replaced, that
+    transactional withdrawn once in force (validated and accepted by every
+    main author, `replacesSourcesNow`): `amendment_withdrawn` with
+    `replacedSources: true`, recorded when an author withdraws it
+    (`POST .../withdraw`, which leaves it to the Mesa while other members'
+    amendments are among them) or the Mesa does, from that endpoint or the
+    session console; their amendments stay `transacted`. Its value is
+    `replaced`;
   - for the presenters of a document (main and co-presenters), what was
     settled about it, with `amendment: null`: `document_published` (the
     Secretaría's validation), `document_correction_requested`,
@@ -1895,7 +1910,9 @@ managers and the Mesa), soonest first:
   `reason: "sources_transacted"`), the code of the amendment whose fate
   closed a transactional (`amendment_withdrawn` with
   `by: "sources_closed"`) or whose reopening brought it back
-  (`amendment_reopened` with `reason: "source_reopened"`), the result of the final vote (`document_voted`)
+  (`amendment_reopened` with `reason: "source_reopened"`), `replaced` for a
+  transactional in force withdrawn (`amendment_withdrawn` with
+  `replacedSources`), the result of the final vote (`document_voted`)
   or the new status (`document_status_changed`); null otherwise.
   `ownAmendment` is true when the amendment is one the member wrote (main
   author or co-author), false for document news and for transactionals it

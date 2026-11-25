@@ -49,7 +49,7 @@ const rows = computed(() => text.rows(props.election));
             v-if="row.runoff"
             color="warning"
             variant="subtle"
-            :size="size === 'lg' ? 'lg' : 'sm'"
+            :size="size === 'lg' ? 'lg' : 'md'"
             :label="t('amendment.vote.election.runoffMark')"
             class="ms-1 align-middle"
           />

@@ -18,7 +18,7 @@ import {
   type PackagePdfAssembly,
 } from "../packagePdf";
 import {
-  RALEWAY_FILES,
+  PDF_FONT_FILES,
   pdfmake,
   registerPdfFonts,
   type RalewayFile,
@@ -53,7 +53,7 @@ const brand: ExportBrand = {
 beforeAll(() => {
   registerPdfFonts(
     Object.fromEntries(
-      Object.values(RALEWAY_FILES).map((name) => [
+      PDF_FONT_FILES.map((name) => [
         name,
         readFileSync(resolve(FONTS_DIR, name)),
       ]),

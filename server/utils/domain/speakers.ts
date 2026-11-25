@@ -19,7 +19,10 @@ import type {
 } from "~~/shared/types/api";
 import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import { DEFAULT_SPEAKING_LIMIT_SECONDS } from "~~/shared/utils/schemas/assembly";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
+import {
+  getOptimisticLockTimestampMs,
+  STALE_WRITE_DATA,
+} from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, canNoteSpeakers, type Actor } from "./actor";
 import { loadVisibleAmendmentIds } from "./documents";
@@ -451,7 +454,11 @@ export async function updateSpeakingTurn(
       getOptimisticLockTimestampMs(turn.updatedAt) !==
       getOptimisticLockTimestampMs(body.updatedAt)
     ) {
-      fail(409, "La lista de palabras ha cambiado. Recarga la página");
+      fail(
+        409,
+        "La lista de palabras ha cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     }
 
     const open = await loadOpenTurns(tx, assembly.id);
@@ -472,7 +479,11 @@ export async function updateSpeakingTurn(
         expectedSpeakingId: body.expectedSpeakingId,
       })
     ) {
-      fail(409, "La lista de palabras ha cambiado. Recarga la página");
+      fail(
+        409,
+        "La lista de palabras ha cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     }
     const now = new Date();
     const undoing = turn.status === "done" && body.status === "speaking";

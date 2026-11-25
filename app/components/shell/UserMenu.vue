@@ -10,8 +10,11 @@ import { avatarDisplayText, avatarTextClass } from "~/utils/accountAvatar";
  * (the welcome again: the layout opens it, `help`) and sign out. While an Admin acts as another account it shows
  * that account, and "Volver a mi cuenta" replaces signing out.
  *
- * A long name and its subtitle wrap in the button, never cut, and the menu
- * wraps every line too, so the whole name, email and labels always show.
+ * In the button a long name wraps to two lines at most and the subtitle
+ * keeps one, so the sidebar's footer stays short; each shows whole on hover
+ * (a native title: a tooltip would nest a second trigger in the menu's),
+ * and the name in the button's aria-label too. The menu wraps every line, so the whole name,
+ * email and labels always show there.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 const emit = defineEmits<{ help: [] }>();
@@ -165,13 +168,15 @@ const items = computed<DropdownMenuItem[][]>(() => [
         <UAvatar v-bind="avatar" class="shrink-0" />
         <span v-if="!props.collapsed" class="min-w-0 flex-1 text-start">
           <span
-            class="text-highlighted block text-sm font-medium wrap-break-word"
+            class="text-highlighted line-clamp-2 text-sm font-medium wrap-break-word"
+            :title="name"
           >
             {{ name }}
           </span>
           <span
             v-if="subtitle"
-            class="text-muted block text-xs wrap-break-word"
+            class="text-muted block truncate text-xs"
+            :title="subtitle"
           >
             {{ subtitle }}
           </span>

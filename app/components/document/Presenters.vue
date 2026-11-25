@@ -104,13 +104,12 @@ const parts = computed<Part[]>(() => {
       <CommonMemberBadge :member="main" :size="size" :show-name="showName" />
     </template>
   </span>
-
-  <!-- Several, by name beside the title: "Vocalía de X con Vocalía de Y" -->
   <span
     v-else-if="main && named"
     class="text-muted min-w-0 text-sm"
     data-testid="document-presenters"
   >
+    <!-- Several, by name beside the title: "Vocalía de X con Vocalía de Y" -->
     <span class="sr-only">{{ `${t("document.header.proponent")} ` }}</span>
     <i18n-t keypath="document.presenters.short" tag="span" scope="global">
       <template #main>

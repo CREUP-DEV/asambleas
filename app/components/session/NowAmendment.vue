@@ -609,17 +609,18 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
         </template>
       </template>
 
-      <!-- Another transactional got ahead of it: only withdrawing settles it. -->
-      <UButton
-        v-else-if="stage === 'superseded'"
-        size="lg"
-        color="warning"
-        icon="i-lucide-undo-2"
-        :label="t('session.actions.withdraw')"
-        :loading="busy"
-        :disabled="busy"
-        @click="session.withdrawSubmission(amendment)"
-      />
+      <template v-else-if="stage === 'superseded'">
+        <!-- Another transactional got ahead of it: only withdrawing settles it. -->
+        <UButton
+          size="lg"
+          color="warning"
+          icon="i-lucide-undo-2"
+          :label="t('session.actions.withdraw')"
+          :loading="busy"
+          :disabled="busy"
+          @click="session.withdrawSubmission(amendment)"
+        />
+      </template>
 
       <UButton
         v-else-if="stage === 'late'"
@@ -648,22 +649,23 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
           :disabled="closed"
           @click="session.finalVoteDialog.open = true"
         />
-        <!-- Nothing to debate next: the late ones first, else the document. -->
-        <UButton
-          v-else-if="lateIds.length > 0"
-          size="lg"
-          color="warning"
-          icon="i-lucide-gavel"
-          :label="
-            t(
-              'session.queue.lateDecide',
-              { count: lateIds.length },
-              lateIds.length,
-            )
-          "
-          :disabled="Boolean(session.busy.value.admission)"
-          @click="session.openAdmission(lateIds, 'admitted')"
-        />
+        <template v-else-if="lateIds.length > 0">
+          <!-- Nothing to debate next: the late ones first, else the document. -->
+          <UButton
+            size="lg"
+            color="warning"
+            icon="i-lucide-gavel"
+            :label="
+              t(
+                'session.queue.lateDecide',
+                { count: lateIds.length },
+                lateIds.length,
+              )
+            "
+            :disabled="Boolean(session.busy.value.admission)"
+            @click="session.openAdmission(lateIds, 'admitted')"
+          />
+        </template>
         <UButton
           v-else
           size="lg"

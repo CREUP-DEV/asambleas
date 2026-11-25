@@ -38,6 +38,7 @@ import {
 import { cuid } from "../../db/schema/common";
 import type {
   AcceptanceDecision,
+  AcceptanceRole,
   AcceptedAmendmentRule,
   AdmissionStatus,
   DecisionKind,
@@ -127,6 +128,7 @@ import { isUniqueConstraintViolation } from "../errors";
 import {
   buildOptimisticLockCondition,
   getOptimisticLockTimestampMs,
+  STALE_WRITE_DATA,
 } from "../optimisticLock";
 import {
   actsFor,
@@ -605,6 +607,26 @@ export function withdrawNeedsMesa(input: {
     input.authorsApproval === "accepted" &&
     input.validatedAt !== null &&
     input.acceptances.some((party) => party.memberId !== input.actorMemberId)
+  );
+}
+
+/**
+ * Whether withdrawing (or lapsing) this amendment settles a transactional in
+ * force: validated and accepted by every main author, so the amendments it
+ * replaced are `transacted` for good and stay so. Read on the locked row and
+ * its locked parties. Records `replacedSources` on amendment_withdrawn, by
+ * an author (withdrawAmendment) or by the Mesa from the console
+ * (recordAmendmentOutcome), and their authors are told (news.ts).
+ */
+export function replacesSourcesNow(
+  kind: AmendmentKind,
+  validatedAt: Date | null,
+  parties: { role: AcceptanceRole; decision: AcceptanceDecision }[],
+): boolean {
+  return (
+    kind === "transactional" &&
+    validatedAt !== null &&
+    authorsApproval({ kind, acceptances: parties }) === "accepted"
   );
 }
 
@@ -1552,7 +1574,11 @@ async function replaceSources(
     )
     .returning({ id: amendments.id });
   if (transacted.length !== plan.ids.length) {
-    fail(409, "Las enmiendas han cambiado. Recarga la página");
+    fail(
+      409,
+      "Las enmiendas han cambiado. Recarga la página",
+      STALE_WRITE_DATA,
+    );
   }
   for (const row of transacted) {
     await recordEvent(tx, {
@@ -2782,7 +2808,7 @@ export async function updateAmendmentDraft(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
 
     if (authors) {
       await tx
@@ -3353,7 +3379,11 @@ function instantReview(instant: boolean, actor: Actor, now: Date) {
  * (closeTransactionalsOver). A transactional that already replaced other
  * members' amendments is the Mesa's to withdraw (withdrawNeedsMesa),
  * checked again once it is locked: the last acceptance may have put it in
- * force meanwhile.
+ * force meanwhile. The withdrawal of a transactional in force (validated and
+ * accepted by every main author, whoever withdraws it; replacesSourcesNow)
+ * records `replacedSources`: the amendments it replaced stay `transacted`,
+ * and their authors are told (news.ts, isNewsEvent). The Mesa's withdrawal
+ * from the console (recordAmendmentOutcome) records it the same way.
  */
 export async function withdrawAmendment(
   ctx: AmendmentContext,
@@ -3396,12 +3426,16 @@ export async function withdrawAmendment(
       amendment.id,
       ...dependents.ids,
     ]);
-    if (amendment.kind === "transactional" && !moderate) {
+    let replacedSources = false;
+    if (amendment.kind === "transactional") {
       const row = locked.find((entry) => entry.id === amendment.id);
       const parties = await lockParties(tx, [amendment.id], "share");
       if (row && needsMesa(row.validatedAt, parties)) {
         fail(409, REPLACED_SOURCES_WITHDRAW_MESSAGE);
       }
+      replacedSources =
+        row !== undefined &&
+        replacesSourcesNow(amendment.kind, row.validatedAt, parties);
     }
     const updated = await tx
       .update(amendments)
@@ -3420,7 +3454,10 @@ export async function withdrawAmendment(
       entityType: "amendment",
       entityId: amendment.id,
       type: "amendment_withdrawn",
-      payload: { by: ctx.isAuthor ? "author" : "moderator" },
+      payload: {
+        by: ctx.isAuthor ? "author" : "moderator",
+        ...(replacedSources ? { replacedSources: true } : {}),
+      },
       actor,
     });
     await closeDependents(tx, ctx, dependents, locked, [
@@ -3610,7 +3647,11 @@ export async function decideAmendmentAdmission(
         );
       })
     ) {
-      fail(409, "Las enmiendas han cambiado. Recarga la página");
+      fail(
+        409,
+        "Las enmiendas han cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     }
     assertValidatedForAdmission(locked, body);
     // Deciding on admission checks the amendment: one the Secretaría had not
@@ -3709,7 +3750,11 @@ export async function decideAmendmentAdmission(
             )
             .returning({ id: amendments.id });
     if (updated.length !== body.amendmentIds.length) {
-      fail(409, "Las enmiendas han cambiado. Recarga la página");
+      fail(
+        409,
+        "Las enmiendas han cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     }
 
     if (voteRow) {
@@ -4018,6 +4063,7 @@ export async function validateAmendments(
       fail(
         409,
         "Alguien ya ha revisado alguna de estas enmiendas. Recarga la página para ver cómo está",
+        STALE_WRITE_DATA,
       );
     }
     // Validating a transactional its main authors accepted makes it replace
@@ -4065,7 +4111,11 @@ export async function validateAmendments(
         )
         .returning({ id: amendments.id });
       if (updated.length !== ids.length) {
-        fail(409, "Las enmiendas han cambiado. Recarga la página");
+        fail(
+          409,
+          "Las enmiendas han cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
       }
       // Numbered on presentation; one presented before that rule is numbered now (numberAmendments).
       if (publish) {
@@ -4182,7 +4232,11 @@ export async function publishAmendments(
       )
       .returning({ id: amendments.id });
     if (updated.length !== body.amendmentIds.length) {
-      fail(409, "Las enmiendas han cambiado. Recarga la página");
+      fail(
+        409,
+        "Las enmiendas han cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     }
     await numberAmendments(tx, document.id, body.amendmentIds);
     for (const id of body.amendmentIds) {
@@ -4436,7 +4490,7 @@ export async function undoAmendmentValidation(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     const positionReset = await resetPosition(tx, amendment.id);
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
@@ -4518,7 +4572,7 @@ export async function requestAmendmentCorrection(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     // The text may change: the presenter answers it again once it is
     // back. Read under the row lock the update took, so an answer recorded
     // meanwhile is reset too.
@@ -4643,7 +4697,7 @@ export async function declareInadmissibleOnReview(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     const positionReset = validated
       ? await resetPosition(tx, amendment.id)
       : false;
@@ -4772,7 +4826,7 @@ export async function reclassifyAmendment(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
       documentId: ctx.document.id,
@@ -4784,7 +4838,8 @@ export async function reclassifyAmendment(
     });
 
     const current = locked.find((row) => row.id === amendment.id);
-    if (!current) fail(409, "La enmienda ha cambiado. Recarga la página");
+    if (!current)
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     const position = stored?.position ?? null;
     const plan = reclassifyPositionPlan(
       { ...current, presenterSeesValidated: ctx.presenterSeesValidated },
@@ -4839,7 +4894,11 @@ export async function reclassifyAmendment(
         )
         .returning({ id: amendments.id });
       if (reopened.length === 0)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
+        fail(
+          409,
+          "La enmienda ha cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
       await recordEvent(tx, {
         assemblyId: ctx.assembly.id,
         documentId: ctx.document.id,
@@ -4976,7 +5035,7 @@ export async function changeAmendmentAuthors(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
 
     await tx
       .delete(amendmentAuthors)
@@ -5161,7 +5220,7 @@ async function recordPosition(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     await recordEvent(tx, {
       ...base,
       type: "amendment_reopened",
@@ -5212,7 +5271,7 @@ async function recordPosition(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     await recordEvent(tx, {
       ...base,
       type: "amendment_rejected",
@@ -5243,7 +5302,7 @@ async function recordPosition(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     await recordEvent(tx, {
       ...base,
       type: "amendment_reopened",
@@ -5315,7 +5374,7 @@ async function incorporateAcceptance(
     )
     .returning({ id: amendments.id });
   if (updated.length === 0)
-    fail(409, "La enmienda ha cambiado. Recarga la página");
+    fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
   await recordEvent(tx, {
     assemblyId: ctx.assembly.id,
     documentId: document.id,
@@ -5748,6 +5807,7 @@ export async function setAmendmentPosition(
       fail(
         409,
         "Alguien ha respondido a esta enmienda mientras tanto. Recarga la página para ver su respuesta",
+        STALE_WRITE_DATA,
       );
     }
 
@@ -6126,7 +6186,11 @@ async function recordAmendmentOutcome(
         )
         .returning({ id: amendments.id });
       if (updated.length === 0)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
+        fail(
+          409,
+          "La enmienda ha cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
 
       if (voteRow) {
         await recordEvent(tx, {
@@ -6240,6 +6304,17 @@ async function recordAmendmentOutcome(
         amendment.id,
         ...dependents.ids,
       ]);
+      // A transactional in force keeps what it replaced `transacted`: its
+      // withdrawal is news for their authors (replacesSourcesNow). A lapse
+      // is not (isReplacingWithdrawal).
+      let replacedSources = false;
+      if (transactional && body.action === "withdraw") {
+        const row = locked.find((entry) => entry.id === amendment.id);
+        const parties = await lockParties(tx, [amendment.id], "share");
+        replacedSources =
+          row !== undefined &&
+          replacesSourcesNow(amendment.kind, row.validatedAt, parties);
+      }
       const updated = await tx
         .update(amendments)
         .set({ status, decidedAt: now, outcomeNote: body.note ?? null })
@@ -6253,7 +6328,11 @@ async function recordAmendmentOutcome(
         )
         .returning({ id: amendments.id });
       if (updated.length === 0)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
+        fail(
+          409,
+          "La enmienda ha cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
       await recordEvent(tx, {
         ...base,
         entityId: amendment.id,
@@ -6261,7 +6340,10 @@ async function recordAmendmentOutcome(
           body.action === "withdraw"
             ? "amendment_withdrawn"
             : "amendment_lapsed",
-        payload: { by: "moderator" },
+        payload: {
+          by: "moderator",
+          ...(replacedSources ? { replacedSources: true } : {}),
+        },
       });
       await closeDependents(tx, ctx, dependents, locked, [
         { id: amendment.id, code: amendment.code, status },
@@ -6344,7 +6426,11 @@ async function recordAmendmentOutcome(
         !reopenable.includes(row.status) ||
         (alternatives && row.outcomeVoteId !== alternatives.voteId)
       ) {
-        fail(409, "La enmienda ha cambiado. Recarga la página");
+        fail(
+          409,
+          "La enmienda ha cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
       }
       return row;
     });
@@ -6391,7 +6477,7 @@ async function recordAmendmentOutcome(
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
+      fail(409, "La enmienda ha cambiado. Recarga la página", STALE_WRITE_DATA);
     const others = reopenIds.filter((id) => id !== amendment.id);
     if (others.length > 0 && alternatives) {
       const rest = await tx
@@ -6406,7 +6492,11 @@ async function recordAmendmentOutcome(
         )
         .returning({ id: amendments.id });
       if (rest.length !== others.length)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
+        fail(
+          409,
+          "La enmienda ha cambiado. Recarga la página",
+          STALE_WRITE_DATA,
+        );
     }
     for (const row of currents) {
       await recordEvent(tx, {
@@ -6587,6 +6677,7 @@ export async function touchVotedWithoutEffect(
     fail(
       409,
       `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
+      STALE_WRITE_DATA,
     );
   }
 }
@@ -7097,6 +7188,7 @@ async function recordMultiAmendmentVote(
         fail(
           409,
           `${amendment.code ?? "Una enmienda"} ha cambiado. Recarga la página`,
+          STALE_WRITE_DATA,
         );
       }
       await recordEvent(tx, {
@@ -7445,6 +7537,7 @@ export async function createTransactionalAmendment(
       fail(
         409,
         "Ha cambiado quién presenta alguna de las enmiendas. Recarga la página",
+        STALE_WRITE_DATA,
       );
     }
     const { ops, errors } = prepareAmendmentOps({
@@ -7678,7 +7771,12 @@ export async function recordAmendmentAcceptance(
       );
     }
     const row = parties.find((item) => item.memberId === memberId);
-    if (!row) fail(409, "Las respuestas han cambiado. Recarga la página");
+    if (!row)
+      fail(
+        409,
+        "Las respuestas han cambiado. Recarga la página",
+        STALE_WRITE_DATA,
+      );
     if (row.decision !== "pending" && !moderate)
       fail(409, "Esta parte ya ha respondido");
     // Accepting only makes sense while what it groups is still open: one of

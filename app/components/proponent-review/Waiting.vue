@@ -7,10 +7,12 @@ import type { PositionWaitCounts } from "./-review";
  * to treat, transactionals their main authors have not accepted, and, for
  * the Mesa and the Secretaría (the only ones who see them), amendments the
  * Secretaría has not validated or published yet. Nothing renders when
- * nothing waits.
+ * nothing waits. `inline` puts the reasons on one line that wraps, for the
+ * review's counter row; otherwise they stack.
  */
 const props = defineProps<{
   counts: PositionWaitCounts;
+  inline?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -59,7 +61,10 @@ const lines = computed(() => {
 </script>
 
 <template>
-  <ul v-if="lines.length > 0" class="space-y-1">
+  <ul
+    v-if="lines.length > 0"
+    :class="inline ? 'flex flex-wrap gap-x-3 gap-y-1' : 'space-y-1'"
+  >
     <li
       v-for="line in lines"
       :key="line.key"

@@ -508,14 +508,14 @@ async function confirmDelete() {
                   v-if="isDefault(key)"
                   color="neutral"
                   variant="soft"
-                  size="sm"
+                  size="md"
                   :label="t('assembly.settings.default')"
                 />
                 <UBadge
                   v-if="changedSettings.includes(key)"
                   color="info"
                   variant="soft"
-                  size="sm"
+                  size="md"
                   :label="t('assembly.settings.changed')"
                 />
               </p>

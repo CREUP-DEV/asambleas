@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from "vue";
+import { unrefElement } from "@vueuse/core";
 import {
   UNFOLDED,
   foldOnScroll,
@@ -109,7 +111,8 @@ import { scrollParentOf } from "~/utils/scrollAnchor";
  * (its badge counts what waits for them), and "Más filtros" holds the rest.
  * An open amendment takes the panel and is read on its own: "Anterior ·
  * 3 de 17 · Siguiente" walks the list as filtered (also with the arrow
- * keys and K / J), and "Volver a la lista" is always there. Corrections the
+ * keys and K / J), and "Volver a la lista" goes back to it (the slideover
+ * of a narrow screen leaves it out: its X closes it). Corrections the
  * Secretaría asked for get a notice above
  * the workspace; the Secretaría gets a quiet line with what it still has to
  * review or publish, and what it sent back for correction (those drafts are
@@ -198,7 +201,18 @@ useHead({
   title: () => document.value?.title ?? t("workspace.title"),
 });
 
-const isDesktop = useMediaQuery("(min-width: 1024px)");
+/**
+ * The wide layout (the folded header's way through, the list beside the
+ * text, the detail in its panel), only once mounted. The media query is read
+ * on the client during setup, before hydration: the server and the
+ * hydrating client both render the narrow tree, so their nodes and their
+ * `useId` order agree, and the switch to the wide one after mount is a
+ * change Vue patches. Called before the hooks below that read it, so it is
+ * already true when they run.
+ */
+const mounted = useMounted();
+const desktopQuery = useMediaQuery("(min-width: 1024px)");
+const isDesktop = computed(() => mounted.value && desktopQuery.value);
 const textView = useTemplateRef<TextViewHandle>("textView");
 const draftView = useTemplateRef<TextViewHandle>("draftView");
 
@@ -428,11 +442,6 @@ interface MoreItem {
   onSelect?: () => void;
 }
 
-/**
- * Everything but the one action of the page, in its "Más" menu: the review
- * when nothing waits there, the PDF, the record, and the less usual ways to
- * amend, each with what it does.
- */
 // The presenter's answers ------------------------------------------------------
 
 /**
@@ -475,6 +484,11 @@ async function setPositionsPublic(value: boolean): Promise<void> {
   }
 }
 
+/**
+ * Everything but the one action of the page, in its "Más" menu: the review
+ * when nothing waits there, the PDF, the record, and the less usual ways to
+ * amend, each with what it does.
+ */
 const moreItems = computed<MoreItem[][]>(() => {
   const work: MoreItem[] = [];
   if (showReviewEntry.value && !reviewIsPrimary.value) {
@@ -574,6 +588,26 @@ const moreItems = computed<MoreItem[][]>(() => {
 
   return [work, text, ways].filter((group) => group.length > 0);
 });
+/**
+ * The menu's entries, without its group labels. A lone one shows as its own
+ * button instead of a menu of one («Otras formas» always holds a label and
+ * at least one way, so it never comes down to one).
+ */
+const moreEntries = computed(() =>
+  moreItems.value.flat().filter((item) => item.type !== "label"),
+);
+/** A lone entry of "Más" as a button of its own. */
+function moreButton(item: MoreItem) {
+  return {
+    label: item.label,
+    icon: item.icon,
+    to: item.to,
+    external: item.external,
+    target: item.target,
+    disabled: item.disabled,
+    onClick: item.onSelect,
+  };
+}
 
 function blockReference(blockId: string | null | undefined): string | null {
   if (!blockId) return null;
@@ -639,6 +673,29 @@ function onTextMode(mode: string | number): void {
   // Side by side takes the whole width: the detail would hide it.
   if (mode === "compare" && !compareDiff.value) detailOpen.value = false;
 }
+
+/**
+ * The tab of the view on show, scrolled into its list when the tabs do not
+ * fit (a phone), whoever changed the view (a tab, "Ver en el documento").
+ * Only the list scrolls sideways: the page never moves for it.
+ */
+const modeTabs = useTemplateRef<ComponentPublicInstance>("modeTabs");
+watch(
+  textMode,
+  () => {
+    const root = unrefElement(modeTabs);
+    const list = root?.querySelector<HTMLElement>('[role="tablist"]');
+    const active = list?.querySelector<HTMLElement>(
+      '[role="tab"][data-state="active"]',
+    );
+    if (!list || !active) return;
+    const box = list.getBoundingClientRect();
+    const tab = active.getBoundingClientRect();
+    if (tab.left < box.left) list.scrollLeft -= box.left - tab.left;
+    else if (tab.right > box.right) list.scrollLeft += tab.right - box.right;
+  },
+  { flush: "post" },
+);
 
 /** "Incluir las aceptadas" only changes the two views of the result. */
 const showAcceptedSwitch = computed(
@@ -1500,13 +1557,9 @@ function setAmendmentsHidden(hidden: boolean): void {
  */
 // Only once mounted, like the stored choice: decided while hydrating, the
 // panel would keep the server's classes (Vue does not patch them then).
-const workspaceMounted = ref(false);
-onMounted(() => {
-  workspaceMounted.value = true;
-});
 const noAmendments = computed(
   () =>
-    workspaceMounted.value &&
+    mounted.value &&
     Boolean(list.data.value) &&
     list.amendments.value.length === 0,
 );
@@ -1788,7 +1841,9 @@ const filteredBlockLabel = computed(() =>
          below takes what the header leaves and the page never scrolls
          besides the text. min-h-0: its size comes from the body, never from
          the text inside. -->
-    <!-- Loading -->
+    <!-- Loading, then the error, then the document. No comment goes
+         between the branches of a v-if chain: in development Vue folds it
+         into the next branch, on the client only, and hydration breaks. -->
     <div v-if="pending" class="flex flex-col gap-4" role="status">
       <span class="sr-only">{{ t("workspace.loading") }}</span>
       <USkeleton aria-hidden="true" class="h-4 w-32" />
@@ -1802,8 +1857,6 @@ const filteredBlockLabel = computed(() =>
         />
       </div>
     </div>
-
-    <!-- Error -->
     <CommonEmptyState
       v-else-if="!document || !assembly"
       :icon="
@@ -1881,13 +1934,15 @@ const filteredBlockLabel = computed(() =>
                   :label="String(reviewBacklog.total)"
                   color="neutral"
                   variant="solid"
-                  size="sm"
+                  size="md"
                   class="tabular-nums"
                   aria-hidden="true"
                 />
               </template>
             </UButton>
-            <!-- Primary, unless the presenter's review is pending. -->
+            <!-- Primary, unless the presenter's review is pending. Else, a
+                 presented document waits for the Secretaría: its button
+                 says what it does there. -->
             <UButton
               v-if="canAmend && isStructured && !composing"
               data-amend-entry
@@ -1896,8 +1951,6 @@ const filteredBlockLabel = computed(() =>
               :label="t('workspace.cta.present')"
               @click="startAmendment"
             />
-            <!-- A presented document waits for the Secretaría: its button
-                 says what it does there. -->
             <UButton
               v-else-if="canEditDraft && !headerHasNextStep"
               :to="documentPath('editar')"
@@ -1918,9 +1971,9 @@ const filteredBlockLabel = computed(() =>
               :root="notesRoot"
               @locate="showNoteBlock"
             />
-            <!-- The uploaded PDF in a tab of its own, on the screens
-                 where it shows embedded below; elsewhere its card has the
-                 button. -->
+            <!-- The uploaded PDF in a tab of its own, to zoom, print or save
+                 it, on every screen: the pages below leave the button out
+                 (`open-button` false). -->
             <UButton
               v-if="document.format === 'file' && document.fileUrl"
               :to="document.fileUrl"
@@ -1929,7 +1982,6 @@ const filteredBlockLabel = computed(() =>
               color="neutral"
               variant="outline"
               icon="i-lucide-external-link"
-              class="max-lg:hidden"
               :label="t('workspace.text.openPdfTab')"
               data-testid="document-open-pdf"
             />
@@ -1977,8 +2029,16 @@ const filteredBlockLabel = computed(() =>
               :api-base="packageApiBase"
               :preset="packagePreset"
             />
+            <!-- The rest, out of the first plane: one entry shows as
+                 itself, several fold into "Más". -->
+            <UButton
+              v-if="moreEntries.length === 1 && moreEntries[0]"
+              color="neutral"
+              variant="outline"
+              v-bind="moreButton(moreEntries[0])"
+            />
             <UDropdownMenu
-              v-if="moreItems.length > 0"
+              v-else-if="moreEntries.length > 1"
               :items="moreItems"
               :content="{ align: 'end' }"
               :ui="{
@@ -2042,10 +2102,9 @@ const filteredBlockLabel = computed(() =>
         :label="t('readMarks.bar.endLabel')"
         class="border-default justify-items-center border-t pt-3"
       />
-
-      <!-- Not published yet -->
       <template v-else-if="!isPublished">
-        <!-- Not while it is back with its presenters: the header says so. -->
+        <!-- Not published yet. Its notice not while it is back with its
+             presenters: the header says so. -->
         <UAlert
           v-if="document.amendable && !document.correctionRequestedAt"
           color="info"
@@ -2093,10 +2152,9 @@ const filteredBlockLabel = computed(() =>
           variant="outline"
         />
       </template>
-
-      <!-- Workspace -->
       <template v-else>
-        <!-- The Secretaría sent some of the actor's amendments back. -->
+        <!-- Workspace. First, the Secretaría sent some of the actor's
+             amendments back. -->
         <UAlert
           v-if="corrections.length > 0 && canAmend && !composing"
           color="warning"
@@ -2151,6 +2209,7 @@ const filteredBlockLabel = computed(() =>
           :content="false"
           size="sm"
           class="lg:hidden"
+          :ui="{ trailingBadgeSize: 'md' }"
           :aria-label="t('workspace.panes.label')"
         />
 
@@ -2191,10 +2250,13 @@ const filteredBlockLabel = computed(() =>
             :ui="textPanelUi"
           >
             <template #header>
+              <!-- Below lg the tabs take the room the rest leaves and scroll
+                   in it (their list is `overflow-x-auto`), never the
+                   toolbar; from lg the rest wraps under them instead. -->
               <UDashboardToolbar
                 :ui="{
-                  root: 'flex-wrap gap-2 py-2 min-h-12 h-auto',
-                  left: 'flex-wrap',
+                  root: 'flex-wrap max-lg:flex-nowrap gap-2 py-2 min-h-12 h-auto',
+                  left: 'min-w-0 max-w-full flex-wrap max-lg:flex-1',
                   right: 'flex-wrap',
                 }"
               >
@@ -2208,6 +2270,7 @@ const filteredBlockLabel = computed(() =>
                   </span>
                   <UTabs
                     v-else
+                    ref="modeTabs"
                     v-model="textMode"
                     :items="modeItems"
                     :content="false"
@@ -2216,7 +2279,7 @@ const filteredBlockLabel = computed(() =>
                     class="max-w-full"
                     :ui="{
                       list: 'w-auto max-w-full overflow-x-auto',
-                      trigger: 'shrink-0 grow-0',
+                      trigger: 'shrink-0 grow-0 max-sm:min-h-8',
                     }"
                     :aria-label="t('workspace.modes.label')"
                     @update:model-value="onTextMode"
@@ -2248,15 +2311,20 @@ const filteredBlockLabel = computed(() =>
                     "
                     :content="{ align: 'end' }"
                   >
+                    <!-- Only its icons on a phone, so the tabs keep the
+                         room; its name stays for screen readers. -->
                     <UButton
                       color="neutral"
                       variant="ghost"
                       size="sm"
                       icon="i-lucide-sliders-horizontal"
                       trailing-icon="i-lucide-chevron-down"
-                      :label="t('workspace.viewOptions')"
                       data-testid="view-options"
-                    />
+                    >
+                      <span class="max-sm:sr-only">{{
+                        t("workspace.viewOptions")
+                      }}</span>
+                    </UButton>
                     <template #content>
                       <div class="flex max-w-80 flex-col gap-3 p-3">
                         <USwitch
@@ -2315,7 +2383,7 @@ const filteredBlockLabel = computed(() =>
                           :label="String(list.listed.value.length)"
                           color="neutral"
                           variant="subtle"
-                          size="sm"
+                          size="md"
                         />
                       </template>
                     </UButton>
@@ -2364,9 +2432,8 @@ const filteredBlockLabel = computed(() =>
                   />
                 </AmendmentTextActions>
               </template>
-
-              <!-- One amendment over the full text -->
               <template v-else-if="textMode === 'amended'">
+                <!-- One amendment over the full text -->
                 <CommonEmptyState
                   v-if="!selectedAmendment"
                   icon="i-lucide-mouse-pointer-click"
@@ -2423,11 +2490,10 @@ const filteredBlockLabel = computed(() =>
                   />
                 </template>
               </template>
-
-              <!-- Live consolidation -->
               <template
                 v-else-if="textMode === 'consolidated' && consolidation"
               >
+                <!-- Live consolidation -->
                 <UAlert
                   v-if="finalText && conciliation.length > 0"
                   color="warning"
@@ -2533,9 +2599,8 @@ const filteredBlockLabel = computed(() =>
                   @amendment-click="selectAmendment($event, { fromText: true })"
                 />
               </template>
-
-              <!-- One text, the changes marked on it -->
               <template v-else-if="textMode === 'compare' && compareDiff">
+                <!-- One text, the changes marked on it -->
                 <p class="text-muted text-sm">
                   {{
                     finalText
@@ -2550,9 +2615,8 @@ const filteredBlockLabel = computed(() =>
                   :pages="basePages"
                 />
               </template>
-
-              <!-- Side by side -->
               <div v-else-if="textMode === 'compare'" class="@container">
+                <!-- Side by side -->
                 <div class="grid gap-6 @3xl:grid-cols-2">
                   <section class="min-w-0">
                     <h3
@@ -2639,7 +2703,8 @@ const filteredBlockLabel = computed(() =>
             </template>
 
             <template #body>
-              <!-- Transactional composer -->
+              <!-- The transactional composer; else the open amendment's
+                   detail (wide screens); else my amendments or all. -->
               <TransactionalComposer
                 v-if="transactional"
                 :key="transactional.key"
@@ -2663,8 +2728,6 @@ const filteredBlockLabel = computed(() =>
                 @conflict="refreshAll()"
                 @passage="transactionalPassage = $event"
               />
-
-              <!-- Detail (wide screens) -->
               <AmendmentDetail
                 v-else-if="showDesktopDetail && selectedAmendment"
                 ref="desktopDetail"
@@ -2691,9 +2754,9 @@ const filteredBlockLabel = computed(() =>
                 @removed="onDetailRemoved"
                 @changed="refreshAll()"
               />
-
-              <!-- My amendments: drafts, corrections and where the rest stand -->
               <template v-else-if="listTab === 'mine' && showMineTab">
+                <!-- My amendments: drafts, corrections and where the rest
+                     stand -->
                 <CommonEmptyState
                   v-if="list.mine.value.length === 0"
                   icon="i-lucide-file-pen"
@@ -2720,11 +2783,10 @@ const filteredBlockLabel = computed(() =>
                   </li>
                 </ul>
               </template>
-
-              <!-- All amendments -->
               <template v-else>
-                <!-- Secretaría: what it still has to check or publish, and
-                     what it sent back for correction. -->
+                <!-- All amendments. First, for the Secretaría, what it still
+                     has to check or publish, and what it sent back for
+                     correction. -->
                 <div
                   v-if="reviewQueueItems.length > 0"
                   class="flex flex-wrap items-center gap-x-2 gap-y-1.5"
@@ -2849,6 +2911,7 @@ const filteredBlockLabel = computed(() =>
           <template #body>
             <AmendmentDetail
               v-if="selectedAmendment"
+              in-overlay
               :amendment="selectedAmendment"
               :base="base"
               :document="document"

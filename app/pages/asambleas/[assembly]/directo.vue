@@ -753,18 +753,6 @@ const voteQuestion = computed(() =>
     : null,
 );
 
-/**
- * From xl the page has two columns: the debate, the notes, the result and
- * the amendments on the left; who has the floor and the attendance in a
- * column of their own on the right, which stays in view. Below xl they
- * keep their place among the rest, in one column, so the order the eye
- * follows is the order of the page for the keyboard and screen readers
- * too. Only once mounted: the server renders one column.
- */
-const mounted = useMounted();
-const xlScreen = useMediaQuery("(min-width: 1280px)");
-const twoColumns = computed(() => mounted.value && xlScreen.value);
-
 const documentPath = computed(() =>
   document.value
     ? `${sectionPath("documentos")}/${encodeURIComponent(document.value.slug)}`
@@ -1023,22 +1011,23 @@ watch(
       />
     </CommonEmptyState>
 
-    <!-- After the session -->
-    <CommonEmptyState
-      v-else-if="status === 'closed'"
-      icon="i-lucide-flag"
-      :title="t('liveView.closed.title')"
-      :description="t('liveView.closed.description')"
-      variant="outline"
-    >
-      <template #action>
-        <UButton
-          :to="sectionPath('documentos')"
-          icon="i-lucide-files"
-          :label="t('liveView.closed.documents')"
-        />
-      </template>
-    </CommonEmptyState>
+    <template v-else-if="status === 'closed'">
+      <!-- After the session -->
+      <CommonEmptyState
+        icon="i-lucide-flag"
+        :title="t('liveView.closed.title')"
+        :description="t('liveView.closed.description')"
+        variant="outline"
+      >
+        <template #action>
+          <UButton
+            :to="sectionPath('documentos')"
+            icon="i-lucide-files"
+            :label="t('liveView.closed.documents')"
+          />
+        </template>
+      </CommonEmptyState>
+    </template>
 
     <template v-else-if="inSession">
       <!-- Connection (the hub's navbar badge is hidden on phones) -->
@@ -1172,7 +1161,17 @@ watch(
         </template>
       </UAlert>
 
-      <!-- From xl, two columns (twoColumns); below, one. -->
+      <!--
+        From xl the page has two columns: the debate, the notes, the result
+        and the amendments on the left; who has the floor and the attendance
+        in a column of their own on the right, which stays in view. Below xl
+        they keep their place among the rest, in one column, so the order the
+        eye follows is the order of the page for the keyboard and screen
+        readers too. CSS picks the layout, so the server paints the final one
+        at any width with nothing moving after hydration: each block is
+        rendered in both places and the one not shown is display:none, out
+        of the layout and the accessibility tree.
+      -->
       <div
         class="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
       >
@@ -1203,15 +1202,16 @@ watch(
             </template>
           </CommonEmptyState>
 
-          <!-- Nothing in debate yet -->
-          <CommonEmptyState
-            v-else-if="nothingInDebate"
-            icon="i-lucide-hourglass"
-            :title="t('liveView.idle.title')"
-            :description="t('liveView.idle.description')"
-            variant="outline"
-            size="sm"
-          />
+          <template v-else-if="nothingInDebate">
+            <!-- Nothing in debate yet -->
+            <CommonEmptyState
+              icon="i-lucide-hourglass"
+              :title="t('liveView.idle.title')"
+              :description="t('liveView.idle.description')"
+              variant="outline"
+              size="sm"
+            />
+          </template>
 
           <LiveViewDebate
             v-else
@@ -1276,8 +1276,9 @@ watch(
           </section>
 
           <LiveViewSpeakers
-            v-if="speakers && !twoColumns"
+            v-if="speakers"
             :speakers="speakers"
+            class="xl:hidden"
           />
 
           <section
@@ -1300,8 +1301,9 @@ watch(
           </section>
 
           <LiveViewAttendance
-            v-if="headcountsDto && !twoColumns"
+            v-if="headcountsDto"
             :attendance="attendance"
+            class="xl:hidden"
           />
 
           <LiveViewAmendmentList
@@ -1327,14 +1329,24 @@ watch(
 
         <!--
           The right column, in view while the left one scrolls; it scrolls
-          on its own when its lists, opened, outgrow the screen.
+          on its own when its lists, opened, outgrow the screen. The padding
+          keeps focus rings unclipped; the margin that offsets it stays off
+          the inline end, so the column ends with its track.
         -->
         <div
-          v-if="twoColumns && (speakers || headcountsDto)"
-          class="sticky top-0 -m-1 flex max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] flex-col gap-6 overflow-x-hidden overflow-y-auto p-1"
+          v-if="speakers || headcountsDto"
+          class="sticky top-0 -my-1 -ms-1 hidden max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] flex-col gap-6 xl:flex overflow-x-hidden overflow-y-auto p-1"
         >
-          <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
-          <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />
+          <LiveViewSpeakers
+            v-if="speakers"
+            :speakers="speakers"
+            heading-id="live-speakers-side-title"
+          />
+          <LiveViewAttendance
+            v-if="headcountsDto"
+            :attendance="attendance"
+            heading-id="live-attendance-side-title"
+          />
         </div>
       </div>
     </template>

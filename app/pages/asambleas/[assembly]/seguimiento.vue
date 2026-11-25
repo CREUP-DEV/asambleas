@@ -111,12 +111,10 @@ const deadlineOpen = computed({
 
 async function onCreated() {
   filter.value = "all";
-  statusMessage.value = t("tracking.expected.created");
   await refresh();
 }
 
 async function onDeadlineSaved() {
-  statusMessage.value = t("tracking.deadline.savedShort");
   await refresh();
 }
 </script>

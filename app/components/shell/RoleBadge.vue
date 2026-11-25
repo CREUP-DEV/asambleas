@@ -32,7 +32,7 @@ const props = withDefaults(
     role: string | null | undefined;
     size?: "xs" | "sm" | "md" | "lg" | "xl";
   }>(),
-  { size: "sm" },
+  { size: "md" },
 );
 
 const { t } = useI18n();

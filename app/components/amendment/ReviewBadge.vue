@@ -64,7 +64,7 @@ const audience = computed(() => {
       v-if="badge"
       :color="badge.color"
       variant="subtle"
-      size="xs"
+      size="md"
       :icon="badge.icon"
       :label="t(`amendment.review.badges.${badge.key}`)"
       class="whitespace-nowrap"

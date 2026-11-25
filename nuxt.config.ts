@@ -83,6 +83,15 @@ const AVATAR_IMAGE_RATE_LIMIT = {
   tokensPerInterval: 10_000,
   interval: 300_000,
 };
+// The PDFs of documents and of the convocatoria (GET /api/uploads/documents
+// and /convocations): every reader asks for each one it opens, revalidates
+// it on each visit (304) and, with a long PDF, asks for it in 1 MB parts
+// (pdf.js's Range requests), so a room behind one IP reading the same texts
+// would drain the global bucket. A bucket of its own per route.
+const PDF_FILE_RATE_LIMIT = {
+  tokensPerInterval: 20_000,
+  interval: 300_000,
+};
 // A sync of the room reads the Intranet's attendees and queues their images.
 // The server calls the Intranet at most once a minute per assembly, but a
 // change of source starts that minute again: this bucket bounds the calls
@@ -206,6 +215,16 @@ const routeRules = {
   "/api/uploads/avatars/*": {
     security: {
       rateLimiter: AVATAR_IMAGE_RATE_LIMIT,
+    },
+  },
+  "/api/uploads/documents/*": {
+    security: {
+      rateLimiter: PDF_FILE_RATE_LIMIT,
+    },
+  },
+  "/api/uploads/convocations/*": {
+    security: {
+      rateLimiter: PDF_FILE_RATE_LIMIT,
     },
   },
   // Export status polling and downloads: authenticated and owner-checked,

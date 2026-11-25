@@ -467,7 +467,7 @@ const total = computed(() => props.groups.length);
                   <UBadge
                     color="neutral"
                     variant="subtle"
-                    size="sm"
+                    size="md"
                     class="shrink-0 tabular-nums"
                     :label="`${entry.counts.seated}/${entry.counts.total}`"
                     aria-hidden="true"

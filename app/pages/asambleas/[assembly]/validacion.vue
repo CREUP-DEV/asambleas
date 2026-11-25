@@ -361,12 +361,6 @@ function documentPath(slug: string): string {
   return sectionPath(`documentos/${encodeURIComponent(slug)}`);
 }
 
-const statusMessage = ref("");
-
-function announce(message: string) {
-  statusMessage.value = message;
-}
-
 function patch(update: (value: ReviewQueueDto) => ReviewQueueDto) {
   if (queue.value) queue.value = update(queue.value);
 }
@@ -430,7 +424,6 @@ async function confirmPublish() {
           reference: published.reference,
         })
       : undefined;
-    announce(description ? `${title}. ${description}` : title);
     toast.add({ title, description, color: "success", icon: "i-lucide-check" });
     refreshAfterWrite();
   } catch (failure) {
@@ -460,7 +453,6 @@ async function sendDocumentCorrection(note: string) {
       title: document.title,
     });
     const description = t("review.documents.correctionHint");
-    announce(`${title}. ${description}`);
     toast.add({
       title,
       description,
@@ -585,7 +577,6 @@ async function confirmBulkPublish() {
       { count: published },
       published,
     );
-    announce(title);
     toast.add({ title, color: "success", icon: "i-lucide-check" });
   }
   if (failed.length > 0) {
@@ -632,10 +623,6 @@ async function confirmBulkPublish() {
           :to="sectionPath('seguimiento')"
         />
       </div>
-
-      <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {{ statusMessage }}
-      </p>
 
       <!-- Narrow everything below to one document or one presenter. On a
            phone, one row: the labels are read, not shown (the placeholders
@@ -804,7 +791,6 @@ async function confirmBulkPublish() {
             :document-id="filterDocumentId"
             :member-id="filterMemberId"
             @undone="onUndoneWhileEmpty"
-            @announce="announce"
           />
         </section>
       </template>
@@ -949,7 +935,6 @@ async function confirmBulkPublish() {
               @updated="onAmendmentsUpdated"
               @removed="onAmendmentsRemoved"
               @conflict="refresh"
-              @announce="announce"
             />
           </div>
         </section>
@@ -978,6 +963,7 @@ async function confirmBulkPublish() {
               indicator: 'max-sm:bottom-0',
               trigger: 'max-sm:shrink-0',
               label: 'max-sm:overflow-visible max-sm:whitespace-nowrap',
+              trailingBadgeSize: 'md',
             }"
             :aria-label="t('review.amendments.tabs.label')"
           />
@@ -1001,7 +987,6 @@ async function confirmBulkPublish() {
                 @updated="onAmendmentsUpdated"
                 @removed="onAmendmentsRemoved"
                 @conflict="refresh"
-                @announce="announce"
               />
             </div>
           </div>
@@ -1024,7 +1009,6 @@ async function confirmBulkPublish() {
                 @updated="onAmendmentsUpdated"
                 @removed="onAmendmentsRemoved"
                 @conflict="refresh"
-                @announce="announce"
               />
             </div>
           </div>
@@ -1039,7 +1023,6 @@ async function confirmBulkPublish() {
             :document-id="filterDocumentId"
             :member-id="filterMemberId"
             @undone="refresh"
-            @announce="announce"
           />
         </section>
 
@@ -1082,7 +1065,6 @@ async function confirmBulkPublish() {
               @updated="onAmendmentsUpdated"
               @removed="onAmendmentsRemoved"
               @conflict="refresh"
-              @announce="announce"
             />
           </div>
         </section>

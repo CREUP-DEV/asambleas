@@ -75,6 +75,22 @@ const isLeft = (document: DocumentSummaryDto) =>
 const leftCount = computed(
   () => (agenda.value?.documents ?? []).filter(isLeft).length,
 );
+/** The read marks are on their way (fetched in the browser only). */
+const marksWaiting = computed(
+  () => marks.marks.value === null && !marks.failed.value,
+);
+
+/**
+ * A filter switch on a phone answers in its whole row (M-031): the label
+ * stretches over the row's height and the rest of its width, and the
+ * switch's own button reaches the row's top and bottom.
+ */
+const FILTER_SWITCH_UI = {
+  root: "max-sm:min-h-11 items-center",
+  base: "max-sm:relative max-sm:after:absolute max-sm:after:-inset-x-2 max-sm:after:-inset-y-3",
+  wrapper: "max-sm:flex max-sm:flex-1 max-sm:self-stretch",
+  label: "max-sm:flex max-sm:flex-1 max-sm:items-center cursor-pointer",
+};
 
 const memberId = computed(() => me.member.value?.id ?? null);
 const isMine = (document: DocumentSummaryDto) =>
@@ -337,18 +353,20 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           v-if="mineCount > 0"
           v-model="onlyMine"
           size="sm"
-          :ui="{ root: 'max-sm:min-h-11 items-center' }"
+          :ui="FILTER_SWITCH_UI"
           :label="
             t('documents.onlyMine', { member: me.member.value?.acronym ?? '' })
           "
         />
       </div>
-      <!-- Names the dot the rows show for what is left to read. -->
+      <!-- Names the dot the rows show for what is left to read. On a phone,
+           while the marks are on their way, its row is kept, so the list
+           does not move down when it comes. -->
       <USwitch
         v-if="leftCount > 0 || onlyLeft"
         v-model="onlyLeft"
         size="sm"
-        :ui="{ root: 'max-sm:min-h-11 items-center' }"
+        :ui="FILTER_SWITCH_UI"
         :label="t('readMarks.onlyLeft', { count: leftCount })"
         data-testid="documents-only-left"
       >
@@ -362,6 +380,13 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           </span>
         </template>
       </USwitch>
+      <div
+        v-else-if="marksWaiting"
+        class="flex min-h-11 items-center sm:hidden"
+        aria-hidden="true"
+      >
+        <USkeleton class="h-4 w-60 max-w-full" />
+      </div>
       <UButton
         v-if="filtering"
         color="neutral"

@@ -25,7 +25,7 @@ import {
 } from "../members/intranet";
 import { isTooLarge, readCapped } from "../seating/intranet";
 import { sniffImageFormat } from "../seating/images";
-import { assertOptimisticLock } from "../optimisticLock";
+import { assertOptimisticLock, STALE_WRITE_DATA } from "../optimisticLock";
 import type { Actor } from "./actor";
 import {
   findAgreementsRecord,
@@ -310,7 +310,8 @@ export async function prepareRecordForSigning(
   try {
     previous = await db.transaction(async (tx) => {
       const current = await lockDocument(tx, document.id);
-      if (current.consolidatedVersionId !== versionId) fail(409, STALE_MESSAGE);
+      if (current.consolidatedVersionId !== versionId)
+        fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
       const row = await loadSigningRow(document.id, tx);
       const values = {
         versionId,
@@ -417,7 +418,7 @@ export async function attachSignedRecord(
         .for("update");
       if (!row?.preparedFile) fail(409, "Prepara primero el acta para firmar");
       if (row.versionId !== current.consolidatedVersionId) {
-        fail(409, STALE_MESSAGE);
+        fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
       }
       assertOptimisticLock(updatedAt, row.updatedAt, STALE_MESSAGE);
       await tx

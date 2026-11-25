@@ -39,7 +39,10 @@ import {
   type VoteBallot,
   type VoteBallotInput,
 } from "~~/shared/utils/rollCall";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
+import {
+  getOptimisticLockTimestampMs,
+  STALE_WRITE_DATA,
+} from "../optimisticLock";
 import { canModerate, type Actor } from "./actor";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
@@ -497,7 +500,7 @@ export async function updateHeadcount(
       getOptimisticLockTimestampMs(row.updatedAt) !==
       getOptimisticLockTimestampMs(body.updatedAt)
     ) {
-      fail(409, "El recuento ha cambiado. Recarga la página");
+      fail(409, "El recuento ha cambiado. Recarga la página", STALE_WRITE_DATA);
     }
 
     const listed = await tx

@@ -62,13 +62,13 @@ const parentPending = computed(() => parent.value?.pending === true);
       <span v-else class="truncate">{{ parent.label }}</span>
     </ULink>
   </nav>
-  <!-- Only with a level above it: a top-level page (Asambleas, Mi
-       actividad) would repeat in a row of its own what its navbar already
-       says, as the administration pages, which have no trail, never do. -->
   <div
     v-else-if="props.placement === 'row' && parent"
     class="border-default flex h-(--shell-breadcrumb-height) shrink-0 items-center border-b px-4 sm:px-6 print:hidden"
   >
+    <!-- Only with a level above it: a top-level page (Asambleas, Mi
+         actividad) would repeat in a row of its own what its navbar already
+         says, as the administration pages, which have no trail, never do. -->
     <ShellBreadcrumbTrail
       :crumbs="crumbs"
       class="hidden min-w-0 flex-1 lg:flex"

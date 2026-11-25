@@ -77,7 +77,7 @@ const pending = computed(
           v-if="gone"
           color="error"
           variant="subtle"
-          size="sm"
+          size="md"
           icon="i-lucide-user-x"
           :label="t('seating.person.gone')"
         />
@@ -85,7 +85,7 @@ const pending = computed(
           v-else-if="pending"
           color="warning"
           variant="subtle"
-          size="sm"
+          size="md"
           icon="i-lucide-clock"
           :label="t('seating.person.pending')"
         />
@@ -93,7 +93,7 @@ const pending = computed(
           v-else
           color="neutral"
           variant="subtle"
-          size="sm"
+          size="md"
           :label="statusLabel(occupant.person, group)"
         />
       </div>
