@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { defaultSecurityConfig } from "../node_modules/nuxt-security/dist/defaultConfig.mjs";
 import { standardToSecurity } from "../node_modules/nuxt-security/dist/utils/headers.mjs";
 import { defuReplaceArray } from "../node_modules/nuxt-security/dist/utils/merge.mjs";
+import { DOCUMENT_IMAGE_MAX_BYTES } from "~~/shared/constants/uploads";
 import { amendmentDraftBodySchema } from "~~/shared/utils/schemas/amendment";
 
 /**
@@ -346,8 +347,17 @@ describe("request size limits", () => {
       limit("/api/assemblies/80-ago/agreements-record/signing/signed"),
     ).toBe(21_000_000);
     // A rule that only sets a rate limiter inherits the size limits.
-    expect(limit("/api/assemblies/80-ago/documents/res-4/images")).toBe(
-      8_000_000,
+    expect(limit("/api/assemblies/80-ago/export")).toBe(8_000_000);
+  });
+
+  it("let an image up to its limit reach the handler, which says the figure", () => {
+    const rules = resolveRules("/api/assemblies/80-ago/documents/res-4/images")
+      .requestSizeLimiter as Record<string, number>;
+    expect(rules.maxRequestSizeInBytes).toBe(6_000_000);
+    // readUploadedFile refuses a body declared over the limit plus 64 KiB
+    // with its own 413; the module's 413 must only come after that.
+    expect(rules.maxUploadFileRequestInBytes).toBeGreaterThan(
+      DOCUMENT_IMAGE_MAX_BYTES + 64 * 1024,
     );
   });
 });

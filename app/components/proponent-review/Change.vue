@@ -26,6 +26,30 @@ const { t } = useI18n();
 const titleId = useId();
 
 const withContext = ref(false);
+const box = useTemplateRef<HTMLElement>("box");
+
+/**
+ * Shows or hides the paragraphs around the change. Showing them can push the
+ * change below the screen (the paragraph before may be long), so it brings
+ * the first mark back to the middle of the view; focus stays on the button.
+ */
+async function toggleContext(): Promise<void> {
+  withContext.value = !withContext.value;
+  if (!withContext.value) return;
+  await nextTick();
+  const mark =
+    box.value?.querySelector<HTMLElement>(
+      ".cx-ins, .cx-del, .cx-fmt, .cx-block-inserted, .cx-block-deleted",
+    ) ?? box.value?.querySelector<HTMLElement>("[data-amendment-id]");
+  if (!mark) return;
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  mark.scrollIntoView({
+    block: "center",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
 
 const hasText = computed(() => props.amendment.ops.length > 0);
 
@@ -63,7 +87,7 @@ const place = computed(() => {
             ? t('proponentReview.change.hideContext')
             : t('proponentReview.change.showContext')
         "
-        @click="withContext = !withContext"
+        @click="toggleContext"
       />
     </div>
 
@@ -90,6 +114,7 @@ const place = computed(() => {
     </p>
 
     <div
+      ref="box"
       class="border-default rounded-lg border"
       :class="compact ? 'p-3' : 'review-text p-4 sm:p-6'"
     >

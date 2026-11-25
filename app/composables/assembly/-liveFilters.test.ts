@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  affectsDocumentAmendments,
   affectsDocumentDto,
   AGENDA_UNCHANGED_DOCUMENT_TYPES,
+  amendmentsRefetchPlan,
   AGREEMENTS_RECORD_UPDATED,
   keepsAgendaSummary,
   keepsAgendaTitles,
@@ -613,6 +615,95 @@ describe("affectsDocumentDto", () => {
         null,
       ),
     ).toBe(true);
+  });
+});
+
+describe("affectsDocumentAmendments", () => {
+  const doc = "d1";
+
+  it("follows a poll, even before the document is known", () => {
+    const poll = [scoped("assembly", "poll", "as1")];
+    expect(affectsDocumentAmendments(poll, doc)).toBe(true);
+    expect(affectsDocumentAmendments(poll, undefined)).toBe(true);
+  });
+
+  it("follows every event of the document and of its amendments", () => {
+    for (const batch of [
+      [scoped("document", "document_updated", doc, doc)],
+      [scoped("document", "passage_worded", doc)],
+      [scoped("amendment", "amendment_approved", "a1", doc)],
+      [scoped("vote", "vote_recorded", "v1", doc)],
+    ]) {
+      expect(affectsDocumentAmendments(batch, doc)).toBe(true);
+    }
+  });
+
+  it("follows the assembly's status, which decides «deshacer validación»", () => {
+    expect(
+      affectsDocumentAmendments(
+        [scoped("assembly", "assembly_status_changed", "as1")],
+        doc,
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores other documents and what of the assembly it never reads", () => {
+    for (const batch of [
+      [scoped("amendment", "amendment_approved", "a9", "d2")],
+      [scoped("document", "document_updated", "d2", "d2")],
+      [scoped("assembly", "calendar_updated", "as1")],
+      [scoped("assembly", "assembly_updated", "as1")],
+      [scoped("assembly", "agenda_reordered", "as1")],
+      [scoped("live", "live_changed", "as1")],
+      [scoped("speakers", "floor_given", "s1")],
+    ]) {
+      expect(affectsDocumentAmendments(batch, doc)).toBe(false);
+    }
+  });
+
+  it("follows nothing but a poll without a document", () => {
+    expect(
+      affectsDocumentAmendments(
+        [scoped("assembly", "assembly_status_changed", "as1")],
+        undefined,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("amendmentsRefetchPlan and the assembly's status", () => {
+  const doc = "d1";
+  const status = scoped("assembly", "assembly_status_changed", "as1");
+
+  it("reads the whole list when the assembly is closed or reopened", () => {
+    expect(amendmentsRefetchPlan([status], doc, 20)).toEqual({ full: true });
+  });
+
+  it("reads the whole list even beside a decision it could read alone", () => {
+    expect(
+      amendmentsRefetchPlan(
+        [scoped("amendment", "amendment_approved", "a1", doc), status],
+        doc,
+        20,
+      ),
+    ).toEqual({ full: true });
+  });
+
+  it("reads nothing on the assembly events the list never reads", () => {
+    for (const type of [
+      "calendar_updated",
+      "assembly_updated",
+      "agenda_reordered",
+    ]) {
+      expect(
+        amendmentsRefetchPlan([scoped("assembly", type, "as1")], doc, 20),
+        type,
+      ).toBeNull();
+    }
+  });
+
+  it("reads nothing without a document", () => {
+    expect(amendmentsRefetchPlan([status], undefined, 20)).toBeNull();
   });
 });
 

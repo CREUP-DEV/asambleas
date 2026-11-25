@@ -254,6 +254,7 @@
         "editAlt": "Image description…",
         "remove": "Remove image",
         "uploadError": "The image could not be uploaded",
+        "tooLarge": "The image is larger than the 10 MB limit.",
         "pastedSkipped": "Images in what you pasted were not copied: insert them with the image button or paste each image on its own.",
         "notHere": "Images cannot be added here: an amendment can only keep or remove those in the text.",
         "notThisDocument": "A pasted image belongs to another document. Remove it and insert it again from its file."
@@ -356,7 +357,7 @@
       "documentManage": "Edit, publish and withdraw any document",
       "documentCorrectForm": "Correct the form of approved texts: typos and changes of form that replace the consolidated text",
       "amendmentCreate": "Create and submit amendments",
-      "amendmentManage": "Manage other members' amendments",
+      "amendmentManage": "Manage other members' amendments: the same as validating and publishing amendments",
       "amendmentReview": "Validate and publish amendments, and record their admission",
       "assemblyVoteResult": "Record assembly vote result",
       "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
@@ -722,7 +723,8 @@
   },
   "document": {
     "pdfPages": {
-      "failed": "The PDF could not be shown."
+      "failed": "The PDF could not be shown.",
+      "open": "Open the file"
     },
     "title": "Documents",
     "create": "Create document",
@@ -1515,8 +1517,7 @@
       "transactGroup": "Combine into a transactional amendment"
     },
     "filters": {
-      "search": "Search amendments",
-      "searchPlaceholder": "Code, member or justification",
+      "search": "Search amendments by code, member or justification",
       "button": "Filters",
       "buttonActive": "Filters in use: {count}",
       "chipsLabel": "Which amendments to show",
@@ -2298,7 +2299,10 @@
       "yourRole": "Your role",
       "ownRoleLosesWarning": "You are removing permissions from your own role. You will lose them too, and to get them back someone else who manages roles will usually have to restore them.",
       "notHeldLocked": "Rows with a lock are permissions you do not hold: you can only give or remove permissions you also hold.",
-      "leadershipLocked": "Only an Administrator changes the permissions of the Secretariat and the Presidency."
+      "leadershipLocked": "Only an Administrator changes the permissions of the Secretariat and the Presidency.",
+      "pickRole": "Role",
+      "roleUnsaved": "{role} (unsaved)",
+      "permissionsOf": "Permissions of {role}"
     },
     "intro": "Manage who can access the platform, what each role can do and which members present documents and amendments.",
     "sections": "Administration sections",
@@ -6799,7 +6803,9 @@
       "label": "Reading the documents",
       "position": "Document {index} of {total}",
       "left": "Left to read: {items}",
-      "nextLeft": "Open the next one you have left: {title}"
+      "nextLeft": "Open the next one you have left: {title}",
+      "previousTo": "Previous: {title}",
+      "nextTo": "Next: {title}"
     },
     "count": {
       "documents": "{count} document | {count} documents",

@@ -42,11 +42,7 @@ import {
 } from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { stampDebateStarted } from "./positionsPublication";
-import {
-  markPresentedTreated,
-  stampAmendmentsProjected,
-  stampProjected,
-} from "./sessionProgress";
+import { applyOnScreenMarks } from "./sessionProgress";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
 import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
@@ -1315,27 +1311,15 @@ export async function updateLiveState(
     }
     // In session, a document on screen is marked projected, and what is
     // presented (the item, the document's own item) is marked treated at
-    // once (sessionProgress.ts).
-    if (locked.status === "in_session") {
-      if (next.documentId && next.documentId !== previous.documentId) {
-        await stampProjected(tx, next.documentId);
-      }
-      await stampAmendmentsProjected(tx, [
-        next.amendmentId,
-        ...(next.amendmentBloc ?? []),
-      ]);
-      if (
-        next.agendaItemId !== previous.agendaItemId ||
-        next.documentId !== previous.documentId
-      ) {
-        await markPresentedTreated(tx, {
-          assemblyId,
-          previous,
-          next,
-          actor,
-        });
-      }
-    }
+    // once (sessionProgress.ts), as a vote that moves the projection and the
+    // session opening do.
+    await applyOnScreenMarks(tx, {
+      assemblyId,
+      status: locked.status,
+      previous,
+      next,
+      actor,
+    });
     // What goes into debate makes its presenters' answers public for good.
     if (
       next.agendaItemId !== previous.agendaItemId ||

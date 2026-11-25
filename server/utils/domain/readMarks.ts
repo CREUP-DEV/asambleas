@@ -1,6 +1,6 @@
 import type { H3Event } from "h3";
 import { createError } from "h3";
-import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   amendmentAuthors,
@@ -17,11 +17,13 @@ import type { AssemblyRow } from "./assemblies";
 import { recordAudit } from "./audit";
 import type { Executor } from "./events";
 import { loadCoProponentIds } from "./presenters";
+import { publicAmendmentWhere } from "./publicAmendments";
 
 /**
  * Read marks (docs/design.md, "Read marks"): what an account marked as
  * read, by hand, among the published documents of an assembly and their
- * published amendments. Everyone who sees the assembly reads those, so the
+ * public amendments (published, never withdrawn: publicAmendmentWhere).
+ * Everyone who sees the assembly reads those, so the
  * marks need no visibility rule of their own; nothing else can be marked.
  *
  * A mark stores the revision it was made on. A document's is its frozen
@@ -102,8 +104,7 @@ async function loadMarkable(
       .where(
         and(
           inArray(amendments.documentId, documentIds),
-          ne(amendments.status, "draft"),
-          isNotNull(amendments.publishedAt),
+          publicAmendmentWhere(),
         ),
       ),
   ]);

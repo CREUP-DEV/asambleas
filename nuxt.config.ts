@@ -2,6 +2,10 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import type { NitroRouteConfig } from "nitropack/types";
 import type { NuxtSecurityRouteRules } from "nuxt-security";
+import {
+  DOCUMENT_IMAGE_MAX_BYTES,
+  UPLOAD_REQUEST_MARGIN_BYTES,
+} from "./shared/constants/uploads";
 import { getOptionalConfigUrl } from "./shared/utils/config";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -129,9 +133,16 @@ const routeRules = {
       },
     },
   },
+  // Above the handler's own limit, so its 413 (with the figure) answers
+  // first, not the module's bare one.
   "/api/assemblies/*/documents/*/images": {
     security: {
       rateLimiter: UPLOAD_RATE_LIMIT,
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes:
+          DOCUMENT_IMAGE_MAX_BYTES + UPLOAD_REQUEST_MARGIN_BYTES,
+      },
     },
   },
   "/api/assemblies/*/convocation": {

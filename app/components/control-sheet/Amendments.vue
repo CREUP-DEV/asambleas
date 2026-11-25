@@ -17,6 +17,7 @@ import {
   type TreatedBox,
 } from "./-model";
 import { amendmentOwnNotes, type OwnSheetNotes } from "./-readers";
+import { rowClickOpens } from "./-rowClick";
 
 /**
  * «Enmiendas» of the control sheet for one document: its amendments in the
@@ -187,7 +188,7 @@ function approvalWithoutVote(amendment: AmendmentDto): string | null {
 const count = computed(() => props.rows.length);
 
 const ALL_COLUMNS: { key: AmendmentSortKey; label: string; class: string }[] = [
-  { key: "code", label: "controlSheet.columns.code", class: "w-24" },
+  { key: "code", label: "controlSheet.columns.code", class: "w-32" },
   {
     key: "authors",
     label: "controlSheet.columns.authors",
@@ -225,6 +226,19 @@ const columns = computed(() =>
       (props.showPositions || column.key !== "position"),
   ),
 );
+/** «Observaciones» or «Mis notas» closes the table, when either is there. */
+const notesColumn = computed(() => props.internal || !!props.ownNotes);
+
+/**
+ * A click anywhere in a row opens its panel, as its button beside the code
+ * does (E-086: at the end it fell out of view on a laptop), unless it lands
+ * on a link, a button or a popover's trigger, or ends a selection.
+ */
+function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!rowClickOpens(target, window.getSelection()?.toString() ?? "")) return;
+  emit("open", row);
+}
 </script>
 
 <template>
@@ -265,9 +279,6 @@ const columns = computed(() =>
             >
               {{ t("notes.title") }}
             </th>
-            <th v-else scope="col" class="w-12 px-3 py-2">
-              <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
-            </th>
           </tr>
         </thead>
         <tbody class="divide-default divide-y">
@@ -276,13 +287,29 @@ const columns = computed(() =>
             :key="row.amendment.id"
             :aria-current="row.live ? 'true' : undefined"
             :class="[
-              'align-top',
+              'hover:bg-elevated/40 cursor-pointer align-top',
               row.live ? 'ring-primary ring-2 ring-inset' : '',
             ]"
             :data-sheet-row="row.amendment.id"
+            @click="openFromRow($event, row)"
           >
             <th scope="row" class="px-3 py-2 font-medium">
+              <!-- The way into the row's panel sits by its code, in view at
+                   any width: the pencil or the eye first, or «Responder»
+                   under the code on one waiting for the reader's answer as
+                   its presenter. The rest of the row opens it too. -->
               <span class="inline-flex items-center gap-1">
+                <UTooltip v-if="!row.awaitsAnswer" :text="openButton">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    :icon="openIcon"
+                    class="-my-1 shrink-0"
+                    :aria-label="openLabel(row.amendment)"
+                    @click="emit('open', row)"
+                  />
+                </UTooltip>
                 <ULink
                   :to="amendmentPath(row.amendment)"
                   class="text-highlighted underline-offset-2 hover:underline"
@@ -301,6 +328,17 @@ const columns = computed(() =>
                   />
                 </UTooltip>
               </span>
+              <UButton
+                v-if="row.awaitsAnswer"
+                color="primary"
+                variant="soft"
+                size="xs"
+                :icon="openButtonOf(row).icon"
+                :label="openButtonOf(row).label"
+                class="mt-1 flex w-fit"
+                :aria-label="openButtonOf(row).aria"
+                @click="emit('open', row)"
+              />
             </th>
             <td class="px-3 py-2">
               <ControlSheetMemberTags
@@ -377,57 +415,23 @@ const columns = computed(() =>
             <td v-if="internal" class="px-3 py-2">
               <ControlSheetSpeakers :speakers="row.speakers" />
             </td>
-            <td class="px-3 py-2">
-              <!-- «Responder» goes under the notes, so they keep the width. -->
-              <div
-                :class="[
-                  'flex gap-2',
-                  row.awaitsAnswer ? 'flex-col' : 'items-start justify-between',
-                ]"
+            <td v-if="notesColumn" class="space-y-2 px-3 py-2">
+              <p
+                v-if="internal && row.sheet?.observations"
+                class="text-default line-clamp-3 text-sm whitespace-pre-line"
               >
-                <div
-                  v-if="internal || ownNotes"
-                  class="min-w-0 flex-1 space-y-2"
-                >
-                  <p
-                    v-if="internal && row.sheet?.observations"
-                    class="text-default line-clamp-3 text-sm whitespace-pre-line"
-                  >
-                    {{ row.sheet.observations }}
-                  </p>
-                  <!-- Nothing written: the cell stays empty, said only to
-                       screen readers. -->
-                  <span v-else-if="internal" class="sr-only">{{
-                    t("controlSheet.noObservations")
-                  }}</span>
-                  <ControlSheetOwnNotes
-                    v-if="ownNotes"
-                    :lines="notesOf(row)"
-                    :clamp="internal ? 2 : 3"
-                  />
-                </div>
-                <UButton
-                  v-if="row.awaitsAnswer"
-                  color="primary"
-                  variant="soft"
-                  size="xs"
-                  :icon="openButtonOf(row).icon"
-                  :label="openButtonOf(row).label"
-                  class="ms-auto shrink-0"
-                  :aria-label="openButtonOf(row).aria"
-                  @click="emit('open', row)"
-                />
-                <UButton
-                  v-else
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  :icon="openIcon"
-                  class="ms-auto shrink-0"
-                  :aria-label="openLabel(row.amendment)"
-                  @click="emit('open', row)"
-                />
-              </div>
+                {{ row.sheet.observations }}
+              </p>
+              <!-- Nothing written: the cell stays empty, said only to
+                   screen readers. -->
+              <span v-else-if="internal" class="sr-only">{{
+                t("controlSheet.noObservations")
+              }}</span>
+              <ControlSheetOwnNotes
+                v-if="ownNotes"
+                :lines="notesOf(row)"
+                :clamp="internal ? 2 : 3"
+              />
             </td>
           </tr>
         </tbody>

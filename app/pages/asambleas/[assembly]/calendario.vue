@@ -459,7 +459,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
         <div
           v-if="dirty || saving"
           ref="saveBar"
-          class="bg-default/95 border-default sticky -bottom-4 z-10 -mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6"
+          class="bg-default/95 border-default sticky bottom-[calc(-1rem-var(--shell-session-pill-room,0px))] z-10 -mx-4 mb-[calc(-1rem-var(--shell-session-pill-room,0px))] flex flex-wrap items-center justify-end gap-2 border-t px-4 pt-3 pb-[calc(0.75rem+var(--shell-session-pill-room,0px))] backdrop-blur sm:bottom-[calc(-1.5rem-var(--shell-session-pill-room,0px))] sm:-mx-6 sm:mb-[calc(-1.5rem-var(--shell-session-pill-room,0px))] sm:px-6"
         >
           <span class="text-muted me-auto text-sm">
             {{ t("calendar.unsaved", { count: changeCount }, changeCount) }}

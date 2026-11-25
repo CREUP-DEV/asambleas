@@ -198,12 +198,13 @@ const containerLabel = computed(() => {
       :class="{ 'ring-primary/40 ring-2': busy }"
       :aria-busy="busy || undefined"
     >
+      <!-- The title keeps 14rem: below that, what follows it wraps under it -->
       <div class="flex flex-wrap items-start gap-x-3 gap-y-2">
         <component
           :is="headingLevel"
           :id="agendaItemAnchor(item.id)"
           tabindex="-1"
-          class="text-highlighted min-w-0 flex-1 scroll-mt-24 font-semibold focus-visible:outline-none"
+          class="text-highlighted min-w-0 flex-[1_1_14rem] scroll-mt-24 font-semibold focus-visible:outline-none"
           :class="
             node.depth === 0 ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
           "
@@ -248,6 +249,7 @@ const containerLabel = computed(() => {
 
         <AgendaDocumentBadges
           v-if="merged"
+          class="max-w-full"
           :document="merged"
           :edit-to="ctx.documentEditPath(merged)"
         />

@@ -75,6 +75,7 @@ import {
 import { useAssemblyLive } from "../live/useAssemblyLive";
 import { followLiveState } from "../live/-liveState";
 import {
+  affectsDocumentAmendments,
   affectsDocumentDto,
   keepsAgendaSummary,
 } from "../assembly/-liveFilters";
@@ -1183,10 +1184,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       ) {
         agendaChanged = true;
       }
-      const touchesCurrent =
-        current !== null &&
-        (event.documentId === current ||
-          (event.entityType === "document" && event.entityId === current));
+      // As the room reads it (affectsDocumentAmendments): its document, and
+      // the assembly opening or closing, which changes what may be done.
+      const touchesCurrent = affectsDocumentAmendments([event], current);
       if (touchesCurrent) amendmentsChanged = true;
     }
     if (live) void refreshLive();

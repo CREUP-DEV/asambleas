@@ -9,6 +9,8 @@ import type { ImpersonationContext } from "../auth/impersonation";
 import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import {
   PERMISSION_KEYS,
+  holdsPermission,
+  readsControlSheet,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
 import type { MemberKind } from "~~/shared/constants/domain";
@@ -119,15 +121,11 @@ export function canManageDocuments(actor: Actor): boolean {
 /**
  * Reading the control sheet of an assembly (hoja de control): whoever may
  * edit it reads it too, and so do whoever notes the speakers and whoever
- * records results (assembly:vote_result), who do it from there.
+ * records results (assembly:vote_result), who do it from there
+ * (CONTROL_SHEET_READER_KEYS, the one definition of its readers).
  */
 export function canViewControlSheet(actor: Actor): boolean {
-  return (
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-    actor.can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
-    actor.can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT)
-  );
+  return readsControlSheet(actor.can);
 }
 
 /**
@@ -161,10 +159,7 @@ export function canEditControlSheet(actor: Actor): boolean {
  * photos. Whoever may edit it reads it too.
  */
 export function canViewSeating(actor: Actor): boolean {
-  return (
-    actor.can(PERMISSION_KEYS.SEATING_VIEW) ||
-    actor.can(PERMISSION_KEYS.SEATING_EDIT)
-  );
+  return holdsPermission(actor.can, PERMISSION_KEYS.SEATING_VIEW);
 }
 
 /**
@@ -181,12 +176,13 @@ export function canEditSeating(actor: Actor): boolean {
   return actor.can(PERMISSION_KEYS.SEATING_EDIT);
 }
 
-/** Admission review and amendment management (Secretaría). */
+/**
+ * Admission review and amendment management (Secretaría):
+ * amendment:review, or amendment:manage, which implies it
+ * (PERMISSION_IMPLIED_BY).
+ */
 export function canReviewAmendments(actor: Actor): boolean {
-  return (
-    actor.can(PERMISSION_KEYS.AMENDMENT_REVIEW) ||
-    actor.can(PERMISSION_KEYS.AMENDMENT_MANAGE)
-  );
+  return holdsPermission(actor.can, PERMISSION_KEYS.AMENDMENT_REVIEW);
 }
 
 /**

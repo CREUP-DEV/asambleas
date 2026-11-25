@@ -31,7 +31,10 @@ import {
   sessionTransactionalRejectors,
   sortSessionAmendments,
 } from "~/composables/session/sessionModel";
-import { keepsAgendaTitles } from "~/composables/assembly/-liveFilters";
+import {
+  AGENDA_ENTITY_TYPES,
+  keepsAgendaTitles,
+} from "~/composables/assembly/-liveFilters";
 import { numberedAgendaTitle } from "~/utils/agendaTree";
 import { memberSpokenName, positionRecorderKey } from "~/utils/format";
 
@@ -193,9 +196,6 @@ export function isNewerScroll(
   if (Number.isNaN(was) || Number.isNaN(is)) return true;
   return is > was;
 }
-
-/** Entity types whose changes can alter the agenda (items and documents). */
-const AGENDA_ENTITY_TYPES = new Set(["assembly", "agenda_item", "document"]);
 
 /**
  * Whether a batch of live events may have changed the agenda as Directo and

@@ -2,6 +2,7 @@
 import type { DocumentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import { DOCUMENT_IMAGE_MAX_BYTES } from "~~/shared/constants/uploads";
 import { cellLayoutKey } from "~~/shared/utils/content/tables";
 import { formatTime } from "~/utils/format";
 
@@ -163,6 +164,17 @@ let inflight: Promise<boolean> | null = null;
 async function uploadImage(
   file: File,
 ): Promise<{ asset: string; width: number; height: number } | null> {
+  // Said before uploading: past the route rule's margin the refusal would
+  // come from nuxt-security, without the figure.
+  if (file.size > DOCUMENT_IMAGE_MAX_BYTES) {
+    toast.add({
+      title: t("common.editor.image.uploadError"),
+      description: t("common.editor.image.tooLarge"),
+      color: "error",
+      icon: "i-lucide-circle-alert",
+    });
+    return null;
+  }
   const body = new FormData();
   body.append("file", file, file.name);
   try {

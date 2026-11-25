@@ -71,7 +71,7 @@ import { recordEvent } from "./events";
 import { loadSignedRecordFile } from "./agreementsSignedFile";
 import { assertSessionOpen } from "./sessionOpen";
 import { stampDebateStarted } from "./positionsPublication";
-import { stampAmendmentsProjected } from "./sessionProgress";
+import { applyOnScreenMarks } from "./sessionProgress";
 import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import {
@@ -2681,12 +2681,13 @@ export async function shareLockAssembly(
  * it a concurrent PUT .../live-state could overwrite this change. Callers
  * take that share lock before any document lock (see "Row locks" above);
  * taking it again here is a no-op that keeps the helper safe on its own.
+ * Answers the row and the assembly's status read under that lock.
  */
 async function lockLiveState(
   tx: Executor,
   assemblyId: string,
-): Promise<LivePointer | null> {
-  await shareLockAssembly(tx, assemblyId);
+): Promise<LockedLiveState | null> {
+  const assembly = await shareLockAssembly(tx, assemblyId);
   const [row] = await tx
     .select({
       agendaItemId: liveState.agendaItemId,
@@ -2704,24 +2705,34 @@ async function lockLiveState(
   const bloc = normalizeBloc(row.amendmentBloc);
   const options = normalizeBlocOptions(row.amendmentBlocOptions, bloc);
   return {
-    ...row,
-    amendmentBloc: bloc,
-    amendmentBlocOptions: options,
-    amendmentBlocPurpose: normalizeBlocPurpose(
-      row.amendmentBlocPurpose,
-      bloc,
-      options,
-    ),
+    status: assembly?.status ?? null,
+    previous: {
+      ...row,
+      amendmentBloc: bloc,
+      amendmentBlocOptions: options,
+      amendmentBlocPurpose: normalizeBlocPurpose(
+        row.amendmentBlocPurpose,
+        bloc,
+        options,
+      ),
+    },
   };
 }
+
+/** The live_state row under its lock (lockLiveState). */
+type LockedLiveState = {
+  status: AssemblyRow["status"] | null;
+  previous: LivePointer;
+};
 
 async function writeLiveState(
   tx: Executor,
   assemblyId: string,
-  previous: LivePointer,
+  locked: LockedLiveState,
   next: LivePointer,
   actor: Actor,
 ): Promise<void> {
+  const { previous } = locked;
   const changed = changedLiveFields(previous, next);
   if (changed.length === 0) return;
   await tx
@@ -2733,16 +2744,22 @@ async function writeLiveState(
     entityType: "live",
     entityId: assemblyId,
     type: "live_changed",
-    // Same shape as updateLiveState: ids only.
+    // Ids only, the 7 pointer fields with their nulls (updateLiveState's
+    // payload omits null bloc options and adds the room's own fields).
     payload: { changed, ...next },
     actor,
   });
-  // As in updateLiveState: an amendment put on screen is marked projected.
-  await stampAmendmentsProjected(tx, [
-    next.amendmentId,
-    ...(next.amendmentBloc ?? []),
-  ]);
-  // As in updateLiveState: what goes into debate makes its answers public.
+  // The same marks as updateLiveState (sessionProgress.ts): a vote that
+  // takes the screen to another document marks it projected and what it
+  // presents treated, and the amendments on screen projected.
+  await applyOnScreenMarks(tx, {
+    assemblyId,
+    status: locked.status,
+    previous,
+    next,
+    actor,
+  });
+  // What goes into debate makes its answers public (as updateLiveState).
   if (changed.includes("agendaItemId") || changed.includes("documentId")) {
     await stampDebateStarted(tx, {
       assemblyId,
@@ -2758,8 +2775,9 @@ async function writeLiveState(
  * recorded it, when the session has a live_state row. An amendment or
  * document vote also points the projection at what was voted (choosing a new
  * document selects its agenda item, as PUT .../live-state does); a decision
- * vote only replaces the vote. Records `live_changed`, and forgets a
- * secret vote's count kept for the projection (endLiveTally), so none left
+ * vote only replaces the vote. Records `live_changed`, marks in session the
+ * document it takes the screen to as projected (applyOnScreenMarks), and
+ * forgets a secret vote's count kept for the projection (endLiveTally), so none left
  * behind covers the result.
  */
 export async function pointLiveVote(
@@ -2775,8 +2793,9 @@ export async function pointLiveVote(
     };
   },
 ): Promise<void> {
-  const previous = await lockLiveState(tx, input.assemblyId);
-  if (!previous) return;
+  const locked = await lockLiveState(tx, input.assemblyId);
+  if (!locked) return;
+  const { previous } = locked;
   // A vote takes the bloc off the screen (nextLivePointer).
   const next: LivePointer = {
     ...previous,
@@ -2792,7 +2811,7 @@ export async function pointLiveVote(
     next.documentId = input.subject.documentId;
     next.amendmentId = input.subject.amendmentId;
   }
-  await writeLiveState(tx, input.assemblyId, previous, next, input.actor);
+  await writeLiveState(tx, input.assemblyId, locked, next, input.actor);
   // A result goes on screen: no count left behind may cover it (open
   // projections drop theirs when the vote on screen changes).
   endLiveTally(input.assemblyId);
@@ -2814,14 +2833,16 @@ export async function projectItemVote(
     actor: Actor;
   },
 ): Promise<boolean> {
-  const previous = await lockLiveState(tx, input.assemblyId);
-  if (!previous || previous.agendaItemId !== input.agendaItemId) return false;
+  const locked = await lockLiveState(tx, input.assemblyId);
+  if (!locked || locked.previous.agendaItemId !== input.agendaItemId) {
+    return false;
+  }
   await writeLiveState(
     tx,
     input.assemblyId,
-    previous,
+    locked,
     {
-      ...previous,
+      ...locked.previous,
       voteId: input.voteId,
       amendmentBloc: null,
       amendmentBlocOptions: null,
@@ -2844,13 +2865,13 @@ export async function clearLiveVote(
   input: { assemblyId: string; voteId: string | null; actor: Actor },
 ): Promise<void> {
   if (!input.voteId) return;
-  const previous = await lockLiveState(tx, input.assemblyId);
-  if (!previous || previous.voteId !== input.voteId) return;
+  const locked = await lockLiveState(tx, input.assemblyId);
+  if (!locked || locked.previous.voteId !== input.voteId) return;
   await writeLiveState(
     tx,
     input.assemblyId,
-    previous,
-    { ...previous, voteId: null },
+    locked,
+    { ...locked.previous, voteId: null },
     input.actor,
   );
 }
@@ -2864,14 +2885,14 @@ async function clearLiveDocument(
   tx: Executor,
   input: { assemblyId: string; documentId: string; actor: Actor },
 ): Promise<void> {
-  const previous = await lockLiveState(tx, input.assemblyId);
-  if (!previous || previous.documentId !== input.documentId) return;
+  const locked = await lockLiveState(tx, input.assemblyId);
+  if (!locked || locked.previous.documentId !== input.documentId) return;
   await writeLiveState(
     tx,
     input.assemblyId,
-    previous,
+    locked,
     {
-      ...previous,
+      ...locked.previous,
       documentId: null,
       amendmentId: null,
       amendmentBloc: null,

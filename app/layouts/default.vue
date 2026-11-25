@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBanner.vue";
+import { useSessionPillHeight } from "~/components/shell/SessionBanner.vue";
 
 /**
  * Authenticated dashboard shell. Every page renders its own UDashboardPanel
@@ -12,11 +13,19 @@ import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBa
  * never covers the navbars, and `--shell-banner-height` tells the pages
  * sized to the viewport how much to take off.
  *
+ * While the floating "En sesión" pill (ShellSessionBanner) shows, the end
+ * of the panel bodies makes room for it (`data-session-pill`, the style
+ * below), so it never covers a form's last button, a list's pagination or
+ * the control that has the focus; `--shell-session-pill-room` tells the
+ * pages sized to the viewport how much to take off.
+ *
  * It also holds the welcome (ShellWelcome), which opens by itself the first
  * time in a browser, and again from "Ayuda" in the user menu. The welcome is client only: nothing of it is server-rendered.
  */
 const { t } = useI18n();
 const bannerOffset = useImpersonationBannerOffset();
+const sessionPillHeight = useSessionPillHeight();
+const sessionPillShown = computed(() => sessionPillHeight.value !== "0px");
 
 const sidebarOpen = ref(false);
 const welcomeOpen = ref(false);
@@ -101,6 +110,12 @@ useHead({
         id="main-content"
         tabindex="-1"
         class="flex min-w-0 flex-1 overflow-y-auto [--shell-breadcrumb-height:2.5rem] focus:outline-none print:block print:overflow-visible"
+        :data-session-pill="sessionPillShown ? '' : undefined"
+        :style="
+          sessionPillShown
+            ? { '--shell-session-pill-height': sessionPillHeight }
+            : undefined
+        "
       >
         <slot />
       </main>
@@ -113,3 +128,47 @@ useHead({
     </ClientOnly>
   </div>
 </template>
+
+<style>
+/*
+ * Room for the floating "En sesión" pill while it shows (unset otherwise):
+ * its offset from the bottom (1rem, 1.5rem from sm) and its height. Pages
+ * sized to the viewport, or with a bar stuck to the bottom of the panel
+ * body, take `--shell-session-pill-room` off (fallback 0px).
+ *
+ * The innermost panel body ends that much later, after its usual gap, so
+ * the last thing of the page clears the pill once scrolled to the end; a
+ * page's own panel nested in the assembly hub's gets it once. Every
+ * scroller (main and each panel body: below lg the hub's body scrolls a
+ * nested page) keeps the same room as scroll padding, so a control that
+ * gets the focus, or is scrolled into view, stops above the pill instead
+ * of under it. Unlayered on purpose, so it wins over the body's padding
+ * utilities, and only while the pill shows.
+ */
+main[data-session-pill] {
+  --shell-session-pill-room: calc(1rem + var(--shell-session-pill-height));
+  scroll-padding-bottom: var(--shell-session-pill-room);
+}
+
+main[data-session-pill] [id^="dashboard-panel-"] > [data-slot="body"] {
+  scroll-padding-bottom: var(--shell-session-pill-room);
+}
+
+main[data-session-pill]
+  [id^="dashboard-panel-"]
+  > [data-slot="body"]:not(:has([id^="dashboard-panel-"])) {
+  padding-bottom: calc(1rem + var(--shell-session-pill-room));
+}
+
+@media (width >= 40rem) {
+  main[data-session-pill] {
+    --shell-session-pill-room: calc(1.5rem + var(--shell-session-pill-height));
+  }
+
+  main[data-session-pill]
+    [id^="dashboard-panel-"]
+    > [data-slot="body"]:not(:has([id^="dashboard-panel-"])) {
+    padding-bottom: calc(1.5rem + var(--shell-session-pill-room));
+  }
+}
+</style>

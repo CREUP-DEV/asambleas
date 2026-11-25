@@ -254,6 +254,7 @@
         "editAlt": "Descripción de la imagen…",
         "remove": "Quitar imagen",
         "uploadError": "No se ha podido subir la imagen",
+        "tooLarge": "La imagen supera el límite de 10 MB.",
         "pastedSkipped": "Las imágenes que venían en lo pegado no se han copiado: insértalas con el botón de imagen o pega cada imagen sola.",
         "notHere": "Aquí no se pueden añadir imágenes: una enmienda solo puede conservar o quitar las del texto.",
         "notThisDocument": "La imagen pegada es de otro documento. Quítala e insértala de nuevo desde su archivo."
@@ -356,7 +357,7 @@
       "documentManage": "Editar, publicar y retirar cualquier documento",
       "documentCorrectForm": "Corregir la forma de los textos aprobados: erratas y cambios de forma que sustituyen al texto consolidado",
       "amendmentCreate": "Crear y presentar enmiendas",
-      "amendmentManage": "Gestionar enmiendas de otros miembros",
+      "amendmentManage": "Gestionar enmiendas de otros miembros: lo mismo que validar y publicar enmiendas",
       "amendmentReview": "Validar y publicar enmiendas, y anotar si se admiten",
       "assemblyVoteResult": "Registrar resultado de votación en asamblea",
       "sessionModerate": "Moderar la sesión: estado en directo, admisiones, votaciones y transaccionales",
@@ -722,7 +723,8 @@
   },
   "document": {
     "pdfPages": {
-      "failed": "No se ha podido mostrar el PDF."
+      "failed": "No se ha podido mostrar el PDF.",
+      "open": "Abrir el archivo"
     },
     "title": "Documentos",
     "create": "Crear documento",
@@ -1515,8 +1517,7 @@
       "transactGroup": "Combinar en una transaccional"
     },
     "filters": {
-      "search": "Buscar enmiendas",
-      "searchPlaceholder": "Código, miembro o justificación",
+      "search": "Buscar enmiendas por código, miembro o justificación",
       "button": "Filtros",
       "buttonActive": "Filtros en uso: {count}",
       "chipsLabel": "Qué enmiendas ver",
@@ -2298,7 +2299,10 @@
       "yourRole": "Tu rol",
       "ownRoleLosesWarning": "Vas a quitar permisos a tu propio rol. Tú también los perderás y, para recuperarlos, normalmente tendrá que devolvérselos otra persona que gestione roles.",
       "notHeldLocked": "Las filas con candado son permisos que tú no tienes: solo puedes dar o quitar los permisos que tú también tienes.",
-      "leadershipLocked": "Los permisos de Secretaría y Presidencia solo los cambia un Administrador."
+      "leadershipLocked": "Los permisos de Secretaría y Presidencia solo los cambia un Administrador.",
+      "pickRole": "Rol",
+      "roleUnsaved": "{role} (sin guardar)",
+      "permissionsOf": "Permisos de {role}"
     },
     "intro": "Gestiona quién accede a la plataforma, qué puede hacer cada rol y qué miembros presentan documentos y enmiendas.",
     "sections": "Secciones de administración",
@@ -6799,7 +6803,9 @@
       "label": "Lectura de la documentación",
       "position": "Documento {index} de {total}",
       "left": "Te quedan por leer {items}",
-      "nextLeft": "Abrir el siguiente que te queda: {title}"
+      "nextLeft": "Abrir el siguiente que te queda: {title}",
+      "previousTo": "Anterior: {title}",
+      "nextTo": "Siguiente: {title}"
     },
     "count": {
       "documents": "{count} documento | {count} documentos",

@@ -4,7 +4,7 @@ import type {
   ControlSheetObservationDto,
   LiveEventDto,
 } from "~~/shared/types/api";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { readsControlSheet } from "~~/shared/constants/permissions";
 
 /**
  * The control sheet's observations about the document on show and its
@@ -48,13 +48,8 @@ export function provideSheetObservations(
   const api = useApi();
   const { can } = useMe();
   const { apiBase, onLive } = useCurrentAssembly();
-  const readsSheet = computed(
-    () =>
-      can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-      can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-      can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
-      can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
-  );
+  // canViewControlSheet on the server: the same keys, declared once.
+  const readsSheet = computed(() => readsControlSheet(can));
   const url = computed(() => {
     const id = toValue(documentId);
     return id && readsSheet.value

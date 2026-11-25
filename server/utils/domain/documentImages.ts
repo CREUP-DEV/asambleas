@@ -23,8 +23,8 @@ import { recordEvent, type Executor } from "./events";
  * the rest becomes JPEG.
  */
 
-/** The largest upload accepted, before it is made smaller. */
-export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+// The largest upload accepted, before it is made smaller, is
+// DOCUMENT_IMAGE_MAX_BYTES (shared/constants/uploads.ts).
 /** Pixels sharp agrees to decode: a 64-megapixel photo, not a bomb. */
 const IMAGE_MAX_INPUT_PIXELS = 64_000_000;
 /** The longest side kept: enough for print, light enough for the web. */

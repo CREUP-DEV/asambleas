@@ -73,8 +73,14 @@ const props = withDefaults(
     title: string;
     /** The text and the links over the pages. */
     textLayer?: boolean;
+    /**
+     * The link to the file in the line shown when the PDF cannot be drawn.
+     * Left out where the page already offers that way (DocumentPdfViewer's
+     * «Abrir en una pestaña nueva») or where nobody clicks (the projection).
+     */
+    fileLink?: boolean;
   }>(),
-  { textLayer: true },
+  { textLayer: true, fileLink: true },
 );
 
 const emit = defineEmits<{ ready: []; failed: [] }>();
@@ -88,8 +94,17 @@ interface PageSize {
 
 const root = ref<HTMLElement | null>(null);
 const sizes = ref<PageSize[]>([]);
+/**
+ * The PDF could not be read. Either this or `drawFailed` shows one line,
+ * with a link to the file itself (`fileLink`) that the browser opens in its
+ * own viewer: the way out where pdf.js cannot run, such as Safari before
+ * 17.4 (every browser on an iPhone with iOS 16), which lacks
+ * `Promise.withResolvers`.
+ */
 const failed = ref(false);
 const width = ref(0);
+/** A page failed to draw (not a drawing let go for another). */
+const drawFailed = ref(false);
 
 let pdf: PDFDocumentProxy | null = null;
 /** This component's hold on the PDF it shows (pdfDocuments). */
@@ -127,6 +142,7 @@ const pageElement = (number: number) =>
 function load(url: string): void {
   const token = ++loadToken;
   failed.value = false;
+  drawFailed.value = false;
   freeAll();
   shown.value = new Set();
   lease?.release();
@@ -191,14 +207,21 @@ async function draw(number: number): Promise<void> {
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
     const context = canvas.getContext("2d");
-    if (!context) return;
+    if (!context) throw new Error("No 2D context for the page's canvas");
     const task = page.render({ canvasContext: context, viewport });
     renders.set(number, task);
     await task.promise;
     if (renders.get(number) === task) renders.delete(number);
     if (token === pageTokens.get(number)) markShown(number, true);
-  } catch {
-    if (token === pageTokens.get(number)) drawn.delete(number);
+  } catch (error) {
+    if (token !== pageTokens.get(number)) return;
+    drawn.delete(number);
+    // pdf.js rejects a cancelled render (the page was freed or redrawn):
+    // only another error means the page cannot be drawn.
+    const cancelled =
+      (error as { name?: unknown } | null)?.name ===
+      "RenderingCancelledException";
+    if (!cancelled) drawFailed.value = true;
   }
 }
 
@@ -353,10 +376,23 @@ onBeforeUnmount(() => {
     role="document"
     :aria-label="t('workspace.text.pdfFrame', { title })"
   >
-    <p v-if="failed" class="text-muted text-sm">
+    <p
+      v-if="failed || drawFailed"
+      class="text-muted text-sm"
+      data-testid="pdf-pages-failed"
+    >
       {{ t("document.pdfPages.failed") }}
+      <ULink
+        v-if="fileLink"
+        :to="url"
+        external
+        target="_blank"
+        class="text-primary font-medium underline underline-offset-4"
+      >
+        {{ t("document.pdfPages.open") }}
+      </ULink>
     </p>
-    <div v-else-if="sizes.length === 0" class="space-y-3" role="status">
+    <div v-if="!failed && sizes.length === 0" class="space-y-3" role="status">
       <span class="sr-only">{{ t("common.loading") }}</span>
       <USkeleton aria-hidden="true" class="aspect-[1/1.414] w-full" />
     </div>

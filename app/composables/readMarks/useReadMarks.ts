@@ -28,6 +28,8 @@ import { keepLastGoodData } from "../fetch/lastGoodData";
 export interface ReadMarksContext {
   /** Null until they first load. */
   marks: Readonly<Ref<ReadMarksDto | null>>;
+  /** Their read failed and none ever arrived: nothing is on its way. */
+  failed: ComputedRef<boolean>;
   index: ComputedRef<ReadMarkIndex>;
   progress: ComputedRef<ReadProgress>;
   /** The mark of a document or an amendment; null when it takes none. */
@@ -128,6 +130,9 @@ export function provideReadMarks(
 
   const context: ReadMarksContext = {
     marks,
+    failed: computed(
+      () => result.status.value === "error" && data.value == null,
+    ),
     index,
     progress,
     document: (id) => index.value.documents.get(id) ?? null,
@@ -145,6 +150,7 @@ export function useReadMarks(): ReadMarksContext {
   if (injected) return injected;
   return {
     marks: readonly(ref(null)),
+    failed: computed(() => false),
     index: computed(() => EMPTY_INDEX),
     progress: computed(() => EMPTY_PROGRESS),
     document: () => null,

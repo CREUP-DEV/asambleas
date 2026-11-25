@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import type { AssemblyStatus } from "~~/shared/constants/domain";
 import type { SessionProgressDto } from "~~/shared/types/api";
 import {
   itemsAwaitingVote,
@@ -37,8 +38,12 @@ import { loadItemVoteRows } from "./votes";
  *   is treated once voted. A mark the Mesa took away comes back only when
  *   the item is presented again.
  *
- * Both run inside updateLiveState's transaction, which holds the assembly
- * row FOR UPDATE: the sheet's writes take it FOR SHARE first, so they wait.
+ * Both run inside the transaction of the live_state writer
+ * (applyOnScreenMarks): updateLiveState and the status change hold the
+ * assembly row NO KEY UPDATE, so the sheet's writes (FOR SHARE first) wait;
+ * a vote that moves the projection holds it FOR SHARE, and the sheet's
+ * writes then wait on the control_sheet_items row, which they lock without
+ * taking any lock the vote holds.
  */
 
 /**
@@ -85,6 +90,81 @@ export async function stampAmendmentsProjected(
     .where(
       and(inArray(amendments.id, ids), isNull(amendments.firstProjectedAt)),
     );
+}
+
+/** What the live state points at, as the marks of putting it on screen read it. */
+export type OnScreen = {
+  agendaItemId: string | null;
+  documentId: string | null;
+  amendmentId: string | null;
+  amendmentBloc: readonly string[] | null;
+};
+
+/**
+ * What putting `next` on screen marks, by every writer that moves the
+ * projection (the PUT, a vote that moves it, the session opening with
+ * something on screen; not repointSession): only in session, the document that comes on screen
+ * (stampProjected), the amendments on screen alone or in a bloc
+ * (stampAmendmentsProjected), and, when the item or the document changes,
+ * what it presents (`presented`, markPresentedTreated). `previous` null is
+ * the session opening with `next` already on screen.
+ */
+export function onScreenMarks(
+  status: AssemblyStatus | null | undefined,
+  previous: OnScreen | null,
+  next: OnScreen,
+): { documentId: string | null; amendmentIds: string[]; presented: boolean } {
+  if (status !== "in_session") {
+    return { documentId: null, amendmentIds: [], presented: false };
+  }
+  const moved =
+    !previous ||
+    next.agendaItemId !== previous.agendaItemId ||
+    next.documentId !== previous.documentId;
+  return {
+    documentId:
+      next.documentId && next.documentId !== previous?.documentId
+        ? next.documentId
+        : null,
+    amendmentIds: [
+      ...new Set(
+        [next.amendmentId, ...(next.amendmentBloc ?? [])].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ],
+    presented: moved && Boolean(next.agendaItemId || next.documentId),
+  };
+}
+
+/**
+ * Applies onScreenMarks inside the writer's transaction, after its locks
+ * ("Row locks" in documents.ts). Where the writer holds the document only
+ * FOR SHARE (an amendment vote), stamping it upgrades that lock, as
+ * stampDebateStarted already does at the same moment, and only the first
+ * time the document goes on screen.
+ */
+export async function applyOnScreenMarks(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    status: AssemblyStatus | null | undefined;
+    previous: OnScreen | null;
+    next: OnScreen;
+    actor: Actor;
+  },
+): Promise<void> {
+  const marks = onScreenMarks(input.status, input.previous, input.next);
+  if (marks.documentId) await stampProjected(tx, marks.documentId);
+  await stampAmendmentsProjected(tx, marks.amendmentIds);
+  if (marks.presented) {
+    await markPresentedTreated(tx, {
+      assemblyId: input.assemblyId,
+      previous: input.previous,
+      next: input.next,
+      actor: input.actor,
+    });
+  }
 }
 
 type AgendaItemRow = typeof agendaItems.$inferSelect;
@@ -289,13 +369,15 @@ export async function markOnScreenAtOpen(
     .select({
       agendaItemId: liveState.agendaItemId,
       documentId: liveState.documentId,
+      amendmentId: liveState.amendmentId,
+      amendmentBloc: liveState.amendmentBloc,
     })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId));
   if (!state) return;
-  if (state.documentId) await stampProjected(tx, state.documentId);
-  await markPresentedTreated(tx, {
+  await applyOnScreenMarks(tx, {
     assemblyId,
+    status: "in_session",
     previous: null,
     next: state,
     actor,

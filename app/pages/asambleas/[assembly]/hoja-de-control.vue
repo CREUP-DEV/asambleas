@@ -1988,19 +1988,28 @@ function scrollToRow(id: string): void {
 }
 
 /**
+ * The tabs the debate moving on never takes a reader out of: «Turnos de
+ * palabra» lists the whole assembly and «Historial» what changed in it, so
+ * neither has a row to follow (E-088). Only the reader turning following on
+ * there takes them to the debate, as the button says it does.
+ */
+const STAY_TABS: ReadonlySet<SheetTab> = new Set(["turns", "history"]);
+
+/**
  * Opens what the Mesa has on screen: its amendment, or its item; in
  * «Enmiendas», the amendments of the document in debate if it has any the
- * reader sees. Never from «Turnos de palabra», which lists the whole
- * assembly and has no row to follow: the debate moving on would take its
- * reader out of it. Whether it went anywhere: false when there was nothing
- * to follow (nothing on screen, «Turnos de palabra», the document already
- * shown) or it waits: while an amendment's panel is open, another document
- * waits until it closes (followWaitsForPanel), so the panel never stays on
- * a row the list no longer holds.
+ * reader sees. Never from «Turnos de palabra» or «Historial» (STAY_TABS)
+ * unless the reader `asked`, turning following on there. Whether it went
+ * anywhere: false when there was nothing to follow (nothing on screen, one
+ * of those tabs, the document already shown) or it waits: while an
+ * amendment's panel is open, another document waits until it closes
+ * (followWaitsForPanel), so the panel never stays on a row the list no
+ * longer holds.
  */
-async function followDebate(): Promise<boolean> {
+async function followDebate(asked = false): Promise<boolean> {
   const state = live.value;
-  if (!follow.value || !state || tab.value === "turns") return false;
+  if (!follow.value || !state) return false;
+  if (!asked && STAY_TABS.has(tab.value)) return false;
   // Coming back where the reader left it: the sheet stays there.
   if (holdFollow) return false;
   const waitsForPanel = (documentId: string) => {
@@ -2049,6 +2058,16 @@ async function followDebate(): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+/**
+ * The button in the tabs bar. Turned on from «Turnos de palabra» or
+ * «Historial», it opens the debate there and then; the watch below would
+ * leave the reader where they are.
+ */
+function toggleFollow(): void {
+  follow.value = !follow.value;
+  if (follow.value && STAY_TABS.has(tab.value)) void followDebate(true);
 }
 
 // Only when what is on screen moves (or following is turned on), not on
@@ -2369,8 +2388,8 @@ onMounted(async () => {
     searchDraft.value = saved.search;
   }
   // The debate moved: follow it, unless there is nothing to follow
-  // («Turnos de palabra», nothing on screen, its document already shown);
-  // then the sheet comes back where it was left.
+  // («Turnos de palabra», «Historial», nothing on screen, its document
+  // already shown); then the sheet comes back where it was left.
   if (moved) {
     if (await followDebate()) return;
     holdFollow = true;
@@ -2496,7 +2515,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               follow ? t('controlSheet.following') : t('controlSheet.follow')
             "
             :aria-pressed="follow"
-            @click="follow = !follow"
+            @click="toggleFollow"
           />
         </UTooltip>
       </div>

@@ -26,6 +26,55 @@ export type PermissionKey =
 
 export const ALL_PERMISSION_KEYS = Object.values(PERMISSION_KEYS);
 
+/**
+ * Keys that hold another: whoever holds one of the listed keys holds the
+ * key too. Declared once, here; rules read a key through `holdsPermission`,
+ * never with an OR of their own. `amendment:manage` opens exactly what
+ * `amendment:review` opens (its description says so). Only for checks:
+ * getEffectivePermissions, /api/me and the grant rules of the admin panel
+ * (adminGrantViolation) keep the keys as granted, so holding an edit key
+ * never lets anyone grant the matching view key.
+ */
+export const PERMISSION_IMPLIED_BY: Partial<
+  Record<PermissionKey, readonly PermissionKey[]>
+> = {
+  [PERMISSION_KEYS.AMENDMENT_REVIEW]: [PERMISSION_KEYS.AMENDMENT_MANAGE],
+  [PERMISSION_KEYS.CONTROL_SHEET_VIEW]: [PERMISSION_KEYS.CONTROL_SHEET_EDIT],
+  [PERMISSION_KEYS.SEATING_VIEW]: [PERMISSION_KEYS.SEATING_EDIT],
+};
+
+/** A check of one key: Actor.can on the server, useMe().can on the client. */
+export type PermissionCheck = (key: PermissionKey) => boolean;
+
+/** Whether `can` holds `key`, itself or through a key that implies it. */
+export function holdsPermission(
+  can: PermissionCheck,
+  key: PermissionKey,
+): boolean {
+  return can(key) || (PERMISSION_IMPLIED_BY[key] ?? []).some(can);
+}
+
+/**
+ * Who reads the control sheet (hoja de control) as such: what it notes,
+ * its history, every amendment it lists (validated and withdrawn ones,
+ * published or not) and the executive offices on it. Whoever reads or
+ * edits it, whoever notes the speakers (session:record_speakers) and
+ * whoever records results (assembly:vote_result), who both do it from
+ * there. The one definition: canViewControlSheet on the server and the
+ * sheet's own reads on the client go through `readsControlSheet`.
+ */
+export const CONTROL_SHEET_READER_KEYS: readonly PermissionKey[] = [
+  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
+  PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+  PERMISSION_KEYS.SESSION_RECORD_SPEAKERS,
+  PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT,
+];
+
+/** Whether `can` holds a key of CONTROL_SHEET_READER_KEYS. */
+export function readsControlSheet(can: PermissionCheck): boolean {
+  return CONTROL_SHEET_READER_KEYS.some((key) => holdsPermission(can, key));
+}
+
 export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.USER_MANAGE_ROLES]:
     "permissions.descriptions.userManageRoles",

@@ -231,7 +231,7 @@ const readMark = computed(() => {
 
     <span
       v-if="amendment.justification"
-      class="text-muted mt-2 line-clamp-1 block text-sm"
+      class="text-muted mt-2 line-clamp-1 text-sm"
     >
       {{ amendment.justification }}
     </span>

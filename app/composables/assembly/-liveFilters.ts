@@ -240,7 +240,7 @@ export function shouldRefetchAssembly(
  * that sets each document's window, the order of the items), its items and
  * its documents (each one's summary).
  */
-const AGENDA_ENTITY_TYPES: ReadonlySet<string> = new Set([
+export const AGENDA_ENTITY_TYPES: ReadonlySet<string> = new Set([
   "assembly",
   "agenda_item",
   "document",
@@ -295,17 +295,67 @@ const VOTED_AMENDMENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The assembly event a document's amendments list reads: its status, since
+ * a closed assembly takes «deshacer validación» away from every amendment
+ * (`can.unvalidate`, `assemblyClosed`) and the server then refuses it with
+ * a 409. Nothing else of the assembly reaches that DTO: its calendar,
+ * edits, agenda order and convocation do not (`late` is stored on the
+ * amendment), so they never read the list again.
+ */
+const AMENDMENT_LIST_ASSEMBLY_TYPES: ReadonlySet<string> = new Set([
+  "assembly_status_changed",
+]);
+
+/** An event of this document or of one of its amendments. */
+function concernsDocument(event: ScopedLiveEvent, documentId: string): boolean {
+  return (
+    event.documentId === documentId ||
+    (event.entityType === "document" && event.entityId === documentId)
+  );
+}
+
+/** An assembly event that changes what its amendments allow. */
+function changesAmendmentCapabilities(event: LiveEventLike): boolean {
+  return (
+    event.entityType === "assembly" &&
+    AMENDMENT_LIST_ASSEMBLY_TYPES.has(event.type)
+  );
+}
+
+/**
+ * Whether a batch of live events may change this document's amendments
+ * list (DocumentAmendmentsDto): a poll, any event of the document or of one
+ * of its amendments, and the assembly's status
+ * (AMENDMENT_LIST_ASSEMBLY_TYPES). The rule of the room's copies of that
+ * list (amendmentsRefetchPlan narrows it to the amendments a batch changed)
+ * and of Validación; the Mesa's console (touchesCurrent) and the control
+ * sheet (affectsSheetAmendments) keep their own.
+ */
+export function affectsDocumentAmendments(
+  events: readonly ScopedLiveEvent[],
+  documentId: string | null | undefined,
+): boolean {
+  if (!documentId) return events.some((event) => event.type === "poll");
+  return events.some(
+    (event) =>
+      event.type === "poll" ||
+      concernsDocument(event, documentId) ||
+      changesAmendmentCapabilities(event),
+  );
+}
+
+/**
  * How a reader holding a document's amendments list (the room's: the
  * document page, Directo, the projection) follows a live batch: nothing,
  * the whole list, or only some amendments (GET .../amendments?ids=,
- * listDocumentAmendmentsByIds). Only the events of this document count
- * (isDocumentLiveBatch). The whole list on a poll, on any event of the
- * document itself (its rule, its final vote, a passage wording), on a
- * relation, on an amendment event not in PARTIAL_AMENDMENT_TYPES (those
- * that change which amendments are seen, an inclusion, a reclassification,
- * a vote between alternatives, which records a `decision_recorded`), on a
- * `vote_recorded` with no decision of an amendment beside it, and over
- * `max` ids.
+ * listDocumentAmendmentsByIds). Only what affectsDocumentAmendments lets
+ * through counts. The whole list on a poll, on the assembly's status, on
+ * any event of the document itself (its rule, its final vote, a passage
+ * wording), on a relation, on an amendment event not in
+ * PARTIAL_AMENDMENT_TYPES (those that change which amendments are seen, an
+ * inclusion, a reclassification, a vote between alternatives, which records
+ * a `decision_recorded`), on a `vote_recorded` with no decision of an
+ * amendment beside it, and over `max` ids.
  */
 export function amendmentsRefetchPlan(
   events: readonly ScopedLiveEvent[],
@@ -314,11 +364,8 @@ export function amendmentsRefetchPlan(
 ): { full: true } | { full: false; ids: string[] } | null {
   if (events.some((event) => event.type === "poll")) return { full: true };
   if (!documentId) return null;
-  const own = events.filter(
-    (event) =>
-      event.documentId === documentId ||
-      (event.entityType === "document" && event.entityId === documentId),
-  );
+  if (events.some(changesAmendmentCapabilities)) return { full: true };
+  const own = events.filter((event) => concernsDocument(event, documentId));
   if (own.length === 0) return null;
   const voted = own.some(
     (event) =>
@@ -359,7 +406,7 @@ export function amendmentsRefetchPlan(
  * it projected without moving its `updatedAt` (stampProjected), so a form
  * open on it never turns stale on a `live_changed`, which carries no
  * `documentId`. Its amendments list follows every event of the document
- * instead (isDocumentLiveBatch).
+ * instead (affectsDocumentAmendments).
  */
 export function affectsDocumentDto(
   events: readonly ScopedLiveEvent[],

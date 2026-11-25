@@ -1,14 +1,35 @@
-<script setup lang="ts">
+<script lang="ts">
+import { useState } from "#imports";
 import type { AssemblyListDto, AssemblySummaryDto } from "~~/shared/types/api";
 import { assemblyPath } from "./Navigation.vue";
 
+const HEIGHT_STATE_KEY = "shell-session-pill-height";
+/** Assemblies whose pill was closed, kept for the tab (sessionStorage). */
+const DISMISSED_STORAGE_KEY = "shell-session-dismissed";
+
+/**
+ * The floating pill's measured height while it shows, "0px" otherwise.
+ * The default layout pads the end of the panel bodies by it, so the pill
+ * never covers the last thing on a page (a form's "Guardar", a list's
+ * pagination). Client only: it is measured after mount, never seeded on
+ * the server, where the layout renders before the pill.
+ */
+export function useSessionPillHeight() {
+  return useState<string>(HEIGHT_STATE_KEY, () => "0px");
+}
+</script>
+
+<script setup lang="ts">
 /**
  * Slim floating banner shown while any assembly the user can see is in
  * session, linking to its live view ("En directo"; the list of those in
  * session when there are several). It floats out of the layout flow so it
- * never shrinks the dashboard panels, and it is hidden inside that
- * assembly, whose menu leads to the live view. Dismissing it hides it until
- * another assembly goes into session.
+ * never shrinks the dashboard panels, and the layout reserves its height
+ * at the end of the panels (useSessionPillHeight). It is hidden inside
+ * that assembly, whose menu leads to the live view, and on the home page,
+ * whose "En sesión ahora" block already says it. Dismissing it hides it,
+ * for the rest of the tab, until another assembly goes into session or
+ * the same one goes into session again after leaving it.
  *
  * Inside an assembly that is itself in session it would stay hidden, so it
  * asks nothing there (NAV-12 of the performance report of 2026-11): on
@@ -64,10 +85,33 @@ const insideOne = computed(() =>
   ),
 );
 
+/** The home page has its own "En sesión ahora" block: one notice per fact. */
+const onHome = computed(() => route.path === localePath("/"));
+
 const visible = computed(
   () =>
-    visibleAssemblies.value.length > 0 && !insideOne.value && !insideLive.value,
+    visibleAssemblies.value.length > 0 &&
+    !insideOne.value &&
+    !insideLive.value &&
+    !onHome.value,
 );
+
+const pill = useTemplateRef<HTMLElement>("pill");
+const { height: pillHeight } = useElementSize(pill, undefined, {
+  box: "border-box",
+});
+const reservedHeight = useSessionPillHeight();
+watch(
+  [visible, pillHeight],
+  ([shown, measured]) => {
+    reservedHeight.value =
+      shown && measured > 0 ? `${Math.ceil(measured)}px` : "0px";
+  },
+  { immediate: true },
+);
+onScopeDispose(() => {
+  reservedHeight.value = "0px";
+});
 
 const single = computed(() =>
   visibleAssemblies.value.length === 1 ? visibleAssemblies.value[0] : null,
@@ -88,6 +132,17 @@ const message = computed(() =>
     : t("shell.live.multiple", { count: visibleAssemblies.value.length }),
 );
 
+function storeDismissed(): void {
+  try {
+    sessionStorage.setItem(
+      DISMISSED_STORAGE_KEY,
+      JSON.stringify(dismissed.value),
+    );
+  } catch {
+    // No storage (private mode, blocked): it stays closed until a reload.
+  }
+}
+
 function dismiss(): void {
   dismissed.value = [
     ...new Set([
@@ -95,7 +150,45 @@ function dismiss(): void {
       ...visibleAssemblies.value.map((i) => i.id),
     ]),
   ];
+  storeDismissed();
 }
+
+/**
+ * Forgets the closed pills of assemblies no longer in session, so a later
+ * sitting of the same assembly (adjourned and opened again another day)
+ * shows the pill again. Only on a whole list: a partial page says nothing
+ * of the assemblies left out.
+ */
+function pruneDismissed(): void {
+  const list = data.value;
+  if (!list || list.items.length < list.total) return;
+  const live = new Set(inSession.value.map((item) => item.id));
+  const kept = dismissed.value.filter((id) => live.has(id));
+  if (kept.length === dismissed.value.length) return;
+  dismissed.value = kept;
+  storeDismissed();
+}
+
+/** A pill closed earlier in this tab stays closed after a reload. */
+function restoreDismissed(): void {
+  try {
+    const stored: unknown = JSON.parse(
+      sessionStorage.getItem(DISMISSED_STORAGE_KEY) ?? "[]",
+    );
+    if (!Array.isArray(stored)) return;
+    const ids = stored.filter((id): id is string => typeof id === "string");
+    if (ids.length > 0) {
+      dismissed.value = [...new Set([...dismissed.value, ...ids])];
+    }
+  } catch {
+    // Unreadable or blocked storage: nothing was kept.
+  }
+  pruneDismissed();
+}
+
+watch(data, () => {
+  if (import.meta.client) pruneDismissed();
+});
 
 // Announce sessions that start while the page is open, not on first load
 // (nor on the first list a page of an assembly fetches on the client).
@@ -142,6 +235,7 @@ function refreshThrottled(): void {
 }
 
 onMounted(() => {
+  restoreDismissed();
   // The list came with the page; otherwise (a page of an assembly) fetch
   // it now if the banner may show.
   if (data.value) lastRefresh = Date.now();
@@ -174,7 +268,8 @@ watch(visibility, (state) => {
     >
       <aside
         v-if="visible"
-        class="bg-inverted text-inverted ring-default fixed inset-x-4 bottom-4 flex items-center gap-2 rounded-full py-1.5 ps-4 pe-1.5 shadow-lg ring sm:inset-x-auto sm:end-6 sm:bottom-6 sm:max-w-md"
+        ref="pill"
+        class="bg-inverted text-inverted ring-default fixed inset-x-4 bottom-4 flex min-h-11 items-center gap-2 rounded-full py-1 ps-4 pe-1 shadow-lg ring sm:inset-x-auto sm:end-6 sm:bottom-6 sm:max-w-md"
         :aria-label="t('shell.live.region')"
       >
         <span class="relative flex size-2.5 shrink-0" aria-hidden="true">
@@ -186,9 +281,11 @@ watch(visibility, (state) => {
 
         <NuxtLink
           :to="target"
-          class="group flex min-w-0 flex-1 items-center gap-2 rounded-full text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+          class="group flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-full text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
         >
-          <span class="min-w-0 flex-1 truncate">{{ message }}</span>
+          <span class="min-w-0 flex-1 py-1 text-pretty wrap-anywhere">{{
+            message
+          }}</span>
           <span
             class="bg-primary text-inverted hidden shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold group-hover:opacity-90 sm:inline-flex"
           >
@@ -203,7 +300,7 @@ watch(visibility, (state) => {
 
         <UButton
           icon="i-lucide-x"
-          size="xs"
+          size="md"
           color="neutral"
           variant="ghost"
           class="text-inverted hover:bg-default/10 focus-visible:bg-default/10 shrink-0 rounded-full"

@@ -526,14 +526,17 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
         ]"
       />
 
+      <!-- Below lg the table takes its full height and the panel scrolls;
+           from lg it scrolls in its own box under a header that stays. -->
       <UTable
         v-else
+        sticky
         :data="filtered"
         :columns="columns"
         :loading="status === 'pending' && members.length === 0"
         :aria-label="t('admin.members.title')"
-        class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle whitespace-normal' }"
+        class="border-default rounded-lg border max-lg:shrink-0"
+        :ui="{ thead: 'bg-default', td: 'align-middle whitespace-normal' }"
       >
         <template #acronym-cell="{ row }">
           <span class="text-highlighted font-semibold tracking-wide">

@@ -170,6 +170,8 @@ describe("canSeeExecutiveMembers", () => {
       PERMISSION_KEYS.CONTROL_SHEET_VIEW,
       PERMISSION_KEYS.CONTROL_SHEET_EDIT,
       PERMISSION_KEYS.SESSION_RECORD_SPEAKERS,
+      // Records results from the control sheet, which names the offices.
+      PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT,
       PERMISSION_KEYS.SEATING_VIEW,
       PERMISSION_KEYS.SEATING_EDIT,
     ]) {
@@ -190,7 +192,6 @@ describe("canSeeExecutiveMembers", () => {
           permissions: [
             PERMISSION_KEYS.DOCUMENT_CREATE,
             PERMISSION_KEYS.AMENDMENT_CREATE,
-            PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT,
             PERMISSION_KEYS.ASSEMBLY_CREATE,
             PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
           ],

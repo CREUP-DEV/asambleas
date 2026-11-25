@@ -208,18 +208,18 @@ function clearAll(): void {
         v-if="!showingMine"
         :model-value="filters.query"
         icon="i-lucide-search"
-        size="sm"
         class="min-w-0 flex-1"
-        :placeholder="t('amendment.filters.searchPlaceholder')"
+        :ui="{ base: 'max-sm:h-10' }"
+        :placeholder="t('common.search')"
         :aria-label="t('amendment.filters.search')"
         @update:model-value="patch({ query: String($event ?? '') })"
       />
-      <UPopover :content="{ align: 'end' }">
+      <UPopover :content="{ align: 'end', collisionPadding: 12 }">
         <UButton
           icon="i-lucide-list-filter"
           color="neutral"
           variant="outline"
-          size="sm"
+          class="max-sm:h-10"
           :label="buttonLabel"
           :aria-label="buttonAria"
         >
@@ -242,7 +242,9 @@ function clearAll(): void {
         </UButton>
 
         <template #content>
-          <div class="flex w-80 max-w-[90vw] flex-col gap-3 p-3">
+          <div
+            class="flex max-h-[calc(var(--reka-popover-content-available-height,70dvh)-0.5rem)] w-80 max-w-[90vw] flex-col gap-3 overflow-y-auto p-3"
+          >
             <div
               class="flex flex-wrap items-center gap-1.5"
               role="group"

@@ -91,8 +91,10 @@ an account sees the offices when its role is Admin, Secretaría, Presidencia,
 Moderador (the Mesa gives them the floor) or CEA, when it holds a management
 permission (`document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage`,
-`user:manage_roles`, `stats:view`, `notification:manage`, `control_sheet:view`,
-`control_sheet:edit`, `seating:view`, `seating:edit`), or when it acts for an
+`user:manage_roles`, `stats:view`, `notification:manage`, `seating:view`,
+`seating:edit`, or a key of the control sheet's readers,
+`CONTROL_SHEET_READER_KEYS`: `control_sheet:view`, `control_sheet:edit`,
+`session:record_speakers`, `assembly:vote_result`), or when it acts for an
 office itself
 (`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado, Otro) gets one
 generic presenter instead of any office:
@@ -981,7 +983,8 @@ account and document or amendment).
   (`stats:view`, "Statistics") are the one place that reads another
   account's.
 - **What takes a mark.** Published documents (`status` `published`) and the
-  amendments to them that are presented and published. Everyone who sees
+  amendments to them that are published and not withdrawn
+  (`publicAmendmentWhere`, the SQL twin of `isPublicAmendment`). Everyone who sees
   the assembly reads those, so the marks need no visibility rule of their
   own, and nothing else can be marked (404).
 - **Changed since.** A mark stores the revision it was made on: a document's

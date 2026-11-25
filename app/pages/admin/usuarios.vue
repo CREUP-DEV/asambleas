@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
+import { createReusableTemplate } from "@vueuse/core";
 import type { MemberDto } from "~~/shared/types/api";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
@@ -34,8 +35,10 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * its university when the name leaves it out, and its email wrap, never
  * cut), its role with the extra permissions (listed on
  * hover), the member it acts for and the last sync, with the sign-up date
- * under it. Each row's "Editar" opens a side panel with its role, its member
- * and its extra permissions; each change is confirmed and saved on its own.
+ * under it (from 2xl). Each row's "Editar" opens a side panel with its role,
+ * its member and its extra permissions; each change is confirmed and saved on
+ * its own. "Editar" is always in view: its column stays at the table's right
+ * edge, and on a phone it sits under the email instead.
  * An Admin also gets, in the row's "⋯" menu, the person's activity (the
  * Admin-only /admin/actividad, filtered by them) and "Acceder como", which
  * asks for a reason and then reloads the app as that account (POST
@@ -423,10 +426,19 @@ const rows = computed<UserTableRow[]>(() =>
   })),
 );
 
-/** Shown from a width on: narrow screens keep the account, role and actions. */
-function fromWidth(breakpoint: "lg" | "xl") {
-  const shown =
-    breakpoint === "lg" ? "hidden lg:table-cell" : "hidden xl:table-cell";
+// Whole literals, so Tailwind sees each class.
+const SHOWN_FROM = {
+  sm: "hidden sm:table-cell",
+  lg: "hidden lg:table-cell",
+  "2xl": "hidden 2xl:table-cell",
+} as const;
+
+/**
+ * Shown from a width on: a phone keeps the account (with "Editar" under the
+ * email) and the role; sm adds the actions, lg the member, 2xl the last sync.
+ */
+function fromWidth(breakpoint: keyof typeof SHOWN_FROM) {
+  const shown = SHOWN_FROM[breakpoint];
   return { class: { th: shown, td: shown } };
 }
 
@@ -437,10 +449,27 @@ const columns = computed<TableColumn<UserTableRow>[]>(() => [
   {
     accessorKey: "lastRoleSyncAt",
     header: t("admin.users.lastSync"),
-    meta: fromWidth("xl"),
+    meta: fromWidth("2xl"),
   },
-  { id: "actions", header: t("admin.users.actions") },
+  {
+    id: "actions",
+    header: t("admin.users.actions"),
+    meta: fromWidth("sm"),
+  },
 ]);
+
+/**
+ * "Acciones" stays at the right edge of the table's box while the rest
+ * scrolls sideways, so "Editar" is in view at any laptop width. One pinned
+ * column only: Nuxt UI places a pinned cell by TanStack's column sizes, not
+ * by its real width, which is right only for the column at the edge.
+ */
+const columnPinning = { left: [], right: ["actions"] };
+
+/** "Editar" and "⋯": in their column from sm, under the email below it. */
+const [DefineRowActions, ReuseRowActions] = createReusableTemplate<{
+  user: UserTableRow;
+}>();
 
 const changingUserId = ref<string | null>(null);
 const pendingChange = ref<{
@@ -1054,6 +1083,38 @@ function goToPage(next: number): void {
         {{ statusMessage }}
       </p>
 
+      <DefineRowActions v-slot="{ user }">
+        <div class="flex items-center gap-1">
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-pencil"
+            class="whitespace-nowrap"
+            :label="t('admin.users.editAction')"
+            :aria-label="t('admin.users.editFor', { user: displayName(user) })"
+            :disabled="impersonation !== null"
+            @click="openEdit(user)"
+          />
+          <!-- The activity log and acting as someone are Admin-only. -->
+          <UDropdownMenu
+            v-if="isAdmin"
+            :items="rowMenu(user)"
+            :content="{ align: 'end' }"
+          >
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-ellipsis"
+              :aria-label="
+                t('admin.users.moreActionsFor', { user: displayName(user) })
+              "
+            />
+          </UDropdownMenu>
+        </div>
+      </DefineRowActions>
+
       <UAlert
         v-if="usersError"
         color="error"
@@ -1070,14 +1131,24 @@ function goToPage(next: number): void {
         ]"
       />
 
+      <!-- Below lg the table takes its full height and the panel scrolls:
+           shrunk into the box under the filters it showed a row or none on
+           a phone. From lg it scrolls in its own box under a header that
+           stays, and "Acciones" stays at its right edge. -->
       <UTable
         v-else
+        sticky
         :data="rows"
         :columns="columns"
+        :column-pinning="columnPinning"
         :loading="loading"
         :aria-label="t('admin.users.title')"
-        class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle whitespace-normal' }"
+        class="border-default rounded-lg border max-lg:shrink-0"
+        :ui="{
+          thead: 'bg-default',
+          th: 'data-[pinned=right]:bg-default',
+          td: 'align-middle whitespace-normal data-[pinned=right]:bg-default',
+        }"
       >
         <template #name-cell="{ row }">
           <div class="flex max-w-md min-w-48 items-center gap-3">
@@ -1118,13 +1189,19 @@ function goToPage(next: number): void {
                   {{ revokedDetail(row.original) }}
                 </span>
               </p>
+              <!-- A phone has no room for the actions column. -->
+              <div class="mt-2 sm:hidden">
+                <ReuseRowActions :user="row.original" />
+              </div>
             </div>
           </div>
         </template>
 
         <template #role-cell="{ row }">
           <div class="flex flex-wrap items-center gap-1.5">
-            <span class="text-sm whitespace-nowrap">
+            <!-- Wraps: «Comisión Ejecutiva Ampliada (CEA)» on one line
+                 pushed "Editar" out of a laptop's box. -->
+            <span class="text-sm">
               {{
                 row.original.role
                   ? roleName(row.original.role.name)
@@ -1235,39 +1312,7 @@ function goToPage(next: number): void {
         </template>
 
         <template #actions-cell="{ row }">
-          <div class="flex items-center gap-1">
-            <UButton
-              color="neutral"
-              variant="outline"
-              size="sm"
-              icon="i-lucide-pencil"
-              class="whitespace-nowrap"
-              :label="t('admin.users.editAction')"
-              :aria-label="
-                t('admin.users.editFor', { user: displayName(row.original) })
-              "
-              :disabled="impersonation !== null"
-              @click="openEdit(row.original)"
-            />
-            <!-- The activity log and acting as someone are Admin-only. -->
-            <UDropdownMenu
-              v-if="isAdmin"
-              :items="rowMenu(row.original)"
-              :content="{ align: 'end' }"
-            >
-              <UButton
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                icon="i-lucide-ellipsis"
-                :aria-label="
-                  t('admin.users.moreActionsFor', {
-                    user: displayName(row.original),
-                  })
-                "
-              />
-            </UDropdownMenu>
-          </div>
+          <ReuseRowActions :user="row.original" />
         </template>
 
         <template #empty>

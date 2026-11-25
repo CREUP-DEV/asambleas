@@ -2079,6 +2079,7 @@ useHead(() => ({
                   :url="document.fileUrl"
                   :title="document.title"
                   :text-layer="false"
+                  :file-link="false"
                   @ready="followMesaScroll"
                 />
                 <SessionPointerLayer

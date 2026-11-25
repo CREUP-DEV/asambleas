@@ -880,22 +880,28 @@ useHead({
 
     <template v-else>
       <header class="space-y-1">
-        <!-- The way back to the document is the breadcrumb row, above -->
-        <div v-if="reviewing" class="flex items-center justify-end gap-2">
-          <ProponentReviewShortcutHelp class="hidden lg:inline-flex" />
-          <UButton
-            class="lg:hidden"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-lucide-list"
-            :label="t('proponentReview.list.open')"
-            @click="listOpen = true"
-          />
+        <!-- The way back to the document is the breadcrumb row, above.
+             The title shares its row with the shortcuts (desktop) or the
+             list (below lg), so the change starts higher on the screen. -->
+        <div class="flex items-start justify-between gap-2">
+          <h2 class="text-highlighted min-w-0 text-xl font-bold sm:text-2xl">
+            {{ t("proponentReview.title") }}
+          </h2>
+          <template v-if="reviewing">
+            <ProponentReviewShortcutHelp
+              class="hidden shrink-0 lg:inline-flex"
+            />
+            <UButton
+              class="shrink-0 lg:hidden"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-list"
+              :label="t('proponentReview.list.open')"
+              @click="listOpen = true"
+            />
+          </template>
         </div>
-        <h2 class="text-highlighted text-xl font-bold sm:text-2xl">
-          {{ t("proponentReview.title") }}
-        </h2>
         <p class="text-muted text-sm">
           <span v-if="document.reference" class="tabular-nums">
             {{ document.reference }} ·
@@ -938,7 +944,7 @@ useHead({
         role="status"
       >
         <span class="sr-only">{{ t("proponentReview.loading") }}</span>
-        <USkeleton aria-hidden="true" class="h-3 w-full" />
+        <USkeleton aria-hidden="true" class="h-5 w-48" />
         <USkeleton aria-hidden="true" class="h-80 w-full" />
       </div>
 
@@ -994,9 +1000,11 @@ useHead({
 
       <!-- Review -->
       <template v-else>
-        <div class="max-w-4xl space-y-2">
+        <!-- The count says the progress: no bar repeating it, so the change
+             starts higher on the screen. -->
+        <div class="max-w-4xl space-y-1">
           <div
-            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
+            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
           >
             <!-- Always rendered, so screen readers hear every change. -->
             <div aria-live="polite" aria-atomic="true" class="min-w-0">
@@ -1018,16 +1026,6 @@ useHead({
               :label="t('proponentReview.onlyPending')"
             />
           </div>
-          <UProgress
-            v-if="progress.total > 0"
-            :model-value="progress.answered"
-            :max="progress.total"
-            size="sm"
-            :color="
-              progress.answered === progress.total ? 'success' : 'primary'
-            "
-            aria-hidden="true"
-          />
           <ProponentReviewWaiting :counts="waiting" />
         </div>
 

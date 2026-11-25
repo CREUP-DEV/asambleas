@@ -4,7 +4,8 @@
  * It only shows the mark; the Mesa changes it in the row's panel
  * (ControlSheetRowPanel). `label` names the row ("Tratado: 3.1. Informe").
  * While a change made in the panel is on its way (`saving`) the box shows
- * the new value.
+ * the new value. It takes no clicks: one on it falls through to its row,
+ * which opens that panel (E-086), instead of dying on a disabled box.
  */
 defineProps<{
   treated: boolean;
@@ -14,7 +15,7 @@ defineProps<{
 </script>
 
 <template>
-  <span class="inline-flex items-center">
+  <span class="pointer-events-none inline-flex items-center">
     <UCheckbox
       :model-value="treated"
       disabled

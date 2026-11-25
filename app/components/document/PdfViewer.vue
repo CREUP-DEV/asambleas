@@ -67,7 +67,12 @@ const { t } = useI18n();
       />
     </div>
     <ClientOnly>
-      <DocumentPdfPages :key="url" :url="url" :title="props.title" />
+      <DocumentPdfPages
+        :key="url"
+        :url="url"
+        :title="props.title"
+        :file-link="!openButton"
+      />
       <template #fallback>
         <USkeleton aria-hidden="true" class="aspect-[1/1.414] w-full" />
       </template>

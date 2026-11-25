@@ -7,7 +7,13 @@ import {
   type DecisionKind,
   type DocumentStatus,
 } from "~~/shared/constants/domain";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import {
+  CONTROL_SHEET_READER_KEYS,
+  PERMISSION_KEYS,
+  holdsPermission,
+  readsControlSheet,
+  type PermissionKey,
+} from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type {
   AcceptanceDto,
@@ -27,6 +33,7 @@ import {
   canReviewAmendments,
   type Actor,
 } from "./actor";
+import { isPublicAmendment } from "./publicAmendments";
 
 /** Draft assemblies are only visible to those who manage assemblies. */
 export function canSeeAssembly(
@@ -142,7 +149,7 @@ export function seesAnswerRecord(
   return (
     context.insider ||
     context.isPresenter ||
-    actor.user.role?.name === SYSTEM_ROLES.CEA ||
+    isCeaAccount(actor) ||
     canModerate(actor) ||
     canManageDocuments(actor) ||
     canReviewAmendments(actor)
@@ -174,7 +181,8 @@ export function isAmendmentInsider(
  * - Withdrawn: never public, published or not: its authors, its creator,
  *   the parties of a transactional, reviewers, the Mesa, the CEA's
  *   accounts and the control sheet's readers (`seesWithdrawnAmendments`).
- * - Presented and published (`publishedAt`): everyone.
+ * - Presented and published (`publishedAt`): everyone (isPublicAmendment,
+ *   whose SQL twin publicAmendmentWhere lists them in queries).
  * - Presented, not published yet (waiting for validation, validated but kept
  *   private, or decided before publication): its authors, its creator, the
  *   parties of a transactional, reviewers, the Mesa and the CEA's accounts
@@ -197,6 +205,7 @@ export function canSeeAmendment(
   actor: Actor,
   amendment: AmendmentVisibilityContext,
 ): boolean {
+  if (isPublicAmendment(amendment)) return true;
   const insider = isAmendmentInsider(actor, amendment);
   if (amendment.status === "draft") {
     return insider || canReviewAmendments(actor);
@@ -208,7 +217,6 @@ export function canSeeAmendment(
       seesWithdrawnAmendments(actor)
     );
   }
-  if (amendment.publishedAt) return true;
   if (insider || seesAllPresentedAmendments(actor)) return true;
   if (seesPresentedAmendments(actor)) return true;
   if (presentsTransactionalDocument(actor, amendment)) return true;
@@ -245,35 +253,46 @@ export function presentsTransactionalDocument(
  * amendment before its validation (positionBlocker).
  */
 export function seesPresentedAmendments(actor: Actor): boolean {
+  return isCeaAccount(actor);
+}
+
+/** The account has the CEA role (an office's account of the CEA). */
+export function isCeaAccount(actor: Actor): boolean {
   return actor.user.role?.name === SYSTEM_ROLES.CEA;
 }
 
 /**
+ * Who reads the amendments the control sheet lists beyond the public ones
+ * (validated and withdrawn, published or not), besides their insiders,
+ * reviewers and the Mesa: the CEA's accounts and whoever reads the sheet
+ * (canViewControlSheet, CONTROL_SHEET_READER_KEYS). One rule for both
+ * seesWithdrawnAmendments and seesValidatedAmendments, so the internal
+ * sheet never drops rows for a reader the sheet lets in.
+ */
+function seesUnpublishedOnSheet(actor: Actor): boolean {
+  return isCeaAccount(actor) || readsControlSheet(actor.can);
+}
+
+/**
  * Who reads a withdrawn amendment besides its insiders, reviewers and the
- * Mesa: the CEA's accounts (role CEA) and whoever reads the control sheet.
- * Withdrawn amendments are never public (user's decision of 2026-11-17).
+ * Mesa: the CEA's accounts (role CEA) and whoever reads the control sheet
+ * (seesUnpublishedOnSheet). Withdrawn amendments are never public (user's
+ * decision of 2026-11-17).
  */
 export function seesWithdrawnAmendments(actor: Actor): boolean {
-  return (
-    actor.user.role?.name === SYSTEM_ROLES.CEA ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT)
-  );
+  return seesUnpublishedOnSheet(actor);
 }
 
 /**
  * Who reads an amendment the Secretaría validated and has not published:
  * the CEA's accounts (role CEA, who read it even before, see
  * seesPresentedAmendments) and whoever reads the control sheet (it lists
- * every validated amendment, published or not). Not the presenters of
- * the amended document as such (user's decision of 2026-11-17).
+ * every validated amendment, published or not; seesUnpublishedOnSheet).
+ * Not the presenters of the amended document as such (user's decision of
+ * 2026-11-17).
  */
 export function seesValidatedAmendments(actor: Actor): boolean {
-  return (
-    actor.user.role?.name === SYSTEM_ROLES.CEA ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT)
-  );
+  return seesUnpublishedOnSheet(actor);
 }
 
 /** Event types whose payload carries a correction note (`note`). */
@@ -399,11 +418,14 @@ const EXECUTIVE_VISIBLE_ROLES: ReadonlySet<string> = new Set([
   SYSTEM_ROLES.CEA,
 ]);
 
-/** Management permissions that imply it, whatever the role. */
-const EXECUTIVE_VISIBLE_PERMISSIONS = [
+/**
+ * Management permissions that imply it, whatever the role. Keys that imply
+ * one of these (PERMISSION_IMPLIED_BY: amendment:manage, the edit keys)
+ * count through holdsPermission.
+ */
+const EXECUTIVE_VISIBLE_PERMISSIONS: readonly PermissionKey[] = [
   PERMISSION_KEYS.DOCUMENT_MANAGE,
   PERMISSION_KEYS.AMENDMENT_REVIEW,
-  PERMISSION_KEYS.AMENDMENT_MANAGE,
   PERMISSION_KEYS.ASSEMBLY_MANAGE,
   PERMISSION_KEYS.SESSION_MODERATE,
   PERMISSION_KEYS.MEMBER_MANAGE,
@@ -412,15 +434,12 @@ const EXECUTIVE_VISIBLE_PERMISSIONS = [
   PERMISSION_KEYS.STATS_VIEW,
   // The email log names every account and what it was told.
   PERMISSION_KEYS.NOTIFICATION_MANAGE,
-  // The control sheet feeds the minutes: who presents and who speaks.
-  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
-  PERMISSION_KEYS.CONTROL_SHEET_EDIT,
-  // Noting who spoke names the offices that speak.
-  PERMISSION_KEYS.SESSION_RECORD_SPEAKERS,
+  // The control sheet feeds the minutes: who presents and who speaks. Its
+  // readers, noting who spoke and recording results from it included.
+  ...CONTROL_SHEET_READER_KEYS,
   // The room's seating names the offices and the people who act for them.
   PERMISSION_KEYS.SEATING_VIEW,
-  PERMISSION_KEYS.SEATING_EDIT,
-] as const;
+];
 
 /**
  * Whether the actor sees the executive areas (members of kind "executive")
@@ -434,7 +453,10 @@ export function canSeeExecutiveMembers(actor: Actor): boolean {
   if (actor.isAdmin) return true;
   const role = actor.user.role?.name;
   if (role && EXECUTIVE_VISIBLE_ROLES.has(role)) return true;
-  if (EXECUTIVE_VISIBLE_PERMISSIONS.some((key) => actor.can(key))) return true;
+  if (
+    EXECUTIVE_VISIBLE_PERMISSIONS.some((key) => holdsPermission(actor.can, key))
+  )
+    return true;
   return actor.memberKind === "executive";
 }
 

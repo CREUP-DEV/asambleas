@@ -22,6 +22,11 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * permission away from it is warned about first, since they lose it too.
  * Nor can a non-Admin give or take a permission they do not hold
  * (`not_held`): that whole row is locked, with the reason.
+ *
+ * From md the permission column stays in view as the matrix scrolls
+ * sideways, and from lg, where the matrix scrolls in its own box, the roles'
+ * row stays too; below lg the panel scrolls. A phone picks one role and
+ * lists its permissions.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -294,6 +299,38 @@ function roleName(name: string): string {
   return key ? t(key) : name;
 }
 
+/**
+ * Below md the matrix does not fit: a phone edits one role at a time, its
+ * permissions as a list whose whole row is the target. The first role until
+ * another is picked; a role that goes falls back to the first again.
+ */
+const pickedRoleId = ref<string>();
+const shownRole = computed(
+  () =>
+    editableRoles.value.find((role) => role.id === pickedRoleId.value) ??
+    editableRoles.value[0],
+);
+const roleItems = computed(() =>
+  editableRoles.value.map((role) => ({
+    label: changed(role.id)
+      ? t("admin.roles.roleUnsaved", { role: roleName(role.name) })
+      : roleName(role.name),
+    value: role.id,
+  })),
+);
+
+function pickRole(value: unknown): void {
+  if (typeof value === "string") pickedRoleId.value = value;
+}
+
+function toggleShown(key: PermissionKey, value: boolean): void {
+  if (shownRole.value) toggle(shownRole.value.id, key, value);
+}
+
+function shownLocked(key: PermissionKey): boolean {
+  return Boolean(shownRole.value && lockReasonId(shownRole.value.id, key));
+}
+
 function permissionLabel(key: PermissionKey): string {
   const i18nKey = PERMISSION_DESCRIPTION_I18N_KEYS[key];
   return i18nKey && te(i18nKey) ? t(i18nKey) : key;
@@ -477,109 +514,195 @@ useLeaveGuard(
         :title="t('admin.roles.noRoles')"
       />
 
-      <div
-        v-else
-        class="border-default overflow-x-auto rounded-lg border"
-        role="region"
-        :aria-label="t('admin.roles.matrix')"
-        tabindex="0"
-      >
-        <table class="w-full min-w-[36rem] text-sm">
-          <caption class="sr-only">
-            {{
-              t("admin.roles.matrix")
-            }}
-          </caption>
-          <thead class="bg-elevated/50">
-            <tr class="border-default border-b">
-              <th scope="col" class="p-3 text-start font-semibold">
-                {{ t("admin.roles.permission") }}
-              </th>
-              <th
-                v-for="role in editableRoles"
-                :key="role.id"
-                scope="col"
-                class="p-3 text-center font-semibold whitespace-nowrap"
+      <template v-else>
+        <!-- A phone: one role at a time (see shownRole). -->
+        <div v-if="shownRole" class="space-y-3 md:hidden">
+          <UFormField
+            :label="t('admin.roles.pickRole')"
+            :help="
+              shownRole.id === ownRoleId ? t('admin.roles.yourRole') : undefined
+            "
+          >
+            <USelect
+              :model-value="shownRole.id"
+              :items="roleItems"
+              class="w-full"
+              @update:model-value="pickRole"
+            />
+          </UFormField>
+          <ul
+            class="border-default divide-default divide-y rounded-lg border"
+            :aria-label="
+              t('admin.roles.permissionsOf', { role: roleName(shownRole.name) })
+            "
+          >
+            <li v-for="key in ALL_PERMISSION_KEYS" :key="key">
+              <UCheckbox
+                variant="card"
+                :model-value="isGranted(shownRole.id, key)"
+                :disabled="
+                  saving ||
+                  !saved[shownRole.id] ||
+                  lockReasonId(shownRole.id, key) !== undefined
+                "
+                :aria-describedby="lockReasonId(shownRole.id, key)"
+                :aria-label="
+                  t('admin.roles.grant', {
+                    permission: permissionLabel(key),
+                    role: roleName(shownRole.name),
+                  })
+                "
+                :ui="{
+                  root: 'rounded-none border-0',
+                  label: 'font-normal text-highlighted',
+                }"
+                @update:model-value="
+                  (value: boolean | 'indeterminate') =>
+                    toggleShown(key, value === true)
+                "
               >
-                {{ roleName(role.name) }}
-                <span
-                  v-if="changed(role.id)"
-                  class="bg-warning ms-1 inline-block size-1.5 rounded-full align-middle"
-                  :title="t('admin.roles.roleChanged')"
-                />
-                <span v-if="changed(role.id)" class="sr-only">
-                  {{ t("admin.roles.roleChanged") }}
-                </span>
-                <span
-                  v-if="role.id === ownRoleId"
-                  class="text-muted block text-xs font-normal"
-                >
-                  {{ t("admin.roles.yourRole") }}
-                </span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="key in ALL_PERMISSION_KEYS"
-              :key="key"
-              class="border-default hover:bg-elevated/40 border-b last:border-b-0"
+                <template #label>
+                  <span class="flex items-start gap-1.5">
+                    <UIcon
+                      :name="PERMISSION_ICONS[key]"
+                      class="text-dimmed mt-0.5 size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{{ permissionLabel(key) }}</span>
+                    <UIcon
+                      v-if="shownLocked(key)"
+                      name="i-lucide-lock"
+                      class="text-muted mt-0.5 size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </template>
+              </UCheckbox>
+            </li>
+          </ul>
+        </div>
+
+        <!-- From md, the matrix. The permission column stays in view as it
+           scrolls sideways, and from lg the roles' row stays too; both need
+           an opaque background (the header's is the tint it had, mixed over
+           the page's colour) and an inset line, since a collapsed border
+           does not move with them. Below lg the box takes its full height
+           and the panel scrolls, so the roles' row scrolls away with it. -->
+        <div
+          class="border-default hidden overflow-x-auto rounded-lg border max-lg:shrink-0 md:block"
+          role="region"
+          :aria-label="t('admin.roles.matrix')"
+          tabindex="0"
+        >
+          <table class="w-full min-w-[36rem] text-sm">
+            <caption class="sr-only">
+              {{
+                t("admin.roles.matrix")
+              }}
+            </caption>
+            <thead
+              class="sticky top-0 z-2 bg-[color-mix(in_oklab,var(--ui-bg-elevated)_50%,var(--ui-bg))]"
             >
-              <th scope="row" class="p-3 text-start font-normal">
-                <span class="text-highlighted flex items-start gap-1.5">
-                  <UIcon
-                    :name="PERMISSION_ICONS[key]"
-                    class="text-dimmed mt-0.5 size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span>{{ permissionLabel(key) }}</span>
-                  <!-- One lock for the whole row: the note above says why. -->
-                  <UIcon
-                    v-if="notHeld(key)"
-                    name="i-lucide-lock"
-                    class="text-muted mt-0.5 size-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                </span>
-              </th>
-              <td
-                v-for="role in editableRoles"
-                :key="role.id"
-                class="p-3 text-center align-middle"
+              <tr>
+                <th
+                  scope="col"
+                  class="sticky start-0 z-1 bg-[color-mix(in_oklab,var(--ui-bg-elevated)_50%,var(--ui-bg))] p-3 text-start align-bottom font-semibold shadow-[inset_-1px_-1px_0_var(--ui-border)]"
+                >
+                  {{ t("admin.roles.permission") }}
+                </th>
+                <th
+                  v-for="role in editableRoles"
+                  :key="role.id"
+                  scope="col"
+                  class="p-3 text-center align-bottom font-semibold shadow-[inset_0_-1px_0_var(--ui-border)]"
+                >
+                  <span class="mx-auto block max-w-36 min-w-24 text-balance">
+                    {{ roleName(role.name) }}
+                    <span
+                      v-if="changed(role.id)"
+                      class="bg-warning ms-1 inline-block size-1.5 rounded-full align-middle"
+                      :title="t('admin.roles.roleChanged')"
+                    />
+                  </span>
+                  <span v-if="changed(role.id)" class="sr-only">
+                    {{ t("admin.roles.roleChanged") }}
+                  </span>
+                  <span
+                    v-if="role.id === ownRoleId"
+                    class="text-muted block text-xs font-normal"
+                  >
+                    {{ t("admin.roles.yourRole") }}
+                  </span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="key in ALL_PERMISSION_KEYS"
+                :key="key"
+                class="group border-default hover:bg-elevated/40 border-b last:border-b-0"
               >
-                <!-- The lock hangs to the side so the boxes stay aligned. -->
-                <div class="relative flex items-center justify-center">
-                  <UCheckbox
-                    :model-value="isGranted(role.id, key)"
-                    :disabled="
-                      saving ||
-                      !saved[role.id] ||
-                      lockReasonId(role.id, key) !== undefined
-                    "
-                    :aria-describedby="lockReasonId(role.id, key)"
-                    :aria-label="
-                      t('admin.roles.grant', {
-                        permission: permissionLabel(key),
-                        role: roleName(role.name),
-                      })
-                    "
-                    @update:model-value="
-                      (value: boolean | 'indeterminate') =>
-                        toggle(role.id, key, value === true)
-                    "
-                  />
-                  <UIcon
-                    v-if="cellLocked(role.id, key)"
-                    name="i-lucide-lock"
-                    class="text-muted absolute start-1/2 ms-3 size-3.5"
-                    aria-hidden="true"
-                  />
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                <th
+                  scope="row"
+                  class="bg-default sticky start-0 z-1 p-3 text-start font-normal shadow-[inset_-1px_0_0_var(--ui-border)] group-hover:bg-[color-mix(in_oklab,var(--ui-bg-elevated)_40%,var(--ui-bg))]"
+                >
+                  <span
+                    class="text-highlighted flex max-w-80 min-w-56 items-start gap-1.5"
+                  >
+                    <UIcon
+                      :name="PERMISSION_ICONS[key]"
+                      class="text-dimmed mt-0.5 size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{{ permissionLabel(key) }}</span>
+                    <!-- One lock for the whole row: the note above says why. -->
+                    <UIcon
+                      v-if="notHeld(key)"
+                      name="i-lucide-lock"
+                      class="text-muted mt-0.5 size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </th>
+                <td
+                  v-for="role in editableRoles"
+                  :key="role.id"
+                  class="p-3 text-center align-middle"
+                >
+                  <!-- The lock hangs to the side so the boxes stay aligned. -->
+                  <div class="relative flex items-center justify-center">
+                    <UCheckbox
+                      :model-value="isGranted(role.id, key)"
+                      :disabled="
+                        saving ||
+                        !saved[role.id] ||
+                        lockReasonId(role.id, key) !== undefined
+                      "
+                      :aria-describedby="lockReasonId(role.id, key)"
+                      :aria-label="
+                        t('admin.roles.grant', {
+                          permission: permissionLabel(key),
+                          role: roleName(role.name),
+                        })
+                      "
+                      @update:model-value="
+                        (value: boolean | 'indeterminate') =>
+                          toggle(role.id, key, value === true)
+                      "
+                    />
+                    <UIcon
+                      v-if="cellLocked(role.id, key)"
+                      name="i-lucide-lock"
+                      class="text-muted absolute start-1/2 ms-3 size-3.5"
+                      aria-hidden="true"
+                    />
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </template>
   </UDashboardPanel>
 </template>

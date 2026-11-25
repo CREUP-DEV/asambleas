@@ -14,6 +14,7 @@ import {
   type TreatedBox,
 } from "./-model";
 import { generalOwnNotes, type OwnSheetNotes } from "./-readers";
+import { rowClickOpens } from "./-rowClick";
 
 /**
  * «General» of the control sheet: one row per agenda item it lists, under
@@ -177,7 +178,7 @@ function parentLine(row: GeneralSheetRow): string | null {
 }
 
 const ALL_COLUMNS: { key: GeneralSortKey; label: string; class: string }[] = [
-  { key: "number", label: "controlSheet.columns.number", class: "w-16" },
+  { key: "number", label: "controlSheet.columns.number", class: "w-24" },
   { key: "item", label: "controlSheet.columns.item", class: "min-w-64" },
   {
     key: "proponent",
@@ -204,6 +205,25 @@ const columns = computed(() =>
     ? ALL_COLUMNS
     : ALL_COLUMNS.filter((column) => !INTERNAL_COLUMNS.has(column.key)),
 );
+/** «Observaciones» or «Mis notas» closes the table, when either is there. */
+const notesColumn = computed(() => props.internal || !!props.ownNotes);
+/** What a heading spans after its number: every other column. */
+const headingSpan = computed(
+  () => columns.value.length - 1 + (notesColumn.value ? 1 : 0),
+);
+
+/**
+ * A click anywhere in an item's row opens its panel, as its button at the
+ * start of the row does (E-086: at the end it fell out of view on a laptop),
+ * unless it lands on a link, a button or a popover's trigger, or ends a
+ * selection.
+ */
+function openFromRow(event: MouseEvent, row: GeneralSheetRow): void {
+  if (row.kind !== "item") return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!rowClickOpens(target, window.getSelection()?.toString() ?? "")) return;
+  emit("open", row);
+}
 
 const itemRows = computed(() =>
   props.rows.filter((row) => row.kind === "item"),
@@ -249,9 +269,6 @@ const itemRows = computed(() =>
             >
               {{ t("notes.title") }}
             </th>
-            <th v-else scope="col" class="w-12 px-3 py-2">
-              <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
-            </th>
           </tr>
         </thead>
         <tbody class="divide-default divide-y">
@@ -261,18 +278,37 @@ const itemRows = computed(() =>
             :aria-current="row.live ? 'true' : undefined"
             :class="[
               'align-top',
-              row.kind === 'heading' ? 'bg-elevated/30' : '',
+              row.kind === 'heading'
+                ? 'bg-elevated/30'
+                : 'hover:bg-elevated/40 cursor-pointer',
               row.live ? 'ring-primary ring-2 ring-inset' : '',
             ]"
             :data-sheet-row="row.id"
+            @click="openFromRow($event, row)"
           >
             <td class="px-3 py-2 font-medium">
-              <AgendaItemNumber :number="row.number" />
+              <!-- The way into the row's panel goes first, in view at any
+                   width and the row's first stop for the keyboard; the rest
+                   of the row opens it too. -->
+              <div class="flex items-start gap-1">
+                <AgendaItemNumber :number="row.number" />
+                <UTooltip v-if="row.kind === 'item'" :text="openButton">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    :icon="openIcon"
+                    class="-my-0.5 shrink-0"
+                    :aria-label="openLabel(row)"
+                    @click="emit('open', row)"
+                  />
+                </UTooltip>
+              </div>
             </td>
             <th
               v-if="row.kind === 'heading'"
               scope="row"
-              :colspan="columns.length"
+              :colspan="headingSpan"
               class="text-highlighted px-3 py-2 font-semibold"
             >
               {{ row.title }}
@@ -468,39 +504,23 @@ const itemRows = computed(() =>
               <td v-if="internal" class="px-3 py-2">
                 <ControlSheetSpeakers :speakers="row.speakers" />
               </td>
-              <td class="px-3 py-2">
-                <div class="flex items-start justify-between gap-2">
-                  <div
-                    v-if="internal || ownNotes"
-                    class="min-w-0 flex-1 space-y-2"
-                  >
-                    <p
-                      v-if="internal && row.sheet?.observations"
-                      class="text-default line-clamp-3 text-sm whitespace-pre-line"
-                    >
-                      {{ row.sheet.observations }}
-                    </p>
-                    <!-- Nothing written: the cell stays empty, said only to
-                         screen readers. -->
-                    <span v-else-if="internal" class="sr-only">{{
-                      t("controlSheet.noObservations")
-                    }}</span>
-                    <ControlSheetOwnNotes
-                      v-if="ownNotes"
-                      :lines="notesOf(row)"
-                      :clamp="internal ? 2 : 3"
-                    />
-                  </div>
-                  <UButton
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    :icon="openIcon"
-                    class="ms-auto shrink-0"
-                    :aria-label="openLabel(row)"
-                    @click="emit('open', row)"
-                  />
-                </div>
+              <td v-if="notesColumn" class="space-y-2 px-3 py-2">
+                <p
+                  v-if="internal && row.sheet?.observations"
+                  class="text-default line-clamp-3 text-sm whitespace-pre-line"
+                >
+                  {{ row.sheet.observations }}
+                </p>
+                <!-- Nothing written: the cell stays empty, said only to
+                     screen readers. -->
+                <span v-else-if="internal" class="sr-only">{{
+                  t("controlSheet.noObservations")
+                }}</span>
+                <ControlSheetOwnNotes
+                  v-if="ownNotes"
+                  :lines="notesOf(row)"
+                  :clamp="internal ? 2 : 3"
+                />
               </td>
             </template>
           </tr>

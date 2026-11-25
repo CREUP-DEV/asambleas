@@ -174,7 +174,11 @@ const showTodo = computed(
 );
 
 const tree = computed(() => buildAgendaTree(agenda.value?.items ?? []));
-const rows = computed(() => flattenAgendaTree(tree.value));
+/**
+ * The summary lists the root items only: each carries the totals and what
+ * is left of its sub-items, and the footer opens the whole agenda.
+ */
+const rows = computed(() => tree.value);
 
 /** Documents and amendments of every item, including its sub-items. */
 const totals = computed(() =>
@@ -570,17 +574,17 @@ const warnedKeys = computed(() =>
             />
           </template>
         </CommonEmptyState>
-        <ol v-else class="divide-default -my-2 divide-y">
+        <!-- Counters under the title, or in a column of their own when the
+             list is wide enough for both -->
+        <ol v-else class="divide-default @container -my-2 divide-y">
           <li
             v-for="row in rows"
             :key="row.item.id"
-            class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2"
-            :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
+            class="grid items-start gap-x-3 gap-y-1 py-2 @xl:grid-cols-[minmax(0,1fr)_auto]"
           >
             <NuxtLink
               :to="agendaItemPath(sectionPath(), row.item)"
-              class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-              :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
+              class="text-default hover:text-primary focus-visible:outline-primary min-w-0 justify-self-start rounded-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               <AgendaItemNumber
                 :number="row.number"
@@ -590,7 +594,7 @@ const warnedKeys = computed(() =>
             </NuxtLink>
             <span
               v-if="totalsFor(row.item.id).documents > 0"
-              class="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums"
+              class="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums @xl:flex-nowrap @xl:justify-self-end"
             >
               <span class="inline-flex items-center gap-1">
                 <UIcon

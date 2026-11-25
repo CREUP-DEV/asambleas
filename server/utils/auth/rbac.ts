@@ -153,7 +153,10 @@ export function getUserExtraPermissions(
 /**
  * A user's permissions: every key for Admin, otherwise the role's
  * permissions plus those granted to the user (mergePermissions). A user
- * without a role keeps only their own grants.
+ * without a role keeps only their own grants. The keys as granted: a key
+ * another implies (PERMISSION_IMPLIED_BY) is never added here, since
+ * adminGrantViolation reads this list to decide what the caller may grant;
+ * checks apply the implication through holdsPermission.
  */
 export async function getEffectivePermissions(user: {
   id: string;

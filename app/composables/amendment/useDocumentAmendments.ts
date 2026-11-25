@@ -8,7 +8,7 @@ import type {
   PartialDocumentAmendmentsDto,
 } from "~~/shared/types/api";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
-import { isDocumentLiveBatch } from "../document/useDocument";
+import { affectsDocumentAmendments } from "../assembly/-liveFilters";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { trailingRefresh } from "../fetch/trailingRefresh";
 import { useAssemblyLive } from "../live/useAssemblyLive";
@@ -53,8 +53,9 @@ export interface UseDocumentAmendmentsOptions {
   /**
    * The room's reading of the list (the document page): a live event of a
    * few amendments reads only those (partialAmendmentsRefetch). Off, every
-   * event of the document reads the whole list again, as the validation
-   * inbox needs, since it acts on it.
+   * event of the document and the assembly's status
+   * (affectsDocumentAmendments) read the whole list again, as the
+   * validation inbox needs, since it acts on it.
    */
   partialLive?: boolean;
   /**
@@ -391,7 +392,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   function handleLiveEvents(events: LiveEventDto[]): void {
     if (partial) {
       void partial.handle(events);
-    } else if (isDocumentLiveBatch(events, toValue(options.documentId))) {
+    } else if (affectsDocumentAmendments(events, toValue(options.documentId))) {
       void refreshAll();
     }
   }
