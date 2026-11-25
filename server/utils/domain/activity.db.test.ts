@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { Actor } from "./actor";
 
 /**
@@ -40,28 +41,18 @@ describe.skipIf(!enabled)("activity SQL on the database", () => {
     await db.$client.end();
   });
 
-  function actorOf(
+  /** testActor, imported only when the suite runs (it loads the database). */
+  async function actorOf(
     user: { id: string; name: string; email: string; memberId: string | null },
     isAdmin: boolean,
-  ): Actor {
-    return {
-      user: {
-        ...user,
-        image: null,
-        roleId: null,
-        externalRole: null,
-        externalName: null,
-        externalInitials: null,
-        university: null,
-        lastRoleSyncAt: null,
-        role: null,
-      },
+  ): Promise<Actor> {
+    const { testActor } = await import("../../testing/actor");
+    return testActor({
+      id: user.id,
+      user: { name: user.name, email: user.email },
+      role: isAdmin ? SYSTEM_ROLES.ADMIN : null,
       memberId: user.memberId ?? "zzzzzzzzzzzzzzzzzzzzzzzz",
-      isAdmin,
-      permissions: [],
-      can: () => isAdmin,
-      impersonation: null,
-    };
+    });
   }
 
   it("runs every tab and pages without repeating rows", async () => {
@@ -70,7 +61,7 @@ describe.skipIf(!enabled)("activity SQL on the database", () => {
     expect(user).toBeDefined();
 
     for (const isAdmin of [false, true]) {
-      const actor = actorOf(user!, isAdmin);
+      const actor = await actorOf(user!, isAdmin);
       for (const tab of ["by", "to", "access", "member"] as const) {
         const page = await activity.loadMeActivity(actor, {
           tab,

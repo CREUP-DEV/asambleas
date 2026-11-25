@@ -6,14 +6,8 @@ match those types. Model and rules: [`design.md`](./design.md).
 
 ## Conventions
 
-The usual AGENTS.md handler order applies:
-
-1. `requireActor(event)` from `server/utils/domain/actor.ts`.
-2. Resolve the route params.
-3. Validate the body with `readBodyWith` (the query with `readQueryWith`).
-4. Run the DB work in a transaction.
-5. Call `recordEvent`.
-6. Return the DTO.
+Handlers follow the order in AGENTS.md ("API Rules", handler order), the one
+place it is written.
 
 - **Validation errors.** `server/utils/core/http.ts`. A body that fails its
   schema answers 400 «Datos no válidos» with `data.issues` (a `path` and a
@@ -318,14 +312,15 @@ same row.
 
 **Permissions.** A user's permissions are the union of their role's
 (`role_permissions`) and the ones an admin granted to that user alone
-(`user_permissions`); Admin has every key. The same set backs `requireActor`,
-`requirePermission`, `GET /api/auth/permissions`, `GET /api/me` and the export
-worker, and it is cached per user for a minute (a change through the endpoint
-below takes effect at once). The association's `Secretaría` and `Presidencia`
-hold every permission, users and roles included: `pnpm db:seed` adds the
-missing grants to their existing role rows (it never removes any). Both are
-kept by role sync, like `Admin` and `Moderador`, which the Mesa's Vocalía and
-Presidencia keep (`session:moderate`).
+(`user_permissions`); Admin has every key. The same set backs `requireActor`
+(and so the admin section's `requireAnyPermission`), `GET /api/me` and the
+export worker (`loadActorForUser`), and it is cached per role and per user for
+five minutes (a change through the endpoint below takes effect at once). The
+association's `Secretaría` and `Presidencia` hold every permission, users and
+roles included: `pnpm db:seed` adds the missing grants to their existing role
+rows (it never removes any). Both are kept by role sync, like `Admin` and
+`Moderador`, which the Mesa's Vocalía and Presidencia keep
+(`session:moderate`).
 
 **Admin section.** `/api/admin/**` opens by permission, not by role. The
 `serverHandlers` gate (`server/handlers/auth.ts`) only authenticates (401
@@ -2489,8 +2484,9 @@ The projection is opened on a Mesa account but read by the room, so every
 read it makes adds `?view=room` (`ROOM_VIEW_QUERY`). These GETs take it:
 `/api/assemblies/[assembly]`, `.../live-state`, `.../agenda`,
 `.../speakers`, `.../headcounts`, `.../documents/[document]` and
-`.../documents/[document]/amendments`. Each calls `requireViewer`
-(`server/utils/domain/roomView.ts`): the flag is honoured only for
+`.../documents/[document]/amendments`. Each opens as a viewer
+(`requireViewer`, `server/utils/domain/roomView.ts`, directly or through
+`resolveAssemblyRoute(event, { viewer: true })`): the flag is honoured only for
 `session:moderate` (403 otherwise) and only on GET (400 otherwise), and the
 answer is what an account that sees only what is public reads (offices as
 the generic "CEA", no person speaking for one, nothing unpublished). A draft
@@ -2509,6 +2505,12 @@ Existing endpoints, now based on structured content:
   offers it.
 - `GET /api/exports/[jobId]/status`
 - `GET /api/exports/[jobId]/download`
+
+Both answer only the account that asked for the export or whoever holds the
+key that manages its queue (`document:manage` for a document's,
+`assembly:manage` for an assembly's; `requireExportReader`) and 403 to anyone
+else. A malformed id answers 400, and a well-formed id with no export answers
+404 to any signed-in account, before the reader check.
 
 pdfmake lays out and renders each PDF in a separate Node process
 (`server/utils/export/pdfRender.ts`), one at a time, so the app keeps

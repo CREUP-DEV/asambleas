@@ -3,10 +3,9 @@ import {
   ALL_PERMISSION_KEYS,
   CONTROL_SHEET_READER_KEYS,
   PERMISSION_KEYS,
-  type PermissionKey,
 } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
-import type { Actor } from "./actor";
+import { testActor } from "../../testing/actor";
 
 // Who reads the control sheet, and what it lists, is one rule (ARQ-20):
 // canViewControlSheet and the amendments only the sheet's readers see.
@@ -31,32 +30,6 @@ const {
   seesWithdrawnAmendments,
 } = await import("./visibility");
 
-function makeActor(permissions: PermissionKey[], role: string | null = null) {
-  const actor: Actor = {
-    user: {
-      id: "u".repeat(32),
-      name: "Ana",
-      email: "ana@example.org",
-      image: null,
-      roleId: null,
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: null,
-      lastRoleSyncAt: null,
-      role: role ? { id: "role", name: role } : null,
-    },
-    memberId: null,
-    memberKind: null,
-    isAdmin: false,
-    permissions,
-    can: (key) => permissions.includes(key),
-    impersonation: null,
-  };
-  return actor;
-}
-
 /** Someone else's amendment, presented and validated or withdrawn. */
 function amendment(status: "submitted" | "withdrawn") {
   return {
@@ -74,7 +47,7 @@ function amendment(status: "submitted" | "withdrawn") {
 describe("the control sheet's readers", () => {
   it("are the same accounts for the sheet and for the amendments it lists", () => {
     for (const key of ALL_PERMISSION_KEYS) {
-      const actor = makeActor([key]);
+      const actor = testActor({ permissions: [key] });
       const reads = CONTROL_SHEET_READER_KEYS.includes(key);
       expect(canViewControlSheet(actor), key).toBe(reads);
       // Reviewers and the Mesa see every presented amendment anyway.
@@ -88,12 +61,15 @@ describe("the control sheet's readers", () => {
 
   it("see the executive offices, as the sheet names them", () => {
     for (const key of CONTROL_SHEET_READER_KEYS) {
-      expect(canSeeExecutiveMembers(makeActor([key])), key).toBe(true);
+      expect(
+        canSeeExecutiveMembers(testActor({ permissions: [key] })),
+        key,
+      ).toBe(true);
     }
   });
 
   it("leave out an account with no key", () => {
-    const nobody = makeActor([]);
+    const nobody = testActor();
     expect(canViewControlSheet(nobody)).toBe(false);
     expect(seesValidatedAmendments(nobody)).toBe(false);
     expect(seesWithdrawnAmendments(nobody)).toBe(false);
@@ -103,7 +79,7 @@ describe("the control sheet's readers", () => {
   });
 
   it("add the CEA's accounts to who sees what the sheet lists", () => {
-    const cea = makeActor([], SYSTEM_ROLES.CEA);
+    const cea = testActor({ role: SYSTEM_ROLES.CEA });
     expect(isCeaAccount(cea)).toBe(true);
     expect(canViewControlSheet(cea)).toBe(false);
     expect(seesValidatedAmendments(cea)).toBe(true);
@@ -113,20 +89,34 @@ describe("the control sheet's readers", () => {
 
 describe("keys that imply another", () => {
   it("let amendment:manage review amendments, as amendment:review does", () => {
-    const manager = makeActor([PERMISSION_KEYS.AMENDMENT_MANAGE]);
+    const manager = testActor({
+      permissions: [PERMISSION_KEYS.AMENDMENT_MANAGE],
+    });
     expect(canReviewAmendments(manager)).toBe(true);
     expect(seesAllPresentedAmendments(manager)).toBe(true);
     expect(canSeeExecutiveMembers(manager)).toBe(true);
-    expect(canReviewAmendments(makeActor([]))).toBe(false);
+    expect(canReviewAmendments(testActor())).toBe(false);
   });
 
   it("let seating:edit read the room", () => {
-    expect(canViewSeating(makeActor([PERMISSION_KEYS.SEATING_EDIT]))).toBe(
-      true,
-    );
-    expect(canViewSeating(makeActor([PERMISSION_KEYS.SEATING_VIEW]))).toBe(
-      true,
-    );
-    expect(canViewSeating(makeActor([]))).toBe(false);
+    expect(
+      canViewSeating(
+        testActor({ permissions: [PERMISSION_KEYS.SEATING_EDIT] }),
+      ),
+    ).toBe(true);
+    expect(
+      canViewSeating(
+        testActor({ permissions: [PERMISSION_KEYS.SEATING_VIEW] }),
+      ),
+    ).toBe(true);
+    expect(canViewSeating(testActor())).toBe(false);
+  });
+});
+
+describe("the Admin", () => {
+  it("reads the sheet and the room with no key listed (buildActor)", () => {
+    const admin = testActor({ role: SYSTEM_ROLES.ADMIN, permissions: [] });
+    expect(canViewControlSheet(admin)).toBe(true);
+    expect(canViewSeating(admin)).toBe(true);
   });
 });

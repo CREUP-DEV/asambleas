@@ -1,13 +1,17 @@
 import { sendReadStream } from "../../../utils/core/http";
-import { defineEventHandler, createError, setResponseHeaders } from "h3";
+import {
+  defineEventHandler,
+  createError,
+  getRouterParam,
+  setResponseHeaders,
+} from "h3";
 import { createReadStream } from "node:fs";
-import { getAuthUserWithRole } from "../../../utils/auth/requireAuth";
-import { hasPermission } from "../../../utils/auth/rbac";
+import { requireActor } from "../../../utils/domain/actor";
 import { recordExportDownload } from "../../../utils/export/audit";
 import {
   assertExportFileExists,
-  getExportPermissionForQueue,
   readExportMetadata,
+  requireExportReader,
   validateExportJobId,
 } from "../../../utils/export/storage";
 
@@ -17,20 +21,10 @@ import {
  * goes out, since the PDF may hold drafts.
  */
 export default defineEventHandler(async (event) => {
-  const user = await getAuthUserWithRole(event);
-  const jobId = validateExportJobId(event.context.params?.jobId);
+  const actor = await requireActor(event);
+  const jobId = validateExportJobId(getRouterParam(event, "jobId"));
   const metadata = await readExportMetadata(jobId);
-
-  const canRead =
-    metadata.requestedBy === user?.id ||
-    (await hasPermission(
-      event,
-      getExportPermissionForQueue(metadata.queueName),
-    ));
-
-  if (!canRead) {
-    throw createError({ statusCode: 403, message: "Acceso denegado" });
-  }
+  requireExportReader(actor, metadata);
 
   if (metadata.status !== "done") {
     throw createError({

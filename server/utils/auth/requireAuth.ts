@@ -8,7 +8,6 @@ import { markSeen } from "../live/online";
 import { avatarUrl } from "./avatarFiles";
 import { resolveImpersonation } from "./impersonation";
 import type { ImpersonationContext } from "./impersonation";
-import type { PermissionKey } from "~~/shared/constants/permissions";
 import type { MemberKind } from "~~/shared/constants/domain";
 
 export type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>;
@@ -56,8 +55,6 @@ export interface AuthEventContext {
   impersonation?: ImpersonationContext | null;
   /** The effective user's role. */
   role?: AuthUserWithRole["role"];
-  /** The effective user's permissions (attachAuthContext). */
-  permissions?: PermissionKey[];
   /**
    * The kind of the member the effective user acts for (null without one),
    * read with the user in getAuthUserWithRole so requireActor needs no

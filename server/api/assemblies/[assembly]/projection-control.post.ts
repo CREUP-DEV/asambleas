@@ -1,11 +1,11 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { ProjectionControlDto } from "~~/shared/types/api";
 import { projectionControlBodySchema } from "~~/shared/utils/schemas/assembly";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import { projectionControl } from "../../../utils/domain/projectionControl";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * A session console beats while open, takes control of the projection or
@@ -15,12 +15,8 @@ import { resolveAssembly } from "../../../utils/domain/resolvers";
  */
 export default defineEventHandler(
   async (event): Promise<ProjectionControlDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     const body = await readBodyWith(event, projectionControlBodySchema);
     return projectionControl(actor, assembly.id, body);
   },

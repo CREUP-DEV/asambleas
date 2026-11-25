@@ -1,14 +1,13 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { SeatingSourceResultDto } from "~~/shared/types/api";
 import { seatingSourceBodySchema } from "~~/shared/utils/schemas/seating";
-import { requireActor } from "../../../../utils/domain/actor";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import {
   requireSeatingEditor,
   setSeatingSource,
 } from "../../../../utils/domain/seating";
 import { throwMutationError } from "../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Which assembly's Intranet attendees the room reads (seating:edit): another
@@ -16,12 +15,8 @@ import { throwMutationError } from "../../../../utils/errors";
  */
 export default defineEventHandler(
   async (event): Promise<SeatingSourceResultDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireSeatingEditor(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     const body = await readBodyWith(event, seatingSourceBodySchema);
     try {
       return await setSeatingSource(actor, assembly, body);

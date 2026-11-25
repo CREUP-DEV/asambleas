@@ -1,10 +1,5 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import {
-  createError,
-  defineEventHandler,
-  getRouterParam,
-  setResponseStatus,
-} from "h3";
+import { createError, defineEventHandler, setResponseStatus } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AgendaItemDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -15,7 +10,7 @@ import {
 import { agendaItemBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems } from "../../../../db/schema";
-import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { requireCan } from "../../../../utils/domain/actor";
 import {
   lockAssembly,
   nextSiblingOrder,
@@ -27,7 +22,7 @@ import {
   toAgendaItemDto,
 } from "../../../../utils/domain/assemblies";
 import { recordEvent } from "../../../../utils/domain/events";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Adds an item at the end of its parent (or of the root items). A root item
@@ -37,12 +32,8 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
  * kind). `voted` («Se vota el punto») defaults to false.
  */
 export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, agendaItemBodySchema);
   const parentId = body.parentId ?? null;
   const acceptsSubmissions = body.acceptsSubmissions ?? false;

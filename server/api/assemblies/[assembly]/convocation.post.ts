@@ -1,7 +1,7 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import {
   loadAssemblyDto,
   throwAssemblyMutationError,
@@ -11,20 +11,16 @@ import {
   PDF_MAX_BYTES,
   readUploadedFile,
 } from "../../../utils/domain/documents";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * The signed convocatoria as a PDF: multipart `file` (up to 20 MB) and
  * `updatedAt` of the assembly. Replaces the one uploaded before.
  */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   // Refuse before reading a large body the actor may not upload.
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const file = await readUploadedFile(
     event,
     PDF_MAX_BYTES,

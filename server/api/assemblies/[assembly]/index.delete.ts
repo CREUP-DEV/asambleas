@@ -1,4 +1,4 @@
-import { createError, defineEventHandler, getRouterParam } from "h3";
+import { createError, defineEventHandler } from "h3";
 import { and, asc, count, eq } from "drizzle-orm";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -11,14 +11,14 @@ import {
   events,
   seatingPlans,
 } from "../../../db/schema";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import { throwAssemblyMutationError } from "../../../utils/domain/assemblies";
 import { recordAudit } from "../../../utils/domain/audit";
 import { removeConvocationPdf } from "../../../utils/domain/convocation";
 import { recordEvent, type Executor } from "../../../utils/domain/events";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { removeSeatingPlanImages } from "../../../utils/seating/images";
 import { removeAssemblyPackages } from "../../../utils/export/package/storage";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /** Most events copied into the deletion's audit row (drafts hold few). */
 const DELETED_EVENTS_LIMIT = 1_000;
@@ -68,12 +68,8 @@ async function deletedAssemblyTrace(tx: Executor, assemblyId: string) {
  * history (deletedAssemblyTrace).
  */
 export default defineEventHandler(async (event): Promise<{ success: true }> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   if (assembly.status !== "draft") {
     throw createError({
       statusCode: 409,

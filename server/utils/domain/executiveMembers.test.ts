@@ -3,10 +3,7 @@ import {
   GENERIC_EXECUTIVE_MEMBER,
   GENERIC_EXECUTIVE_MEMBER_ID,
 } from "~~/shared/constants/domain";
-import {
-  PERMISSION_KEYS,
-  type PermissionKey,
-} from "~~/shared/constants/permissions";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   EXECUTIVE_MAIN_REFUSED_REASON,
   EXECUTIVE_MEMBER_REFUSED_REASON,
@@ -14,7 +11,7 @@ import {
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AcceptanceDto, MemberDto, MemberRef } from "~~/shared/types/api";
 import { entityIdSchema } from "~~/shared/utils/schemas/primitives";
-import type { Actor } from "./actor";
+import { testActor } from "../../testing/actor";
 
 // Only the pure rules run here: the loaders need the database.
 vi.mock("../../db", () => ({ db: {} }));
@@ -55,43 +52,6 @@ const { genericExecutiveMemberDto } = await import("../members/dto");
 
 // Fixtures ------------------------------------------------------------------
 
-function makeActor(
-  options: {
-    role?: string | null;
-    permissions?: PermissionKey[];
-    memberId?: string | null;
-    memberKind?: MemberRef["kind"] | null;
-    omitMemberKind?: boolean;
-  } = {},
-): Actor {
-  const permissions = options.permissions ?? [];
-  const admin = options.role === SYSTEM_ROLES.ADMIN;
-  return {
-    user: {
-      id: "u".repeat(32),
-      name: "Ana",
-      email: "ana@example.org",
-      image: null,
-      roleId: null,
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: options.memberId ?? null,
-      lastRoleSyncAt: null,
-      role: options.role ? { id: "role", name: options.role } : null,
-    },
-    memberId: options.memberId ?? null,
-    ...(options.omitMemberKind
-      ? {}
-      : { memberKind: options.memberKind ?? null }),
-    isAdmin: admin,
-    permissions,
-    can: (key) => admin || permissions.includes(key),
-    impersonation: null,
-  };
-}
-
 const AREA_A: MemberRef = {
   id: "areaaaaaaaaaaaaaaaaaaaaa",
   acronym: "VPU",
@@ -118,12 +78,12 @@ const SECTORIAL: MemberRef = {
 };
 const GENERIC: MemberRef = { ...GENERIC_EXECUTIVE_MEMBER };
 
-const asociado = makeActor({
+const asociado = testActor({
   role: SYSTEM_ROLES.ASOCIADO,
   memberId: COUNCIL.id,
   memberKind: "asociado",
 });
-const cea = makeActor({
+const cea = testActor({
   role: SYSTEM_ROLES.CEA,
   memberId: AREA_A.id,
   memberKind: "executive",
@@ -141,7 +101,7 @@ describe("canSeeExecutiveMembers", () => {
       SYSTEM_ROLES.MODERADOR,
       SYSTEM_ROLES.CEA,
     ]) {
-      expect(canSeeExecutiveMembers(makeActor({ role })), role).toBe(true);
+      expect(canSeeExecutiveMembers(testActor({ role })), role).toBe(true);
     }
   });
 
@@ -152,7 +112,7 @@ describe("canSeeExecutiveMembers", () => {
       SYSTEM_ROLES.INVITADO,
       null,
     ]) {
-      expect(canSeeExecutiveMembers(makeActor({ role })), String(role)).toBe(
+      expect(canSeeExecutiveMembers(testActor({ role })), String(role)).toBe(
         false,
       );
     }
@@ -179,7 +139,7 @@ describe("canSeeExecutiveMembers", () => {
     ]) {
       expect(
         canSeeExecutiveMembers(
-          makeActor({ role: SYSTEM_ROLES.ASOCIADO, permissions: [key] }),
+          testActor({ role: SYSTEM_ROLES.ASOCIADO, permissions: [key] }),
         ),
         key,
       ).toBe(true);
@@ -189,7 +149,7 @@ describe("canSeeExecutiveMembers", () => {
   it("does not follow the permissions every member account holds", () => {
     expect(
       canSeeExecutiveMembers(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.ASOCIADO,
           permissions: [
             PERMISSION_KEYS.DOCUMENT_CREATE,
@@ -205,7 +165,7 @@ describe("canSeeExecutiveMembers", () => {
   it("lets an account that acts for an area see them, whatever its role", () => {
     expect(
       canSeeExecutiveMembers(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.INVITADO,
           memberId: AREA_A.id,
           memberKind: "executive",
@@ -214,7 +174,7 @@ describe("canSeeExecutiveMembers", () => {
     ).toBe(true);
     expect(
       canSeeExecutiveMembers(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.INVITADO,
           memberId: SECTORIAL.id,
           memberKind: "sectorial",
@@ -223,10 +183,10 @@ describe("canSeeExecutiveMembers", () => {
     ).toBe(false);
   });
 
-  it("reads an actor built without the member's kind as not acting for an area", () => {
+  it("reads an actor whose member's kind is null as not acting for an office", () => {
     expect(
       canSeeExecutiveMembers(
-        makeActor({ memberId: AREA_A.id, omitMemberKind: true }),
+        testActor({ memberId: AREA_A.id, memberKind: null }),
       ),
     ).toBe(false);
   });
@@ -670,7 +630,7 @@ describe("planNamedMember", () => {
 
 describe("canNameExecutiveAuthors", () => {
   it("lets an account that presents amendments for a member name the areas", () => {
-    const council = makeActor({
+    const council = testActor({
       role: SYSTEM_ROLES.ASOCIADO,
       permissions: [PERMISSION_KEYS.AMENDMENT_CREATE],
       memberId: COUNCIL.id,
@@ -682,14 +642,14 @@ describe("canNameExecutiveAuthors", () => {
 
   it("covers whoever sees the areas anyway", () => {
     expect(
-      canNameExecutiveAuthors(makeActor({ role: SYSTEM_ROLES.SECRETARIA })),
+      canNameExecutiveAuthors(testActor({ role: SYSTEM_ROLES.SECRETARIA })),
     ).toBe(true);
   });
 
   it("refuses an account that presents no amendments or acts for no member", () => {
     expect(
       canNameExecutiveAuthors(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.INVITADO,
           memberId: COUNCIL.id,
           memberKind: "asociado",
@@ -698,7 +658,7 @@ describe("canNameExecutiveAuthors", () => {
     ).toBe(false);
     expect(
       canNameExecutiveAuthors(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.ASOCIADO,
           permissions: [PERMISSION_KEYS.AMENDMENT_CREATE],
         }),
@@ -707,7 +667,7 @@ describe("canNameExecutiveAuthors", () => {
     // Presenting documents is not enough: only amendments name an area.
     expect(
       canNameExecutiveAuthors(
-        makeActor({
+        testActor({
           role: SYSTEM_ROLES.ASOCIADO,
           permissions: [PERMISSION_KEYS.DOCUMENT_CREATE],
           memberId: COUNCIL.id,

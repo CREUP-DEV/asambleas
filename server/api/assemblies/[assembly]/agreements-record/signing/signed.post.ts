@@ -1,14 +1,13 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { AgreementsRecordDto } from "~~/shared/types/api";
-import { requireActor } from "../../../../../utils/domain/actor";
 import { requireRecordManager } from "../../../../../utils/domain/agreementsRecord";
 import { attachSignedRecord } from "../../../../../utils/domain/agreementsSigning";
 import {
   PDF_MAX_BYTES,
   readUploadedFile,
 } from "../../../../../utils/domain/documents";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * The signed acta de acuerdos as a PDF: multipart `file` (up to 20 MB, with
@@ -17,13 +16,9 @@ import { throwMutationError } from "../../../../../utils/errors";
  */
 export default defineEventHandler(
   async (event): Promise<AgreementsRecordDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     // Refuse before reading a large body the actor may not upload.
     requireRecordManager(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     const file = await readUploadedFile(
       event,
       PDF_MAX_BYTES,

@@ -2,6 +2,10 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEvent } from "h3";
+import {
+  PERMISSION_KEYS,
+  type PermissionKey,
+} from "~~/shared/constants/permissions";
 
 // requireActor with the auth helpers stubbed: where the member's kind
 // comes from.
@@ -25,7 +29,8 @@ vi.mock("../auth/rbac", () => ({
   isAdmin: (name: string | null | undefined) => name === "Admin",
 }));
 
-const { requireActor } = await import("./actor");
+const { buildActor, requireActor, requireCan } = await import("./actor");
+const { publicExportActor } = await import("../export/actor");
 
 function fakeEvent() {
   const req = new IncomingMessage(new Socket());
@@ -85,5 +90,87 @@ describe("requireActor: the member's kind", () => {
     const actor = await requireActor(event);
     expect(actor.memberKind).toBe("asociado");
     expect(memberReads).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildActor", () => {
+  it("makes an Admin of the Admin role, who passes every check", () => {
+    const actor = buildActor({
+      user: { ...user, role: { id: "role-Admin", name: "Admin" } },
+      permissions: [],
+      memberKind: "executive",
+      impersonation: null,
+    });
+    expect(actor.isAdmin).toBe(true);
+    expect(actor.can(PERMISSION_KEYS.SESSION_MODERATE)).toBe(true);
+    expect(actor.memberId).toBe("m1");
+    expect(actor.memberKind).toBe("executive");
+  });
+
+  it("passes only the keys held by anyone else", () => {
+    const actor = buildActor({
+      user,
+      permissions: [PERMISSION_KEYS.CONTROL_SHEET_VIEW],
+      memberKind: null,
+      impersonation: null,
+    });
+    expect(actor.isAdmin).toBe(false);
+    expect(actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW)).toBe(true);
+    expect(actor.can(PERMISSION_KEYS.SESSION_MODERATE)).toBe(false);
+  });
+
+  it("builds the exports' public reader with no role, member or key", () => {
+    const reader = publicExportActor();
+    expect(reader.isAdmin).toBe(false);
+    expect(reader.memberId).toBeNull();
+    expect(reader.memberKind).toBeNull();
+    expect(reader.impersonation).toBeNull();
+    expect(reader.permissions).toEqual([]);
+    expect(reader.can(PERMISSION_KEYS.DOCUMENT_MANAGE)).toBe(false);
+  });
+});
+
+describe("requireCan", () => {
+  const holding = (...permissions: PermissionKey[]) =>
+    buildActor({ user, permissions, memberKind: null, impersonation: null });
+
+  it("refuses whoever does not hold the key", () => {
+    expect(() =>
+      requireCan(holding(), PERMISSION_KEYS.ASSEMBLY_MANAGE),
+    ).toThrow(expect.objectContaining({ statusCode: 403 }));
+    expect(() =>
+      requireCan(
+        holding(PERMISSION_KEYS.DOCUMENT_MANAGE),
+        PERMISSION_KEYS.SESSION_MODERATE,
+      ),
+    ).toThrow(expect.objectContaining({ statusCode: 403 }));
+  });
+
+  it("checks the key itself: a key that implies it does not pass", () => {
+    // amendment:manage implies amendment:review only through holdsPermission.
+    expect(() =>
+      requireCan(
+        holding(PERMISSION_KEYS.AMENDMENT_MANAGE),
+        PERMISSION_KEYS.AMENDMENT_REVIEW,
+      ),
+    ).toThrow(expect.objectContaining({ statusCode: 403 }));
+  });
+
+  it("lets the holder and an Admin through", () => {
+    expect(() =>
+      requireCan(
+        holding(PERMISSION_KEYS.SESSION_MODERATE),
+        PERMISSION_KEYS.SESSION_MODERATE,
+      ),
+    ).not.toThrow();
+    const admin = buildActor({
+      user: { ...user, role: { id: "role-Admin", name: "Admin" } },
+      permissions: [],
+      memberKind: null,
+      impersonation: null,
+    });
+    expect(() =>
+      requireCan(admin, PERMISSION_KEYS.MEMBER_MANAGE),
+    ).not.toThrow();
   });
 });

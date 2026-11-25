@@ -2,7 +2,7 @@ import type { H3Event } from "h3";
 import { createError } from "h3";
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { members } from "../../db/schema";
+import { members, users } from "../../db/schema";
 import { getAuthUserWithRole, requireAuth } from "../auth/requireAuth";
 import type { AuthEventContext, AuthUserWithRole } from "../auth/requireAuth";
 import type { ImpersonationContext } from "../auth/impersonation";
@@ -25,7 +25,8 @@ import type { MemberKind } from "~~/shared/constants/domain";
  * The authenticated user, their permissions and the member they act for.
  * `permissions` are the role's plus those granted to the user
  * (getEffectivePermissions). Admin passes every check through `can`, as with
- * the RBAC helpers.
+ * the RBAC helpers. Build one only with buildActor: it is the one place that
+ * defines `isAdmin` and `can`.
  *
  * While an Admin acts as another account, `user` is that account (its
  * permissions, member, visibility and authorship) and `impersonation` names
@@ -36,25 +37,51 @@ export interface Actor {
   memberId: string | null;
   /**
    * The kind of that member; null without one. An account acting for an
-   * executive area sees the areas (canSeeExecutiveMembers). Actors built by
-   * hand may leave it out, which reads as "not an executive area".
+   * executive office sees the offices (canSeeExecutiveMembers).
    */
-  memberKind?: MemberKind | null;
+  memberKind: MemberKind | null;
   isAdmin: boolean;
   permissions: PermissionKey[];
   can(key: PermissionKey): boolean;
   /**
-   * The impersonation the request runs under; null or absent when nobody
-   * is impersonating (actors built outside a request, such as the export
-   * worker's, may leave it out).
+   * The impersonation the request runs under; null when nobody is
+   * impersonating, and for actors built outside a request (the export
+   * worker's, the backfills', the public reader).
    */
-  impersonation?: ImpersonationContext | null;
+  impersonation: ImpersonationContext | null;
+}
+
+/**
+ * The one constructor of an Actor: requireActor, loadActorForUser, the
+ * public reader of the exports (publicExportActor), the room viewer
+ * (roomViewer) and the tests' testActor (server/testing/actor.ts) all go
+ * through it. The member is the user's (`user.memberId`) and an Admin is
+ * the role named Admin, who passes every `can`. `permissions` are taken as
+ * given: getEffectivePermissions already lists every key for an Admin.
+ */
+export function buildActor(input: {
+  user: AuthUserWithRole;
+  permissions: PermissionKey[];
+  memberKind: MemberKind | null;
+  impersonation: ImpersonationContext | null;
+}): Actor {
+  const admin = isAdmin(input.user.role?.name);
+  const permissions = input.permissions;
+  return {
+    user: input.user,
+    memberId: input.user.memberId,
+    memberKind: input.memberKind,
+    isAdmin: admin,
+    permissions,
+    can: (key) => admin || permissions.includes(key),
+    impersonation: input.impersonation,
+  };
 }
 
 /**
  * The kind of the member an account acts for (Actor.memberKind), for actors
  * whose user was not loaded by getAuthUserWithRole with it: an impersonated
- * account and the export worker's.
+ * account and loadActorForUser's.
  */
 export async function loadMemberKind(
   memberId: string | null,
@@ -78,7 +105,6 @@ export async function requireActor(event: H3Event): Promise<Actor> {
     throw createError({ statusCode: 401, message: "No autorizado" });
   }
 
-  const admin = isAdmin(user.role?.name);
   const context = event.context as AuthEventContext;
   // getAuthUserWithRole read the kind with the user; while an Admin
   // impersonates it is left unset, and the target's is read here.
@@ -89,17 +115,57 @@ export async function requireActor(event: H3Event): Promise<Actor> {
       : loadMemberKind(user.memberId),
   ]);
 
-  const actor: Actor = {
+  const actor = buildActor({
     user,
-    memberId: user.memberId,
-    memberKind,
-    isAdmin: admin,
     permissions,
-    can: (key) => admin || permissions.includes(key),
+    memberKind,
     impersonation: context.impersonation ?? null,
-  };
+  });
   event.context.actor = actor;
   return actor;
+}
+
+/**
+ * Rebuilds an account as an Actor outside a request, with its current
+ * role, grants and member, and no impersonation: the export worker (the
+ * requester, when the PDF is generated), the notification sender and the
+ * boot backfills (formalBackfill, proposedBackfill), which call the domain
+ * as the user who acted. Null when the account no longer exists. `image`
+ * stays null (never users.image): nothing built from this actor draws a
+ * photo.
+ */
+export async function loadActorForUser(userId: string): Promise<Actor | null> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: {
+      id: true,
+      name: true,
+      email: true,
+      roleId: true,
+      externalRole: true,
+      externalName: true,
+      externalInitials: true,
+      university: true,
+      memberId: true,
+      lastRoleSyncAt: true,
+    },
+    with: {
+      role: { columns: { id: true, name: true } },
+    },
+  });
+  if (!user) return null;
+
+  // The same union of role and per-user permissions as requireActor.
+  const [permissions, memberKind] = await Promise.all([
+    getEffectivePermissions(user),
+    loadMemberKind(user.memberId),
+  ]);
+  return buildActor({
+    user: { ...user, image: null },
+    permissions,
+    memberKind,
+    impersonation: null,
+  });
 }
 
 export function requireCan(actor: Actor, key: PermissionKey): void {

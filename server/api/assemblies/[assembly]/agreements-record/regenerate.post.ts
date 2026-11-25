@@ -1,12 +1,11 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { AgreementsRecordDto } from "~~/shared/types/api";
-import { requireActor } from "../../../../utils/domain/actor";
 import {
   regenerateApprovedRecord,
   requireRecordManager,
 } from "../../../../utils/domain/agreementsRecord";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Writes the approved acta de acuerdos again with the Secretaría's
@@ -14,12 +13,8 @@ import { throwMutationError } from "../../../../utils/errors";
  */
 export default defineEventHandler(
   async (event): Promise<AgreementsRecordDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireRecordManager(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     try {
       return await regenerateApprovedRecord(actor, assembly);
     } catch (error) {

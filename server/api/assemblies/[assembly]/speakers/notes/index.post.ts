@@ -1,19 +1,14 @@
 import { readBodyWith } from "../../../../../utils/core/http";
-import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
+import { defineEventHandler, setResponseStatus } from "h3";
 import type { SpeakerNotesDto } from "~~/shared/types/api";
 import { speakerNoteBodySchema } from "~~/shared/utils/schemas/speakers";
-import { requireActor } from "../../../../../utils/domain/actor";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { noteSpeaker } from "../../../../../utils/domain/speakers";
 import { throwMutationError } from "../../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /** Notes that a member, or a person, spoke on an item or an amendment. */
 export default defineEventHandler(async (event): Promise<SpeakerNotesDto> => {
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   const body = await readBodyWith(event, speakerNoteBodySchema);
 
   try {

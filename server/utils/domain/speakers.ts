@@ -306,6 +306,17 @@ async function renumberQueue(
 }
 
 /**
+ * The queue of requests to speak is the Mesa's (session:moderate): adding,
+ * giving the floor, moving or cancelling a turn. The routes check it first
+ * too; this keeps the rule with the functions for any other caller.
+ */
+function requireQueueModerator(actor: Actor): void {
+  if (!canModerate(actor)) {
+    fail(403, "No puedes gestionar los turnos de palabra");
+  }
+}
+
+/**
  * POST .../speakers (session:moderate): adds a request to speak at the end of
  * the queue, for a member, a person's name or both. The agenda item
  * defaults to the one in debate (live state). Refused once the assembly is
@@ -316,6 +327,7 @@ export async function addSpeakingTurn(
   assembly: AssemblyRow,
   body: SpeakingTurnBody,
 ): Promise<SpeakersDto> {
+  requireQueueModerator(actor);
   assertOpen(assembly);
   const memberId = body.memberId ?? null;
   const speaker = body.speaker ?? null;
@@ -431,6 +443,7 @@ export async function updateSpeakingTurn(
   turnId: string,
   body: SpeakingTurnUpdateBody,
 ): Promise<SpeakersDto> {
+  requireQueueModerator(actor);
   const clears = speakerUpdateClearsOnly(body);
   assertOpen(assembly, clears);
 

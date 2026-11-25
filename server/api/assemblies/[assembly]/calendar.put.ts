@@ -1,12 +1,12 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { calendarBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { assemblyMilestones } from "../../../db/schema";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import { lockAssembly } from "../../../utils/domain/agendaWrites";
 import {
   loadAssemblyDto,
@@ -14,7 +14,7 @@ import {
 } from "../../../utils/domain/assemblies";
 import { diffChanges } from "../../../utils/domain/changes";
 import { recordEvent } from "../../../utils/domain/events";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * Upserts the listed milestones (a null date deletes one). Milestones that
@@ -23,12 +23,8 @@ import { resolveAssembly } from "../../../utils/domain/resolvers";
  * how it is brought forward or put off.
  */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, calendarBodySchema);
 
   try {

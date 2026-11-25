@@ -1,15 +1,15 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
+import { defineEventHandler, setResponseStatus } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { liveTallyBodySchema } from "~~/shared/utils/schemas/assembly";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import { loadPublicItemMarks } from "../../../utils/domain/assemblies";
 import { controlsProjection } from "../../../utils/domain/projectionControl";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import {
   publishLiveTally,
   takeLiveTallyTicket,
 } from "../../../utils/live/scroll";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * The Mesa announces a secret vote it is counting (user's decision of
@@ -32,12 +32,8 @@ import {
  */
 export default defineEventHandler(async (event) => {
   const ticket = takeLiveTallyTicket();
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, liveTallyBodySchema);
   setResponseStatus(event, 204);
   if (body.tally && assembly.status !== "in_session") return null;

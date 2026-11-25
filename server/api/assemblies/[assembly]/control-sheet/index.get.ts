@@ -1,11 +1,8 @@
-import { createError, defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { ControlSheetDto } from "~~/shared/types/api";
 import { loadControlSheet } from "../../../../utils/domain/controlSheet";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
-import {
-  requireViewer,
-  wantsRoomView,
-} from "../../../../utils/domain/roomView";
+import { refuseRoomView } from "../../../../utils/domain/roomView";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * The control sheet of an assembly, to whoever sees the assembly: all of it
@@ -14,16 +11,9 @@ import {
  * no sheet.
  */
 export default defineEventHandler(async (event): Promise<ControlSheetDto> => {
-  const actor = await requireViewer(event);
-  if (wantsRoomView(event)) {
-    throw createError({
-      statusCode: 403,
-      message: "La hoja de control no se lee como la sala",
-    });
-  }
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event, {
+    viewer: true,
+  });
+  refuseRoomView(event, "La hoja de control no se lee como la sala");
   return loadControlSheet(actor, assembly);
 });

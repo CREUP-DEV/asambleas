@@ -8,7 +8,7 @@ import {
   events,
 } from "../../db/schema";
 import { logError, logInfo } from "../core/logger";
-import { loadExportActor } from "../export/actor";
+import { loadActorForUser } from "./actor";
 import {
   buildDocumentAmendmentContext,
   settleProposedTransactionals,
@@ -192,7 +192,7 @@ async function settleCandidates(
         )
         .map((row) => row.id);
       if (ids.length === 0) continue;
-      const actor = await loadExportActor(group.userId);
+      const actor = await loadActorForUser(group.userId);
       if (!actor) continue;
       const assembly = await db.query.assemblies.findFirst({
         where: eq(assemblies.id, document.assemblyId),

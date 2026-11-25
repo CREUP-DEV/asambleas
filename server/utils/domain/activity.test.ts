@@ -7,13 +7,12 @@ import {
   GENERIC_EXECUTIVE_MEMBER,
   GENERIC_EXECUTIVE_MEMBER_ID,
 } from "~~/shared/constants/domain";
-import {
-  PERMISSION_KEYS,
-  type PermissionKey,
-} from "~~/shared/constants/permissions";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { ActivityItemDto } from "~~/shared/types/api";
 import { decodeActivityCursor } from "~~/shared/utils/schemas/activity";
 import type { Actor } from "./actor";
+import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { testActor } from "../../testing/actor";
 
 // Only the pure parts run here: the database and the auth layer are stubbed,
 // so the real visibility rules (visibility.ts, actor.ts) judge every row.
@@ -88,39 +87,6 @@ const OTHER = "o".repeat(32);
 const ADMIN = "a".repeat(32);
 const MEMBER = "m1aaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_MEMBER = "m2aaaaaaaaaaaaaaaaaaaaaa";
-
-function makeActor(
-  options: {
-    id?: string;
-    memberId?: string | null;
-    permissions?: PermissionKey[];
-    isAdmin?: boolean;
-  } = {},
-): Actor {
-  const permissions = options.permissions ?? [];
-  const admin = options.isAdmin ?? false;
-  return {
-    user: {
-      id: options.id ?? ME,
-      name: "Ana",
-      email: "ana@example.org",
-      image: null,
-      roleId: null,
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: options.memberId ?? null,
-      lastRoleSyncAt: null,
-      role: null,
-    },
-    memberId: options.memberId ?? null,
-    isAdmin: admin,
-    permissions,
-    can: (key) => admin || permissions.includes(key),
-    impersonation: null,
-  };
-}
 
 let sequence = 0;
 function row(overrides: Partial<Row>): Row {
@@ -991,7 +957,7 @@ describe("toMeActivityItem", () => {
 
   it("keeps an own act on something no longer visible, emptied", () => {
     // A former Secretaría member asked an unpublished amendment for a correction.
-    const item = meItem(makeActor(), "by", {
+    const item = meItem(testActor(), "by", {
       ...correction,
       targetId: "hidden",
     })!;
@@ -1009,7 +975,7 @@ describe("toMeActivityItem", () => {
 
   it("shows it whole while the account still reviews amendments", () => {
     const item = meItem(
-      makeActor({ permissions: [PERMISSION_KEYS.AMENDMENT_REVIEW] }),
+      testActor({ permissions: [PERMISSION_KEYS.AMENDMENT_REVIEW] }),
       "by",
       { ...correction, targetId: "hidden" },
     )!;
@@ -1024,7 +990,7 @@ describe("toMeActivityItem", () => {
   });
 
   it("strips correction notes and positions others may not read", () => {
-    const viewer = makeActor({ memberId: MEMBER });
+    const viewer = testActor({ memberId: MEMBER });
     const note = meItem(viewer, "member", {
       ...correction,
       targetId: "public",
@@ -1069,7 +1035,7 @@ describe("toMeActivityItem", () => {
 
   it("leaves out others' acts on hidden things (tab member)", () => {
     expect(
-      meItem(makeActor({ memberId: MEMBER }), "member", {
+      meItem(testActor({ memberId: MEMBER }), "member", {
         ...correction,
         targetId: "hidden",
         actorUserId: OTHER,
@@ -1077,7 +1043,7 @@ describe("toMeActivityItem", () => {
     ).toBeNull();
     // A draft document of another member.
     expect(
-      meItem(makeActor({ memberId: MEMBER }), "member", {
+      meItem(testActor({ memberId: MEMBER }), "member", {
         action: "document_updated",
         targetType: "document",
         targetId: "draftdoc",
@@ -1087,7 +1053,7 @@ describe("toMeActivityItem", () => {
   });
 
   it("hides what happened in an assembly the account cannot see", () => {
-    const item = meItem(makeActor(), "by", {
+    const item = meItem(testActor(), "by", {
       assemblyId: "draftasm",
       targetId: "draftasm",
     })!;
@@ -1103,12 +1069,12 @@ describe("toMeActivityItem", () => {
       impersonationId: "imp1",
       payload: { code: "CEUA 1", late: false },
     };
-    const own = meItem(makeActor({ memberId: MEMBER }), "by", acted)!;
+    const own = meItem(testActor({ memberId: MEMBER }), "by", acted)!;
     expect(own.impersonatedBy).toEqual({ id: ADMIN, name: "Admin" });
     expect(own.impersonationId).toBe("imp1");
 
     const colleague = meItem(
-      makeActor({ id: OTHER, memberId: MEMBER }),
+      testActor({ id: OTHER, memberId: MEMBER }),
       "member",
       acted,
     )!;
@@ -1117,23 +1083,27 @@ describe("toMeActivityItem", () => {
     expect(colleague.impersonationId).toBeNull();
 
     const admin = meItem(
-      makeActor({ id: OTHER, isAdmin: true }),
+      testActor({ id: OTHER, role: SYSTEM_ROLES.ADMIN }),
       "member",
       acted,
     )!;
     expect(admin.impersonatedBy).toEqual({ id: ADMIN, name: "Admin" });
 
     // The impersonation's own rows are the Admin's acts: nobody behind them.
-    const start = meItem(makeActor({ id: ADMIN, isAdmin: true }), "by", {
-      kind: "audit",
-      action: "impersonation.start",
-      actorUserId: ADMIN,
-      impersonationId: "imp1",
-      assemblyId: null,
-      targetType: "user",
-      targetId: ME,
-      payload: { before: null, after: { reason: "Soporte" } },
-    })!;
+    const start = meItem(
+      testActor({ id: ADMIN, role: SYSTEM_ROLES.ADMIN }),
+      "by",
+      {
+        kind: "audit",
+        action: "impersonation.start",
+        actorUserId: ADMIN,
+        impersonationId: "imp1",
+        assemblyId: null,
+        targetType: "user",
+        targetId: ME,
+        payload: { before: null, after: { reason: "Soporte" } },
+      },
+    )!;
     expect(start.impersonatedBy).toBeNull();
     expect(start.impersonationId).toBe("imp1");
   });
@@ -1150,14 +1120,14 @@ describe("toMeActivityItem", () => {
       userAgent: "Firefox",
       payload: { before: null, after: { sessionId: "s", roleSync: "ok" } },
     };
-    const own = meItem(makeActor(), "access", signIn)!;
+    const own = meItem(testActor(), "access", signIn)!;
     expect(own.access).toEqual({
       ipAddress: "192.0.2.1",
       userAgent: "Firefox",
     });
     expect(own.payload).toEqual({ before: null, after: { roleSync: "ok" } });
     // The same row outside the access tab.
-    expect(meItem(makeActor(), "by", signIn)!.access).toBeNull();
+    expect(meItem(testActor(), "by", signIn)!.access).toBeNull();
 
     const window = {
       kind: "impersonation" as const,
@@ -1173,7 +1143,7 @@ describe("toMeActivityItem", () => {
     };
     // An Admin acted as the account: the Admin's IP stays hidden.
     const onMe = toMeActivityItem(
-      makeActor(),
+      testActor(),
       "access",
       row(window),
       lookups(),
@@ -1192,7 +1162,7 @@ describe("toMeActivityItem", () => {
     expect(onMe.category).toBe("access");
     // The Admin's own window keeps its own IP.
     const byMe = toMeActivityItem(
-      makeActor({ id: ADMIN, isAdmin: true }),
+      testActor({ id: ADMIN, role: SYSTEM_ROLES.ADMIN }),
       "access",
       row(window),
       lookups(),
@@ -1215,11 +1185,11 @@ describe("toMeActivityItem", () => {
         after: { roleId: "r2", roleName: "Asociado" },
       },
     };
-    const former = meItem(makeActor(), "by", assign)!;
+    const former = meItem(testActor(), "by", assign)!;
     expect(former.target).toMatchObject({ available: false, label: null });
     expect(former.payload).toEqual({});
     const manager = meItem(
-      makeActor({ permissions: [PERMISSION_KEYS.USER_MANAGE_ROLES] }),
+      testActor({ permissions: [PERMISSION_KEYS.USER_MANAGE_ROLES] }),
       "by",
       assign,
     )!;
@@ -1243,13 +1213,13 @@ describe("toMeActivityItem", () => {
         after: { permissions: ["document:create"] },
       },
     };
-    const held = meItem(makeActor(), "to", { ...change, approximate: true })!;
+    const held = meItem(testActor(), "to", { ...change, approximate: true })!;
     expect(held.target).toMatchObject({ available: true, label: "Asociado" });
     expect(held.approximate).toBe(true);
     expect(held.actor).toEqual({ id: OTHER, name: "Luis", member: null });
     expect(held.access).toBeNull();
     // The same row found by actor (tab by) for someone who no longer reads roles.
-    expect(meItem(makeActor(), "by", change)!.target.available).toBe(false);
+    expect(meItem(testActor(), "by", change)!.target.available).toBe(false);
   });
 
   it("keeps only the visible amendments of an admission decision", () => {
@@ -1260,7 +1230,7 @@ describe("toMeActivityItem", () => {
       method: "mesa",
       subjectIds: ["hidden", "public"],
     });
-    const viewer = makeActor({ memberId: MEMBER });
+    const viewer = testActor({ memberId: MEMBER });
     const decision = {
       action: "decision_recorded",
       targetType: "decision",
@@ -1303,7 +1273,7 @@ describe("toMeActivityItem", () => {
       payload: { title: "Informe", kind: "report", format: "structured" },
     };
     const insider = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "member",
       deletion,
       data,
@@ -1314,7 +1284,7 @@ describe("toMeActivityItem", () => {
       document: null,
     });
     expect(
-      meItem(makeActor({ memberId: OTHER_MEMBER }), "member", deletion, data),
+      meItem(testActor({ memberId: OTHER_MEMBER }), "member", deletion, data),
     ).toBeNull();
   });
 
@@ -1337,7 +1307,7 @@ describe("toMeActivityItem", () => {
       },
     };
     const coAuthor = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "member",
       deletion,
     )!;
@@ -1345,7 +1315,7 @@ describe("toMeActivityItem", () => {
     expect(coAuthor.payload).toEqual({ kind: "modification", code: null });
     expect(
       meItem(
-        makeActor({ id: "x".repeat(32), memberId: "m3aaaaaaaaaaaaaaaaaaaaaa" }),
+        testActor({ id: "x".repeat(32), memberId: "m3aaaaaaaaaaaaaaaaaaaaaa" }),
         "member",
         deletion,
       ),
@@ -1364,11 +1334,11 @@ describe("toMeActivityItem", () => {
       },
     };
     // The document is published: anyone sees the edit, not the draft title.
-    const outsider = meItem(makeActor({ memberId: MEMBER }), "by", edit)!;
+    const outsider = meItem(testActor({ memberId: MEMBER }), "by", edit)!;
     expect(outsider.target.available).toBe(true);
     expect(outsider.payload).toEqual({ fields: ["title"] });
     const presenter = meItem(
-      makeActor({ memberId: OTHER_MEMBER }),
+      testActor({ memberId: OTHER_MEMBER }),
       "by",
       edit,
     )!;
@@ -1385,9 +1355,9 @@ describe("toMeActivityItem", () => {
       targetId: "turn",
       payload: { memberId: MEMBER, position: 2 },
     };
-    expect(meItem(makeActor(), "by", turn)!.target.available).toBe(false);
+    expect(meItem(testActor(), "by", turn)!.target.available).toBe(false);
     const mesa = meItem(
-      makeActor({ permissions: [PERMISSION_KEYS.SESSION_MODERATE] }),
+      testActor({ permissions: [PERMISSION_KEYS.SESSION_MODERATE] }),
       "by",
       turn,
     )!;
@@ -1473,13 +1443,13 @@ describe("automatic agenda sub-items", () => {
   });
 
   it("show to those who see their document", () => {
-    const viewer = makeActor({ memberId: MEMBER });
+    const viewer = testActor({ memberId: MEMBER });
     // Another member's draft: its sub-item carries its title.
     expect(meItem(viewer, "member", created("draftdoc"))).toBeNull();
     expect(meItem(viewer, "member", created("doc"))?.target.available).toBe(
       true,
     );
-    const presenter = makeActor({ memberId: OTHER_MEMBER });
+    const presenter = testActor({ memberId: OTHER_MEMBER });
     const item = meItem(presenter, "member", created("draftdoc"))!;
     expect(item.target.available).toBe(true);
     expect(item.payload).toEqual({ title: "Borrador", auto: true });
@@ -1498,10 +1468,10 @@ describe("automatic agenda sub-items", () => {
       },
     };
     expect(
-      meItem(makeActor({ memberId: MEMBER }), "member", deleted),
+      meItem(testActor({ memberId: MEMBER }), "member", deleted),
     ).toBeNull();
     const item = meItem(
-      makeActor({ permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE] }),
+      testActor({ permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE] }),
       "member",
       deleted,
     )!;
@@ -1515,7 +1485,7 @@ describe("automatic agenda sub-items", () => {
 
   it("leave items written by hand visible to everyone", () => {
     expect(
-      meItem(makeActor({ memberId: MEMBER }), "member", {
+      meItem(testActor({ memberId: MEMBER }), "member", {
         action: "agenda_item_created",
         targetType: "agenda_item",
         targetId: "item",
@@ -1537,13 +1507,13 @@ describe("automatic agenda sub-items", () => {
         documentId,
       },
     });
-    const viewer = makeActor({ memberId: MEMBER });
+    const viewer = testActor({ memberId: MEMBER });
     expect(meItem(viewer, "member", renamed("draftdoc"))).toBeNull();
     // Once the document is published everyone sees its events.
     expect(meItem(viewer, "member", renamed("doc"))?.target.available).toBe(
       true,
     );
-    const presenter = makeActor({ memberId: OTHER_MEMBER });
+    const presenter = testActor({ memberId: OTHER_MEMBER });
     const item = meItem(presenter, "member", renamed("draftdoc"))!;
     expect(item.target.available).toBe(true);
     expect(item.payload).not.toHaveProperty("documentId");
@@ -1557,7 +1527,7 @@ describe("automatic agenda sub-items", () => {
       actorUserId: OTHER,
       payload: { changes: {}, documentId: "gone" },
     };
-    const viewer = makeActor({ memberId: MEMBER });
+    const viewer = testActor({ memberId: MEMBER });
     const draft = lookups();
     draft.deleted.set("document:gone", {
       memberIds: [OTHER_MEMBER],
@@ -1590,9 +1560,9 @@ describe("automatic agenda sub-items", () => {
       },
     };
     expect(
-      meItem(makeActor({ memberId: MEMBER }), "member", renamed),
+      meItem(testActor({ memberId: MEMBER }), "member", renamed),
     ).toBeNull();
-    const manager = makeActor({
+    const manager = testActor({
       permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
     });
     expect(meItem(manager, "member", renamed)?.target.available).toBe(true);
@@ -1621,7 +1591,7 @@ describe("votes on agenda items", () => {
     const data = lookups();
     data.agendaItems.set("item", "Ratificación de la Mesa");
     const item = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "member",
       vote("vote_recorded", { result: "approved" }),
       data,
@@ -1640,11 +1610,11 @@ describe("votes on agenda items", () => {
       auto: true,
       documentId: "draftdoc",
     });
-    expect(meItem(makeActor({ memberId: MEMBER }), "member", voided)).toBe(
+    expect(meItem(testActor({ memberId: MEMBER }), "member", voided)).toBe(
       null,
     );
     const presenter = meItem(
-      makeActor({ memberId: OTHER_MEMBER }),
+      testActor({ memberId: OTHER_MEMBER }),
       "member",
       voided,
     )!;
@@ -1660,10 +1630,10 @@ describe("votes on agenda items", () => {
       unanimous: true,
       titleWithheld: true,
     });
-    expect(meItem(makeActor({ memberId: MEMBER }), "member", changed)).toBe(
+    expect(meItem(testActor({ memberId: MEMBER }), "member", changed)).toBe(
       null,
     );
-    const manager = makeActor({
+    const manager = testActor({
       permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
     });
     expect(meItem(manager, "member", changed)?.payload).toEqual({
@@ -1678,11 +1648,12 @@ describe("votes on agenda items", () => {
       subjectId: "m1",
       result: "approved",
     });
-    expect(meItem(makeActor({ memberId: MEMBER }), "member", unknown)).toBe(
+    expect(meItem(testActor({ memberId: MEMBER }), "member", unknown)).toBe(
       null,
     );
     expect(
-      meItem(makeActor({ isAdmin: true }), "member", unknown)?.target.available,
+      meItem(testActor({ role: SYSTEM_ROLES.ADMIN }), "member", unknown)?.target
+        .available,
     ).toBe(true);
   });
 
@@ -1764,7 +1735,7 @@ describe("executive areas in Mi actividad", () => {
 
   it("names neither the area nor the person who acted for it", () => {
     const item = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "member",
       answered,
       withAreas(),
@@ -1781,7 +1752,7 @@ describe("executive areas in Mi actividad", () => {
 
   it("shows both to those who see the areas", () => {
     const item = meItem(
-      makeActor({
+      testActor({
         memberId: MEMBER,
         permissions: [PERMISSION_KEYS.AMENDMENT_REVIEW],
       }),
@@ -1803,7 +1774,7 @@ describe("executive areas in Mi actividad", () => {
 
   it("keeps the viewer's own name on its own acts", () => {
     const item = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "by",
       { ...answered, actorUserId: ME },
       withAreas(),
@@ -1817,7 +1788,7 @@ describe("executive areas in Mi actividad", () => {
 
   it("replaces the areas a payload names, also those only the full mask knows", () => {
     const item = toMeActivityItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "by",
       row({
         kind: "audit",
@@ -1845,7 +1816,7 @@ describe("executive areas in Mi actividad", () => {
 
   it("says nothing of what an area was and became", () => {
     const item = meItem(
-      makeActor({ memberId: MEMBER }),
+      testActor({ memberId: MEMBER }),
       "by",
       {
         kind: "audit",

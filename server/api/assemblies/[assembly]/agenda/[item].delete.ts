@@ -9,7 +9,7 @@ import {
 import { agendaItemDeleteQuerySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems, liveState, speakingTurns } from "../../../../db/schema";
-import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { requireCan } from "../../../../utils/domain/actor";
 import {
   lockAssembly,
   sheetNotesIn,
@@ -30,15 +30,13 @@ import {
   type DeletedDocumentFiles,
 } from "../../../../utils/domain/documents";
 import { recordEvent, type Executor } from "../../../../utils/domain/events";
-import {
-  resolveAgendaItem,
-  resolveAssembly,
-} from "../../../../utils/domain/resolvers";
+import { resolveAgendaItem } from "../../../../utils/domain/resolvers";
 import {
   AGENDA_DELETE_AMENDMENTS_REASON,
   AGENDA_DELETE_LIVE_REASON,
   AGENDA_DELETE_SHEET_REASON,
 } from "~~/shared/constants/errorReasons";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Whether the session is on something about to be deleted: the projection
@@ -91,12 +89,8 @@ async function sessionIsOn(
  * the delete commits), and each item records its own `agenda_item_deleted`.
  */
 export default defineEventHandler(async (event): Promise<{ success: true }> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const resolved = await resolveAgendaItem(
     assembly.id,
     getRouterParam(event, "item"),

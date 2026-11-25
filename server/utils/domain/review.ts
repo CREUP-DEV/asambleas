@@ -1,4 +1,5 @@
 import { createError } from "h3";
+import { fail } from "../core/http";
 import {
   and,
   asc,
@@ -105,6 +106,13 @@ const OPEN_AMENDMENT_STATUSES = ["draft", "submitted"] as const;
 
 export function canUseReviewQueue(actor: Actor): boolean {
   return usesReviewQueue(actor.can);
+}
+
+/** GET .../review: 403 for whoever does not use the inbox (canUseReviewQueue). */
+export function requireReviewQueue(actor: Actor): void {
+  if (!canUseReviewQueue(actor)) {
+    fail(403, "No tienes permiso para revisar la documentación");
+  }
 }
 
 function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {

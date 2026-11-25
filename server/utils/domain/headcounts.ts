@@ -414,6 +414,15 @@ function countPayload(row: Pick<HeadcountRow, keyof CountFigures>) {
 type CountFigures = Pick<HeadcountRow, "eligible" | "present" | "required">;
 
 /**
+ * Taking or correcting a headcount is the Mesa's (session:moderate). The
+ * routes check it first too; this keeps the rule with the function for any
+ * other caller.
+ */
+function requireHeadcountTaker(actor: Actor): void {
+  if (!canModerate(actor)) fail(403, "No puedes tomar recuentos");
+}
+
+/**
  * POST .../headcounts (session:moderate): stores a new count of the active
  * asociados, with the sectorials and guests in the room, checked against
  * the quorum threshold of the type in force. Refused in a draft or closed
@@ -424,6 +433,7 @@ export async function recordHeadcount(
   assembly: AssemblyRow,
   body: HeadcountBody,
 ): Promise<HeadcountsDto> {
+  requireHeadcountTaker(actor);
   assertCountable(assembly);
   await db.transaction(async (tx) => {
     const locked = await lockAssembly(tx, assembly.id);
@@ -480,6 +490,7 @@ export async function updateHeadcount(
   headcountId: string,
   body: HeadcountUpdateBody,
 ): Promise<HeadcountsDto> {
+  requireHeadcountTaker(actor);
   assertCountable(assembly);
   await db.transaction(async (tx) => {
     const locked = await lockAssembly(tx, assembly.id);

@@ -1,8 +1,7 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { ReviewValidatedDto } from "~~/shared/types/api";
-import { requireActor } from "../../../../utils/domain/actor";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { loadValidatedAmendments } from "../../../../utils/domain/review";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * «Publicadas» in the validation inbox (amendment:review): the amendments
@@ -11,11 +10,7 @@ import { loadValidatedAmendments } from "../../../../utils/domain/review";
  */
 export default defineEventHandler(
   async (event): Promise<ReviewValidatedDto> => {
-    const actor = await requireActor(event);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     return loadValidatedAmendments(actor, assembly);
   },
 );

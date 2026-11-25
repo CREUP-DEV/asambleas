@@ -1,8 +1,7 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { LiveTallyDto } from "~~/shared/types/api";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
-import { requireViewer } from "../../../utils/domain/roomView";
 import { readLiveTally } from "../../../utils/live/scroll";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * The secret vote the Mesa is counting, for a projection that opens
@@ -11,11 +10,7 @@ import { readLiveTally } from "../../../utils/live/scroll";
  */
 export default defineEventHandler(
   async (event): Promise<LiveTallyDto | null> => {
-    const actor = await requireViewer(event);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
+    const { assembly } = await resolveAssemblyRoute(event, { viewer: true });
     return readLiveTally(assembly.id);
   },
 );

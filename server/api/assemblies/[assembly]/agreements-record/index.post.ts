@@ -1,14 +1,13 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { AgreementsRecordDto } from "~~/shared/types/api";
 import { agreementsRecordCreateBodySchema } from "~~/shared/utils/schemas/agreementsRecord";
-import { requireActor } from "../../../../utils/domain/actor";
 import {
   createAgreementsRecord,
   requireRecordManager,
 } from "../../../../utils/domain/agreementsRecord";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Creates the acta de acuerdos under the agenda item where it is read and
@@ -16,13 +15,9 @@ import { throwMutationError } from "../../../../utils/errors";
  */
 export default defineEventHandler(
   async (event): Promise<AgreementsRecordDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireRecordManager(actor);
     const body = await readBodyWith(event, agreementsRecordCreateBodySchema);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     try {
       return await createAgreementsRecord(actor, assembly, body.agendaItemId);
     } catch (error) {

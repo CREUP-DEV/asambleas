@@ -12,7 +12,7 @@ import { agendaItemUpdateBodySchema } from "~~/shared/utils/schemas/assembly";
 import { normalizeText } from "~~/shared/utils/schemas/content";
 import { db } from "../../../../db";
 import { agendaItems } from "../../../../db/schema";
-import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { requireCan } from "../../../../utils/domain/actor";
 import {
   lockAssembly,
   nextSiblingOrder,
@@ -30,14 +30,12 @@ import {
 } from "../../../../utils/domain/assemblies";
 import { diffChanges } from "../../../../utils/domain/changes";
 import { recordEvent } from "../../../../utils/domain/events";
-import {
-  resolveAgendaItem,
-  resolveAssembly,
-} from "../../../../utils/domain/resolvers";
+import { resolveAgendaItem } from "../../../../utils/domain/resolvers";
 import {
   buildOptimisticLockCondition,
   staleWriteError,
 } from "../../../../utils/optimisticLock";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Edits an item. Changing `parentId` moves it to the end of its new parent.
@@ -58,12 +56,8 @@ import {
  * for both is ignored and the answer hides them again.
  */
 export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const item = await resolveAgendaItem(
     assembly.id,
     getRouterParam(event, "item"),

@@ -1,11 +1,10 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { ItemVotesDto } from "~~/shared/types/api";
 import {
   loadItemVotes,
   requireItemVoteReader,
 } from "../../../utils/domain/itemVotes";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
-import { requireViewer } from "../../../utils/domain/roomView";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * The votes on agenda items the reader gets, voided ones too, oldest first
@@ -14,11 +13,9 @@ import { requireViewer } from "../../../utils/domain/roomView";
  * is refused.
  */
 export default defineEventHandler(async (event): Promise<ItemVotesDto> => {
-  const actor = await requireViewer(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event, {
+    viewer: true,
+  });
   requireItemVoteReader(actor);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   return loadItemVotes(actor, assembly);
 });

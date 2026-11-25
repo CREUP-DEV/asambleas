@@ -3,9 +3,9 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { MemberRef } from "~~/shared/types/api";
 import { GENERIC_EXECUTIVE_MEMBER } from "~~/shared/constants/domain";
-import type { Actor } from "./actor";
 import type { AgendaItemRow } from "./assemblies";
 import { numberAgendaItems } from "~~/shared/utils/agendaNumbering";
+import { testActor } from "../../testing/actor";
 
 const query = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const requireActor = vi.hoisted(() => vi.fn());
@@ -39,6 +39,7 @@ const { agendaItemDtos } = await import("./assemblies");
 const {
   ROOM_VIEWER_ID,
   isRoomViewer,
+  refuseRoomView,
   requireViewer,
   roomViewOf,
   roomViewer,
@@ -48,35 +49,11 @@ const {
 
 const MESA_ID = "m".repeat(32);
 
-function makeActor(role: string, permissions: string[] = []): Actor {
-  const admin = role === SYSTEM_ROLES.ADMIN;
-  return {
-    user: {
-      id: MESA_ID,
-      name: "Vocalía de la Mesa",
-      email: "mesa@example.org",
-      image: null,
-      roleId: "role",
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: null,
-      lastRoleSyncAt: null,
-      role: { id: "role", name: role },
-    },
-    memberId: null,
-    memberKind: null,
-    isAdmin: admin,
-    permissions: permissions as Actor["permissions"],
-    can: (key) => admin || permissions.includes(key),
-    impersonation: null,
-  };
-}
-
-const MESA = makeActor(SYSTEM_ROLES.MODERADOR, [
-  PERMISSION_KEYS.SESSION_MODERATE,
-]);
+const MESA = testActor({
+  id: MESA_ID,
+  role: SYSTEM_ROLES.MODERADOR,
+  permissions: [PERMISSION_KEYS.SESSION_MODERATE],
+});
 
 function makeEvent(method = "GET") {
   return {
@@ -114,7 +91,9 @@ describe("roomViewer", () => {
     expect(redactMember(room, OFFICE)).toEqual(GENERIC_EXECUTIVE_MEMBER);
     // An Admin opening the projection reads as the room too.
     expect(
-      canSeeExecutiveMembers(roomViewer(makeActor(SYSTEM_ROLES.ADMIN))),
+      canSeeExecutiveMembers(
+        roomViewer(testActor({ id: MESA_ID, role: SYSTEM_ROLES.ADMIN })),
+      ),
     ).toBe(false);
   });
 
@@ -176,7 +155,11 @@ describe("requireViewer", () => {
 
   it("refuses the flag to anyone who does not moderate", async () => {
     requireActor.mockResolvedValue(
-      makeActor(SYSTEM_ROLES.SECRETARIA, [PERMISSION_KEYS.DOCUMENT_MANAGE]),
+      testActor({
+        id: MESA_ID,
+        role: SYSTEM_ROLES.SECRETARIA,
+        permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
+      }),
     );
     query.value = { view: "room" };
     const event = makeEvent();
@@ -196,6 +179,46 @@ describe("requireViewer", () => {
     await expect(requireViewer(makeEvent("POST"))).rejects.toMatchObject({
       statusCode: 400,
     });
+  });
+});
+
+describe("refuseRoomView", () => {
+  beforeEach(() => {
+    query.value = {};
+  });
+
+  it("lets a read without the flag through", () => {
+    expect(() => refuseRoomView(makeEvent(), "no")).not.toThrow();
+  });
+
+  it("refuses the room view, whoever asks, and any other view", () => {
+    query.value = { view: "room" };
+    expect(() => refuseRoomView(makeEvent(), "no")).toThrow(
+      expect.objectContaining({ statusCode: 403, message: "no" }),
+    );
+    query.value = { view: "mesa" };
+    expect(() => refuseRoomView(makeEvent(), "no")).toThrow(
+      expect.objectContaining({ statusCode: 400 }),
+    );
+  });
+});
+
+describe("roomViewer keeps the request's impersonation", () => {
+  it("as built by buildActor, with nothing else of the account", () => {
+    const impersonation = { id: "imp1" } as never;
+    const room = roomViewer(
+      testActor({
+        id: MESA_ID,
+        role: SYSTEM_ROLES.MODERADOR,
+        permissions: [PERMISSION_KEYS.SESSION_MODERATE],
+        memberId: OFFICE.id,
+        memberKind: "executive",
+        impersonation,
+      }),
+    );
+    expect(room.impersonation).toBe(impersonation);
+    expect(room.memberKind).toBeNull();
+    expect(room.can(PERMISSION_KEYS.SESSION_MODERATE)).toBe(false);
   });
 });
 
@@ -400,7 +423,7 @@ describe("screenTitleReadable", () => {
   });
 
   it("never gives a withheld title, nor one without the Mesa account", async () => {
-    const admin = makeActor(SYSTEM_ROLES.ADMIN);
+    const admin = testActor({ id: MESA_ID, role: SYSTEM_ROLES.ADMIN });
     await expect(
       screenTitleReadable(
         admin,

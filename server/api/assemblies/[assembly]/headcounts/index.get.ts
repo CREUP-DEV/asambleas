@@ -1,8 +1,7 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { HeadcountsDto } from "~~/shared/types/api";
-import { requireViewer } from "../../../../utils/domain/roomView";
 import { loadHeadcounts } from "../../../../utils/domain/headcounts";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * The Mesa's headcounts, newest first, and what a new one is checked
@@ -10,10 +9,8 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
  * count lists only reach the Mesa.
  */
 export default defineEventHandler(async (event): Promise<HeadcountsDto> => {
-  const actor = await requireViewer(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event, {
+    viewer: true,
+  });
   return loadHeadcounts(actor, assembly);
 });

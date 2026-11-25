@@ -40,7 +40,7 @@ import {
   canSeeDocument,
   visibleAcronym,
 } from "../domain/visibility";
-import { loadExportActor, publicExportActor } from "./actor";
+import { loadActorForUser, publicExportActor } from "./actor";
 import {
   amendmentCode,
   amendmentCodes,
@@ -80,7 +80,7 @@ type AssemblyRow = typeof assemblies.$inferSelect;
 type DocumentRow = typeof documents.$inferSelect;
 
 async function requireExportActor(userId: string): Promise<Actor> {
-  const actor = await loadExportActor(userId);
+  const actor = await loadActorForUser(userId);
   if (!actor) throw new ExportRejectedError("The requester no longer exists");
   return actor;
 }

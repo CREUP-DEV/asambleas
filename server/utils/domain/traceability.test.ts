@@ -351,11 +351,11 @@ describe("mutation endpoints", () => {
     for (const [file, name] of [
       ["server/utils/auth/requireAuth.ts", "requireAuth"],
       ["server/utils/auth/requireAuth.ts", "getAuthUserWithRole"],
-      ["server/utils/auth/rbac.ts", "requirePermission"],
       ["server/utils/auth/rbac.ts", "requireAnyPermission"],
       ["server/utils/auth/rbac.ts", "requireAdmin"],
       ["server/utils/domain/actor.ts", "requireActor"],
       ["server/utils/domain/resolvers.ts", "resolveAssembly"],
+      ["server/utils/domain/assemblyRoute.ts", "resolveAssemblyRoute"],
       ["server/utils/domain/documents.ts", "resolveDocumentRoute"],
       ["server/utils/core/http.ts", "readBodyWith"],
       ["server/utils/errors.ts", "throwMutationError"],

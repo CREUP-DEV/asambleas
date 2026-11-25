@@ -1,12 +1,11 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { SeatingSyncResultDto } from "~~/shared/types/api";
-import { requireActor } from "../../../../utils/domain/actor";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import {
   requireSeatingEditor,
   syncSeating,
 } from "../../../../utils/domain/seating";
 import { throwMutationError } from "../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Reads the Intranet's attendees into the room (seating:edit), at most once
@@ -15,12 +14,8 @@ import { throwMutationError } from "../../../../utils/errors";
  */
 export default defineEventHandler(
   async (event): Promise<SeatingSyncResultDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireSeatingEditor(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     try {
       return await syncSeating(actor, assembly);
     } catch (error) {

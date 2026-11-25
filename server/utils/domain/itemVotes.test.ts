@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
-import {
-  PERMISSION_KEYS,
-  type PermissionKey,
-} from "~~/shared/constants/permissions";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { ItemVoteBody } from "~~/shared/types/api";
-import type { Actor } from "./actor";
+import { testActor } from "../../testing/actor";
 
 // The rules of the item vote paths, over a fake transaction: every select
 // answers the next queued result, inserts and updates echo what they write.
@@ -127,37 +124,15 @@ const { toItemVoteDto } = await import("./votes");
 
 const VOTE_ID = "v1aaaaaaaaaaaaaaaaaaaaaa";
 
-function makeActor(permissions: PermissionKey[] = []): Actor {
-  return {
-    user: {
-      id: "u".repeat(32),
-      name: "Ana",
-      email: "ana@example.org",
-      image: null,
-      roleId: null,
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: null,
-      lastRoleSyncAt: null,
-      role: null,
-    },
-    memberId: null,
-    isAdmin: false,
-    permissions,
-    can: (key) => permissions.includes(key),
-    impersonation: null,
-  };
-}
-
-const mesa = makeActor([PERMISSION_KEYS.SESSION_MODERATE]);
-const editor = makeActor([PERMISSION_KEYS.CONTROL_SHEET_EDIT]);
-const reader = makeActor([PERMISSION_KEYS.CONTROL_SHEET_VIEW]);
-const secretaria = makeActor([
-  PERMISSION_KEYS.CONTROL_SHEET_EDIT,
-  PERMISSION_KEYS.DOCUMENT_MANAGE,
-]);
+const mesa = testActor({ permissions: [PERMISSION_KEYS.SESSION_MODERATE] });
+const editor = testActor({ permissions: [PERMISSION_KEYS.CONTROL_SHEET_EDIT] });
+const reader = testActor({ permissions: [PERMISSION_KEYS.CONTROL_SHEET_VIEW] });
+const secretaria = testActor({
+  permissions: [
+    PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+    PERMISSION_KEYS.DOCUMENT_MANAGE,
+  ],
+});
 
 const assembly = {
   id: "asm",

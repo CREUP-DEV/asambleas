@@ -2,15 +2,14 @@ import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ItemVoteResultDto } from "~~/shared/types/api";
 import { itemVoteBodySchema } from "~~/shared/utils/schemas/vote";
-import { requireActor } from "../../../../../utils/domain/actor";
 import {
   recordItemVote,
   requireItemVoteRecorder,
   resolveVotableItem,
 } from "../../../../../utils/domain/itemVotes";
 import { controlsProjection } from "../../../../../utils/domain/projectionControl";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * Records a vote on the agenda item itself (session:moderate or
@@ -18,11 +17,7 @@ import { throwMutationError } from "../../../../../utils/errors";
  * on screen.
  */
 export default defineEventHandler(async (event): Promise<ItemVoteResultDto> => {
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   // Before the item: whoever may not vote learns nothing of it.
   requireItemVoteRecorder(actor);
   const item = await resolveVotableItem(

@@ -1,9 +1,9 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { SessionProgressDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { requireCan } from "../../../utils/domain/actor";
 import { loadSessionProgress } from "../../../utils/domain/sessionProgress";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * What the Mesa's console marks: the documents projected and the agenda
@@ -11,12 +11,8 @@ import { loadSessionProgress } from "../../../utils/domain/sessionProgress";
  */
 export default defineEventHandler(
   async (event): Promise<SessionProgressDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     return loadSessionProgress(assembly.id);
   },
 );

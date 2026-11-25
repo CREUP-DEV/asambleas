@@ -1,21 +1,17 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
+import { defineEventHandler, setResponseStatus } from "h3";
 import type { HeadcountsDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { headcountBodySchema } from "~~/shared/utils/schemas/headcount";
-import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { requireCan } from "../../../../utils/domain/actor";
 import { recordHeadcount } from "../../../../utils/domain/headcounts";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /** The Mesa takes a headcount of the members with a vote. */
 export default defineEventHandler(async (event): Promise<HeadcountsDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, headcountBodySchema);
 
   try {

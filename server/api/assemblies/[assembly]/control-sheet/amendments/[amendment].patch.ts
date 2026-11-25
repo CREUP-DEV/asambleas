@@ -2,24 +2,19 @@ import { readBodyWith } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam } from "h3";
 import type { ControlSheetAmendmentRowDto } from "~~/shared/types/api";
 import { controlSheetAmendmentBodySchema } from "~~/shared/utils/schemas/controlSheet";
-import { requireActor } from "../../../../../utils/domain/actor";
 import {
   requireControlSheetReader,
   resolveSheetAmendment,
   updateSheetAmendment,
 } from "../../../../../utils/domain/controlSheet";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../../utils/errors";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /** Changes what the control sheet notes about an amendment. */
 export default defineEventHandler(
   async (event): Promise<ControlSheetAmendmentRowDto> => {
-    const actor = await requireActor(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event);
     requireControlSheetReader(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     const amendment = await resolveSheetAmendment(
       actor,
       assembly,

@@ -1,24 +1,20 @@
 import { readQueryWith } from "../../../utils/core/http";
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { convocationDeleteQuerySchema } from "~~/shared/utils/schemas/assembly";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import {
   loadAssemblyDto,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
 import { removeConvocationFile } from "../../../utils/domain/convocation";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /** Takes the signed convocatoria away; `?updatedAt=` of the assembly. */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const { updatedAt } = readQueryWith(event, convocationDeleteQuerySchema);
   try {
     await removeConvocationFile(actor, assembly, updatedAt);

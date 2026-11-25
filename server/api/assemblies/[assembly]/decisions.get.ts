@@ -1,9 +1,8 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import type { DecisionDto } from "~~/shared/types/api";
-import { requireActor } from "../../../utils/domain/actor";
 import { loadDecisionDtos } from "../../../utils/domain/assemblies";
 import { filterVisibleDecisions } from "../../../utils/domain/documents";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * Procedural decisions of the assembly, oldest first. Admission decisions
@@ -11,11 +10,7 @@ import { resolveAssembly } from "../../../utils/domain/resolvers";
  * the Secretaría publishes it).
  */
 export default defineEventHandler(async (event): Promise<DecisionDto[]> => {
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   return filterVisibleDecisions(
     actor,
     assembly,

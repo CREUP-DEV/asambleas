@@ -1,14 +1,14 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
+import { defineEventHandler, setResponseStatus } from "h3";
 import { eq } from "drizzle-orm";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { livePointerBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { liveState } from "../../../db/schema";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import { controlsProjection } from "../../../utils/domain/projectionControl";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { publishLivePointer } from "../../../utils/live/scroll";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * The Mesa points or draws on the document in debate: the projection shows
@@ -18,12 +18,8 @@ import { publishLivePointer } from "../../../utils/live/scroll";
  * ignored with a 204. Records and keeps nothing.
  */
 export default defineEventHandler(async (event) => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, livePointerBodySchema);
   setResponseStatus(event, 204);
   if (assembly.status !== "in_session") return null;

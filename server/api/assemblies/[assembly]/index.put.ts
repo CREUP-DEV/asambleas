@@ -1,12 +1,12 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { createError, defineEventHandler, getRouterParam } from "h3";
+import { createError, defineEventHandler } from "h3";
 import { and, eq, sql } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { assemblyUpdateBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { assemblies } from "../../../db/schema";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import {
   assertDateRange,
   findAssemblyByTypeNumber,
@@ -16,20 +16,16 @@ import {
 import { diffChanges } from "../../../utils/domain/changes";
 import { assemblySettings } from "../../../utils/domain/documents";
 import { recordEvent } from "../../../utils/domain/events";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import {
   buildOptimisticLockCondition,
   staleWriteError,
 } from "../../../utils/optimisticLock";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /** Edits the assembly. Settings are merged over the stored ones. */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const { updatedAt, settings, startDate, endDate, ...fields } =
     await readBodyWith(event, assemblyUpdateBodySchema);
 

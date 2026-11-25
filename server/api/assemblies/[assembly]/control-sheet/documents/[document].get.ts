@@ -4,11 +4,8 @@ import {
   loadDocumentSheetObservations,
   requireControlSheetReader,
 } from "../../../../../utils/domain/controlSheet";
-import {
-  resolveAssembly,
-  resolveDocument,
-} from "../../../../../utils/domain/resolvers";
-import { requireViewer } from "../../../../../utils/domain/roomView";
+import { resolveDocument } from "../../../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * The control sheet's observations about one document and its amendments,
@@ -16,12 +13,10 @@ import { requireViewer } from "../../../../../utils/domain/roomView";
  */
 export default defineEventHandler(
   async (event): Promise<ControlSheetDocumentObservationsDto> => {
-    const actor = await requireViewer(event);
+    const { actor, assembly } = await resolveAssemblyRoute(event, {
+      viewer: true,
+    });
     requireControlSheetReader(actor);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
     const document = await resolveDocument(
       actor,
       assembly.id,

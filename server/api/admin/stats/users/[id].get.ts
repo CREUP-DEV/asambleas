@@ -2,7 +2,6 @@ import { createError, defineEventHandler, getQuery, getRouterParam } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { StatsAccountDetailDto } from "~~/shared/types/api";
 import { requireAnyPermission } from "../../../../utils/auth/rbac";
-import { requireActor } from "../../../../utils/domain/actor";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { loadAccountStats } from "../../../../utils/domain/stats";
 import { validateAuthId } from "../../../../utils/validation";
@@ -13,8 +12,9 @@ import { validateAuthId } from "../../../../utils/validation";
  */
 export default defineEventHandler(
   async (event): Promise<StatsAccountDetailDto> => {
-    await requireAnyPermission(event, [PERMISSION_KEYS.STATS_VIEW]);
-    const actor = await requireActor(event);
+    const { actor } = await requireAnyPermission(event, [
+      PERMISSION_KEYS.STATS_VIEW,
+    ]);
     const userId = validateAuthId(getRouterParam(event, "id"));
     const { assembly } = getQuery(event);
     const row = await resolveAssembly(

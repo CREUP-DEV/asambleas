@@ -4,6 +4,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { Actor } from "./actor";
 import type { LoadedAmendment, PositionRecorders } from "./amendments";
 import type { DocumentPresenters } from "./visibility";
+import { testActor } from "../../testing/actor";
 
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../auth/requireAuth", () => ({
@@ -32,40 +33,19 @@ const PRESENTER = "p".repeat(24);
 const AUTHOR = "a".repeat(24);
 const MESA_USER = "m".repeat(24);
 
-function makeActor(role: string, permissions: string[] = []): Actor {
-  return {
-    user: {
-      id: CEA_USER,
-      name: "Presidencia",
-      email: "pres@example.org",
-      image: null,
-      roleId: "role",
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: null,
-      lastRoleSyncAt: null,
-      role: { id: "role", name: role },
-    },
-    memberId: null,
-    memberKind: null,
-    isAdmin: false,
-    permissions: permissions as Actor["permissions"],
-    can: (key) => permissions.includes(key),
-    impersonation: null,
-  };
-}
-
 /** A CEA account that reads the sheet, not the Mesa nor a reviewer. */
-const CEA_READER = makeActor(SYSTEM_ROLES.CEA, [
-  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
-]);
+const CEA_READER = testActor({
+  id: CEA_USER,
+  role: SYSTEM_ROLES.CEA,
+  permissions: [PERMISSION_KEYS.CONTROL_SHEET_VIEW],
+});
 
 /** Someone given the control sheet by hand, outside the CEA. */
-const SHEET_READER = makeActor(SYSTEM_ROLES.ASOCIADO, [
-  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
-]);
+const SHEET_READER = testActor({
+  id: CEA_USER,
+  role: SYSTEM_ROLES.ASOCIADO,
+  permissions: [PERMISSION_KEYS.CONTROL_SHEET_VIEW],
+});
 
 const DOCUMENT: DocumentPresenters = {
   proponentMemberId: PRESENTER,

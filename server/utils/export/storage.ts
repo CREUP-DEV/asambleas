@@ -7,6 +7,8 @@ import {
   type ExportVariant,
 } from "./queue";
 import type { ExportLocale } from "./labels";
+import { fail } from "../core/http";
+import type { Actor } from "../domain/actor";
 import {
   PERMISSION_KEYS,
   type PermissionKey,
@@ -122,6 +124,20 @@ export function getExportPermissionForQueue(
   return queueName === EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT
     ? PERMISSION_KEYS.DOCUMENT_MANAGE
     : PERMISSION_KEYS.ASSEMBLY_MANAGE;
+}
+
+/**
+ * Who may poll or download an export: its requester (the effective user
+ * who asked for it, `requestedBy`) or whoever holds the key that manages
+ * its queue (getExportPermissionForQueue). 403 otherwise.
+ */
+export function requireExportReader(
+  actor: Actor,
+  metadata: Pick<ExportMetadata, "requestedBy" | "queueName">,
+): void {
+  if (metadata.requestedBy === actor.user.id) return;
+  if (actor.can(getExportPermissionForQueue(metadata.queueName))) return;
+  fail(403, "Acceso denegado");
 }
 
 export function buildExportFilename(parts: string[]) {

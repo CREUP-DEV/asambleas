@@ -1,5 +1,6 @@
 import type { H3Event } from "h3";
 import { createError, getQuery } from "h3";
+import { fail } from "../core/http";
 import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../db";
@@ -7,7 +8,7 @@ import { liveState } from "../../db/schema";
 import type { AgendaDto, AgendaItemDto } from "~~/shared/types/api";
 import { ROOM_VIEW } from "~~/shared/constants/roomView";
 import { agendaItemSlugs } from "~~/shared/utils/slug";
-import { canModerate, requireActor, type Actor } from "./actor";
+import { buildActor, canModerate, requireActor, type Actor } from "./actor";
 import {
   canReadItemTitle,
   loadAgendaItems,
@@ -43,7 +44,7 @@ const roomViewQuerySchema = z.object({
  * impersonation the request runs under stays, as with any actor.
  */
 export function roomViewer(actor: Actor): Actor {
-  return {
+  return buildActor({
     user: {
       ...actor.user,
       id: ROOM_VIEWER_ID,
@@ -58,13 +59,10 @@ export function roomViewer(actor: Actor): Actor {
       externalInitials: null,
       university: null,
     },
-    memberId: null,
-    memberKind: null,
-    isAdmin: false,
     permissions: [],
-    can: () => false,
-    impersonation: actor.impersonation ?? null,
-  };
+    memberKind: null,
+    impersonation: actor.impersonation,
+  });
 }
 
 /** Whether the actor is the room viewer (roomViewer). */
@@ -88,6 +86,16 @@ export function wantsRoomView(event: H3Event): boolean {
     throw createError({ statusCode: 400, message: "Parámetros no válidos" });
   }
   return true;
+}
+
+/**
+ * For a read the room never makes (the control sheet and its notes): 403
+ * with `?view=room`, whoever asks, and 400 for any other `view`
+ * (wantsRoomView). Call it right after the actor (requireViewer, or
+ * resolveAssemblyRoute with `viewer`).
+ */
+export function refuseRoomView(event: H3Event, message: string): void {
+  if (wantsRoomView(event)) fail(403, message);
 }
 
 /**

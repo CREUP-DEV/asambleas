@@ -7,8 +7,7 @@ import {
   users,
 } from "../../db/schema";
 import { logError, logInfo, logWarn } from "../core/logger";
-import type { Actor } from "../domain/actor";
-import { loadExportActor } from "../export/actor";
+import { loadActorForUser, type Actor } from "../domain/actor";
 import { emailFingerprint } from "../members/intranet";
 import {
   EMAIL_MAX_ATTEMPTS,
@@ -221,7 +220,7 @@ async function loadRecipient(
   if (!user || user.accessRevokedAt || !user.email.includes("@")) {
     return "no_access";
   }
-  const actor = await loadExportActor(userId);
+  const actor = await loadActorForUser(userId);
   if (!actor) return "no_access";
   return { email: user.email, actor };
 }

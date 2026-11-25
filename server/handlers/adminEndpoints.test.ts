@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * else: the first `await` inside `defineEventHandler` is one of these
  * calls. A handler that skips it would be open to any signed-in account.
  */
-const CHECKS = ["requireAnyPermission(", "requireAdmin(", "requirePermission("];
+const CHECKS = ["requireAnyPermission(", "requireAdmin("];
 
 const adminDir = fileURLToPath(new URL("../api/admin", import.meta.url));
 

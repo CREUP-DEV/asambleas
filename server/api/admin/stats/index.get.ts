@@ -2,7 +2,6 @@ import { defineEventHandler, getQuery } from "h3";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { StatsDto } from "~~/shared/types/api";
 import { requireAnyPermission } from "../../../utils/auth/rbac";
-import { requireActor } from "../../../utils/domain/actor";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { loadStats } from "../../../utils/domain/stats";
 
@@ -12,8 +11,9 @@ import { loadStats } from "../../../utils/domain/stats";
  * may not see.
  */
 export default defineEventHandler(async (event): Promise<StatsDto> => {
-  await requireAnyPermission(event, [PERMISSION_KEYS.STATS_VIEW]);
-  const actor = await requireActor(event);
+  const { actor } = await requireAnyPermission(event, [
+    PERMISSION_KEYS.STATS_VIEW,
+  ]);
   const { assembly } = getQuery(event);
   const row = await resolveAssembly(
     actor,

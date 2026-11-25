@@ -1,12 +1,12 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import { createError, defineEventHandler, getRouterParam } from "h3";
+import { createError, defineEventHandler } from "h3";
 import { eq } from "drizzle-orm";
 import type { AgendaDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { agendaReorderBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems } from "../../../../db/schema";
-import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { requireCan } from "../../../../utils/domain/actor";
 import { lockAssembly } from "../../../../utils/domain/agendaWrites";
 import {
   confirmFinalRootChange,
@@ -17,7 +17,7 @@ import {
   throwAssemblyMutationError,
 } from "../../../../utils/domain/assemblies";
 import { recordEvent } from "../../../../utils/domain/events";
-import { resolveAssembly } from "../../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Sets parent and order of the listed items; the rest keep theirs. Every id
@@ -27,12 +27,8 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
  * `afterFinal`. Returns the whole agenda, as GET does.
  */
 export default defineEventHandler(async (event): Promise<AgendaDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, agendaReorderBodySchema);
 
   try {

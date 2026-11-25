@@ -12,7 +12,7 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { EmailDeliveryDto } from "~~/shared/types/api";
 import { emailDeliveriesQuerySchema } from "~~/shared/utils/schemas/notifications";
 import { requireAnyPermission } from "../../../utils/auth/rbac";
-import { canManageDocuments, requireActor } from "../../../utils/domain/actor";
+import { canManageDocuments } from "../../../utils/domain/actor";
 
 /**
  * The latest emails, newest first (notification:manage): the kind, who it
@@ -22,8 +22,9 @@ import { canManageDocuments, requireActor } from "../../../utils/domain/actor";
  */
 export default defineEventHandler(
   async (event): Promise<EmailDeliveryDto[]> => {
-    await requireAnyPermission(event, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
-    const actor = await requireActor(event);
+    const { actor } = await requireAnyPermission(event, [
+      PERMISSION_KEYS.NOTIFICATION_MANAGE,
+    ]);
     const query = readQueryWith(event, emailDeliveriesQuerySchema, {
       message: "Consulta no válida",
     });

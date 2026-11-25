@@ -1,29 +1,23 @@
-import { defineEventHandler, createError } from "h3";
-import { getAuthUserWithRole } from "../../../utils/auth/requireAuth";
-import { hasPermission } from "../../../utils/auth/rbac";
+import { defineEventHandler, createError, getRouterParam } from "h3";
+import { requireActor } from "../../../utils/domain/actor";
 import { getExportQueue } from "../../../utils/export/queue";
 import {
-  getExportPermissionForQueue,
   patchExportMetadata,
   readExportMetadata,
+  requireExportReader,
   validateExportJobId,
 } from "../../../utils/export/storage";
 
+/**
+ * The state of an export, for its requester or whoever manages its queue
+ * (requireExportReader). A job the queue lost while queued is marked
+ * failed.
+ */
 export default defineEventHandler(async (event) => {
-  const user = await getAuthUserWithRole(event);
-  const jobId = validateExportJobId(event.context.params?.jobId);
+  const actor = await requireActor(event);
+  const jobId = validateExportJobId(getRouterParam(event, "jobId"));
   const metadata = await readExportMetadata(jobId);
-
-  const canRead =
-    metadata.requestedBy === user?.id ||
-    (await hasPermission(
-      event,
-      getExportPermissionForQueue(metadata.queueName),
-    ));
-
-  if (!canRead) {
-    throw createError({ statusCode: 403, message: "Acceso denegado" });
-  }
+  requireExportReader(actor, metadata);
 
   try {
     if (metadata.status === "done" || metadata.status === "failed") {

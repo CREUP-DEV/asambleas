@@ -1,21 +1,12 @@
 import { readBodyWith } from "../../../../../utils/core/http";
-import {
-  createError,
-  defineEventHandler,
-  getRouterParam,
-  setResponseStatus,
-} from "h3";
+import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { BulkDocumentsDto } from "~~/shared/types/api";
 import { bulkDocumentsSchema } from "~~/shared/utils/schemas/document";
-import {
-  canManageDocuments,
-  requireActor,
-} from "../../../../../utils/domain/actor";
+import { requireCan } from "../../../../../utils/domain/actor";
 import { createDocuments } from "../../../../../utils/domain/documentCreate";
-import {
-  resolveAgendaItem,
-  resolveAssembly,
-} from "../../../../../utils/domain/resolvers";
+import { resolveAgendaItem } from "../../../../../utils/domain/resolvers";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * Adds several documents to one agenda item in one go (document:manage):
@@ -27,17 +18,8 @@ import {
  * A row that breaks a rule answers with `data.index`.
  */
 export default defineEventHandler(async (event): Promise<BulkDocumentsDto> => {
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
-  if (!canManageDocuments(actor)) {
-    throw createError({
-      statusCode: 403,
-      message: "No tienes permiso para añadir documentos en serie",
-    });
-  }
+  const { actor, assembly } = await resolveAssemblyRoute(event);
+  requireCan(actor, PERMISSION_KEYS.DOCUMENT_MANAGE);
   const item = await resolveAgendaItem(
     assembly.id,
     getRouterParam(event, "item"),

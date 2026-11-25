@@ -1,12 +1,11 @@
 import { sendReadStream } from "../../../../../utils/core/http";
 import { defineEventHandler, getRouterParam, setResponseHeaders } from "h3";
 import { createReadStream } from "node:fs";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
-import { requireViewer } from "../../../../../utils/domain/roomView";
 import {
   requireSeatingReader,
   resolveSeatingImage,
 } from "../../../../../utils/domain/seating";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * A cached logo or photo of the room (seating:view or seating:edit), never
@@ -14,12 +13,10 @@ import {
  * keep it for good; a new version is a new name.
  */
 export default defineEventHandler(async (event) => {
-  const actor = await requireViewer(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event, {
+    viewer: true,
+  });
   requireSeatingReader(actor);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const path = await resolveSeatingImage(
     actor,
     assembly,

@@ -487,7 +487,10 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
   (item: in the assembly, in `visibleAgendaItems`, title readable when
   shown; amendment: in the assembly, not a draft, `canSeeDocument` and
   `canSeeAmendment`) and answers 404 otherwise. The sheet GETs and the
-  export call `requireViewer`, so `?view=room` answers 403.
+  export open as a viewer (`resolveAssemblyRoute` with `viewer`, then
+  `refuseRoomView` or the reader check), so `?view=room` answers 403 on an
+  assembly the room sees, and 404, as every resolver does, on one it does
+  not (a draft).
 - Endpoints:
   - `GET .../control-sheet` (view);
   - `GET .../control-sheet/history?subjectType=&subjectId=` (view), built

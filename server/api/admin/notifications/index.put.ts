@@ -4,7 +4,6 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { NotificationSettingsDto } from "~~/shared/types/api";
 import { notificationSettingsBodySchema } from "~~/shared/utils/schemas/notifications";
 import { requireAnyPermission } from "../../../utils/auth/rbac";
-import { requireActor } from "../../../utils/domain/actor";
 import { updateNotificationSettings } from "../../../utils/notifications/settings";
 import { loadNotificationSettingsDto } from "../../../utils/notifications/dto";
 
@@ -14,8 +13,9 @@ import { loadNotificationSettingsDto } from "../../../utils/notifications/dto";
  */
 export default defineEventHandler(
   async (event): Promise<NotificationSettingsDto> => {
-    await requireAnyPermission(event, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
-    const actor = await requireActor(event);
+    const { actor } = await requireAnyPermission(event, [
+      PERMISSION_KEYS.NOTIFICATION_MANAGE,
+    ]);
     const body = await readBodyWith(event, notificationSettingsBodySchema, {
       message: "Ajustes de avisos no válidos",
     });

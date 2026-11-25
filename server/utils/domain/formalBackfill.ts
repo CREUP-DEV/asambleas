@@ -8,7 +8,7 @@ import {
   events,
 } from "../../db/schema";
 import { logError, logInfo } from "../core/logger";
-import { loadExportActor } from "../export/actor";
+import { loadActorForUser } from "./actor";
 import {
   buildDocumentAmendmentContext,
   settleFormalAmendments,
@@ -98,7 +98,7 @@ export async function backfillFormalAnswers(): Promise<void> {
   let done = 0;
   for (const group of groups.values()) {
     try {
-      const actor = await loadExportActor(group.userId);
+      const actor = await loadActorForUser(group.userId);
       const [document] = await db.query.documents
         .findMany({ where: eq(documents.id, group.documentId) })
         .then((list) => withCoProponentIds(list));

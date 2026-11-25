@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GENERIC_EXECUTIVE_MEMBER_ID } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import type { Actor } from "./actor";
 import type { AssemblyRow } from "./assemblies";
+import { testActor } from "../../testing/actor";
 
 // The seating domain with the database stubbed: guards, DTOs and the order
 // of a sync, not its SQL (seating.db.test.ts runs that on a database).
@@ -82,34 +82,15 @@ const {
   updateSeatingPerson,
 } = await import("./seating");
 
-function makeActor(permissions: string[] = []): Actor {
-  return {
-    user: {
-      id: "u".repeat(32),
-      name: "Cuenta de prueba",
-      email: "prueba@example.org",
-      image: null,
-      roleId: "role",
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: null,
-      lastRoleSyncAt: null,
-      role: { id: "role", name: "Otro" },
-    },
-    memberId: null,
-    memberKind: null,
-    isAdmin: false,
-    permissions: permissions as Actor["permissions"],
-    can: (key) => permissions.includes(key),
-    impersonation: null,
-  };
-}
-
-const READER = makeActor([PERMISSION_KEYS.SEATING_VIEW]);
-const EDITOR = makeActor([PERMISSION_KEYS.SEATING_EDIT]);
-const NOBODY = makeActor();
+const READER = testActor({
+  role: "Otro",
+  permissions: [PERMISSION_KEYS.SEATING_VIEW],
+});
+const EDITOR = testActor({
+  role: "Otro",
+  permissions: [PERMISSION_KEYS.SEATING_EDIT],
+});
+const NOBODY = testActor({ role: "Otro" });
 
 const ASSEMBLY = {
   id: "asm1b2c3d4e5f6g7h8i9j0k1",

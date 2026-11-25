@@ -4,7 +4,6 @@ import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { EmailTestResultDto } from "~~/shared/types/api";
 import { requireAnyPermission } from "../../../utils/auth/rbac";
-import { requireActor } from "../../../utils/domain/actor";
 import { recordAudit } from "../../../utils/domain/audit";
 import { NOTIFICATION_SETTINGS_ID } from "../../../utils/notifications/settings";
 import { sendTestEmail } from "../../../utils/notifications/sender";
@@ -15,8 +14,9 @@ import { sendTestEmail } from "../../../utils/notifications/sender";
  */
 export default defineEventHandler(
   async (event): Promise<EmailTestResultDto> => {
-    await requireAnyPermission(event, [PERMISSION_KEYS.NOTIFICATION_MANAGE]);
-    const actor = await requireActor(event);
+    const { actor } = await requireAnyPermission(event, [
+      PERMISSION_KEYS.NOTIFICATION_MANAGE,
+    ]);
     const result = await sendTestEmail(actor);
     await recordAudit(db, {
       event,

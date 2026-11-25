@@ -2,12 +2,9 @@ import {
   createEventStream,
   defineEventHandler,
   getQuery,
-  getRouterParam,
   type EventStreamMessage,
 } from "h3";
-import { requireActor } from "../../../utils/domain/actor";
 import { toLiveEventDto } from "../../../utils/domain/assemblies";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import type { AuthEventContext } from "../../../utils/auth/requireAuth";
 import { liveMessageReaches } from "../../../utils/live/audienceFilter";
 import { subscribeToAssembly } from "../../../utils/live/hub";
@@ -24,6 +21,7 @@ import {
   livePushChannels,
   serializeOnce,
 } from "../../../utils/live/sse";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /** Reconnection delay suggested to EventSource clients. */
 const RETRY_MS = 5_000;
@@ -54,11 +52,7 @@ const RETRY_MS = 5_000;
  */
 export default defineEventHandler(async (event) => {
   // Resolve first, so a 401 or 404 still answers as plain JSON.
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   const channels = livePushChannels(getQuery(event).channels);
 
   const stream = createEventStream(event);

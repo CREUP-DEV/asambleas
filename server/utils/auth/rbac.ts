@@ -12,10 +12,10 @@ import {
 import {
   getAuthUserWithRole,
   requireAuth,
-  type AuthEventContext,
   type AuthSession,
 } from "./requireAuth";
 import type { ImpersonationContext } from "./impersonation";
+import { requireActor, type Actor } from "../domain/actor";
 
 interface CacheEntry {
   permissions: PermissionKey[];
@@ -206,64 +206,17 @@ export function isAdmin(roleName: string | null | undefined): boolean {
   return roleName === SYSTEM_ROLES.ADMIN;
 }
 
-async function resolveSessionWithRole(event: H3Event) {
-  const session = await requireAuth(event);
-  const user = await getAuthUserWithRole(event);
-  const impersonation =
-    (event.context as AuthEventContext).impersonation ?? null;
-
-  return { session, user, impersonation };
-}
-
+/**
+ * The request's auth context for every section handler
+ * (server/handlers/auth.ts and protected.ts): the session (401 without one)
+ * and the effective user, which also refuses an account that lost access
+ * (401) and resolves the impersonation the request runs under. It checks no
+ * permission: each endpoint checks its own.
+ */
 export async function attachAuthContext(event: H3Event): Promise<AuthSession> {
   const session = await requireAuth(event);
-  const user = await getAuthUserWithRole(event);
-  const context = event.context as AuthEventContext;
-
-  context.permissions = user ? await getEffectivePermissions(user) : [];
-
+  await getAuthUserWithRole(event);
   return session;
-}
-
-export async function requirePermission(
-  event: H3Event,
-  permissionKey: PermissionKey,
-): Promise<AuthSession> {
-  const { session, user } = await resolveSessionWithRole(event);
-
-  if (!user) {
-    throw createError({
-      statusCode: 403,
-      message: "Sin rol asignado",
-    });
-  }
-
-  if (isAdmin(user.role?.name)) {
-    return session;
-  }
-
-  const effective = await getEffectivePermissions(user);
-
-  if (!effective.includes(permissionKey)) {
-    throw createError({
-      statusCode: 403,
-      message: "No tienes permiso para realizar esta acción",
-    });
-  }
-
-  return session;
-}
-
-export async function hasPermission(
-  event: H3Event,
-  permissionKey: PermissionKey,
-): Promise<boolean> {
-  try {
-    await requirePermission(event, permissionKey);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -289,8 +242,10 @@ export function hasAnyPermission(
 
 /**
  * What requireAnyPermission and requireAdmin return: who is acting and
- * what they hold. Take the caller's identity from `user`, never from
- * `session.user` (the session stays the real Admin's while impersonating).
+ * what they hold, read from the request's Actor (requireActor), which is
+ * also at hand as `actor` for the domain helpers. Take the caller's
+ * identity from `user`, never from `session.user` (the session stays the
+ * real Admin's while impersonating).
  */
 export interface AdminCaller {
   session: AuthSession;
@@ -305,47 +260,57 @@ export interface AdminCaller {
    * recordAudit as `actor` and it records both.
    */
   impersonation: ImpersonationContext | null;
+  /** The request's Actor (requireActor), the same object the domain reads. */
+  actor: Actor;
+}
+
+/**
+ * The session and the request's Actor for the admin callers. A session
+ * whose account row is gone answers 403 «Sin rol asignado», as these
+ * callers always did (requireActor alone would answer 401).
+ */
+async function loadCaller(
+  event: H3Event,
+  refusal: string,
+): Promise<{ session: AuthSession; actor: Actor }> {
+  const session = await requireAuth(event);
+  const user = await getAuthUserWithRole(event);
+  if (!user) {
+    throw createError({ statusCode: 403, message: refusal });
+  }
+  return { session, actor: await requireActor(event) };
+}
+
+function toAdminCaller(session: AuthSession, actor: Actor): AdminCaller {
+  return {
+    session,
+    admin: actor.isAdmin,
+    user: { id: actor.user.id, role: actor.user.role ?? null },
+    permissions: actor.permissions,
+    impersonation: actor.impersonation,
+    actor,
+  };
 }
 
 /**
  * Requires at least one of these permissions (Admin passes through the
- * bypass). Returns the session, whether the user is an Admin (for the
- * changes only an Admin may make: giving or taking the Admin role, its own
- * account and role) and the caller's permissions (adminGrantViolation).
+ * bypass, as with `actor.can`). Returns the session, whether the user is an Admin
+ * (for the changes only an Admin may make: giving or taking the Admin role,
+ * its own account and role), the caller's permissions (adminGrantViolation)
+ * and the request's Actor.
  */
 export async function requireAnyPermission(
   event: H3Event,
   keys: readonly PermissionKey[],
 ): Promise<AdminCaller> {
-  const { session, user, impersonation } = await resolveSessionWithRole(event);
-
-  if (!user) {
-    throw createError({
-      statusCode: 403,
-      message: "Sin rol asignado",
-    });
-  }
-
-  const caller = { id: user.id, role: user.role ?? null };
-  if (isAdmin(user.role?.name)) {
-    return {
-      session,
-      admin: true,
-      user: caller,
-      permissions: [...ALL_PERMISSION_KEYS],
-      impersonation,
-    };
-  }
-
-  const permissions = await getEffectivePermissions(user);
-  if (!hasAnyPermission(permissions, keys)) {
+  const { session, actor } = await loadCaller(event, "Sin rol asignado");
+  if (!actor.isAdmin && !hasAnyPermission(actor.permissions, keys)) {
     throw createError({
       statusCode: 403,
       message: "No tienes permiso para realizar esta acción",
     });
   }
-
-  return { session, admin: false, user: caller, permissions, impersonation };
+  return toAdminCaller(session, actor);
 }
 
 /** Messages for adminGrantViolation. */
@@ -440,20 +405,10 @@ export function adminGrantViolation(input: {
  * until the Admin goes back to their account.
  */
 export async function requireAdmin(event: H3Event): Promise<AdminCaller> {
-  const { session, user, impersonation } = await resolveSessionWithRole(event);
-
-  if (!user || !isAdmin(user.role?.name)) {
-    throw createError({
-      statusCode: 403,
-      message: "Acceso restringido a administradores",
-    });
+  const refusal = "Acceso restringido a administradores";
+  const { session, actor } = await loadCaller(event, refusal);
+  if (!actor.isAdmin) {
+    throw createError({ statusCode: 403, message: refusal });
   }
-
-  return {
-    session,
-    admin: true,
-    user: { id: user.id, role: user.role ?? null },
-    permissions: [...ALL_PERMISSION_KEYS],
-    impersonation,
-  };
+  return toAdminCaller(session, actor);
 }

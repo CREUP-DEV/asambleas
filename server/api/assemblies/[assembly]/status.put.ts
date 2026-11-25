@@ -1,5 +1,5 @@
 import { readBodyWith } from "../../../utils/core/http";
-import { createError, defineEventHandler, getRouterParam } from "h3";
+import { createError, defineEventHandler } from "h3";
 import { and, eq } from "drizzle-orm";
 import type { AssemblyDto } from "~~/shared/types/api";
 import { ASSEMBLY_STATUS_TRANSITIONS } from "~~/shared/constants/domain";
@@ -7,7 +7,7 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { assemblyStatusBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { assemblies } from "../../../db/schema";
-import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { requireCan } from "../../../utils/domain/actor";
 import {
   endRecess,
   ensureLiveState,
@@ -15,22 +15,18 @@ import {
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
 import { recordEvent } from "../../../utils/domain/events";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { markOnScreenAtOpen } from "../../../utils/domain/sessionProgress";
 import { closeSpeakingTurns } from "../../../utils/domain/speakers";
 import {
   buildOptimisticLockCondition,
   staleWriteError,
 } from "../../../utils/optimisticLock";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /** Moves the assembly along ASSEMBLY_STATUS_TRANSITIONS. */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const body = await readBodyWith(event, assemblyStatusBodySchema);
 
   if (!ASSEMBLY_STATUS_TRANSITIONS[assembly.status].includes(body.status)) {

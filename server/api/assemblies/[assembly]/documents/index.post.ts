@@ -1,14 +1,11 @@
 import { readBodyWith } from "../../../../utils/core/http";
-import { defineEventHandler, getRouterParam, setResponseStatus } from "h3";
-import { requireActor } from "../../../../utils/domain/actor";
-import {
-  resolveAgendaItem,
-  resolveAssembly,
-} from "../../../../utils/domain/resolvers";
+import { defineEventHandler, setResponseStatus } from "h3";
+import { resolveAgendaItem } from "../../../../utils/domain/resolvers";
 import { createDocuments } from "../../../../utils/domain/documentCreate";
 import { loadDocumentDto } from "../../../../utils/domain/documents";
 import type { DocumentDto } from "~~/shared/types/api";
 import { documentCreateSchema } from "~~/shared/utils/schemas/document";
+import { resolveAssemblyRoute } from "../../../../utils/domain/assemblyRoute";
 
 /**
  * Creates one document under an agenda item (createDocuments has the
@@ -17,11 +14,7 @@ import { documentCreateSchema } from "~~/shared/utils/schemas/document";
  * sub-item's, not the one sent.
  */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
-  const actor = await requireActor(event);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   const { agendaItemId, ...input } = await readBodyWith(
     event,
     documentCreateSchema,

@@ -1,11 +1,10 @@
-import { defineEventHandler, getRouterParam } from "h3";
+import { defineEventHandler } from "h3";
 import { eq } from "drizzle-orm";
 import type { LiveScrollDto } from "~~/shared/types/api";
 import { db } from "../../../db";
 import { liveState } from "../../../db/schema";
-import { resolveAssembly } from "../../../utils/domain/resolvers";
-import { requireViewer } from "../../../utils/domain/roomView";
 import { readLiveScroll } from "../../../utils/live/scroll";
+import { resolveAssemblyRoute } from "../../../utils/domain/assemblyRoute";
 
 /**
  * Where the Mesa last had the document in debate scrolled, for a
@@ -15,11 +14,7 @@ import { readLiveScroll } from "../../../utils/live/scroll";
  */
 export default defineEventHandler(
   async (event): Promise<LiveScrollDto | null> => {
-    const actor = await requireViewer(event);
-    const assembly = await resolveAssembly(
-      actor,
-      getRouterParam(event, "assembly"),
-    );
+    const { assembly } = await resolveAssemblyRoute(event, { viewer: true });
     const scroll = readLiveScroll(assembly.id);
     if (!scroll) return null;
     const [state] = await db

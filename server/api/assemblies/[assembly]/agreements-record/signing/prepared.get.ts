@@ -1,17 +1,11 @@
 import { sendReadStream } from "../../../../../utils/core/http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import {
-  createError,
-  defineEventHandler,
-  getRouterParam,
-  setResponseHeaders,
-} from "h3";
-import { requireActor } from "../../../../../utils/domain/actor";
+import { createError, defineEventHandler, setResponseHeaders } from "h3";
 import { requireRecordManager } from "../../../../../utils/domain/agreementsRecord";
 import { preparedRecordFile } from "../../../../../utils/domain/agreementsSigning";
-import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { attachmentDisposition } from "../../../../../utils/export/package/http";
+import { resolveAssemblyRoute } from "../../../../../utils/domain/assemblyRoute";
 
 /**
  * The acta de acuerdos prepared to sign (Secretaría only): downloaded to
@@ -19,12 +13,8 @@ import { attachmentDisposition } from "../../../../../utils/export/package/http"
  * AutoFirma.
  */
 export default defineEventHandler(async (event) => {
-  const actor = await requireActor(event);
+  const { actor, assembly } = await resolveAssemblyRoute(event);
   requireRecordManager(actor);
-  const assembly = await resolveAssembly(
-    actor,
-    getRouterParam(event, "assembly"),
-  );
   const file = await preparedRecordFile(actor, assembly);
   const fileStat = await stat(file.path).catch(() => null);
   if (!fileStat?.isFile()) {

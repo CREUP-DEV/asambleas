@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
-import type { Actor } from "../domain/actor";
 import type { AmendmentVisibilityContext } from "../domain/visibility";
+import { testActor } from "../../testing/actor";
 
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../auth/requireAuth", () => ({
@@ -25,60 +25,39 @@ const CREATOR = "creator-user";
 const AUTHOR = "author-member";
 const PARTY = "party-member";
 
-function makeActor(
-  role: string,
-  permissions: string[] = [],
-  ids: { userId?: string; memberId?: string | null } = {},
-): Actor {
-  return {
-    user: {
-      id: ids.userId ?? "someone",
-      name: "Someone",
-      email: "someone@example.org",
-      image: null,
-      roleId: "role",
-      externalRole: null,
-      externalName: null,
-      externalInitials: null,
-      university: null,
-      memberId: ids.memberId ?? null,
-      lastRoleSyncAt: null,
-      role: { id: "role", name: role },
-    },
-    memberId: ids.memberId ?? null,
-    memberKind: null,
-    isAdmin: false,
-    permissions: permissions as Actor["permissions"],
-    can: (key) => permissions.includes(key),
-    impersonation: null,
-  };
-}
-
-const ROOM = makeActor(SYSTEM_ROLES.ASOCIADO, [], { memberId: "other-member" });
-const MESA = makeActor(SYSTEM_ROLES.MODERADOR, [
-  PERMISSION_KEYS.SESSION_MODERATE,
-]);
-const SECRETARIA = makeActor(SYSTEM_ROLES.SECRETARIA, [
-  PERMISSION_KEYS.AMENDMENT_REVIEW,
-]);
-const CEA = makeActor(SYSTEM_ROLES.CEA);
-const SHEET_READER = makeActor(SYSTEM_ROLES.ASOCIADO, [
-  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
-]);
-// Custom roles that manage without reviewing: they read `hasAmendments`.
-const DOCUMENT_MANAGER = makeActor("Gestión documental", [
-  PERMISSION_KEYS.DOCUMENT_MANAGE,
-]);
-const ASSEMBLY_MANAGER = makeActor("Gestión de asambleas", [
-  PERMISSION_KEYS.ASSEMBLY_MANAGE,
-]);
-const CREATOR_ACCOUNT = makeActor(SYSTEM_ROLES.ASOCIADO, [], {
-  userId: CREATOR,
+const ROOM = testActor({
+  role: SYSTEM_ROLES.ASOCIADO,
+  memberId: "other-member",
 });
-const AUTHOR_ACCOUNT = makeActor(SYSTEM_ROLES.ASOCIADO, [], {
+const MESA = testActor({
+  role: SYSTEM_ROLES.MODERADOR,
+  permissions: [PERMISSION_KEYS.SESSION_MODERATE],
+});
+const SECRETARIA = testActor({
+  role: SYSTEM_ROLES.SECRETARIA,
+  permissions: [PERMISSION_KEYS.AMENDMENT_REVIEW],
+});
+const CEA = testActor({ role: SYSTEM_ROLES.CEA });
+const SHEET_READER = testActor({
+  role: SYSTEM_ROLES.ASOCIADO,
+  permissions: [PERMISSION_KEYS.CONTROL_SHEET_VIEW],
+});
+// Custom roles that manage without reviewing: they read `hasAmendments`.
+const DOCUMENT_MANAGER = testActor({
+  role: "Gestión documental",
+  permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
+});
+const ASSEMBLY_MANAGER = testActor({
+  role: "Gestión de asambleas",
+  permissions: [PERMISSION_KEYS.ASSEMBLY_MANAGE],
+});
+const CREATOR_ACCOUNT = testActor({ role: SYSTEM_ROLES.ASOCIADO, id: CREATOR });
+const AUTHOR_ACCOUNT = testActor({
+  role: SYSTEM_ROLES.ASOCIADO,
   memberId: AUTHOR,
 });
-const PARTY_ACCOUNT = makeActor(SYSTEM_ROLES.ASOCIADO, [], {
+const PARTY_ACCOUNT = testActor({
+  role: SYSTEM_ROLES.ASOCIADO,
   memberId: PARTY,
 });
 
@@ -314,7 +293,9 @@ describe("liveMessageReaches", () => {
   it("leaves out the room", () => {
     expect(liveMessageReaches(ROOM, { audience })).toBe(false);
     expect(
-      liveMessageReaches(makeActor(SYSTEM_ROLES.ASOCIADO), { audience }),
+      liveMessageReaches(testActor({ role: SYSTEM_ROLES.ASOCIADO }), {
+        audience,
+      }),
     ).toBe(false);
   });
 

@@ -49,18 +49,6 @@ const rows: Row[] = [
 
 const seen: Actor[] = [];
 
-/** The Secretaría as the export worker rebuilds it (loadExportActor). */
-const secretaria = {
-  user: { id: "secretaria", role: { id: "r", name: "Secretaria" } },
-  memberId: null,
-  memberKind: null,
-  isAdmin: false,
-  permissions: ["document:manage", "amendment:review", "assembly:manage"],
-  can: (key: string) =>
-    ["document:manage", "amendment:review", "assembly:manage"].includes(key),
-  impersonation: null,
-} as unknown as Actor;
-
 /** A published document an executive office presents, with another one. */
 const documentRow = {
   id: "doc",
@@ -162,7 +150,7 @@ vi.mock("../domain/wordings", async () => ({
 }));
 vi.mock("./actor", async () => ({
   ...(await vi.importActual<typeof import("./actor")>("./actor")),
-  loadExportActor: async () => secretaria,
+  loadActorForUser: async () => secretaria,
 }));
 vi.mock("../auth/requireAuth", () => ({
   getAuthUserWithRole: vi.fn(),
@@ -218,22 +206,31 @@ vi.mock("../domain/documents", async () => {
   };
 });
 
+// Imported after the mocks: domain/actor.ts loads the database, whose stub
+// reads the rows above.
+const { testActor } = await import("../../testing/actor");
+
+/** The Secretaría as the export worker rebuilds it (loadActorForUser). */
+const secretaria = testActor({
+  id: "secretaria",
+  role: "Secretaria",
+  permissions: ["document:manage", "amendment:review", "assembly:manage"],
+});
+
+/** A council's delegate: reads the offices as the generic "CEA". */
+const delegate = testActor({
+  id: "delegate",
+  role: "Asociado",
+  memberId: "m-ceum",
+  memberKind: "asociado",
+  permissions: ["document:create", "amendment:create"],
+});
+
 const { annotatedBody, buildDocumentExportData } = await import("./buildData");
 
 beforeEach(() => {
   seen.length = 0;
 });
-
-/** A council's delegate: reads the offices as the generic "CEA". */
-const delegate = {
-  user: { id: "delegate", role: { id: "a", name: "Asociado" } },
-  memberId: "m-ceum",
-  memberKind: "asociado",
-  isAdmin: false,
-  permissions: ["document:create", "amendment:create"],
-  can: (key: string) => ["document:create", "amendment:create"].includes(key),
-  impersonation: null,
-} as unknown as Actor;
 
 describe("annotatedBody", () => {
   it("names the offices as the Secretaría reads them, like the clean PDF", async () => {
