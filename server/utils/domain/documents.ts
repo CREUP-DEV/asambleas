@@ -353,17 +353,20 @@ export function presentationItemAfterMove(
 }
 
 /**
- * A presenter (not a manager) never changes a document's kind or item into
- * one it can no longer present: refused (409) when the change leaves it
- * closed (presentationClosed with the new kind where it hangs `after` the
- * change) and it was not closed before (with its kind where it hangs
- * `before`). So nobody gets around a deadline by creating a kind still open
- * and switching it afterwards, and a document the Secretaría expected under
- * an item reserved to it does not lose that exemption by a move past its
- * kind's deadline, which would leave a draft the member cannot send. A draft
- * already closed, or still open after the change, may change freely, and
- * the same exemptions hold: an internal deadline or a correction requested
- * keep it open wherever it goes.
+ * A presenter (not a manager) never changes a draft's kind or item into one
+ * it can no longer present: refused (409) when the change leaves it closed
+ * (presentationClosed with the new kind where it hangs `after` the change)
+ * and it was not closed before (with its kind where it hangs `before`).
+ * This guards the member, not the deadline: submitDocument already checks
+ * the deadline of the kind the draft has when it is sent, and a presenter
+ * only edits drafts, so a switch could never get a document past it. Without
+ * this check the switch would be stored and the member would only learn on
+ * sending that the draft is stranded. The same holds for a document the
+ * Secretaría expected under an item reserved to it: a move out of that item
+ * past its kind's deadline would lose the exemption. A draft already closed,
+ * or still open after the change, may change freely, and the same
+ * exemptions hold: an internal deadline or a correction requested keep it
+ * open wherever it goes.
  */
 export function requirePresentationChangeOpen(
   document: Pick<DocumentRow, "kind" | "dueAt" | "correctionRequestedAt">,
@@ -1684,8 +1687,9 @@ export const FILE_FORMAT_REFUSED_MESSAGE =
  * Updates the metadata of a document. Presenters may change title, summary,
  * kind, format (text or PDF, until it is published; a PDF only for the types
  * that take no amendments), agenda item and
- * presenters (planPresenters) of their draft, a kind or an item only while
- * they could still present it after the change (requirePresentationChangeOpen);
+ * presenters (planPresenters) of their draft, a kind or an item only when
+ * the change does not strand a draft they could still send
+ * (requirePresentationChangeOpen);
  * everything else needs document:manage. The slug never changes, since it is
  * part of the URLs already shared.
  */
