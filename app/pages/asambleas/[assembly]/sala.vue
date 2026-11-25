@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem, TabsItem } from "@nuxt/ui";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { viewsSeating } from "~~/shared/utils/permissionRules";
 import type {
   AssemblyDto,
   SeatingGroupDto,
@@ -93,11 +93,7 @@ useHead({
 const hasRoom = computed(() =>
   assembly.value ? hasSeatingRoom(assembly.value.type) : true,
 );
-const allowed = computed(
-  () =>
-    hasRoom.value &&
-    (can(PERMISSION_KEYS.SEATING_VIEW) || can(PERMISSION_KEYS.SEATING_EDIT)),
-);
+const allowed = computed(() => hasRoom.value && viewsSeating(can));
 
 const seating = useSeatingPlan({ allowed });
 await seating.ready;

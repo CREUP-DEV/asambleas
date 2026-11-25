@@ -72,13 +72,13 @@ export const ASSEMBLY_SECTION_DEFS: readonly AssemblySectionDef[] = [
 export interface AssemblySectionAccess {
   /** `document:manage`: validates documents and follows their tracking. */
   validateDocuments: boolean;
-  /** `amendment:review`: validates amendments. */
+  /** reviewsAmendments: amendment:review, or amendment:manage, which holds it. */
   reviewAmendments: boolean;
   /** `AssemblyDto.can.manage`. */
   manage: boolean;
   /** `AssemblyDto.can.moderate`. */
   moderate: boolean;
-  /** `seating:view` or `seating:edit`: reads the room (Sala). */
+  /** viewsSeating: seating:view, or seating:edit, which holds it (Sala). */
   seating: boolean;
   /** The assembly is held online (an AGET): it has no room. */
   online: boolean;

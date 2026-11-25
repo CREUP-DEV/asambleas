@@ -323,6 +323,7 @@ defineExpose({
           <CommonMemberBadge
             :member="authors.main"
             :show-name="!authors.marked"
+            wrap
           />
           <span v-if="authors.marked" class="text-dimmed text-xs">
             {{ t("proponentReview.mainAuthor") }}

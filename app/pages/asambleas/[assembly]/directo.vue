@@ -19,7 +19,7 @@ import {
 } from "~/composables/amendment/documentHandover";
 import { partialAmendmentsRefetch } from "~/composables/amendment/partialAmendments";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { notesSpeakers } from "~~/shared/utils/permissionRules";
 import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "~/composables/api/useApi";
 import { agendaWithTitles } from "~/utils/agendaTitles";
@@ -49,6 +49,8 @@ import {
   liveAmendmentRows,
   liveBlocEntries,
   liveSpeakers,
+  liveVoteAmendments,
+  liveVoteGroupSubject,
   liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
@@ -721,9 +723,25 @@ const voteSubjectKind = computed(() =>
       })
     : null,
 );
-const voteSubject = computed(() =>
-  voteSubjectKind.value ? liveVoteSubjectText(voteSubjectKind.value, t) : "",
+/**
+ * The amendments the reader reads, as the list has them: the codes of a
+ * bloc or an alternative open the preview window only on those.
+ */
+const listedAmendments = computed(() =>
+  amendmentRows.value.map((row) => row.amendment),
 );
+const voteSubject = computed(() => {
+  if (!vote.value) return "";
+  // A bloc or alternatives vote names its amendments, not the decision.
+  const group = liveVoteGroupSubject(
+    liveVoteAmendments(vote.value, listedAmendments.value),
+    t,
+  );
+  if (group) return group;
+  return voteSubjectKind.value
+    ? liveVoteSubjectText(voteSubjectKind.value, t)
+    : "";
+});
 /** What an agenda item's vote decided, unless the heading already says it. */
 const voteQuestion = computed(() =>
   vote.value && voteSubjectKind.value
@@ -734,6 +752,18 @@ const voteQuestion = computed(() =>
       )
     : null,
 );
+
+/**
+ * From xl the page has two columns: the debate, the notes, the result and
+ * the amendments on the left; who has the floor and the attendance in a
+ * column of their own on the right, which stays in view. Below xl they
+ * keep their place among the rest, in one column, so the order the eye
+ * follows is the order of the page for the keyboard and screen readers
+ * too. Only once mounted: the server renders one column.
+ */
+const mounted = useMounted();
+const xlScreen = useMediaQuery("(min-width: 1280px)");
+const twoColumns = computed(() => mounted.value && xlScreen.value);
 
 const documentPath = computed(() =>
   document.value
@@ -796,11 +826,7 @@ watch(documentId, () => {
 // Who spoke on what is in debate, for whoever notes it --------------------------
 
 const { can } = useMe();
-const canNoteSpeakers = computed(
-  () =>
-    can(PERMISSION_KEYS.SESSION_MODERATE) ||
-    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
-);
+const canNoteSpeakers = computed(() => notesSpeakers(can));
 const spokenTurns = ref<SpeakingTurnDto[]>([]);
 /**
  * Counts the reads and the editor's own saves: a read that one of them
@@ -967,7 +993,10 @@ watch(
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-8">
+  <div
+    class="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-8"
+    :class="inSession ? 'xl:max-w-6xl' : ''"
+  >
     <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
       {{ announcement }}
     </p>
@@ -1143,142 +1172,171 @@ watch(
         </template>
       </UAlert>
 
-      <!--
-        The live state never loaded: say so instead of "nothing in debate".
-        It is retried on its own (useRetryFailed); the button only hurries it.
-      -->
-      <CommonEmptyState
-        v-if="liveLoadFailed"
-        icon="i-lucide-wifi-off"
-        :title="t('projection.loadFailed')"
-        :description="t('liveView.loadFailed')"
-        variant="outline"
-        size="sm"
+      <!-- From xl, two columns (twoColumns); below, one. -->
+      <div
+        class="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
       >
-        <template #action>
-          <UButton
-            icon="i-lucide-refresh-ccw"
-            color="neutral"
+        <div class="flex min-w-0 flex-col gap-6">
+          <!--
+            The live state never loaded: say so instead of "nothing in
+            debate". It is retried on its own (useRetryFailed); the button
+            only hurries it.
+          -->
+          <CommonEmptyState
+            v-if="liveLoadFailed"
+            icon="i-lucide-wifi-off"
+            :title="t('projection.loadFailed')"
+            :description="t('liveView.loadFailed')"
             variant="outline"
-            size="lg"
-            :loading="retrying"
-            :label="t('common.staleData.retry')"
-            @click="retryNow"
-          />
-        </template>
-      </CommonEmptyState>
-
-      <!-- Nothing in debate yet -->
-      <CommonEmptyState
-        v-else-if="nothingInDebate"
-        icon="i-lucide-hourglass"
-        :title="t('liveView.idle.title')"
-        :description="t('liveView.idle.description')"
-        variant="outline"
-        size="sm"
-      />
-
-      <LiveViewDebate
-        v-else
-        :row="currentRow"
-        :document="document"
-        :amendment="debated?.amendment ?? null"
-        :state="debated?.state ?? null"
-        :note="debatedNote"
-        :amendment-hidden="amendmentHidden"
-        :document-path="documentPath"
-        :show-position="showPosition"
-        :item-loading="itemLoading"
-        :loading="debateLoading"
-        @view-document="openDocumentWindow"
-      />
-      <LiveViewDocumentWindow
-        v-model:open="documentWindowOpen"
-        :document="document"
-        :loading="documentLoading"
-        :scroll="mesaScroll"
-        :document-path="documentPath"
-        :amendments="amendments"
-      />
-
-      <section
-        v-if="canNoteSpeakers && !nothingInDebate && !amendmentHidden && live"
-        aria-labelledby="live-notes-title"
-        class="flex flex-col gap-3"
-      >
-        <div>
-          <h2
-            id="live-notes-title"
-            class="text-highlighted text-lg font-semibold"
+            size="sm"
           >
-            {{ t("speakerNotes.title") }}
-          </h2>
-          <p class="text-muted text-sm">
-            {{
-              debated
-                ? t("speakerNotes.onAmendment", {
-                    code:
-                      liveAmendmentCode(debated.amendment) ||
-                      t(
-                        `session.enums.amendmentKind.${debated.amendment.kind}`,
-                      ),
-                  })
-                : t("speakerNotes.onItem")
-            }}
-          </p>
-        </div>
-        <div class="ring-default rounded-lg p-4 ring">
-          <SpeakerNotesEditor
-            :agenda-item-id="live.agendaItemId"
-            :amendment-id="debated?.amendment.id ?? null"
-            :turns="spokenTurns"
-            :writable="true"
-            @updated="onSpokenTurnsUpdated"
+            <template #action>
+              <UButton
+                icon="i-lucide-refresh-ccw"
+                color="neutral"
+                variant="outline"
+                size="lg"
+                :loading="retrying"
+                :label="t('common.staleData.retry')"
+                @click="retryNow"
+              />
+            </template>
+          </CommonEmptyState>
+
+          <!-- Nothing in debate yet -->
+          <CommonEmptyState
+            v-else-if="nothingInDebate"
+            icon="i-lucide-hourglass"
+            :title="t('liveView.idle.title')"
+            :description="t('liveView.idle.description')"
+            variant="outline"
+            size="sm"
+          />
+
+          <LiveViewDebate
+            v-else
+            :row="currentRow"
+            :document="document"
+            :amendment="debated?.amendment ?? null"
+            :state="debated?.state ?? null"
+            :note="debatedNote"
+            :amendment-hidden="amendmentHidden"
+            :document-path="documentPath"
+            :show-position="showPosition"
+            :item-loading="itemLoading"
+            :loading="debateLoading"
+            @view-document="openDocumentWindow"
+          />
+          <LiveViewDocumentWindow
+            v-model:open="documentWindowOpen"
+            :document="document"
+            :loading="documentLoading"
+            :scroll="mesaScroll"
+            :document-path="documentPath"
+            :amendments="amendments"
+          />
+
+          <section
+            v-if="
+              canNoteSpeakers && !nothingInDebate && !amendmentHidden && live
+            "
+            aria-labelledby="live-notes-title"
+            class="flex flex-col gap-3"
+          >
+            <div>
+              <h2
+                id="live-notes-title"
+                class="text-highlighted text-lg font-semibold"
+              >
+                {{ t("speakerNotes.title") }}
+              </h2>
+              <p class="text-muted text-sm">
+                {{
+                  debated
+                    ? t("speakerNotes.onAmendment", {
+                        code:
+                          liveAmendmentCode(debated.amendment) ||
+                          t(
+                            `session.enums.amendmentKind.${debated.amendment.kind}`,
+                          ),
+                      })
+                    : t("speakerNotes.onItem")
+                }}
+              </p>
+            </div>
+            <div class="ring-default rounded-lg p-4 ring">
+              <SpeakerNotesEditor
+                :agenda-item-id="live.agendaItemId"
+                :amendment-id="debated?.amendment.id ?? null"
+                :turns="spokenTurns"
+                :writable="true"
+                @updated="onSpokenTurnsUpdated"
+              />
+            </div>
+          </section>
+
+          <LiveViewSpeakers
+            v-if="speakers && !twoColumns"
+            :speakers="speakers"
+          />
+
+          <section
+            v-if="vote"
+            aria-labelledby="live-result-title"
+            class="flex flex-col gap-3"
+          >
+            <h2
+              id="live-result-title"
+              class="text-highlighted text-lg font-semibold"
+            >
+              {{ t("liveView.result.title") }}
+            </h2>
+            <LiveViewVoteResult
+              :vote="vote"
+              :subject="voteSubject"
+              :question="voteQuestion"
+              :amendments="listedAmendments"
+            />
+          </section>
+
+          <LiveViewAttendance
+            v-if="headcountsDto && !twoColumns"
+            :attendance="attendance"
+          />
+
+          <LiveViewAmendmentList
+            v-if="showAmendments && documentPath && amendmentsReady"
+            :rows="amendmentRows"
+            :consolidated-path="consolidatedPath"
+            @preview="previewAmendmentId = $event"
+          />
+          <USkeleton
+            v-else-if="showAmendments && documentPath"
+            aria-hidden="true"
+            class="h-40 w-full"
+          />
+          <LiveViewAmendmentWindow
+            v-if="showAmendments"
+            v-model:amendment-id="previewAmendmentId"
+            :rows="amendmentRows"
+            :document="document"
+            :show-position="showPosition"
+            :document-path="documentPath"
           />
         </div>
-      </section>
 
-      <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
-
-      <section
-        v-if="vote"
-        aria-labelledby="live-result-title"
-        class="flex flex-col gap-3"
-      >
-        <h2
-          id="live-result-title"
-          class="text-highlighted text-lg font-semibold"
+        <!--
+          The right column, in view while the left one scrolls; it scrolls
+          on its own when its lists, opened, outgrow the screen.
+        -->
+        <div
+          v-if="twoColumns && (speakers || headcountsDto)"
+          class="sticky top-0 -m-1 flex max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] flex-col gap-6 overflow-x-hidden overflow-y-auto p-1"
         >
-          {{ t("liveView.result.title") }}
-        </h2>
-        <LiveViewVoteResult
-          :vote="vote"
-          :subject="voteSubject"
-          :question="voteQuestion"
-        />
-      </section>
-
-      <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />
-
-      <LiveViewAmendmentList
-        v-if="showAmendments && documentPath && amendmentsReady"
-        :rows="amendmentRows"
-        :consolidated-path="consolidatedPath"
-        @preview="previewAmendmentId = $event"
-      />
-      <USkeleton
-        v-else-if="showAmendments && documentPath"
-        aria-hidden="true"
-        class="h-40 w-full"
-      />
-      <LiveViewAmendmentWindow
-        v-if="showAmendments"
-        v-model:amendment-id="previewAmendmentId"
-        :rows="amendmentRows"
-        :document="document"
-        :show-position="showPosition"
-        :document-path="documentPath"
-      />
+          <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
+          <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />
+        </div>
+      </div>
     </template>
   </div>
 </template>

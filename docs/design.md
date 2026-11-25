@@ -898,7 +898,15 @@ projection.
 **Live view for attendees.** A phone-friendly page that follows the session:
 the item, document and amendment under debate with its change, the last
 result, who has the floor when visible, and the status of every amendment of
-the current document with the provisional consolidated text. Under the
+the current document with the provisional consolidated text. From xl it has
+two columns: who has the floor and the attendance stay in view on the right
+while the rest scrolls on the left; below xl it is one column, in the same
+order for the eye and the keyboard. A result on a bloc names its
+amendments, and one between alternatives lists each option's. The document
+window takes the whole screen on a phone; it and the amendment window give
+their scrolling box the focus on opening, so the keys move the text, and
+the amendment window pages with ← and →, its arrows kept focusable at the
+first and last amendment. Under the
 amendment in debate it says in one line how the document's main presenter
 answered it ("Respuesta de CEUM: la acepta"), or that the Mesa recorded the
 answer on its behalf, without the comment. It shows this only once
@@ -1483,9 +1491,14 @@ one idea each, with a drawing made of icons.
    assembly.
 3. Its main task: presenting a document or an amendment, validating and
    organising (Secretaría), running the session (Mesa) or reading (Otro, Invitado).
-4. How to go back (the breadcrumb row) and where the help is.
+4. How to go back (the top of the page, with the link to the level above
+   when there is one) and where the help is, in words true at every width.
 5. "Ponlo a tu gusto": language, theme, content font and how changes are
    marked, chosen right there.
+
+"Atrás" and "Siguiente" stay in place from step to step: on phones the dialog
+takes the screen's height and its body scrolls, and from `sm` every step but
+the last keeps the same height. The step dots are 24px targets.
 
 The wording follows what the account can do, not the name of its role
 (`welcomeAudience` in `app/components/shell/-welcome.ts`): whoever manages

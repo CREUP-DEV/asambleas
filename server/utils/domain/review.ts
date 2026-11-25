@@ -36,6 +36,7 @@ import type {
   ReviewQueueDto,
   ReviewValidatedDto,
 } from "~~/shared/types/api";
+import { usesReviewQueue } from "~~/shared/utils/permissionRules";
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 import { canManageDocuments, canReviewAmendments, type Actor } from "./actor";
 import { countPendingFormCorrections } from "./formCorrections";
@@ -103,7 +104,7 @@ const WORK_DOCUMENT_STATUSES: DocumentStatus[] = [
 const OPEN_AMENDMENT_STATUSES = ["draft", "submitted"] as const;
 
 export function canUseReviewQueue(actor: Actor): boolean {
-  return canManageDocuments(actor) || canReviewAmendments(actor);
+  return usesReviewQueue(actor.can);
 }
 
 function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {

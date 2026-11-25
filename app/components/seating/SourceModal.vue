@@ -97,7 +97,15 @@ const items = computed(() =>
           :items="items"
           value-key="value"
           :placeholder="t('seating.source.placeholder')"
-          :search-input="{ placeholder: t('seating.source.search') }"
+          :search-input="labelledSearch(t('seating.source.search'))"
+          :aria-label="
+            selectMenuLabel(
+              t('seating.source.label'),
+              items,
+              choice,
+              t('seating.source.placeholder'),
+            )
+          "
           class="w-full"
         />
       </UFormField>

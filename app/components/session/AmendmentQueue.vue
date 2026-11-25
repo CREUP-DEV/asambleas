@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
   sessionValidationBreakdown,
@@ -7,6 +8,7 @@ import {
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 import { sameBloc } from "~~/shared/utils/liveBloc";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 
 /**
  * The amendments of the document on screen, in text order, as a compact
@@ -36,7 +38,14 @@ import { sameBloc } from "~~/shared/utils/liveBloc";
  *
  * When this console puts a document in debate, the column scrolls to its
  * start once it has loaded, so «Ahora en debate» folds into the bar on top
- * and the document fills the column (session.documentScrolls).
+ * and the document fills the column (session.documentScrolls). Only on a
+ * wide screen: the phone's single column has no such bar, and the jump
+ * would leave the card with the next step thousands of pixels behind
+ * (M-120).
+ *
+ * On a phone the bloc's bar keeps the count and the approval by assent in
+ * view and puts the other actions in «Más» (M-121), so it does not cover a
+ * third of the screen; the range hint shows only with a mouse.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -191,6 +200,56 @@ const blocProjected = computed(() => {
   );
 });
 const liveBusy = computed(() => Boolean(session.busy.value.live));
+const blocClosed = computed(() => !session.inSession.value);
+/** The same actions as the bar's buttons, for «Más» on a phone. */
+const blocMoreItems = computed<DropdownMenuItem[][]>(() => {
+  const selected = blocSelected.value;
+  const actions: DropdownMenuItem[] = [];
+  if (session.inControl.value) {
+    actions.push(
+      blocProjected.value
+        ? {
+            label: t("session.bloc.unproject"),
+            icon: "i-lucide-monitor-off",
+            disabled: liveBusy.value,
+            onSelect: () => void session.unprojectBloc(),
+          }
+        : {
+            label: t("session.bloc.project"),
+            icon: "i-lucide-monitor-up",
+            disabled:
+              liveBusy.value || selected.length === 0 || blocClosed.value,
+            onSelect: () => void session.projectBloc(selected),
+          },
+    );
+  }
+  actions.push(
+    {
+      label: t("session.blocVote.open"),
+      icon: "i-lucide-gavel",
+      disabled: selected.length < 2 || blocClosed.value,
+      onSelect: () => session.openBlocVote(selected),
+    },
+    {
+      label: t("session.alternatives.open"),
+      icon: "i-lucide-scale",
+      disabled:
+        (selected.length < 2 && !session.roomAlternatives.value) ||
+        blocClosed.value,
+      onSelect: () => session.openAlternatives(selected),
+    },
+  );
+  return [
+    actions,
+    [
+      {
+        label: t("common.cancel"),
+        icon: "i-lucide-x",
+        onSelect: () => session.cancelBloc(),
+      },
+    ],
+  ];
+});
 
 const loading = computed(
   () =>
@@ -203,6 +262,8 @@ const failed = computed(
 );
 
 const root = ref<HTMLElement | null>(null);
+/** The jump to the document's start is for the wide console only. */
+const isDesktop = useMediaQuery("(min-width: 1024px)");
 let scrollPending = false;
 /**
  * Until when the start is kept at the top: the document lays out after it
@@ -215,6 +276,10 @@ function placeStart(): void {
   root.value?.scrollIntoView({ block: "start" });
 }
 function scrollToStart(): void {
+  if (!isDesktop.value) {
+    scrollPending = false;
+    return;
+  }
   if (!scrollPending || loading.value) return;
   if (document.value?.id !== session.documentId.value) return;
   scrollPending = false;
@@ -233,7 +298,10 @@ watch(
   () => scrollToStart(),
 );
 useResizeObserver(root, () => placeStart());
-const scroller = computed(() => root.value?.parentElement ?? null);
+// The column that scrolls (the page's, null, does not take the hold).
+const scroller = computed(() =>
+  root.value ? scrollParentOf(root.value) : null,
+);
 function letGo(): void {
   holdUntil = 0;
 }
@@ -411,7 +479,8 @@ useEventListener(scroller, "pointerdown", letGo);
           :disabled="blocSelected.length === 0"
           @click="session.clearBlocSelection()"
         />
-        <span class="text-dimmed text-xs">{{
+        <!-- Shift-click needs a keyboard and a mouse. -->
+        <span class="text-dimmed pointer-fine:inline hidden text-xs">{{
           t("session.bloc.rangeHint")
         }}</span>
       </div>
@@ -529,10 +598,12 @@ useEventListener(scroller, "pointerdown", letGo);
         </li>
       </ol>
 
-      <!-- The bloc being selected, stuck to the bottom of the column. -->
+      <!-- The bloc being selected, stuck to the bottom of the column (on a
+           phone, of the page, above the «En sesión» pill). On a phone, the
+           count and «Asentimiento»; the rest in «Más». -->
       <div
         v-if="blocMode"
-        class="border-primary/40 bg-default sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border-2 p-3 shadow-md"
+        class="border-primary/40 bg-default sticky bottom-0 z-10 flex max-lg:bottom-[var(--shell-session-pill-room,0px)] flex-wrap items-center gap-2 rounded-xl border-2 p-2 shadow-md sm:p-3"
         role="region"
         :aria-label="t('session.bloc.barLabel')"
       >
@@ -559,6 +630,7 @@ useEventListener(scroller, "pointerdown", letGo);
             size="sm"
             color="neutral"
             variant="outline"
+            class="max-sm:hidden"
             icon="i-lucide-monitor-off"
             :label="t('session.bloc.unproject')"
             :loading="liveBusy"
@@ -569,6 +641,7 @@ useEventListener(scroller, "pointerdown", letGo);
             size="sm"
             color="neutral"
             variant="outline"
+            class="max-sm:hidden"
             icon="i-lucide-monitor-up"
             :label="t('session.bloc.project')"
             :loading="liveBusy"
@@ -580,15 +653,19 @@ useEventListener(scroller, "pointerdown", letGo);
           size="sm"
           color="success"
           icon="i-lucide-check-check"
-          :label="t('session.bloc.approve')"
+          :aria-label="t('session.bloc.approve')"
           :disabled="blocSelected.length === 0 || !session.inSession.value"
           @click="session.openAssent(blocSelected)"
-        />
+        >
+          <span class="sm:hidden">{{ t("session.actions.assent") }}</span>
+          <span class="max-sm:hidden">{{ t("session.bloc.approve") }}</span>
+        </UButton>
         <!-- One vote on the whole bloc (user's decision of 2026-11-21). -->
         <UButton
           size="sm"
           color="neutral"
           variant="outline"
+          class="max-sm:hidden"
           icon="i-lucide-gavel"
           :label="t('session.blocVote.open')"
           :disabled="blocSelected.length < 2 || !session.inSession.value"
@@ -600,6 +677,7 @@ useEventListener(scroller, "pointerdown", letGo);
           size="sm"
           color="neutral"
           variant="outline"
+          class="max-sm:hidden"
           icon="i-lucide-scale"
           :label="t('session.alternatives.open')"
           :disabled="
@@ -612,9 +690,20 @@ useEventListener(scroller, "pointerdown", letGo);
           size="sm"
           color="neutral"
           variant="ghost"
+          class="max-sm:hidden"
           :label="t('common.cancel')"
           @click="session.cancelBloc()"
         />
+        <UDropdownMenu :items="blocMoreItems" :content="{ align: 'end' }">
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="outline"
+            class="sm:hidden"
+            icon="i-lucide-ellipsis"
+            :label="t('session.now.more')"
+          />
+        </UDropdownMenu>
       </div>
 
       <!-- Not validated by the Secretaría yet: outside the debate, folded away. -->

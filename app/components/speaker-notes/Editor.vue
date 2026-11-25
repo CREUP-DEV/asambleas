@@ -100,6 +100,13 @@ const memberId = ref<string | undefined>(undefined);
 const speaker = ref("");
 const busy = ref(false);
 
+// A member chosen for one subject is never noted on the next (E-137): the
+// live view moves agendaItemId/amendmentId under the same editor.
+watch([() => props.agendaItemId, () => props.amendmentId], () => {
+  memberId.value = undefined;
+  speaker.value = "";
+});
+
 const canAdd = computed(
   () =>
     props.writable &&
@@ -213,6 +220,14 @@ async function remove(entry: SpokenEntry): Promise<void> {
           :filter-fields="MEMBER_MENU_FILTER_FIELDS"
           :search-input="labelledSearch(t('speakerNotes.searchMember'))"
           :placeholder="t('speakerNotes.memberPlaceholder')"
+          :aria-label="
+            selectMenuLabel(
+              t('speakerNotes.member'),
+              memberItems,
+              memberId,
+              t('speakerNotes.memberPlaceholder'),
+            )
+          "
           class="w-full"
         />
       </UFormField>

@@ -844,6 +844,57 @@ export function liveVoteSubjectText(
   }
 }
 
+/** An amendment a vote named, with the code the viewer reads. */
+export interface LiveVoteCode {
+  id: string;
+  code: string;
+}
+
+/**
+ * The amendments a vote decided together: a bloc's (`bloc`) and each
+ * alternative's (`options`, A, B… in order), each in the vote's order with
+ * its code. Only those the viewer's list has: an id it lacks is left out,
+ * never read as «?». Null where the vote is not of that kind.
+ */
+export function liveVoteAmendments(
+  vote: Pick<VoteDto, "blocAmendmentIds" | "options">,
+  amendments: readonly Pick<AmendmentDto, "id" | "code" | "number">[],
+): { bloc: LiveVoteCode[] | null; options: LiveVoteCode[][] | null } {
+  const codes = (ids: readonly string[]): LiveVoteCode[] =>
+    ids.flatMap((id) => {
+      const code = liveAmendmentCode(
+        amendments.find((amendment) => amendment.id === id),
+      );
+      return code ? [{ id, code }] : [];
+    });
+  return {
+    bloc: vote.blocAmendmentIds ? codes(vote.blocAmendmentIds) : null,
+    options:
+      vote.options && vote.options.length > 0
+        ? vote.options.map((option) => codes(option.amendmentIds))
+        : null,
+  };
+}
+
+/**
+ * The heading of a vote on a bloc or between alternatives, for the line
+ * screen readers hear («Votación en bloque: UM1, UM3»; the alternatives'
+ * codes go under each option): its own `subjectType` names only the
+ * decision. Null for any other vote.
+ */
+export function liveVoteGroupSubject(
+  groups: ReturnType<typeof liveVoteAmendments>,
+  t: LiveTranslate,
+): string | null {
+  if (groups.options) return t("amendment.vote.alternatives.title");
+  if (!groups.bloc) return null;
+  return groups.bloc.length > 0
+    ? t("projection.vote.bloc", {
+        codes: groups.bloc.map((item) => item.code).join(", "),
+      })
+    : t("amendment.vote.bloc");
+}
+
 /** Spaces collapsed and case ignored, to compare two short texts. */
 function sameText(a: string, b: string): boolean {
   const plain = (text: string) =>

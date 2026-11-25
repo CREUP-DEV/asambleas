@@ -28,7 +28,9 @@ import {
   liveTallyCast,
   liveTallyRows,
   liveTransactedCodes,
+  liveVoteAmendments,
   liveVoteCounts,
+  liveVoteGroupSubject,
   liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
@@ -907,6 +909,74 @@ describe("live votes", () => {
       ["blank", 1],
       ["invalid", 2],
     ]);
+  });
+});
+
+describe("the amendments a bloc or alternatives vote decided", () => {
+  const list = [
+    amendment("a1", { code: "UM1" }),
+    amendment("a3", { code: "UM3" }),
+    amendment("a7", { code: null, number: 7 }),
+  ];
+  const t = (key: string, params?: Record<string, unknown>) =>
+    params ? `${key}(${JSON.stringify(params)})` : key;
+
+  it("names a bloc's amendments in the vote's order, leaving out unknown ones", () => {
+    const groups = liveVoteAmendments(
+      vote({ blocAmendmentIds: ["a3", "hidden", "a1", "a7"] }),
+      list,
+    );
+    expect(groups).toEqual({
+      bloc: [
+        { id: "a3", code: "UM3" },
+        { id: "a1", code: "UM1" },
+        { id: "a7", code: "#7" },
+      ],
+      options: null,
+    });
+    expect(liveVoteGroupSubject(groups, t)).toBe(
+      'projection.vote.bloc({"codes":"UM3, UM1, #7"})',
+    );
+  });
+
+  it("says only «en bloque» when the viewer reads none of them", () => {
+    const groups = liveVoteAmendments(
+      vote({ blocAmendmentIds: ["hidden"] }),
+      list,
+    );
+    expect(groups.bloc).toEqual([]);
+    expect(liveVoteGroupSubject(groups, t)).toBe("amendment.vote.bloc");
+  });
+
+  it("names each alternative's amendments", () => {
+    const groups = liveVoteAmendments(
+      vote({
+        options: [
+          { amendmentIds: ["a1", "a3"], count: 12 },
+          { amendmentIds: ["a7", "hidden"], count: 8 },
+        ],
+      }),
+      list,
+    );
+    expect(groups).toEqual({
+      bloc: null,
+      options: [
+        [
+          { id: "a1", code: "UM1" },
+          { id: "a3", code: "UM3" },
+        ],
+        [{ id: "a7", code: "#7" }],
+      ],
+    });
+    expect(liveVoteGroupSubject(groups, t)).toBe(
+      "amendment.vote.alternatives.title",
+    );
+  });
+
+  it("leaves any other vote to its own subject", () => {
+    const groups = liveVoteAmendments(vote({ options: [] }), list);
+    expect(groups).toEqual({ bloc: null, options: null });
+    expect(liveVoteGroupSubject(groups, t)).toBeNull();
   });
 });
 

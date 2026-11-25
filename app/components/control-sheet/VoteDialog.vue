@@ -32,11 +32,26 @@ const props = defineProps<{
    * leaves it out, since approving by assent is its own action.
    */
   withAssent?: boolean;
+  /**
+   * Where the focus goes as the dialog closes, when the button that opened
+   * it is gone (a recorded vote replaces it); null leaves it to the
+   * dialog, which goes back to that button.
+   */
+  focusOnClose?: () => HTMLElement | null;
 }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ submit: [vote: VoteInput] }>();
 
 const { t } = useI18n();
+
+const content = {
+  onCloseAutoFocus: (event: Event) => {
+    const target = props.focusOnClose?.();
+    if (!target?.isConnected) return;
+    event.preventDefault();
+    target.focus();
+  },
+};
 
 const vote = ref<VoteInput>(sessionEmptyVote(props.majority));
 watch(open, (value) => {
@@ -68,6 +83,7 @@ const ready = computed(() =>
     v-model:open="open"
     :title="title"
     :description="description"
+    :content="content"
     :ui="{ content: 'sm:max-w-xl' }"
   >
     <template #body>

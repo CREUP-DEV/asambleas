@@ -44,7 +44,7 @@ const { t, te } = useI18n();
 const toast = useToast();
 const api = useApi();
 const localePath = useLocalePath();
-const { me, isAdmin, can, refresh: refreshMe } = useMe();
+const { me, isAdmin, can, granted, refresh: refreshMe } = useMe();
 
 /** The users page has its own permission: link to it only if it opens. */
 const canManageUsers = computed(() => can(PERMISSION_KEYS.USER_MANAGE_ROLES));
@@ -226,12 +226,13 @@ const ownRoleLoses = computed(() => {
 });
 
 /**
- * A permission the user does not hold: they can neither give it to a role
- * nor take it away (the server refuses it, adminGrantViolation
- * `not_held`). Its whole row is locked.
+ * A permission the user does not hold as granted: they can neither give it
+ * to a role nor take it away (the server refuses it, adminGrantViolation
+ * `not_held`, which reads the keys as granted, without the implied ones).
+ * Its whole row is locked.
  */
 function notHeld(key: PermissionKey): boolean {
-  return !isAdmin.value && !can(key);
+  return !isAdmin.value && !granted(key);
 }
 
 const someNotHeld = computed(() => ALL_PERMISSION_KEYS.some(notHeld));

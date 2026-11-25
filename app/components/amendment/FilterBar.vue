@@ -415,11 +415,14 @@ function clearAll(): void {
       </UPopover>
     </div>
 
-    <div v-if="filters.blockId && !showingMine" class="flex items-center gap-2">
+    <!-- A long passage name wraps beside its button, never cut (M-057). -->
+    <div v-if="filters.blockId && !showingMine" class="flex items-start gap-2">
       <UBadge
         color="primary"
         variant="subtle"
         icon="i-lucide-pilcrow"
+        class="min-w-0"
+        :ui="{ label: 'text-clip whitespace-normal break-words text-start' }"
         :label="
           blockLabel
             ? t('amendment.filters.blockNamed', { block: blockLabel })
@@ -430,7 +433,8 @@ function clearAll(): void {
         icon="i-lucide-x"
         color="neutral"
         variant="ghost"
-        size="xs"
+        size="md"
+        class="shrink-0"
         :aria-label="t('amendment.filters.removeBlock')"
         @click="patch({ blockId: null })"
       />

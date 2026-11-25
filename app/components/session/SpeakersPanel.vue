@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
+import { createReusableTemplate } from "@vueuse/core";
 import type { MemberDto, SpeakingTurnDto } from "~~/shared/types/api";
 import { SPEAKER_NAME_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import {
@@ -25,10 +26,11 @@ import {
  * the Mesa marks the turn as limited: the assembly's default, changed per
  * turn; its clock counts down and then the time over),
  * ends it and keeps the queue in order. Every Mesa device sees the same
- * list, live. Who has the floor and the one next step lead; a switch at the
- * bottom (a setting that rarely changes) decides whether the attendees see
- * who has the floor and who is next, in the live view and on the
- * projection.
+ * list, live. Who has the floor and the one next step lead; the settings
+ * (the default limit, and whether the attendees see who has the floor and
+ * who is next, in the live view and on the projection) wait behind one
+ * button by the waiting list's heading, or alone while the turns load or
+ * fail to load, since neither depends on them (E-078).
  *
  * The waiting list stays clean: each row has one "Más" menu, and reordering
  * happens in an explicit mode with up and down buttons that keep the
@@ -80,6 +82,9 @@ function setVisible(value: boolean): void {
   if (visibleBusy.value || value === visible.value) return;
   void session.setSpeakersVisible(value);
 }
+
+/** The settings popover, by the waiting list or alone without the turns. */
+const [DefineSettings, ReuseSettings] = createReusableTemplate();
 
 // Time limits ------------------------------------------------------------------
 
@@ -398,6 +403,50 @@ function duration(turn: SpeakingTurnDto): string | null {
 
 <template>
   <div class="space-y-4">
+    <DefineSettings>
+      <!-- Who sees the turns and the default limit: settings, behind one
+           button, so the turns keep the column (E-078). Closing it saves a
+           time typed and not committed: the fields go with the popover,
+           before their own commit could run. -->
+      <UPopover
+        :content="{ align: 'end' }"
+        @update:open="(open) => open || saveDefaultLimit(defaultSeconds)"
+      >
+        <UTooltip :text="t('session.speakers.settings')">
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-settings-2"
+            :aria-label="t('session.speakers.settings')"
+          />
+        </UTooltip>
+        <template #content>
+          <div class="w-80 max-w-[calc(100vw-2rem)] space-y-3 p-3">
+            <SessionDurationFields
+              v-model="defaultSeconds"
+              :legend="t('session.speakers.limitDefault')"
+              :description="t('session.speakers.limitDefaultHint')"
+              :disabled="limitBusy"
+              @commit="saveDefaultLimit"
+            />
+            <USwitch
+              :model-value="visible"
+              :loading="visibleBusy"
+              :disabled="visibleBusy || (closed && !visible)"
+              :label="t('session.speakers.visible')"
+              :description="
+                visible
+                  ? t('session.speakers.visibleOn')
+                  : t('session.speakers.visibleOff')
+              "
+              @update:model-value="setVisible"
+            />
+          </div>
+        </template>
+      </UPopover>
+    </DefineSettings>
+
     <p class="sr-only" aria-live="polite" aria-atomic="true">
       {{ speakers.loading.value ? "" : announcement }}
     </p>
@@ -425,6 +474,12 @@ function duration(turn: SpeakingTurnDto): string | null {
         },
       ]"
     />
+    <div
+      v-if="speakers.loading.value || speakers.unavailable.value"
+      class="flex justify-end"
+    >
+      <ReuseSettings />
+    </div>
 
     <template v-else>
       <p
@@ -569,7 +624,7 @@ function duration(turn: SpeakingTurnDto): string | null {
         <div class="flex items-center gap-2">
           <h3
             id="session-speakers-waiting"
-            class="text-highlighted text-sm font-semibold"
+            class="text-highlighted me-auto text-sm font-semibold"
           >
             {{
               t(
@@ -581,7 +636,6 @@ function duration(turn: SpeakingTurnDto): string | null {
           </h3>
           <UButton
             v-if="waiting.length >= 2"
-            class="ms-auto"
             size="xs"
             color="neutral"
             variant="ghost"
@@ -594,6 +648,7 @@ function duration(turn: SpeakingTurnDto): string | null {
             :aria-pressed="reordering"
             @click="reordering = !reordering"
           />
+          <ReuseSettings />
         </div>
         <p v-if="waiting.length === 0" class="text-muted text-sm">
           {{ t("session.speakers.waitingEmpty") }}
@@ -764,29 +819,6 @@ function duration(turn: SpeakingTurnDto): string | null {
         </ul>
       </section>
     </template>
-
-    <!-- Who sees the turns and the default limit: settings, so they come last. -->
-    <div class="border-default space-y-3 border-t pt-3">
-      <SessionDurationFields
-        v-model="defaultSeconds"
-        :legend="t('session.speakers.limitDefault')"
-        :description="t('session.speakers.limitDefaultHint')"
-        :disabled="limitBusy"
-        @commit="saveDefaultLimit"
-      />
-      <USwitch
-        :model-value="visible"
-        :loading="visibleBusy"
-        :disabled="visibleBusy || (closed && !visible)"
-        :label="t('session.speakers.visible')"
-        :description="
-          visible
-            ? t('session.speakers.visibleOn')
-            : t('session.speakers.visibleOff')
-        "
-        @update:model-value="setVisible"
-      />
-    </div>
 
     <UModal
       v-model:open="renameOpen"

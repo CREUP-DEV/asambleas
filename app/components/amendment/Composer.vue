@@ -807,6 +807,28 @@ function discardAndClose(): void {
 // Leaving the page, another document, "atrás", reloading: asked first.
 useLeaveGuard(hasUnsavedChanges, () => t("amendment.composer.leave.confirm"));
 
+// The questions' own scroll (wide screens) ---------------------------------------
+
+const questions = useTemplateRef<HTMLElement>("questions");
+/** More of the questions lies below their box: the fade at its foot shows. */
+const questionsBelow = ref(false);
+function measureQuestions(): void {
+  const box = questions.value;
+  questionsBelow.value =
+    !!box && box.scrollHeight - box.scrollTop - box.clientHeight > 1;
+}
+// The box and each question: a field that opens or grows changes the height.
+useResizeObserver(
+  () =>
+    questions.value
+      ? [
+          questions.value,
+          ...(questions.value.children as Iterable<HTMLElement>),
+        ]
+      : [],
+  measureQuestions,
+);
+
 // Where the reader was -----------------------------------------------------------
 
 const root = useTemplateRef<HTMLElement>("root");
@@ -1070,7 +1092,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
          narrower one all of it in a column, and that last block a bar at
          the foot of the screen while the composer is on it. -->
     <div
-      class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-y-0"
+      class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-y-0 xl:grid-cols-[minmax(0,1fr)_22rem]"
     >
       <!-- Writing: kept mounted while reviewing, so the editor keeps its
            cursor and its undo history. -->
@@ -1299,12 +1321,14 @@ const questionClass = "text-highlighted text-sm font-semibold";
 
       <!-- The three questions, always in view -->
       <aside
-        class="border-default flex min-h-0 min-w-0 flex-col rounded-md border lg:col-start-2 lg:row-start-1 lg:h-full"
+        class="border-default relative flex min-h-0 min-w-0 flex-col rounded-md border lg:col-start-2 lg:row-start-1 lg:h-full"
         :class="{ 'lg:rounded-b-none lg:border-b-0': stage === 'edit' }"
         :aria-label="t('amendment.composer.panelLabel')"
       >
         <div
+          ref="questions"
           class="flex min-h-0 flex-1 flex-col gap-5 p-3 sm:p-4 lg:overflow-y-auto"
+          @scroll.passive="measureQuestions"
         >
           <!-- 1. Content or form -->
           <div class="flex flex-col gap-1.5">
@@ -1506,19 +1530,29 @@ const questionClass = "text-highlighted text-sm font-semibold";
             />
           </UFormField>
         </div>
+        <!-- On a wide screen the questions scroll on their own: a fade at
+             their foot says «¿Por qué?» or more is still below. -->
+        <div
+          v-show="questionsBelow"
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[inherit] bg-linear-to-t from-(--ui-bg) to-transparent max-lg:hidden"
+        />
       </aside>
 
       <!-- 4. How much changes, and on to the review: under the questions
              on a wide screen; below it, a bar kept at the foot of the
              screen from the text down to here, so the way on is always in
-             reach. The same block and button, never a second one. -->
+             reach. The same block and button, never a second one. The count
+             and the button share one row (the count wraps rather than push
+             the button down); the note about others' amendments goes under
+             them. -->
       <div
         v-if="stage === 'edit'"
-        class="border-default bg-default -mx-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t p-3 max-lg:sticky max-lg:bottom-0 max-lg:z-20 sm:-mx-4 sm:p-4 lg:col-start-2 lg:row-start-2 lg:mx-0 lg:flex-col lg:flex-nowrap lg:items-stretch lg:rounded-b-md lg:border"
+        class="border-default bg-default -mx-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t p-3 max-lg:sticky max-lg:bottom-0 max-lg:z-20 sm:-mx-4 sm:p-4 lg:col-start-2 lg:row-start-2 lg:mx-0 lg:rounded-b-md lg:border"
       >
         <p
           v-if="mode === 'document'"
-          class="text-default flex items-center gap-1.5 text-sm font-medium"
+          class="text-default flex min-w-0 flex-1 basis-24 items-center gap-1.5 text-sm font-medium"
           aria-live="polite"
         >
           <UIcon
@@ -1534,6 +1568,13 @@ const questionClass = "text-highlighted text-sm font-semibold";
             )
           }}
         </p>
+        <UButton
+          icon="i-lucide-list-checks"
+          class="ms-auto shrink-0"
+          :disabled="cannotPresent"
+          :label="t('amendment.composer.review.action')"
+          @click="openReview"
+        />
         <!-- Others already amend these paragraphs: read them first. -->
         <UPopover
           v-if="sameParagraphs.length > 0"
@@ -1545,7 +1586,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
             size="sm"
             icon="i-lucide-layers"
             trailing-icon="i-lucide-chevron-up"
-            class="justify-start p-0 text-start"
+            class="basis-full justify-start p-0 text-start"
             :label="
               t(
                 'amendment.composer.sameParagraphs.notice',
@@ -1586,13 +1627,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
             </div>
           </template>
         </UPopover>
-        <UButton
-          icon="i-lucide-list-checks"
-          class="max-lg:ms-auto lg:w-full lg:justify-center"
-          :disabled="cannotPresent"
-          :label="t('amendment.composer.review.action')"
-          @click="openReview"
-        />
       </div>
     </div>
 

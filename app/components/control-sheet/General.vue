@@ -232,9 +232,11 @@ const itemRows = computed(() =>
 
 <template>
   <div>
-    <!-- Large screens: the table, scrolling sideways inside its own box. -->
+    <!-- Large screens: the table, scrolling sideways inside its own box,
+         which is positioned so it holds (and clips) the sr-only texts of
+         its cells instead of letting them widen the page (E-087). -->
     <div
-      class="border-default hidden overflow-x-auto rounded-lg border lg:block"
+      class="border-default relative hidden overflow-x-auto rounded-lg border lg:block"
     >
       <table
         :class="[
@@ -364,6 +366,7 @@ const itemRows = computed(() =>
                   size="xs"
                   icon="i-lucide-file-pen-line"
                   class="p-0"
+                  :data-sheet-amendments="ownDocument(row)!.id"
                   :label="
                     t(
                       'controlSheet.amendmentCount',
@@ -430,6 +433,7 @@ const itemRows = computed(() =>
                       size="xs"
                       icon="i-lucide-file-pen-line"
                       class="p-0"
+                      :data-sheet-amendments="document.id"
                       :label="
                         t(
                           'controlSheet.amendmentCount',
@@ -569,20 +573,6 @@ const itemRows = computed(() =>
                 >{{ row.title }}</ULink
               >
               <template v-else>{{ row.title }}</template>
-              <UTooltip
-                v-if="ownDocument(row)"
-                :text="t('controlSheet.preview.document')"
-              >
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  icon="i-lucide-scan-eye"
-                  class="ms-1 align-middle"
-                  :aria-label="previewLabel(ownDocument(row)!)"
-                  @click="emit('preview', ownDocument(row)!)"
-                />
-              </UTooltip>
               <UBadge
                 v-if="row.live"
                 color="primary"
@@ -592,110 +582,127 @@ const itemRows = computed(() =>
                 :label="t('controlSheet.live')"
               />
             </p>
-            <UButton
-              v-if="ownDocument(row) && amendmentsOf(ownDocument(row)!)"
-              color="primary"
-              variant="link"
-              size="xs"
-              icon="i-lucide-file-pen-line"
-              class="p-0"
-              :label="
-                t(
-                  'controlSheet.amendmentCount',
-                  { count: amendmentsOf(ownDocument(row)!) },
-                  amendmentsOf(ownDocument(row)!),
-                )
-              "
-              :aria-label="
-                t(
-                  'controlSheet.openAmendments',
-                  {
-                    count: amendmentsOf(ownDocument(row)!),
-                    title: ownDocument(row)!.title,
-                  },
-                  amendmentsOf(ownDocument(row)!),
-                )
-              "
-              @click="emit('amendments', ownDocument(row)!)"
-            />
-            <UBadge
-              v-if="awaitingOf(ownDocument(row))"
-              color="warning"
-              variant="subtle"
-              size="md"
-              class="ms-2 align-middle"
-              :label="
-                t(
-                  'controlSheet.answer.awaiting',
-                  { count: awaitingOf(ownDocument(row)) },
-                  awaitingOf(ownDocument(row)),
-                )
-              "
-            />
-            <ul v-if="listedDocuments(row).length > 0" class="mt-1 space-y-0.5">
-              <li
-                v-for="document in listedDocuments(row)"
-                :key="document.id"
-                class="flex flex-wrap items-baseline gap-x-2"
-              >
+            <!-- What acts on a document goes on a row of its own under its
+                 title, each large enough for a finger (M-127). -->
+            <div
+              v-if="ownDocument(row)"
+              class="mt-1 flex flex-wrap items-center gap-2"
+            >
+              <UTooltip :text="t('controlSheet.preview.document')">
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-scan-eye"
+                  :aria-label="previewLabel(ownDocument(row)!)"
+                  @click="emit('preview', ownDocument(row)!)"
+                />
+              </UTooltip>
+              <UButton
+                v-if="amendmentsOf(ownDocument(row)!)"
+                color="primary"
+                variant="link"
+                size="xs"
+                icon="i-lucide-file-pen-line"
+                class="min-h-8 px-1"
+                :data-sheet-amendments="ownDocument(row)!.id"
+                :label="
+                  t(
+                    'controlSheet.amendmentCount',
+                    { count: amendmentsOf(ownDocument(row)!) },
+                    amendmentsOf(ownDocument(row)!),
+                  )
+                "
+                :aria-label="
+                  t(
+                    'controlSheet.openAmendments',
+                    {
+                      count: amendmentsOf(ownDocument(row)!),
+                      title: ownDocument(row)!.title,
+                    },
+                    amendmentsOf(ownDocument(row)!),
+                  )
+                "
+                @click="emit('amendments', ownDocument(row)!)"
+              />
+              <UBadge
+                v-if="awaitingOf(ownDocument(row))"
+                color="warning"
+                variant="subtle"
+                size="md"
+                :label="
+                  t(
+                    'controlSheet.answer.awaiting',
+                    { count: awaitingOf(ownDocument(row)) },
+                    awaitingOf(ownDocument(row)),
+                  )
+                "
+              />
+            </div>
+            <ul v-if="listedDocuments(row).length > 0" class="mt-1 space-y-1">
+              <li v-for="document in listedDocuments(row)" :key="document.id">
                 <ULink
                   :to="documentPath(document)"
                   class="text-muted hover:text-default text-xs underline-offset-2 hover:underline"
                 >
                   {{ document.title }}
                 </ULink>
-                <UTooltip :text="t('controlSheet.preview.document')">
+                <div class="flex flex-wrap items-center gap-2">
+                  <UTooltip :text="t('controlSheet.preview.document')">
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      icon="i-lucide-scan-eye"
+                      :aria-label="previewLabel(document)"
+                      @click="emit('preview', document)"
+                    />
+                  </UTooltip>
                   <UButton
-                    color="neutral"
-                    variant="ghost"
+                    v-if="amendmentsOf(document)"
+                    color="primary"
+                    variant="link"
                     size="xs"
-                    icon="i-lucide-scan-eye"
-                    class="-my-1 self-center"
-                    :aria-label="previewLabel(document)"
-                    @click="emit('preview', document)"
+                    icon="i-lucide-file-pen-line"
+                    class="min-h-8 px-1"
+                    :data-sheet-amendments="document.id"
+                    :label="
+                      t(
+                        'controlSheet.amendmentCount',
+                        { count: amendmentsOf(document) },
+                        amendmentsOf(document),
+                      )
+                    "
+                    :aria-label="
+                      t(
+                        'controlSheet.openAmendments',
+                        {
+                          count: amendmentsOf(document),
+                          title: document.title,
+                        },
+                        amendmentsOf(document),
+                      )
+                    "
+                    @click="emit('amendments', document)"
                   />
-                </UTooltip>
-                <UButton
-                  v-if="amendmentsOf(document)"
-                  color="primary"
-                  variant="link"
-                  size="xs"
-                  icon="i-lucide-file-pen-line"
-                  class="p-0"
-                  :label="
-                    t(
-                      'controlSheet.amendmentCount',
-                      { count: amendmentsOf(document) },
-                      amendmentsOf(document),
-                    )
-                  "
-                  :aria-label="
-                    t(
-                      'controlSheet.openAmendments',
-                      { count: amendmentsOf(document), title: document.title },
-                      amendmentsOf(document),
-                    )
-                  "
-                  @click="emit('amendments', document)"
-                />
-                <UBadge
-                  v-if="awaitingOf(document)"
-                  color="warning"
-                  variant="subtle"
-                  size="md"
-                  class="self-center"
-                  :label="
-                    t(
-                      'controlSheet.answer.awaiting',
-                      { count: awaitingOf(document) },
-                      awaitingOf(document),
-                    )
-                  "
-                />
+                  <UBadge
+                    v-if="awaitingOf(document)"
+                    color="warning"
+                    variant="subtle"
+                    size="md"
+                    :label="
+                      t(
+                        'controlSheet.answer.awaiting',
+                        { count: awaitingOf(document) },
+                        awaitingOf(document),
+                      )
+                    "
+                  />
+                </div>
               </li>
             </ul>
           </div>
-          <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <dl class="grid grid-cols-2 gap-2">
             <div v-if="row.documents.length > 0">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.proponent") }}
@@ -720,13 +727,15 @@ const itemRows = computed(() =>
                 />
               </dd>
             </div>
-            <div>
+            <!-- The whole width: a result («Pospuesto a otra asamblea»)
+                 does not fit half a phone's card. -->
+            <div class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.result") }}
               </dt>
               <dd><ControlSheetResultBadge :result="row.outcome.result" /></dd>
             </div>
-            <div class="sm:col-span-2">
+            <div class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.votes") }}
               </dt>
@@ -748,16 +757,13 @@ const itemRows = computed(() =>
                 >
               </dd>
             </div>
-            <div v-if="internal" class="sm:col-span-2">
+            <div v-if="internal && row.speakers.length > 0" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.speakers") }}
               </dt>
               <dd><ControlSheetSpeakers :speakers="row.speakers" /></dd>
             </div>
-            <div
-              v-if="internal && row.sheet?.observations"
-              class="sm:col-span-2"
-            >
+            <div v-if="internal && row.sheet?.observations" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.observations") }}
               </dt>
@@ -765,10 +771,7 @@ const itemRows = computed(() =>
                 {{ row.sheet.observations }}
               </dd>
             </div>
-            <div
-              v-if="ownNotes && notesOf(row).length > 0"
-              class="sm:col-span-2"
-            >
+            <div v-if="ownNotes && notesOf(row).length > 0" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("notes.title") }}
               </dt>

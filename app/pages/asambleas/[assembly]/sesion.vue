@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
+import type { SideRailItem } from "~/components/session/SideRail.vue";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import {
   isSessionDecidable,
@@ -22,7 +23,8 @@ import {
  * leads with what is debated now ("Ahora en debate") and its next step;
  * the amendment queue follows as a compact list. Beside it, foldable: the
  * speaking turns, the agenda and the consolidated text. On narrow screens
- * everything stacks in that order, speaking turns right after the debate.
+ * everything stacks: the debate, the speaking turns, the folded sections,
+ * and last the queue, which holds the document's text.
  * Only for those who can moderate the assembly; everyone else is pointed
  * to the projection.
  */
@@ -118,19 +120,38 @@ const previewSummary = computed(() => {
   return t("session.preview.applied", { count }, count);
 });
 
-/** The side column's strip: one icon per section, with its summary. */
-const sideItems = computed(() => [
+/** Who has the floor now, for the folded strip's clock. */
+const speaking = computed(() =>
+  speakersSummary.value === null ? null : session.speakers.view.value.speaking,
+);
+
+/**
+ * The side column's strip: one icon per section, with its summary, and
+ * folded, what the Mesa watches all along in view without the mouse
+ * (E-130): the turns waiting under the microphone (the clock goes in the
+ * strip's slot) and a dot for whether the last headcount had quorum.
+ */
+const sideItems = computed<SideRailItem[]>(() => [
   {
     id: "speakers",
     icon: "i-lucide-mic",
     title: t("session.speakers.title"),
     summary: speakersSummary.value,
+    count:
+      speakersSummary.value === null
+        ? null
+        : session.speakers.view.value.waiting.length,
   },
   {
     id: "headcount",
     icon: "i-lucide-users-round",
     title: t("session.headcount.title"),
     summary: headcountSummary.value,
+    dot: session.headcounts.latest.value
+      ? session.headcounts.latest.value.quorum
+        ? "bg-success"
+        : "bg-error"
+      : null,
   },
   {
     id: "agenda",
@@ -321,8 +342,11 @@ defineShortcuts({
     </CommonEmptyState>
 
     <ClientOnly v-else>
+      <!-- Clipped, not hidden: no scroll container of its own, so on a phone
+           the bloc bar sticks to the page's bottom and nothing slides it
+           sideways (M-075, M-121). -->
       <section
-        class="border-default bg-default flex flex-col overflow-hidden rounded-xl border lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem-var(--shell-session-pill-room,0px))] lg:min-h-[36rem]"
+        class="border-default bg-default flex flex-col overflow-clip rounded-xl border lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem-var(--shell-session-pill-room,0px))] lg:min-h-[36rem]"
         :aria-label="t('session.title')"
       >
         <SessionConsoleToolbar />
@@ -354,6 +378,14 @@ defineShortcuts({
           </div>
 
           <SessionSideRail :items="sideItems">
+            <template #strip="{ item }">
+              <SessionSpeakerTimer
+                v-if="item.id === 'speakers' && speaking"
+                :started-at="speaking.startedAt"
+                :limit-seconds="speaking.limitSeconds"
+                class="text-highlighted text-xs font-semibold"
+              />
+            </template>
             <SessionFoldPanel
               id="speakers"
               :title="t('session.speakers.title')"
@@ -376,7 +408,7 @@ defineShortcuts({
               icon="i-lucide-list-tree"
               :summary="agendaSummary"
             >
-              <SessionAgendaPanel />
+              <SessionAgendaPanel follow />
             </SessionFoldPanel>
             <SessionFoldPanel
               id="preview"
@@ -390,7 +422,8 @@ defineShortcuts({
           </SessionSideRail>
         </div>
 
-        <!-- Phones and tablets: one column, the debate first. -->
+        <!-- Phones and tablets: one column, the debate first, then the
+             folded sections, and the queue with the document's text. -->
         <div v-else class="space-y-3 p-3">
           <SessionNowPanel />
           <SessionFoldPanel
@@ -401,9 +434,6 @@ defineShortcuts({
           >
             <SessionSpeakersPanel />
           </SessionFoldPanel>
-          <div class="px-1">
-            <SessionAmendmentQueue />
-          </div>
           <SessionFoldPanel
             id="headcount"
             :title="t('session.headcount.title')"
@@ -431,6 +461,11 @@ defineShortcuts({
           >
             <SessionConsolidatedPanel />
           </SessionFoldPanel>
+          <!-- The text last: thousands of pixels, it would bury the folded
+               sections above (M-076). -->
+          <div class="px-1">
+            <SessionAmendmentQueue />
+          </div>
         </div>
       </section>
 

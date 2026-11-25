@@ -25,7 +25,11 @@ import {
  * of the acronym (memberSpokenName), from `members` or the member directory
  * (useMemberDirectory). With `showName`, a council's name goes with its
  * university on screen too, since councils share the same or nearly the
- * same denomination.
+ * same denomination. The name keeps to one line, cut with an ellipsis,
+ * unless the caller passes `wrap`: then a long one wraps in its own column
+ * beside the acronym, its first line level with the badge, and is never cut
+ * (the amendment detail, a transactional's parties). The projection and the
+ * live view keep one line.
  */
 const props = withDefaults(
   defineProps<{
@@ -35,6 +39,8 @@ const props = withDefaults(
     variant?: "solid" | "outline" | "soft" | "subtle";
     /** Shows the full name next to the acronym. */
     showName?: boolean;
+    /** A long name wraps instead of being cut (with `showName`). */
+    wrap?: boolean;
     /** Opens the member's card on hover, tap and focus. */
     tooltip?: boolean;
     /** Every member by id, when the caller has them; else the directory. */
@@ -44,6 +50,7 @@ const props = withDefaults(
     size: "md",
     variant: "subtle",
     showName: false,
+    wrap: false,
     tooltip: true,
     members: undefined,
   },
@@ -112,7 +119,10 @@ const tapGuard = useTouchTapGuard();
 </script>
 
 <template>
-  <span class="inline-flex max-w-full min-w-0 items-center gap-1.5">
+  <span
+    class="inline-flex max-w-full min-w-0 gap-1.5"
+    :class="wrap ? 'items-start' : 'items-center'"
+  >
     <UPopover
       v-if="tooltip"
       mode="hover"
@@ -158,7 +168,8 @@ const tapGuard = useTouchTapGuard();
     </UBadge>
     <span
       v-if="showName && !nameRepeats"
-      class="text-default min-w-0 truncate text-sm"
+      class="text-default min-w-0 text-sm"
+      :class="wrap ? 'py-0.5 break-words' : 'truncate'"
     >
       {{ shownName }}
     </span>

@@ -142,7 +142,7 @@ export function isInReviewQueue(amendment: QueueLike): boolean {
 export interface ReviewScope {
   /** The actor validates documents (document:manage). */
   documents: boolean;
-  /** The actor validates amendments (amendment:review). */
+  /** The actor validates amendments (amendment:review, or amendment:manage, which holds it). */
   amendments: boolean;
 }
 

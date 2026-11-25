@@ -116,6 +116,28 @@ watch(
   },
 );
 
+/**
+ * A final vote recorded or annulled turns the button that opened its
+ * dialog into another, so the focus goes to the section's heading as the
+ * dialog closes rather than to the page (E-136). On cancel, or a refused
+ * vote, the dialog gives it back to its button as usual.
+ */
+const heading = ref<HTMLElement | null>(null);
+let recorded = false;
+function focusAfterRecord(): HTMLElement | null {
+  if (!recorded) return null;
+  recorded = false;
+  return heading.value;
+}
+const annulContent = {
+  onCloseAutoFocus: (event: Event) => {
+    const target = focusAfterRecord();
+    if (!target?.isConnected) return;
+    event.preventDefault();
+    target.focus();
+  },
+};
+
 async function submit(vote: VoteInput): Promise<void> {
   const target = recording.value;
   if (!target || busy.value) return;
@@ -131,7 +153,10 @@ async function submit(vote: VoteInput): Promise<void> {
       `${documentUrl(target.id)}/final-vote`,
       { body },
     );
-    if (recording.value?.id === target.id) recording.value = null;
+    if (recording.value?.id === target.id) {
+      recorded = true;
+      recording.value = null;
+    }
     toast.add({
       title: t("controlSheet.results.finalRecorded", { title: target.title }),
       description:
@@ -198,6 +223,7 @@ async function annul(): Promise<void> {
       method: "DELETE",
       body,
     });
+    recorded = true;
     annulling.value = null;
     toast.add({
       title: t("controlSheet.results.finalAnnulled", { title: target.title }),
@@ -222,7 +248,9 @@ async function annul(): Promise<void> {
   >
     <h3
       id="control-sheet-final-votes"
-      class="text-highlighted text-sm font-medium"
+      ref="heading"
+      tabindex="-1"
+      class="text-highlighted text-sm font-medium outline-none"
     >
       {{ t("controlSheet.results.finalTitle") }}
     </h3>
@@ -238,10 +266,11 @@ async function annul(): Promise<void> {
             <ControlSheetVoteLine :vote="document.finalVote" />
             <UButton
               v-if="canAnnul"
-              size="xs"
+              size="sm"
               color="neutral"
               variant="ghost"
               icon="i-lucide-ban"
+              class="min-h-10 lg:min-h-0"
               :label="t('controlSheet.results.annul')"
               :disabled="busy !== null"
               @click="annulling = document"
@@ -279,6 +308,7 @@ async function annul(): Promise<void> {
       :context="context"
       :busy="busy !== null"
       with-assent
+      :focus-on-close="focusAfterRecord"
       @submit="submit"
     >
       <UAlert
@@ -316,6 +346,7 @@ async function annul(): Promise<void> {
 
     <UModal
       v-model:open="annulOpen"
+      :content="annulContent"
       :title="t('controlSheet.results.annulTitle')"
       :description="annulling?.title"
     >

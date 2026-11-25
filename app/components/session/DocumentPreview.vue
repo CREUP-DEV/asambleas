@@ -441,7 +441,9 @@ onBeforeUnmount(() => {
       v-else-if="blocks.length > 0"
       class="border-default bg-default rounded-lg border p-4"
     >
-      <div ref="content" class="relative">
+      <!-- A reading measure (E-083): on a wide console the lines would
+           run past 100 characters. The pointer measures this same box. -->
+      <div ref="content" class="relative mx-auto max-w-[75ch]">
         <ContentView
           :key="document.id"
           :blocks="blocks"

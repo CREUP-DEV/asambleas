@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * A side section of the console that folds away: a heading button with an
- * optional one-line summary (shown folded or not), and its content. Each
+ * optional short summary (shown folded or not, up to two lines, so an
+ * agenda item's title is not cut where it differs), and its content. Each
  * Mesa member's device remembers which sections they keep open. Folded
  * content stays mounted, so a half-written turn or an open list survives.
  */
@@ -11,7 +12,7 @@ const props = withDefaults(
     id: string;
     title: string;
     icon: string;
-    /** One short line under the title, e.g. who has the floor. */
+    /** A short summary under the title (up to two lines), e.g. who has the floor. */
     summary?: string | null;
     defaultOpen?: boolean;
   }>(),
@@ -63,7 +64,7 @@ const contentId = computed(() => `session-fold-${props.id}-content`);
           <span class="text-highlighted font-semibold">{{ title }}</span>
           <span
             v-if="summary"
-            class="text-muted max-w-full truncate text-xs font-normal"
+            class="text-muted line-clamp-2 max-w-full text-xs font-normal break-words"
           >
             {{ summary }}
           </span>

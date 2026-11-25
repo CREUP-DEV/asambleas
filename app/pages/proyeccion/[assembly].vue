@@ -35,6 +35,7 @@ import {
   sessionConnectionState,
 } from "~/composables/session/sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
+import { AMENDMENT_CHANGE_SELECTOR } from "~/utils/amendmentChange";
 import { formatMoment, formatTime } from "~/utils/format";
 import { applyScrollAnchor } from "~/utils/scrollAnchor";
 import {
@@ -1092,8 +1093,7 @@ const FIT_MIN = 0.4;
 const FIT_STEPS = 7;
 
 /** What an amendment changes, in the order of the text. */
-const CHANGE_SELECTOR =
-  ".cx-ins, .cx-del, .cx-fmt, .cx-fmt-label, .cx-block-inserted, .cx-block-deleted";
+const CHANGE_SELECTOR = `${AMENDMENT_CHANGE_SELECTOR}, .cx-fmt-label`;
 
 function overflows(box: HTMLElement): boolean {
   return box.scrollHeight > box.clientHeight + 1;

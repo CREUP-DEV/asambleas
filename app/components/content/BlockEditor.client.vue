@@ -1524,9 +1524,11 @@ defineExpose({
             :aria-label="t('common.editor.toolbar')"
             :class="[
               'border-default flex-wrap gap-y-1',
+              // On a phone the full toolbar keeps to one row that scrolls
+              // sideways, so it does not eat the text's height (M-062).
               compact
                 ? 'border-b px-1 py-0.5'
-                : 'sticky top-2 z-10 px-2 py-1 transition-shadow',
+                : 'sticky top-2 z-10 px-2 py-1 transition-shadow max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[&>*]:shrink-0',
               !compact &&
                 (stuck
                   ? 'bg-default mx-auto w-fit max-w-full rounded-lg shadow-xl ring ring-(--ui-border-accented)'

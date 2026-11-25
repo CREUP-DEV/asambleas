@@ -133,6 +133,20 @@ const emptyDescription = computed(() =>
 );
 
 const panelTitleId = useId();
+
+/** On a phone the tab row scrolls: keep the selected tab in view. */
+const activityTabs = useTemplateRef<{ $el?: unknown }>("activityTabs");
+function revealActiveTab(): void {
+  void nextTick(() => {
+    const root = activityTabs.value?.$el;
+    if (!(root instanceof Element)) return;
+    root
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+}
+onMounted(revealActiveTab);
+watch(() => filters.value.tab, revealActiveTab);
 </script>
 
 <template>
@@ -161,11 +175,12 @@ const panelTitleId = useId();
         />
 
         <UTabs
+          ref="activityTabs"
           v-model="tab"
           :items="tabItems"
           :content="false"
           class="w-full"
-          :ui="{ list: 'overflow-x-auto', trigger: 'shrink-0' }"
+          :ui="{ list: 'overflow-x-auto', trigger: 'shrink-0 max-sm:py-2.5' }"
           :aria-label="t('activity.tabs.label')"
         />
 

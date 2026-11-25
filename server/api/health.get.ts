@@ -7,7 +7,7 @@ import {
 } from "h3";
 import { sql } from "drizzle-orm";
 import { db, getDatabasePoolStats } from "../db";
-import { getExportQueueInstance } from "../utils/export/queue";
+import { exportQueueHealth } from "../utils/export/queue";
 
 const DATABASE_PROBE_TIMEOUT_MS = 5000;
 
@@ -52,11 +52,10 @@ export default defineEventHandler(async (event) => {
   if (!process.env.DATABASE_URL) {
     checks.queue = "unconfigured";
     if (overallStatus === "ok") overallStatus = "degraded";
-  } else if (!getExportQueueInstance()) {
-    checks.queue = "unavailable";
-    if (overallStatus === "ok") overallStatus = "degraded";
   } else {
-    checks.queue = "ok";
+    const queue = exportQueueHealth();
+    checks.queue = queue;
+    if (queue !== "ok" && overallStatus === "ok") overallStatus = "degraded";
   }
 
   if (overallStatus === "error") {

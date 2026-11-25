@@ -22,6 +22,8 @@ import {
   packageJobSchema,
   EXPORT_QUEUE_BOOT_ATTEMPTS,
   getExportQueue,
+  getExportQueueInstance,
+  onExportQueueStart,
 } from "../utils/export/queue";
 import { buildPackage } from "../utils/export/package/build";
 import { processDocumentPagesJob } from "../utils/export/documentPages";
@@ -213,11 +215,10 @@ export default defineNitroPlugin(async (nitroApp) => {
     return;
   }
 
-  try {
-    const boss = await getExportQueue({
-      attempts: EXPORT_QUEUE_BOOT_ATTEMPTS,
-    });
-
+  // Registered through the shared start, so the workers come up with the
+  // instance even when this boot start gives up and a request starts it
+  // later: otherwise that instance would queue jobs nobody works.
+  onExportQueueStart("export-worker", async (boss) => {
     await boss.work<unknown>(
       EXPORT_QUEUE_NAMES.ASSEMBLY_EXPORT,
       { batchSize: 1 },
@@ -270,12 +271,15 @@ export default defineNitroPlugin(async (nitroApp) => {
         }
       },
     );
+  });
 
-    nitroApp.hooks.hook("close", async () => {
-      logInfo("export-worker.shutdown", {});
-      await boss.stop();
-    });
+  nitroApp.hooks.hook("close", async () => {
+    logInfo("export-worker.shutdown", {});
+    await getExportQueueInstance()?.stop();
+  });
 
+  try {
+    await getExportQueue({ attempts: EXPORT_QUEUE_BOOT_ATTEMPTS });
     logInfo("export-worker.init", { message: "pg-boss worker started" });
   } catch (error) {
     logError("export-worker.init", error);

@@ -1609,6 +1609,7 @@
       "presented": "Enmienda presentada",
       "presentedDescription": "Ya la puede ver toda la asamblea.",
       "transact": "Proponer una transaccional con esta enmienda",
+      "transactMenu": "Transaccional",
       "transactStandIn": "Proponer una transaccional con {code}",
       "transactOverlaps": "Combinarlas en una transaccional",
       "mainAuthor": "autor principal",
@@ -2885,6 +2886,10 @@
     "appName": "Asambleas CREUP",
     "skipToNavigation": "Saltar al menú",
     "skipToContent": "Saltar al contenido",
+    "sidebar": {
+      "title": "Menú",
+      "description": "Navegación y cuenta"
+    },
     "brand": {
       "home": "Asambleas CREUP: ir al inicio",
       "product": "Asambleas"
@@ -3058,7 +3063,7 @@
       },
       "back": {
         "title": "Cómo volver atrás y dónde está la ayuda",
-        "body": "Arriba de cada página ves dónde estás. Pulsa cualquier paso de esa fila para volver atrás. Esta guía se abre otra vez con «Ayuda», en el menú de tu perfil, abajo a la izquierda."
+        "body": "Arriba de cada página ves dónde estás y, si hay un nivel anterior, el enlace para volver a él. Esta guía se abre otra vez con «Ayuda», en el menú con tu nombre (en el teléfono, al final del menú)."
       },
       "preferences": {
         "title": "Ponlo a tu gusto",
@@ -3889,6 +3894,12 @@
       "annotated": "PDF anotado",
       "retry": "Reintentar la exportación",
       "again": "Generar de nuevo",
+      "againClean": "Generar de nuevo el PDF limpio",
+      "againAnnotated": "Generar de nuevo el PDF anotado",
+      "downloadClean": "Descargar PDF limpio",
+      "downloadAnnotated": "Descargar PDF anotado",
+      "readyClean": "PDF limpio listo para descargar",
+      "readyAnnotated": "PDF anotado listo para descargar",
       "timeout": "La exportación está tardando demasiado. Inténtalo más tarde."
     },
     "editRecord": "Editar la ficha del documento",
@@ -4722,6 +4733,7 @@
       "limitApply": "Aplicar",
       "limitDefault": "Límite por defecto",
       "limitDefaultHint": "El tiempo de un turno con límite, salvo que lo cambies en ese turno.",
+      "settings": "Ajustes de los turnos",
       "limitedTurn": "Con límite de tiempo ({time})",
       "priority": "Prioritaria",
       "priorityTurn": "Prioritaria: se salta la cola",
@@ -5306,13 +5318,13 @@
     "title": "Hoja de control",
     "intro": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado, cómo se votó y quién intervino.",
     "introPublic": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado y cómo se votó.",
+    "about": "Qué muestra la hoja de control",
     "loading": "Cargando la hoja de control",
     "loadError": "No se ha podido cargar la hoja de control",
     "retry": "Reintentar",
     "follow": "Seguir el debate",
     "followHint": "Abre lo que la Mesa tiene en debate y lo señala. En «Enmiendas», las del documento en debate.",
-    "following": "Siguiendo el debate",
-    "followingHint": "Te lleva a lo que se debate. Si te alejas o abres otro documento, deja de seguirlo.",
+    "followingHint": "Siguiendo el debate: te lleva a lo que se debate. Si te alejas o abres otro documento, deja de seguirlo.",
     "live": "En debate",
     "noVote": "Sin votar",
     "positionNone": "Sin respuesta",
@@ -5341,10 +5353,12 @@
       "general": "General",
       "amendments": "Enmiendas",
       "turns": "Turnos de palabra",
+      "turnsShort": "Turnos",
       "history": "Historial"
     },
     "turns": {
       "title": "Turnos de palabra",
+      "about": "Qué muestran los turnos de palabra",
       "description": "Cada vez que alguien ha tomado la palabra en la asamblea, en orden, con el punto del orden del día en que se le dio y cuánto duró. «Por interviniente» suma los turnos y el tiempo de cada uno.",
       "emptyTitle": "Todavía no ha hablado nadie",
       "emptyDescription": "Los turnos aparecen aquí en cuanto la Mesa da la palabra.",
@@ -6311,7 +6325,6 @@
     },
     "document": {
       "view": "Ver el documento",
-      "onScreen": "En proyección ahora",
       "gone": "La Mesa ya no lo proyecta.",
       "goToProjected": "Ir a lo proyectado",
       "openPage": "Abrir su página",

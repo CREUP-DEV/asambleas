@@ -384,6 +384,13 @@ useLeaveGuard(
                         notice: t(`admin.notifications.kinds.${kind}.title`),
                       })
                     "
+                    :search-input="
+                      labelledSearch(
+                        t('admin.notifications.rolesLabel', {
+                          notice: t(`admin.notifications.kinds.${kind}.title`),
+                        }),
+                      )
+                    "
                     class="w-full"
                   />
                   <p v-else class="text-muted text-sm">

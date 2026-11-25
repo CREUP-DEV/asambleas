@@ -583,18 +583,19 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         class="inline-flex items-center gap-1"
       >
         {{ positionLabel }}
-        <UTooltip
-          :text="amendment.position.comment ?? undefined"
-          :disabled="!amendment.position.comment"
-        >
-          <CommonStatusBadge
-            kind="position"
-            :value="amendment.position.position"
-            :icon="
-              amendment.position.comment ? 'i-lucide-message-square' : undefined
-            "
-          />
-        </UTooltip>
+        <CommonStatusBadge
+          kind="position"
+          :value="amendment.position.position"
+        />
+      </span>
+      <!-- The proponent's comment in plain text, so the Mesa reads it from
+           the queue, keyboard included (E-079); the one in debate already
+           shows it in «Ahora en debate» (NowAmendment). -->
+      <span
+        v-if="amendment.position?.comment && !awaiting && !debated"
+        class="text-muted line-clamp-2 min-w-0 break-words italic"
+      >
+        {{ amendment.position.comment }}
       </span>
       <span v-if="positionWait" class="inline-flex items-center gap-1">
         <UIcon
@@ -656,6 +657,161 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       </span>
     </div>
 
+    <!-- The actions come before what unfolds, so a long change never pushes
+         them below its text. -->
+    <footer class="mt-3 flex flex-wrap items-center gap-2">
+      <!-- Another transactional got ahead of it: only withdrawing settles it. -->
+      <template v-if="supersededCodes">
+        <UButton
+          v-if="withdrawable"
+          size="sm"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-undo-2"
+          :label="t('session.actions.withdraw')"
+          :loading="busy"
+          @click="session.withdrawSubmission(amendment)"
+        />
+      </template>
+      <template v-else-if="awaiting">
+        <UTooltip v-if="validatable" :text="t('session.actions.validateHint')">
+          <UButton
+            size="sm"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-badge-check"
+            :label="t('session.actions.validate')"
+            :loading="busy"
+            :disabled="reviewBusy"
+            @click="session.validateAmendments([amendment.id])"
+          />
+        </UTooltip>
+      </template>
+      <template v-else-if="open">
+        <!-- Under its row, which already offers "Debatir": only the way out. -->
+        <UButton
+          v-if="debated || (debatable && !embedded)"
+          size="sm"
+          :color="debated ? 'primary' : 'neutral'"
+          :variant="debated ? 'solid' : 'outline'"
+          :icon="debated ? 'i-lucide-radio-tower' : 'i-lucide-radio'"
+          :label="
+            debated
+              ? t('session.actions.undebate')
+              : t('session.actions.debate')
+          "
+          :loading="Boolean(session.busy.value.live) && !busy"
+          :disabled="busy"
+          @click="toggleDebate"
+        />
+        <!-- Nothing private is decided: it has to be public first. -->
+        <template v-if="unpublished">
+          <UButton
+            v-if="publishable"
+            size="sm"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-eye"
+            :label="t('session.actions.publish')"
+            :loading="busy"
+            @click="session.publishAmendments([amendment.id])"
+          />
+          <span v-else class="text-muted text-xs">
+            {{ t("session.card.publishFirst") }}
+          </span>
+        </template>
+        <!-- Some main author has not answered: their answers come first
+             (with its changes), no decision yet. -->
+        <span v-else-if="missing > 0" class="text-muted text-xs">
+          {{ t("session.card.needsAcceptances") }}
+        </span>
+        <template v-else>
+          <UTooltip :text="t('session.actions.assentHint')" :kbds="kbdsOf('a')">
+            <UButton
+              size="sm"
+              color="success"
+              variant="soft"
+              icon="i-lucide-check"
+              :label="t('session.actions.assent')"
+              :loading="busy"
+              :disabled="busy || !session.inSession.value"
+              @click="session.approve(amendment, 'assent')"
+            />
+          </UTooltip>
+          <UTooltip :text="t('session.actions.voteHint')" :kbds="kbdsOf('v')">
+            <UButton
+              size="sm"
+              color="primary"
+              variant="soft"
+              icon="i-lucide-gavel"
+              :label="t('session.actions.vote')"
+              :disabled="busy || !session.inSession.value"
+              @click="session.openVote(amendment)"
+            />
+          </UTooltip>
+        </template>
+      </template>
+      <UButton
+        v-else-if="pendingAdmission"
+        size="sm"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-gavel"
+        :label="t('session.actions.decideTreat')"
+        :disabled="busy"
+        @click="session.openAdmission([amendment.id], 'admitted')"
+      />
+      <UButton
+        v-else-if="inadmissible"
+        size="sm"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-rotate-ccw"
+        :label="t('session.actions.readmit')"
+        :disabled="busy"
+        @click="session.openAdmission([amendment.id], 'admitted')"
+      />
+      <UButton
+        v-else-if="reopenable"
+        size="sm"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-rotate-ccw"
+        :label="t('session.actions.reopen')"
+        :loading="busy"
+        @click="session.reopen(amendment)"
+      />
+
+      <UDropdownMenu
+        v-if="menuItems.length > 0"
+        :items="menuItems"
+        :content="{ align: 'end' }"
+      >
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-ellipsis"
+          :aria-label="t('session.actions.more', { code })"
+          :disabled="busy"
+        />
+      </UDropdownMenu>
+
+      <UButton
+        v-if="
+          !embedded && (amendment.ops.length > 0 || amendment.justification)
+        "
+        size="sm"
+        color="neutral"
+        variant="link"
+        class="ms-auto"
+        :icon="expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        :label="expanded ? t('session.card.hide') : t('session.card.show')"
+        :aria-expanded="expanded"
+        @click="expandedByUser = !expanded"
+      />
+    </footer>
+
     <div v-if="expanded" class="mt-3 space-y-3">
       <p
         v-if="amendment.justification"
@@ -682,158 +838,5 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         :amendment="amendment"
       />
     </div>
-
-    <footer class="mt-3 flex flex-wrap items-center gap-1.5">
-      <!-- Another transactional got ahead of it: only withdrawing settles it. -->
-      <template v-if="supersededCodes">
-        <UButton
-          v-if="withdrawable"
-          size="xs"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-undo-2"
-          :label="t('session.actions.withdraw')"
-          :loading="busy"
-          @click="session.withdrawSubmission(amendment)"
-        />
-      </template>
-      <template v-else-if="awaiting">
-        <UTooltip v-if="validatable" :text="t('session.actions.validateHint')">
-          <UButton
-            size="xs"
-            color="primary"
-            variant="soft"
-            icon="i-lucide-badge-check"
-            :label="t('session.actions.validate')"
-            :loading="busy"
-            :disabled="reviewBusy"
-            @click="session.validateAmendments([amendment.id])"
-          />
-        </UTooltip>
-      </template>
-      <template v-else-if="open">
-        <!-- Under its row, which already offers "Debatir": only the way out. -->
-        <UButton
-          v-if="debated || (debatable && !embedded)"
-          size="xs"
-          :color="debated ? 'primary' : 'neutral'"
-          :variant="debated ? 'solid' : 'outline'"
-          :icon="debated ? 'i-lucide-radio-tower' : 'i-lucide-radio'"
-          :label="
-            debated
-              ? t('session.actions.undebate')
-              : t('session.actions.debate')
-          "
-          :loading="Boolean(session.busy.value.live) && !busy"
-          :disabled="busy"
-          @click="toggleDebate"
-        />
-        <!-- Nothing private is decided: it has to be public first. -->
-        <template v-if="unpublished">
-          <UButton
-            v-if="publishable"
-            size="xs"
-            color="primary"
-            variant="soft"
-            icon="i-lucide-eye"
-            :label="t('session.actions.publish')"
-            :loading="busy"
-            @click="session.publishAmendments([amendment.id])"
-          />
-          <span v-else class="text-muted text-xs">
-            {{ t("session.card.publishFirst") }}
-          </span>
-        </template>
-        <!-- Some main author has not answered: their answers come first
-             (with its changes), no decision yet. -->
-        <span v-else-if="missing > 0" class="text-muted text-xs">
-          {{ t("session.card.needsAcceptances") }}
-        </span>
-        <template v-else>
-          <UTooltip :text="t('session.actions.assentHint')" :kbds="kbdsOf('a')">
-            <UButton
-              size="xs"
-              color="success"
-              variant="soft"
-              icon="i-lucide-check"
-              :label="t('session.actions.assent')"
-              :loading="busy"
-              :disabled="busy || !session.inSession.value"
-              @click="session.approve(amendment, 'assent')"
-            />
-          </UTooltip>
-          <UTooltip :text="t('session.actions.voteHint')" :kbds="kbdsOf('v')">
-            <UButton
-              size="xs"
-              color="primary"
-              variant="soft"
-              icon="i-lucide-gavel"
-              :label="t('session.actions.vote')"
-              :disabled="busy || !session.inSession.value"
-              @click="session.openVote(amendment)"
-            />
-          </UTooltip>
-        </template>
-      </template>
-      <UButton
-        v-else-if="pendingAdmission"
-        size="xs"
-        color="warning"
-        variant="soft"
-        icon="i-lucide-gavel"
-        :label="t('session.actions.decideTreat')"
-        :disabled="busy"
-        @click="session.openAdmission([amendment.id], 'admitted')"
-      />
-      <UButton
-        v-else-if="inadmissible"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-rotate-ccw"
-        :label="t('session.actions.readmit')"
-        :disabled="busy"
-        @click="session.openAdmission([amendment.id], 'admitted')"
-      />
-      <UButton
-        v-else-if="reopenable"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-rotate-ccw"
-        :label="t('session.actions.reopen')"
-        :loading="busy"
-        @click="session.reopen(amendment)"
-      />
-
-      <UDropdownMenu
-        v-if="menuItems.length > 0"
-        :items="menuItems"
-        :content="{ align: 'end' }"
-      >
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-ellipsis"
-          :aria-label="t('session.actions.more', { code })"
-          :disabled="busy"
-        />
-      </UDropdownMenu>
-
-      <UButton
-        v-if="
-          !embedded && (amendment.ops.length > 0 || amendment.justification)
-        "
-        size="xs"
-        color="neutral"
-        variant="link"
-        class="ms-auto"
-        :icon="expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-        :label="expanded ? t('session.card.hide') : t('session.card.show')"
-        :aria-expanded="expanded"
-        @click="expandedByUser = !expanded"
-      />
-    </footer>
   </article>
 </template>

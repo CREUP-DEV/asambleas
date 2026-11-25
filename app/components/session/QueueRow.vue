@@ -132,10 +132,12 @@ function focusRow(): void {
   >
     <div class="flex min-h-11 items-center gap-1 ps-1 pe-1.5">
       <!-- The checkbox is driven by the selection: the click (with or
-           without shift) changes it, the key Space too (a click). -->
+           without shift) changes it, the key Space too (a click). Its
+           cell is a 44 px target, so a tap beside the box ticks it rather
+           than opening the row (M-121). -->
       <span
         v-if="blocSelectable"
-        class="flex shrink-0 items-center ps-1.5"
+        class="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center"
         @click="onBlocClick"
       >
         <UCheckbox
@@ -225,7 +227,7 @@ function focusRow(): void {
       </UBadge>
       <UButton
         v-else-if="debatable"
-        size="xs"
+        size="sm"
         color="neutral"
         variant="outline"
         icon="i-lucide-radio"

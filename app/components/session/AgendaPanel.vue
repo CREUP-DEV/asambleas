@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { scrollParentOf } from "~/utils/scrollAnchor";
+import { revealIn } from "./-reveal";
 
 /**
  * Agenda progress: every item with its documents. "Debate" points the live
@@ -14,7 +16,14 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * the circle of one neither treated nor waiting for a vote marks it (user's
  * decision of 2026-11-19). A mark left on an item now waiting for a vote
  * counts for nothing: a faint check, which undoes it too.
+ *
+ * With `follow` (the side column, a box of its own), the item in debate is
+ * kept in view as the debate moves while the agenda is in view there
+ * (E-078; the strip's icon opens it at that item): only that box scrolls,
+ * never the page, so the phone's single column never jumps to the agenda.
  */
+const props = defineProps<{ follow?: boolean }>();
+
 const session = useSessionConsoleContext();
 const { t } = useI18n();
 
@@ -41,6 +50,24 @@ const loading = computed(
 );
 const failed = computed(
   () => Boolean(session.agendaError.value) && !session.agenda.value,
+);
+
+const list = ref<HTMLElement | null>(null);
+// The column is one scroll shared with the turns: it follows only while
+// the agenda is in view there, never pulling the turns away.
+watch(
+  liveItemId,
+  (id) => {
+    if (!props.follow || !id || !list.value) return;
+    const row = list.value.querySelector<HTMLElement>('[aria-current="step"]');
+    const box = row ? scrollParentOf(row) : null;
+    if (!row || !box) return;
+    const view = box.getBoundingClientRect();
+    const agenda = list.value.getBoundingClientRect();
+    if (agenda.bottom <= view.top || agenda.top >= view.bottom) return;
+    revealIn(box, row);
+  },
+  { flush: "post" },
 );
 
 function select(document: DocumentSummaryDto): void {
@@ -127,7 +154,7 @@ function statusColor(row: { item: { id: string } }, treated: boolean): string {
         />
       </div>
 
-      <ol class="space-y-1" :aria-label="t('session.agenda.title')">
+      <ol ref="list" class="space-y-1" :aria-label="t('session.agenda.title')">
         <li
           v-for="row in rows"
           :key="row.item.id"
@@ -247,14 +274,17 @@ function statusColor(row: { item: { id: string } }, treated: boolean): string {
                   liveDocumentId === document.id ? 'bg-primary/5' : '',
                 ]"
               >
+                <!-- Two lines of title, the rest on hover: two certificates
+                     must not read the same (E-075). -->
                 <button
                   type="button"
                   class="focus-visible:ring-primary min-w-0 flex-1 rounded text-start text-sm outline-none focus-visible:ring-2"
+                  :title="document.title"
                   :aria-pressed="session.documentId.value === document.id"
                   @click="select(document)"
                 >
                   <span
-                    class="block truncate"
+                    class="line-clamp-2 break-words"
                     :class="
                       session.documentProgress(document.id) === 'treated' &&
                       liveDocumentId !== document.id

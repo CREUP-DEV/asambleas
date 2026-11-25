@@ -3,6 +3,7 @@ import type { AmendmentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
+import { AMENDMENT_CHANGE_SELECTOR } from "~/utils/amendmentChange";
 
 /**
  * The change an amendment makes, in large type, over the document's
@@ -38,9 +39,8 @@ async function toggleContext(): Promise<void> {
   if (!withContext.value) return;
   await nextTick();
   const mark =
-    box.value?.querySelector<HTMLElement>(
-      ".cx-ins, .cx-del, .cx-fmt, .cx-block-inserted, .cx-block-deleted",
-    ) ?? box.value?.querySelector<HTMLElement>("[data-amendment-id]");
+    box.value?.querySelector<HTMLElement>(AMENDMENT_CHANGE_SELECTOR) ??
+    box.value?.querySelector<HTMLElement>("[data-amendment-id]");
   if (!mark) return;
   const reduceMotion = window.matchMedia?.(
     "(prefers-reduced-motion: reduce)",

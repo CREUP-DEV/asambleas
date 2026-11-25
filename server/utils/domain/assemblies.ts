@@ -53,6 +53,7 @@ import {
 } from "~~/shared/constants/domain";
 import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { seesDraftAssemblies } from "~~/shared/utils/permissionRules";
 import type {
   AgendaDto,
   AgendaItemDto,
@@ -201,7 +202,7 @@ export function assemblyCapabilities(actor: Actor): AssemblyCapabilities {
 
 /** Same rule as canSeeAssembly: drafts only for managers and the Mesa. */
 export function canSeeDraftAssemblies(actor: Actor): boolean {
-  return canManageAssemblies(actor) || canModerate(actor);
+  return seesDraftAssemblies(actor.can);
 }
 
 /**

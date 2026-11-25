@@ -33,6 +33,13 @@ function when(headcount: HeadcountDto): string {
 const latest = computed(() => props.attendance?.latest ?? null);
 
 /**
+ * Each fold's line: a chevron of its own instead of the browser's marker,
+ * a finger's height on a phone (44px) and a visible focus ring.
+ */
+const SUMMARY_CLASS =
+  "text-default flex min-h-11 md:min-h-8 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden";
+
+/**
  * "Recuento de las 18:45", "Recuento de ayer, 18:45" or, older, "Recuento
  * del 16 nov 2026, 18:45": Spanish words a date and "ayer" differently.
  */
@@ -131,7 +138,12 @@ const takenAt = computed(() => {
       </p>
 
       <details class="group">
-        <summary class="text-default cursor-pointer text-sm font-medium">
+        <summary :class="SUMMARY_CLASS">
+          <UIcon
+            name="i-lucide-chevron-right"
+            class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
           {{
             t(
               "liveView.attendance.inRoom",
@@ -149,8 +161,14 @@ const takenAt = computed(() => {
 
       <details
         v-if="attendance.attending.length + attendance.guests.length > 0"
+        class="group"
       >
-        <summary class="text-default cursor-pointer text-sm font-medium">
+        <summary :class="SUMMARY_CLASS">
+          <UIcon
+            name="i-lucide-chevron-right"
+            class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
           {{
             t(
               "liveView.attendance.attending",
@@ -172,8 +190,13 @@ const takenAt = computed(() => {
         </ul>
       </details>
 
-      <details v-if="attendance.delegations.length > 0">
-        <summary class="text-default cursor-pointer text-sm font-medium">
+      <details v-if="attendance.delegations.length > 0" class="group">
+        <summary :class="SUMMARY_CLASS">
+          <UIcon
+            name="i-lucide-chevron-right"
+            class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
           {{
             t(
               "liveView.attendance.delegations",
@@ -205,8 +228,13 @@ const takenAt = computed(() => {
         </ul>
       </details>
 
-      <details v-if="attendance.earlier.length > 0">
-        <summary class="text-default cursor-pointer text-sm font-medium">
+      <details v-if="attendance.earlier.length > 0" class="group">
+        <summary :class="SUMMARY_CLASS">
+          <UIcon
+            name="i-lucide-chevron-right"
+            class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
           {{
             t(
               "session.headcount.earlier",

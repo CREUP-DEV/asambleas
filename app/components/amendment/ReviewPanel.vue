@@ -61,8 +61,11 @@ import {
  * A presented transactional says what it waits for, to everyone who sees
  * it: the main authors of the amendments it would replace (naming who is
  * missing), or that one rejected it (closed, the originals carry on), or
- * which amendments it replaced. While the Secretaría has it, the usual
- * review sentence stays, plus what checking it will do (replace them).
+ * which amendments it replaced. The detail's header already says it in a
+ * line («Sustituye a …», TransactionalProgress, its codes as links), so
+ * here only the sentence with the next step goes, with no title of its
+ * own. While the Secretaría has it, the usual review sentence stays, plus
+ * what checking it will do (replace them).
  *
  * Focus: after an action the status sentence takes it (it is also announced),
  * or, when the panel is gone (published, nothing left to say), `settled`
@@ -78,10 +81,20 @@ const props = withDefaults(
     labelOf?: (id: string) => string;
     /** Status of another amendment, to tell whether a transactional replaced them. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /**
+     * A grouped amendment is late and awaits the assembly, as the header's
+     * line reads it, so both say the same stage.
+     */
+    awaitsAdmissionOf?: (id: string) => boolean;
     /** The document's final vote is on record: nothing is declared any more. */
     finalVoted?: boolean;
   }>(),
-  { labelOf: undefined, statusOf: undefined, finalVoted: false },
+  {
+    labelOf: undefined,
+    statusOf: undefined,
+    awaitsAdmissionOf: undefined,
+    finalVoted: false,
+  },
 );
 
 const emit = defineEmits<{
@@ -148,6 +161,7 @@ const progress = computed(() =>
     props.amendment,
     member.value?.id ?? null,
     props.statusOf,
+    props.awaitsAdmissionOf,
   ),
 );
 /** The transactional's own sentence, outside the Secretaría's stages. */
@@ -178,14 +192,16 @@ const view = computed(() => {
 const latePublic = computed(
   () => view.value?.key === "published" && view.value.awaitingAdmission,
 );
-/** What the status block says: title, sentence, icon and colour. */
+/**
+ * What the status block says: title, sentence, icon and colour. A
+ * transactional's stage has no title: the header's line is it.
+ */
 const status = computed(() => {
   if (progress.value && progressSentence.value) {
     return {
       icon: progress.value.icon,
       color: progress.value.color,
-      title: progressText.summary(progress.value, props.labelOf),
-      titleLinks: progressText.summaryLinks(progress.value, props.labelOf),
+      title: null,
       sentence: progressSentence.value,
       private: view.value?.private ?? false,
     };
@@ -480,22 +496,8 @@ async function askCorrection(): Promise<void> {
         aria-hidden="true"
       />
       <div class="min-w-0 flex-1 space-y-1">
-        <p class="text-highlighted text-sm font-semibold">
-          <!-- The amendments it combines open, with a preview. -->
-          <i18n-t
-            v-if="'titleLinks' in status && status.titleLinks && labelOf"
-            :keypath="status.titleLinks.key"
-            tag="span"
-            scope="global"
-          >
-            <template #list>
-              <AmendmentCodeLinks
-                :ids="status.titleLinks.ids"
-                :label-of="labelOf"
-              />
-            </template>
-          </i18n-t>
-          <template v-else>{{ status.title }}</template>
+        <p v-if="status.title" class="text-highlighted text-sm font-semibold">
+          {{ status.title }}
         </p>
         <p class="text-default text-sm">
           {{ status.sentence }}

@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto, ReviewQueueDto } from "~~/shared/types/api";
+import {
+  reviewsAmendments,
+  usesReviewQueue,
+  validatesDocuments,
+} from "~~/shared/utils/permissionRules";
 import { errorStatus } from "~/composables/api/useApi";
 import {
   REVIEW_BADGE_STATE_KEY,
@@ -166,15 +170,9 @@ const onOverview = computed(
 // that data in the payload, so showing it during hydration would mismatch.
 
 const { can } = useMe();
-const canValidateDocuments = computed(() =>
-  can(PERMISSION_KEYS.DOCUMENT_MANAGE),
-);
-const canReviewAmendments = computed(() =>
-  can(PERMISSION_KEYS.AMENDMENT_REVIEW),
-);
-const canReview = computed(
-  () => canValidateDocuments.value || canReviewAmendments.value,
-);
+const canValidateDocuments = computed(() => validatesDocuments(can));
+const canReviewAmendments = computed(() => reviewsAmendments(can));
+const canReview = computed(() => usesReviewQueue(can));
 
 const reviewFetch = useFetch<ReviewQueueDto>(
   () => `${current.apiBase.value}/review`,

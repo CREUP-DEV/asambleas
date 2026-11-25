@@ -2,7 +2,7 @@
 import type { TabsItem } from "@nuxt/ui";
 import { ASSEMBLY_TYPES } from "~~/shared/constants/assemblyTypes";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { notesSpeakers, recordsResults } from "~~/shared/utils/permissionRules";
 import type {
   AmendmentDto,
   AmendmentOutcomeDto,
@@ -166,18 +166,10 @@ useHead({
  * Recording results from the sheet, never projected (the Mesa and
  * assembly:vote_result; user's decision of 2026-11-19).
  */
-const canRecordResults = computed(
-  () =>
-    can(PERMISSION_KEYS.SESSION_MODERATE) ||
-    can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
-);
+const canRecordResults = computed(() => recordsResults(can));
 
 /** Noting who spoke (the Mesa and session:record_speakers). */
-const canNoteSpeakers = computed(
-  () =>
-    can(PERMISSION_KEYS.SESSION_MODERATE) ||
-    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
-);
+const canNoteSpeakers = computed(() => notesSpeakers(can));
 /** Notes are taken from the convocation until the assembly closes. */
 const speakerNotesOpen = computed(
   () =>
@@ -383,7 +375,12 @@ const tabItems = computed<TabsItem[]>(() => [
   { value: "amendments", label: t("controlSheet.tabs.amendments") },
   ...(internal.value
     ? [
-        { value: "turns", label: t("controlSheet.tabs.turns") },
+        {
+          value: "turns",
+          label: t("controlSheet.tabs.turns"),
+          // Below sm, so the four tabs nearly fit the phone's strip (M-085).
+          short: t("controlSheet.tabs.turnsShort"),
+        },
         { value: "history", label: t("controlSheet.tabs.history") },
       ]
     : []),
@@ -1636,14 +1633,17 @@ function trailLabel(step: AgendaTrailStep): string {
  * written into its own entry first (saveReturn), so Back brings the reader
  * there again (restoreOnBack).
  */
-function openDocumentAmendments(document: SheetRowDocument): void {
+async function openDocumentAmendments(
+  document: SheetRowDocument,
+): Promise<void> {
   const option = documentOptions.value.find(
     (entry) => entry.id === document.id,
   );
   if (!option) return;
   saveReturn();
   leaveDebateFor(option.id);
-  void router.push({
+  amendmentsOpenedFrom = option.id;
+  await router.push({
     query: {
       ...route.query,
       ...tabQuery("amendments"),
@@ -1651,6 +1651,35 @@ function openDocumentAmendments(document: SheetRowDocument): void {
     },
   });
   scrollToTabs();
+  // «General» went with the button that had the focus: it goes on to the
+  // document's selector, at the head of the list just opened (E-135).
+  void nextTick(() => {
+    const field = documentField.value?.$el;
+    if (!(field instanceof HTMLElement)) return;
+    field.querySelector("button")?.focus({ preventScroll: true });
+  });
+}
+
+/** The selector of «Enmiendas», which a document opened from «General»
+ * gives the focus to. */
+const documentField = ref<{ $el?: unknown } | null>(null);
+/**
+ * The document whose «N enmiendas» opened «Enmiendas»: Back gives that
+ * button the focus again if it went with the list (focusOpenedFrom).
+ */
+let amendmentsOpenedFrom: string | null = null;
+function focusOpenedFrom(): void {
+  const id = amendmentsOpenedFrom;
+  amendmentsOpenedFrom = null;
+  if (!id || tab.value !== "general") return;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  const button = [
+    ...document.querySelectorAll<HTMLElement>(
+      `[data-sheet-amendments="${CSS.escape(id)}"]`,
+    ),
+  ].find((element) => element.getClientRects().length > 0);
+  button?.focus({ preventScroll: true });
 }
 
 /**
@@ -1671,7 +1700,12 @@ function scrollToTabs(): void {
     const gap =
       bar.getBoundingClientRect().top - anchor.getBoundingClientRect().bottom;
     if (gap <= 25) return;
-    anchor.scrollIntoView({ block: "start" });
+    // The heading to the very top, by hand: scrollIntoView would stop it
+    // under the area's scroll padding (padUnderTabs).
+    const area = scrollArea();
+    if (!area) return;
+    area.scrollTop +=
+      anchor.getBoundingClientRect().top - area.getBoundingClientRect().top;
   });
 }
 
@@ -1967,22 +2001,52 @@ registerLive((events) => {
 
 // Following the debate ----------------------------------------------------------
 
-function scrollToRow(id: string): void {
-  if (!import.meta.client) return;
-  void nextTick(() => {
-    // The table and the cards are both in the page; one of them shows.
-    const row = [
+/** A row as the list on show has it (the table and the cards are both in
+ * the page; one of them shows). */
+function shownRow(id: string): HTMLElement | null {
+  return (
+    [
       ...document.querySelectorAll<HTMLElement>(
         `[data-sheet-row="${CSS.escape(id)}"]`,
       ),
-    ].find((element) => element.getClientRects().length > 0);
+    ].find((element) => element.getClientRects().length > 0) ?? null
+  );
+}
+
+/** Whether a row shows between the sticky tabs and the bottom of the area. */
+function rowInView(row: HTMLElement): boolean {
+  const area = scrollArea();
+  if (!area) return true;
+  const box = row.getBoundingClientRect();
+  return (
+    box.top >= barBottom() && box.bottom <= area.getBoundingClientRect().bottom
+  );
+}
+
+/**
+ * Brings a row to the middle of the list: smoothly when the debate moves,
+ * at once (`auto`) when the sheet opens or the row has just arrived, since
+ * a smooth scroll is aimed before the rows finish growing (E-089). At once,
+ * it looks again on the next frame and goes there once more if the row
+ * has moved out of view meanwhile.
+ */
+function scrollToRow(id: string, behavior: "smooth" | "auto" = "smooth"): void {
+  if (!import.meta.client) return;
+  void nextTick(() => {
+    const row = shownRow(id);
     if (!row) return;
     const reduce = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+    const smooth = behavior === "smooth" && !reduce;
     row.scrollIntoView({
       block: "center",
-      behavior: reduce ? "auto" : "smooth",
+      behavior: smooth ? "smooth" : "auto",
+    });
+    if (smooth) return;
+    requestAnimationFrame(() => {
+      const again = shownRow(id);
+      if (again && !rowInView(again)) again.scrollIntoView({ block: "center" });
     });
   });
 }
@@ -2004,9 +2068,11 @@ const STAY_TABS: ReadonlySet<SheetTab> = new Set(["turns", "history"]);
  * of those tabs, the document already shown) or it waits: while an
  * amendment's panel is open, another document waits until it closes
  * (followWaitsForPanel), so the panel never stays on a row the list no
- * longer holds.
+ * longer holds. On opening the sheet (`opening`) it goes to the row at
+ * once rather than smoothly (scrollToRow).
  */
-async function followDebate(asked = false): Promise<boolean> {
+async function followDebate(asked = false, opening = false): Promise<boolean> {
+  const behavior = opening ? "auto" : "smooth";
   const state = live.value;
   if (!follow.value || !state) return false;
   if (!asked && STAY_TABS.has(tab.value)) return false;
@@ -2035,7 +2101,7 @@ async function followDebate(asked = false): Promise<boolean> {
           [DOCUMENT_QUERY]: document.slug,
         },
       });
-      scrollToRow(state.amendmentId);
+      scrollToRow(state.amendmentId, behavior);
       return true;
     }
   }
@@ -2054,7 +2120,7 @@ async function followDebate(asked = false): Promise<boolean> {
         query: { ...route.query, ...tabQuery("general") },
       });
     }
-    scrollToRow(state.agendaItemId);
+    scrollToRow(state.agendaItemId, behavior);
     return true;
   }
   return false;
@@ -2095,8 +2161,38 @@ watch(
   () => {
     if (holdFollow) return;
     if (follow.value && live.value?.amendmentId) {
-      scrollToRow(live.value.amendmentId);
+      scrollToRow(live.value.amendmentId, "auto");
     }
+  },
+);
+// «General» the same way (E-089): the item in debate turning up in the list
+// shown (a refetch, a filter let go) brings it into view, while the debate
+// stays on it; a debate that moves is followDebate's.
+watch(
+  () => {
+    const id = live.value?.agendaItemId ?? null;
+    return {
+      id,
+      shown: id !== null && shownGeneral.value.some((row) => row.id === id),
+    };
+  },
+  (now, before) => {
+    if (!now.id || !now.shown || now.id !== before.id || before.shown) return;
+    if (holdFollow || !follow.value || tab.value !== "general") return;
+    scrollToRow(now.id, "auto");
+  },
+);
+// The members arrive after the sheet (useLazyFetch) and their tags change
+// the rows' height: the row in debate is looked for again if it has left
+// the view meanwhile.
+watch(
+  () => membersById.value.size,
+  () => {
+    if (holdFollow || !follow.value || !import.meta.client) return;
+    void nextTick(() => {
+      const row = debatedRow();
+      if (row && !rowInView(row)) row.scrollIntoView({ block: "center" });
+    });
   },
 );
 
@@ -2122,14 +2218,7 @@ function debatedRow(): HTMLElement | null {
       : tab.value === "general"
         ? state.agendaItemId
         : null;
-  if (!id) return null;
-  return (
-    [
-      ...document.querySelectorAll<HTMLElement>(
-        `[data-sheet-row="${CSS.escape(id)}"]`,
-      ),
-    ].find((element) => element.getClientRects().length > 0) ?? null
-  );
+  return id ? shownRow(id) : null;
 }
 
 /**
@@ -2188,9 +2277,43 @@ onMounted(() => {
     // The scrollbar: a press on the scroll area itself.
     scrollWatched.addEventListener("pointerdown", noteScrollbarPress);
     window.addEventListener("keydown", noteScrollKey);
+    padUnderTabs();
   });
 });
+/**
+ * The sticky tabs cover the top of the scroll area, so the area keeps that
+ * much (and 8px more) as its scroll padding: the browser then stops what
+ * takes the focus (Shift+Tab up the rows) and every scrollIntoView below
+ * them, not under them (E-134). It follows the bar's height and goes with
+ * the sheet, since the area is the hub's, shared by every section.
+ */
+function padUnderTabs(): void {
+  if (!scrollWatched) return;
+  const bar = tabsBar.value;
+  scrollWatched.style.scrollPaddingTop = bar ? `${bar.offsetHeight + 8}px` : "";
+}
+useResizeObserver(tabsBar, padUnderTabs);
+watch(tabsBar, padUnderTabs, { flush: "post" });
+/**
+ * Below sm the tabs scroll sideways in their strip (M-085): the open one is
+ * brought into it, centred, by the strip's own scroll alone, so the sheet
+ * never moves and following the debate is not stopped.
+ */
+function revealActiveTab(): void {
+  const list = tabsBar.value?.querySelector<HTMLElement>('[role="tablist"]');
+  const active = list?.querySelector<HTMLElement>(
+    '[role="tab"][aria-selected="true"]',
+  );
+  if (!list || !active || list.scrollWidth <= list.clientWidth) return;
+  list.scrollLeft = Math.max(
+    0,
+    active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2,
+  );
+}
+useResizeObserver(tabsBar, revealActiveTab);
+watch([tabsBar, tab], revealActiveTab, { flush: "post" });
 onBeforeUnmount(() => {
+  if (scrollWatched) scrollWatched.style.scrollPaddingTop = "";
   scrollWatched?.removeEventListener("scroll", onSheetScroll);
   scrollWatched?.removeEventListener("wheel", noteReaderScroll);
   scrollWatched?.removeEventListener("touchmove", noteReaderScroll);
@@ -2301,6 +2424,7 @@ if (import.meta.client) {
       holdFollow = true;
       restoreScroll(saved, () => {
         holdFollow = false;
+        focusOpenedFrom();
       });
     });
   });
@@ -2373,7 +2497,7 @@ onMounted(async () => {
     ? readSheetReturn(window.history.state, id, SHEET_FILTER_QUERY_KEYS)
     : null;
   if (!saved) {
-    void followDebate();
+    void followDebate(false, true);
     return;
   }
   // Kept in the entry: Back again after Forward, or a reload, finds the
@@ -2391,7 +2515,7 @@ onMounted(async () => {
   // («Turnos de palabra», «Historial», nothing on screen, its document
   // already shown); then the sheet comes back where it was left.
   if (moved) {
-    if (await followDebate()) return;
+    if (await followDebate(false, true)) return;
     holdFollow = true;
   }
   const release = () => {
@@ -2431,20 +2555,47 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       class="flex flex-wrap items-start justify-between gap-3"
     >
       <div class="min-w-0 space-y-1">
-        <h2 class="text-highlighted text-xl font-semibold">
-          {{ t("controlSheet.title") }}
-        </h2>
-        <p class="text-muted max-w-3xl text-sm">
+        <!-- Below lg the introduction waits behind a button by the title, so
+             the rows start higher up on a phone (M-086). -->
+        <div class="flex items-center gap-1">
+          <h2 class="text-highlighted text-xl font-semibold">
+            {{ t("controlSheet.title") }}
+          </h2>
+          <UPopover>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-info"
+              class="lg:hidden"
+              :aria-label="t('controlSheet.about')"
+            />
+            <template #content>
+              <p class="text-default max-w-xs p-3 text-sm">
+                {{
+                  t(
+                    internal
+                      ? "controlSheet.intro"
+                      : "controlSheet.introPublic",
+                  )
+                }}
+              </p>
+            </template>
+          </UPopover>
+        </div>
+        <p class="text-muted hidden max-w-3xl text-sm lg:block">
           {{ t(internal ? "controlSheet.intro" : "controlSheet.introPublic") }}
         </p>
       </div>
-      <!-- The whole sheet as an Excel workbook, whichever tab is open. -->
+      <!-- The whole sheet as an Excel workbook, whichever tab is open; only
+           its icon below sm, its name still read out. -->
       <UButton
         v-if="!loading && !failed"
         color="neutral"
         variant="outline"
         icon="i-lucide-file-spreadsheet"
         :label="t('controlSheet.export.button')"
+        :ui="{ label: 'max-sm:sr-only' }"
         :loading="exporting"
         data-testid="sheet-export-excel"
         @click="exportExcel"
@@ -2486,19 +2637,38 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
       -->
       <div
         ref="tabsBar"
-        class="bg-default sticky -top-4 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 sm:-top-6"
+        class="bg-default sticky -top-4 z-20 flex flex-nowrap items-center justify-between gap-x-3 gap-y-1 pt-1 sm:-top-6 sm:flex-wrap"
       >
         <UTabs
           v-model="tab"
           :items="tabItems"
           :content="false"
           variant="link"
-          class="min-w-0"
+          class="min-w-0 max-sm:flex-1"
+          :ui="{
+            list: 'max-sm:overflow-x-auto max-sm:overflow-y-hidden',
+            indicator: 'max-sm:bottom-0',
+            trigger: 'max-sm:shrink-0',
+            label: 'max-sm:overflow-visible max-sm:whitespace-nowrap',
+          }"
           :aria-label="t('controlSheet.tabs.label')"
-        />
-        <!-- In the bar that stays on top (user's decision of 2026-11-20):
-             it says when the sheet follows the debate, and takes it back
-             there when it does not. -->
+        >
+          <template #default="{ item }">
+            <template v-if="item.short">
+              <span class="sm:hidden">{{ item.short }}</span>
+              <span class="max-sm:hidden">{{ item.label }}</span>
+            </template>
+            <template v-else>{{ item.label }}</template>
+          </template>
+        </UTabs>
+        <!-- One button in the bar that stays on top (user's decision of
+             2026-11-20); since M-124 a toggle with one name and aria-pressed
+             (the switching «Siguiendo el debate» / «Seguir el debate» of that
+             decision gave way to it), pressed while the sheet follows the
+             debate (its colour and tooltip say so), which takes it back
+             there when it does not. Only its icon below sm, so the bar keeps
+             to one row on a phone; below sm the tabs scroll sideways in
+             their strip instead of cutting their labels (M-085). -->
         <UTooltip
           :text="
             follow
@@ -2511,9 +2681,9 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :variant="follow ? 'soft' : 'outline'"
             size="sm"
             icon="i-lucide-radio"
-            :label="
-              follow ? t('controlSheet.following') : t('controlSheet.follow')
-            "
+            :label="t('controlSheet.follow')"
+            :ui="{ label: 'max-sm:sr-only' }"
+            class="shrink-0"
             :aria-pressed="follow"
             @click="toggleFollow"
           />
@@ -2616,6 +2786,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         <template v-else>
           <div class="flex max-w-3xl flex-wrap items-end gap-2">
             <UFormField
+              ref="documentField"
               :label="t('controlSheet.document.label')"
               class="min-w-0 flex-1 basis-64"
             >
@@ -2623,9 +2794,16 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 v-model="selectedDocumentId"
                 :items="selectItems"
                 value-key="value"
-                :search-input="{
-                  placeholder: t('controlSheet.document.search'),
-                }"
+                :aria-label="
+                  selectMenuLabel(
+                    t('controlSheet.document.label'),
+                    selectItems,
+                    selectedDocumentId,
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('controlSheet.document.search'))
+                "
                 :ui="{
                   value: 'whitespace-normal text-start',
                   itemLabel: 'whitespace-normal',
@@ -2639,6 +2817,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               variant="outline"
               icon="i-lucide-scan-eye"
               :label="t('controlSheet.preview.selected')"
+              :ui="{ label: 'max-sm:sr-only' }"
               :aria-label="
                 t('controlSheet.preview.documentAria', {
                   title: selectedDocument.title,
@@ -2646,7 +2825,9 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               "
               @click="openDocumentPreview(selectedDocument)"
             />
-            <!-- The documents before and after, without opening the list. -->
+            <!-- The documents before and after, without opening the list. At
+                 either end the arrow says so but stays focusable
+                 (aria-disabled), so the focus and its tooltip stay (E-135). -->
             <div v-if="documentOptions.length > 1" class="flex gap-1">
               <UTooltip
                 :text="
@@ -2661,7 +2842,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                   color="neutral"
                   variant="outline"
                   icon="i-lucide-chevron-left"
-                  :disabled="!documentNeighbours.previous"
+                  :aria-disabled="!documentNeighbours.previous || undefined"
                   :aria-label="
                     documentNeighbours.previous
                       ? t('controlSheet.document.previous', {
@@ -2689,7 +2870,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                   color="neutral"
                   variant="outline"
                   icon="i-lucide-chevron-right"
-                  :disabled="!documentNeighbours.next"
+                  :aria-disabled="!documentNeighbours.next || undefined"
                   :aria-label="
                     documentNeighbours.next
                       ? t('controlSheet.document.next', {

@@ -289,6 +289,16 @@ function letters(agreement: RecordAgreement): (string | null)[] {
                 v-model="itemChoice"
                 :items="itemOptions"
                 value-key="value"
+                :search-input="
+                  labelledSearch(t('agenda.newDocument.searchItem'))
+                "
+                :aria-label="
+                  selectMenuLabel(
+                    t('agreementsRecord.createItem'),
+                    itemOptions,
+                    itemChoice,
+                  )
+                "
                 class="w-full"
               />
             </UFormField>

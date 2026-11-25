@@ -33,7 +33,9 @@ export const ALL_PERMISSION_KEYS = Object.values(PERMISSION_KEYS);
  * `amendment:review` opens (its description says so). Only for checks:
  * getEffectivePermissions, /api/me and the grant rules of the admin panel
  * (adminGrantViolation) keep the keys as granted, so holding an edit key
- * never lets anyone grant the matching view key.
+ * never lets anyone grant the matching view key. On the client
+ * `useMe().can` applies the implications and `useMe().granted` keeps the
+ * keys as granted, for the admin panel's `not_held` lock.
  */
 export const PERMISSION_IMPLIED_BY: Partial<
   Record<PermissionKey, readonly PermissionKey[]>

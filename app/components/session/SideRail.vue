@@ -1,13 +1,23 @@
 <script setup lang="ts">
+import { revealIn } from "./-reveal";
+
 /**
  * The console's side column (speakers, headcounts, agenda, final text)
  * folded into a strip of icons along the right edge, so the debate takes
  * the width (user's decision of 2026-11-19). Resting the mouse on it opens
  * it over the debate, sliding in, and it folds again a moment after the
  * mouse leaves. It stays open while something opened from it is open (a
- * menu, a popover, a dialog) and while the keyboard is inside it. «Fijar»
- * keeps it open beside the debate, remembered per browser. An icon of the
- * strip opens it at its section, by mouse, touch or keyboard.
+ * menu, a popover, a dialog) and while the keyboard is inside it; Escape
+ * folds it and gives the focus back to the strip. «Fijar» keeps it open
+ * beside the debate, remembered per browser, from xl only: below, 26rem
+ * beside the debate would leave it a strip of text (E-132). An icon of the
+ * strip opens it at its section, unfolded, by mouse, touch or keyboard; the
+ * agenda's opens at the item in debate.
+ *
+ * Folded, the strip keeps in view what the Mesa watches all along: under
+ * each icon what its section counts (`count`, the turns waiting), a dot of
+ * colour (`dot`, whether there is quorum) and the `strip` slot (the turn's
+ * clock).
  *
  * The sections stay mounted while folded (their forms and lists survive);
  * folded they are inert, out of the tab order.
@@ -18,20 +28,37 @@ export interface SideRailItem {
   icon: string;
   title: string;
   summary?: string | null;
+  /** A number under the icon (e.g. the turns waiting); none when 0. */
+  count?: number | null;
+  /** The background class of a dot on the icon (e.g. `bg-success`). */
+  dot?: string | null;
 }
 
 defineProps<{ items: SideRailItem[] }>();
+defineSlots<{
+  default?: () => unknown;
+  strip?: (props: { item: SideRailItem }) => unknown;
+}>();
 
 const { t } = useI18n();
 
 const pinned = useLocalStorage("session-side-pinned", false);
+/** Pinning is offered from xl; a pin kept from a wider screen waits. */
+const wide = useMediaQuery("(min-width: 1280px)");
+const pinnedHere = computed(() => pinned.value && wide.value);
 const hovered = ref(false);
 /** Opened from the strip (a click, a tap or the keyboard). */
 const opened = ref(false);
-const expanded = computed(() => pinned.value || hovered.value || opened.value);
+const expanded = computed(
+  () => pinnedHere.value || hovered.value || opened.value,
+);
+/** The section last opened from the strip: Escape gives its icon the focus. */
+const lastOpened = ref<string | null>(null);
 
 const aside = ref<HTMLElement | null>(null);
+const strip = ref<HTMLElement | null>(null);
 const body = ref<HTMLElement | null>(null);
+const scroller = ref<HTMLElement | null>(null);
 
 let openTimer: ReturnType<typeof setTimeout> | undefined;
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -85,14 +112,62 @@ function onFocusOut(event: FocusEvent): void {
   if (!hovered.value) scheduleClose();
 }
 
+/**
+ * Opens the column at a section, unfolding it if it was folded. Where the
+ * section marks a current step (the agenda's item in debate), it shows
+ * that rather than the section's top. Only the column scrolls: the strip
+ * around it clips sideways, and scrollIntoView would slide it.
+ */
 async function openAt(id: string): Promise<void> {
   opened.value = true;
+  lastOpened.value = id;
   await nextTick();
-  const section = body.value?.querySelector<HTMLElement>(
-    `#session-fold-${CSS.escape(id)}-title`,
+  const key = CSS.escape(id);
+  const title = body.value?.querySelector<HTMLElement>(
+    `#session-fold-${key}-title`,
   );
-  section?.scrollIntoView({ block: "start", behavior: "smooth" });
-  section?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  const toggle = title?.querySelector<HTMLElement>("button");
+  if (toggle?.getAttribute("aria-expanded") === "false") {
+    toggle.click();
+    await nextTick();
+  }
+  const current = body.value?.querySelector<HTMLElement>(
+    `#session-fold-${key}-content [aria-current="step"]`,
+  );
+  if (scroller.value && (current || title)) {
+    revealIn(scroller.value, current ?? title!, current ? "nearest" : "start");
+  }
+  toggle?.focus({ preventScroll: true });
+}
+
+/**
+ * Escape folds a column opened over the debate (not a pinned one) and
+ * gives the focus back to the icon it was opened from. A menu, a popover
+ * or a dialog open from it closes first, on its own Escape.
+ */
+function onEscape(event: KeyboardEvent): void {
+  if (event.defaultPrevented || pinnedHere.value || !expanded.value) return;
+  if (
+    aside.value?.querySelector('[aria-haspopup][aria-expanded="true"]') ||
+    window.document.querySelector(
+      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+    )
+  ) {
+    return;
+  }
+  clearTimeout(openTimer);
+  clearTimeout(closeTimer);
+  hovered.value = false;
+  opened.value = false;
+  void nextTick(() => {
+    const icons =
+      strip.value?.querySelectorAll<HTMLElement>("[data-rail-item]");
+    const back =
+      Array.from(icons ?? []).find(
+        (icon) => icon.dataset.railItem === lastOpened.value,
+      ) ?? icons?.[0];
+    back?.focus();
+  });
 }
 
 // A tap outside a column opened from the strip folds it.
@@ -111,7 +186,7 @@ onBeforeUnmount(() => {
        open and not pinned, it slides over the debate. -->
   <div
     class="relative shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none"
-    :class="pinned ? 'w-[26rem]' : 'w-14'"
+    :class="pinnedHere ? 'w-[26rem]' : 'w-14'"
   >
     <aside
       ref="aside"
@@ -119,14 +194,16 @@ onBeforeUnmount(() => {
       class="border-default bg-default absolute inset-y-0 end-0 z-40 flex overflow-hidden border-s transition-[width,box-shadow] duration-200 ease-out motion-reduce:transition-none"
       :class="[
         expanded ? 'w-[26rem]' : 'w-14',
-        expanded && !pinned ? 'shadow-xl' : '',
+        expanded && !pinnedHere ? 'shadow-xl' : '',
       ]"
       @mouseenter="onEnter"
       @mouseleave="onLeave"
       @focusout="onFocusOut"
+      @keydown.esc="onEscape"
     >
       <!-- The strip, folded -->
       <nav
+        ref="strip"
         :aria-label="t('session.side.strip')"
         class="flex w-14 shrink-0 flex-col items-center gap-1 py-3 transition-opacity duration-200 motion-reduce:transition-none"
         :class="
@@ -140,16 +217,39 @@ onBeforeUnmount(() => {
           :text="item.summary ? `${item.title} · ${item.summary}` : item.title"
           :content="{ side: 'left' }"
         >
+          <!-- Its name is the label: what shows under the icon repeats the
+               summary for the eye (the clock is read in the section). -->
           <UButton
             color="neutral"
             variant="ghost"
             size="lg"
-            :icon="item.icon"
+            class="w-full flex-col justify-center gap-1 px-1 py-2"
+            :data-rail-item="item.id"
             :aria-label="
               item.summary ? `${item.title}: ${item.summary}` : item.title
             "
             @click="openAt(item.id)"
-          />
+          >
+            <span class="relative flex">
+              <UIcon :name="item.icon" class="size-5" aria-hidden="true" />
+              <span
+                v-if="item.dot"
+                class="absolute -end-1 -top-1 size-2.5 rounded-full ring-2 ring-(--ui-bg)"
+                :class="item.dot"
+                aria-hidden="true"
+              />
+            </span>
+            <slot name="strip" :item="item" />
+            <UBadge
+              v-if="item.count"
+              size="md"
+              color="neutral"
+              variant="subtle"
+              class="tabular-nums"
+              :label="String(item.count)"
+              aria-hidden="true"
+            />
+          </UButton>
         </UTooltip>
       </nav>
 
@@ -160,8 +260,9 @@ onBeforeUnmount(() => {
         :class="expanded ? 'opacity-100' : 'pointer-events-none opacity-0'"
         :inert="!expanded || undefined"
       >
-        <div class="flex items-center justify-end px-3 pt-2">
+        <div class="flex min-h-2 items-center justify-end px-3 pt-2">
           <UButton
+            v-if="wide"
             size="xs"
             color="neutral"
             :variant="pinned ? 'soft' : 'ghost'"
@@ -172,6 +273,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <div
+          ref="scroller"
           class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 pt-1 sm:p-4 sm:pt-1"
         >
           <slot />

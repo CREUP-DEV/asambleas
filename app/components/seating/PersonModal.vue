@@ -185,7 +185,14 @@ function submit(): void {
               v-model="groupChoice"
               :items="groupItems"
               value-key="value"
-              :search-input="{ placeholder: t('seating.people.groupSearch') }"
+              :search-input="labelledSearch(t('seating.people.groupSearch'))"
+              :aria-label="
+                selectMenuLabel(
+                  t('seating.people.group'),
+                  groupItems,
+                  groupChoice,
+                )
+              "
               class="w-full"
             />
           </UFormField>

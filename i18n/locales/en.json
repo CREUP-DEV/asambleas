@@ -1609,6 +1609,7 @@
       "presented": "Amendment presented",
       "presentedDescription": "The whole assembly can see it now.",
       "transact": "Propose a transactional amendment with this one",
+      "transactMenu": "Transactional",
       "transactStandIn": "Propose a transactional amendment with {code}",
       "transactOverlaps": "Combine them into a transactional amendment",
       "mainAuthor": "main author",
@@ -2885,6 +2886,10 @@
     "appName": "CREUP Assemblies",
     "skipToNavigation": "Skip to navigation",
     "skipToContent": "Skip to content",
+    "sidebar": {
+      "title": "Menu",
+      "description": "Navigation and account"
+    },
     "brand": {
       "home": "CREUP Assemblies: go to home",
       "product": "Assemblies"
@@ -3058,7 +3063,7 @@
       },
       "back": {
         "title": "How to go back and where the help is",
-        "body": "The top of every page shows where you are. Press any step of that row to go back. This guide opens again with \"Help\", in your profile menu at the bottom left."
+        "body": "The top of every page shows where you are and, when there is a level above, the link back to it. This guide opens again with \"Help\", in the menu with your name (on a phone, at the end of the menu)."
       },
       "preferences": {
         "title": "Make it yours",
@@ -3889,6 +3894,12 @@
       "annotated": "Annotated PDF",
       "retry": "Retry the export",
       "again": "Generate again",
+      "againClean": "Generate the clean PDF again",
+      "againAnnotated": "Generate the annotated PDF again",
+      "downloadClean": "Download clean PDF",
+      "downloadAnnotated": "Download annotated PDF",
+      "readyClean": "Clean PDF ready to download",
+      "readyAnnotated": "Annotated PDF ready to download",
       "timeout": "The export is taking too long. Try again later."
     },
     "editRecord": "Edit document record",
@@ -4722,6 +4733,7 @@
       "limitApply": "Apply",
       "limitDefault": "Default limit",
       "limitDefaultHint": "The time a turn with a limit gets, unless you change it for that turn.",
+      "settings": "Speaking turn settings",
       "limitedTurn": "With a time limit ({time})",
       "priority": "Priority",
       "priorityTurn": "Priority: jumps the queue",
@@ -5306,13 +5318,13 @@
     "title": "Control sheet",
     "intro": "How each item and each amendment stands: whether it was dealt with, its result, how it was voted and who spoke.",
     "introPublic": "How each item and each amendment stands: whether it was dealt with, its result and how it was voted.",
+    "about": "What the control sheet shows",
     "loading": "Loading the control sheet",
     "loadError": "The control sheet could not be loaded",
     "retry": "Try again",
     "follow": "Follow the debate",
     "followHint": "Opens what the Mesa is debating and marks it. In «Amendments», those of the document in debate.",
-    "following": "Following the debate",
-    "followingHint": "It takes you to what is debated. If you move away or open another document, it stops following.",
+    "followingHint": "Following the debate: it takes you to what is debated. If you move away or open another document, it stops following.",
     "live": "Under debate",
     "noVote": "Not voted",
     "positionNone": "No answer",
@@ -5341,10 +5353,12 @@
       "general": "Overview",
       "amendments": "Amendments",
       "turns": "Speaking turns",
+      "turnsShort": "Turns",
       "history": "History"
     },
     "turns": {
       "title": "Speaking turns",
+      "about": "What the speaking turns show",
       "description": "Every time someone took the floor in the assembly, in order, with the agenda item it was given in and how long it lasted. “By speaker” adds up each one's turns and time.",
       "emptyTitle": "Nobody has spoken yet",
       "emptyDescription": "Turns show here as soon as the Mesa gives the floor.",
@@ -6311,7 +6325,6 @@
     },
     "document": {
       "view": "View the document",
-      "onScreen": "On screen now",
       "gone": "The Mesa no longer shows it.",
       "goToProjected": "Go to what is on screen",
       "openPage": "Open its page",

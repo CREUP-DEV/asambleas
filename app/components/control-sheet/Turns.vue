@@ -125,7 +125,24 @@ const summary = computed(() =>
     class="flex flex-col gap-4"
     :aria-label="t('controlSheet.turns.title')"
   >
-    <p class="text-muted text-sm">
+    <!-- Below lg the description waits behind one quiet line, so the turns
+         start higher up on a phone (M-086). -->
+    <UPopover>
+      <UButton
+        color="neutral"
+        variant="link"
+        size="xs"
+        icon="i-lucide-info"
+        class="min-h-8 self-start px-1 lg:hidden"
+        :label="t('controlSheet.turns.about')"
+      />
+      <template #content>
+        <p class="text-default max-w-xs p-3 text-sm">
+          {{ t("controlSheet.turns.description") }}
+        </p>
+      </template>
+    </UPopover>
+    <p class="text-muted hidden text-sm lg:block">
       {{ t("controlSheet.turns.description") }}
     </p>
 
@@ -145,9 +162,17 @@ const summary = computed(() =>
             :items="itemOptions"
             value-key="value"
             :placeholder="t('controlSheet.turns.filters.allItems')"
-            :search-input="{
-              placeholder: t('controlSheet.turns.filters.searchItem'),
-            }"
+            :aria-label="
+              selectMenuLabel(
+                t('controlSheet.turns.filters.item'),
+                itemOptions,
+                itemFilter,
+                t('controlSheet.turns.filters.allItems'),
+              )
+            "
+            :search-input="
+              labelledSearch(t('controlSheet.turns.filters.searchItem'))
+            "
             :ui="{
               value: 'whitespace-normal text-start',
               itemLabel: 'whitespace-normal',
@@ -161,9 +186,17 @@ const summary = computed(() =>
             :items="whoOptions"
             value-key="value"
             :placeholder="t('controlSheet.turns.filters.everyone')"
-            :search-input="{
-              placeholder: t('controlSheet.turns.filters.searchWho'),
-            }"
+            :aria-label="
+              selectMenuLabel(
+                t('controlSheet.turns.filters.who'),
+                whoOptions,
+                whoFilter,
+                t('controlSheet.turns.filters.everyone'),
+              )
+            "
+            :search-input="
+              labelledSearch(t('controlSheet.turns.filters.searchWho'))
+            "
             class="w-full"
           />
         </UFormField>
@@ -218,7 +251,7 @@ const summary = computed(() =>
       <!-- Each turn, in the order it took the floor -->
       <div
         v-else-if="view === 'list'"
-        class="border-default overflow-x-auto rounded-lg border"
+        class="border-default relative overflow-x-auto rounded-lg border"
       >
         <table class="w-full min-w-[44rem] text-left text-sm">
           <caption class="sr-only">
@@ -294,7 +327,10 @@ const summary = computed(() =>
       </div>
 
       <!-- The totals per member, longest first -->
-      <div v-else class="border-default overflow-x-auto rounded-lg border">
+      <div
+        v-else
+        class="border-default relative overflow-x-auto rounded-lg border"
+      >
         <table class="w-full min-w-[36rem] text-left text-sm">
           <caption class="sr-only">
             {{

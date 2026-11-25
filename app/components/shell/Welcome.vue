@@ -103,20 +103,23 @@ onMounted(() => {
     :description="
       t('onboarding.progress', { step: index + 1, total: steps.length })
     "
-    :ui="{ content: 'sm:max-w-xl' }"
+    :ui="{ content: 'sm:max-w-xl max-sm:h-[calc(100dvh-2rem)]' }"
   >
+    <!-- «Atrás» and «Siguiente» stay put from step to step: on phones the
+         dialog takes the screen's height and its body scrolls; from sm the
+         step keeps a height that fits every step but the preferences. -->
     <template #body>
-      <div v-if="step" class="space-y-5" aria-live="polite">
+      <div v-if="step" class="space-y-5 sm:min-h-[23rem]" aria-live="polite">
         <!-- The drawing of the step: decorative, the text says it all. -->
         <div
-          class="bg-elevated flex items-center justify-center gap-5 rounded-xl py-8"
+          class="bg-elevated flex items-center justify-center gap-5 rounded-xl py-4 sm:py-8"
           aria-hidden="true"
         >
           <UIcon
             v-for="icon in step.icons"
             :key="icon"
             :name="icon"
-            class="text-primary size-14 shrink-0"
+            class="text-primary size-10 shrink-0 sm:size-14"
           />
         </div>
 
@@ -143,19 +146,24 @@ onMounted(() => {
 
     <template #footer>
       <div class="flex w-full flex-col gap-4">
+        <!-- Each dot is drawn at 12px inside a 24px target (WCAG 2.5.8). -->
         <ol
-          class="flex items-center justify-center gap-2"
+          class="flex items-center justify-center"
           :aria-label="t('onboarding.stepsLabel')"
         >
           <li v-for="(item, position) in steps" :key="item.id" class="flex">
             <button
               type="button"
-              class="focus-visible:outline-primary size-3 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
-              :class="position === index ? 'bg-primary' : 'bg-accented'"
+              class="focus-visible:outline-primary flex size-6 items-center justify-center rounded-full focus-visible:outline-2"
               :aria-label="t('onboarding.goToStep', { step: position + 1 })"
               :aria-current="position === index ? 'step' : undefined"
               @click="index = position"
-            />
+            >
+              <span
+                class="size-3 rounded-full transition-colors"
+                :class="position === index ? 'bg-primary' : 'bg-accented'"
+              />
+            </button>
           </li>
         </ol>
 

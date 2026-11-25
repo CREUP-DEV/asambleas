@@ -9,10 +9,16 @@ import type { ImpersonationContext } from "../auth/impersonation";
 import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import {
   PERMISSION_KEYS,
-  holdsPermission,
   readsControlSheet,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
+import {
+  moderates,
+  notesSpeakers,
+  recordsResults,
+  reviewsAmendments,
+  viewsSeating,
+} from "~~/shared/utils/permissionRules";
 import type { MemberKind } from "~~/shared/constants/domain";
 
 /**
@@ -107,7 +113,7 @@ export function requireCan(actor: Actor, key: PermissionKey): void {
 
 /** Mesa de Moderación actions: live state, admissions, outcomes, votes. */
 export function canModerate(actor: Actor): boolean {
-  return actor.can(PERMISSION_KEYS.SESSION_MODERATE);
+  return moderates(actor.can);
 }
 
 export function canManageAssemblies(actor: Actor): boolean {
@@ -135,7 +141,7 @@ export function canViewControlSheet(actor: Actor): boolean {
  * assembly:vote_result, who records them from the sheet and never projects.
  */
 export function canRecordResults(actor: Actor): boolean {
-  return canModerate(actor) || actor.can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT);
+  return recordsResults(actor.can);
 }
 
 /**
@@ -144,9 +150,7 @@ export function canRecordResults(actor: Actor): boolean {
  * whoever holds session:record_speakers.
  */
 export function canNoteSpeakers(actor: Actor): boolean {
-  return (
-    canModerate(actor) || actor.can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS)
-  );
+  return notesSpeakers(actor.can);
 }
 
 /** Writing the control sheet: observations, the CEA position, its rows. */
@@ -159,7 +163,7 @@ export function canEditControlSheet(actor: Actor): boolean {
  * photos. Whoever may edit it reads it too.
  */
 export function canViewSeating(actor: Actor): boolean {
-  return holdsPermission(actor.can, PERMISSION_KEYS.SEATING_VIEW);
+  return viewsSeating(actor.can);
 }
 
 /**
@@ -182,7 +186,7 @@ export function canEditSeating(actor: Actor): boolean {
  * (PERMISSION_IMPLIED_BY).
  */
 export function canReviewAmendments(actor: Actor): boolean {
-  return holdsPermission(actor.can, PERMISSION_KEYS.AMENDMENT_REVIEW);
+  return reviewsAmendments(actor.can);
 }
 
 /**

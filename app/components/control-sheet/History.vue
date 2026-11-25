@@ -211,6 +211,14 @@ onLive((events) => {
           multiple
           :search-input="false"
           :placeholder="t('controlSheet.history.filters.allGroups')"
+          :aria-label="
+            selectMenuLabel(
+              t('controlSheet.history.filters.groups'),
+              groupItems,
+              groups,
+              t('controlSheet.history.filters.allGroups'),
+            )
+          "
           class="w-full"
         />
       </UFormField>
@@ -220,9 +228,17 @@ onLive((events) => {
           :items="subjectItems"
           value-key="value"
           :placeholder="t('controlSheet.history.filters.allSubjects')"
-          :search-input="{
-            placeholder: t('controlSheet.history.filters.searchSubject'),
-          }"
+          :aria-label="
+            selectMenuLabel(
+              t('controlSheet.history.filters.subject'),
+              subjectItems,
+              subject,
+              t('controlSheet.history.filters.allSubjects'),
+            )
+          "
+          :search-input="
+            labelledSearch(t('controlSheet.history.filters.searchSubject'))
+          "
           :ui="{
             value: 'whitespace-normal text-start',
             itemLabel: 'whitespace-normal',
@@ -236,9 +252,17 @@ onLive((events) => {
           :items="peopleItems"
           value-key="value"
           :placeholder="t('controlSheet.history.filters.anyone')"
-          :search-input="{
-            placeholder: t('controlSheet.history.filters.searchPerson'),
-          }"
+          :aria-label="
+            selectMenuLabel(
+              t('controlSheet.history.filters.person'),
+              peopleItems,
+              actor,
+              t('controlSheet.history.filters.anyone'),
+            )
+          "
+          :search-input="
+            labelledSearch(t('controlSheet.history.filters.searchPerson'))
+          "
           class="w-full"
         />
       </UFormField>
@@ -267,6 +291,17 @@ onLive((events) => {
           :items="amendmentItems"
           value-key="value"
           :placeholder="t('controlSheet.history.filters.allAmendments')"
+          :aria-label="
+            selectMenuLabel(
+              t('controlSheet.history.filters.amendment'),
+              amendmentItems,
+              amendmentId,
+              t('controlSheet.history.filters.allAmendments'),
+            )
+          "
+          :search-input="
+            labelledSearch(t('controlSheet.history.filters.amendment'))
+          "
           class="w-full"
         />
       </UFormField>

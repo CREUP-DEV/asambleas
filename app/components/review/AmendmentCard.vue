@@ -359,7 +359,7 @@ const moreBusy = computed(
             t("review.amendments.presentedBy")
           }}</span>
           <template v-if="mainAuthor">
-            <CommonMemberBadge :member="mainAuthor" show-name />
+            <CommonMemberBadge :member="mainAuthor" show-name wrap />
             <template v-if="coAuthors.length > 0">
               <span class="text-muted">{{ t("review.togetherWith") }}</span>
               <CommonMemberBadge
@@ -440,6 +440,7 @@ const moreBusy = computed(
         :key="author.id"
         :member="author"
         :show-name="missing.length <= 3"
+        wrap
       />
     </div>
     <p

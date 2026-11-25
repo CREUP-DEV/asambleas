@@ -44,6 +44,12 @@ export type PdfFunctionSpec =
   /** pageBreakBefore: a heading at the foot of a page moves to the next. */
   | { kind: "keepHeadingWithNext" };
 
+/**
+ * The styles of the cell of a framed heading (content.ts's headingNode): the
+ * burgundy bar of level 1 and the box of level 3.
+ */
+const FRAMED_HEADING_STYLES: readonly unknown[] = ["barHeading", "boxHeading"];
+
 /** The key the serialized definition writes a function's spec under. */
 export const PDF_FUNCTION_KEY = "$pdfFunction";
 
@@ -84,12 +90,16 @@ function materialize(spec: PdfFunctionSpec) {
         return node;
       };
     case "keepHeadingWithNext":
+      // A framed heading (levels 1 and 3) is a one-cell table, and its own
+      // cell is among the nodes after it: that one does not count.
       return (
         node: { headlineLevel?: unknown },
-        queries: { getFollowingNodesOnPage(): unknown[] },
+        queries: { getFollowingNodesOnPage(): { style?: unknown }[] },
       ) =>
         node.headlineLevel !== undefined &&
-        queries.getFollowingNodesOnPage().length === 0;
+        queries
+          .getFollowingNodesOnPage()
+          .every((next) => FRAMED_HEADING_STYLES.includes(next.style));
   }
 }
 
@@ -115,10 +125,24 @@ export function constantLayout<T extends string>(
   ) as Record<T, () => string | number | boolean | null>;
 }
 
+const LIGATURES = /[\uFB00-\uFB06]/g;
+
+/**
+ * `text` with the ligature characters U+FB00-FB06 (ﬀ, ﬁ, ﬂ, ﬃ, ﬄ, ﬅ, ﬆ),
+ * common in text pasted from a PDF, spelled out in their letters: the
+ * embedded Raleway has no glyph for them and pdfmake would draw a box. Only
+ * those: a full NFKC would also change ª, º, ² or ½.
+ */
+export function expandLigatures(text: string): string {
+  return text.replace(LIGATURES, (ligature) => ligature.normalize("NFKC"));
+}
+
 function toSerial(value: unknown, path: string): unknown {
   if (value === null) return null;
   switch (typeof value) {
     case "string":
+      // Every string pdfmake lays out crosses here, in every PDF.
+      return expandLigatures(value);
     case "boolean":
       return value;
     case "number":
@@ -187,6 +211,7 @@ export const PDF_FUNCTIONS_SCRIPT = `
 const PDF_FUNCTION_KEY = ${JSON.stringify(PDF_FUNCTION_KEY)};
 const PAGE_NUMBER_MARK = String.fromCharCode(${PAGE_NUMBER_MARK.charCodeAt(0)});
 const PAGE_TOTAL_MARK = String.fromCharCode(${PAGE_TOTAL_MARK.charCodeAt(0)});
+const FRAMED_HEADING_STYLES = ${JSON.stringify(FRAMED_HEADING_STYLES)};
 function fillPageNumbers(node, page, total) {
   if (Array.isArray(node)) {
     for (const item of node) fillPageNumbers(item, page, total);
@@ -217,7 +242,9 @@ function materialize(spec) {
     case "keepHeadingWithNext":
       return (node, queries) =>
         node.headlineLevel !== undefined &&
-        queries.getFollowingNodesOnPage().length === 0;
+        queries
+          .getFollowingNodesOnPage()
+          .every((next) => FRAMED_HEADING_STYLES.includes(next.style));
   }
   throw new Error("unknown PDF function");
 }

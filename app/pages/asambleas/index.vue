@@ -4,6 +4,7 @@ import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
 import { ASSEMBLY_STATUSES } from "~~/shared/constants/domain";
 import type { AssemblyStatus } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { seesDraftAssemblies } from "~~/shared/utils/permissionRules";
 import type { AssemblyListDto } from "~~/shared/types/api";
 
 type TypeFilter = AssemblyType | "all";
@@ -17,11 +18,7 @@ const { can } = useMe();
 useHead({ title: () => t("assemblies.title") });
 
 const canCreate = computed(() => can(PERMISSION_KEYS.ASSEMBLY_CREATE));
-const canSeeDrafts = computed(
-  () =>
-    can(PERMISSION_KEYS.ASSEMBLY_MANAGE) ||
-    can(PERMISSION_KEYS.SESSION_MODERATE),
-);
+const canSeeDrafts = computed(() => seesDraftAssemblies(can));
 
 // Filters live in the URL so they survive reloads and can be shared.
 
@@ -91,6 +88,16 @@ const typeItems = computed(() => [
     value: type,
   })),
 ]);
+
+/**
+ * The filters' menus take the width of their longest option, never less
+ * than the trigger nor more than the screen, and a label that still does
+ * not fit wraps: `text-clip` is what takes the theme's `truncate` out.
+ */
+const filterMenuUi = {
+  content: "min-w-(--reka-select-trigger-width) w-max max-w-[calc(100vw-2rem)]",
+  itemLabel: "text-clip whitespace-normal break-words",
+};
 
 const statusItems = computed(() => [
   { label: t("assemblies.filters.allStatuses"), value: "all" },
@@ -163,28 +170,38 @@ const createOpen = ref(false);
       </UDashboardNavbar>
       <ShellBreadcrumbs />
 
-      <UDashboardToolbar>
+      <!-- On phones the filters are two rows of the same width; their menus
+           are as wide as their longest option, so "AGE · …" and "AGET · …"
+           read whole. -->
+      <UDashboardToolbar
+        :ui="{ left: 'max-sm:min-w-0 max-sm:flex-1', right: 'max-md:hidden' }"
+      >
         <template #left>
-          <div class="flex flex-wrap items-center gap-2 py-2">
+          <div
+            class="grid w-full grid-cols-1 gap-2 py-2 sm:flex sm:flex-wrap sm:items-center"
+          >
             <USelect
               v-model="typeFilter"
               :items="typeItems"
               :aria-label="t('assemblies.filters.type')"
               icon="i-lucide-tag"
-              class="w-48 sm:w-64"
+              class="w-full sm:w-64"
+              :ui="filterMenuUi"
             />
             <USelect
               v-model="statusFilter"
               :items="statusItems"
               :aria-label="t('assemblies.filters.status')"
               icon="i-lucide-circle-dot"
-              class="w-56"
+              class="w-full sm:w-56"
+              :ui="filterMenuUi"
             />
             <UButton
               v-if="hasFilters"
               color="neutral"
               variant="ghost"
               icon="i-lucide-filter-x"
+              class="justify-self-start"
               @click="clearFilters"
             >
               {{ t("assemblies.filters.clear") }}

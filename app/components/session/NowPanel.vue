@@ -572,6 +572,12 @@ const announcement = computed(() => {
         v-if="nextAgenda"
         size="lg"
         icon="i-lucide-play"
+        class="max-w-full"
+        :ui="{
+          label:
+            'line-clamp-2 text-start text-clip break-words whitespace-normal',
+        }"
+        :title="t('session.now.start', { title: nextAgendaLabel })"
         :label="t('session.now.start', { title: nextAgendaLabel })"
         :loading="liveBusy"
         :disabled="closed"
@@ -674,10 +680,12 @@ const announcement = computed(() => {
               : 'border-default'
           "
         >
+          <!-- The title wraps whole; under 10rem beside it, the button
+               goes to the next line (E-075). -->
           <div class="flex flex-wrap items-center gap-2">
-            <span class="min-w-0 flex-1">
+            <span class="min-w-40 flex-1 break-words">
               <span
-                class="block truncate font-medium"
+                class="block font-medium"
                 :class="
                   item.id !== selectedId &&
                   session.documentProgress(item.id) === 'treated'
@@ -999,8 +1007,9 @@ const announcement = computed(() => {
           :disabled="closed"
           @click="openItemVote"
         />
-        <!-- One row that never wraps: a long next item gives way (cut short)
-             so that "Más" always fits beside it. -->
+        <!-- "Más" always beside the next item, whose title takes up to two
+             lines (the rest on hover): what tells it apart is often at its
+             end, after «Aprobación, si procede, …» (M-075). -->
         <div class="flex max-w-full min-w-0 items-center gap-2">
           <UButton
             v-if="nextAgenda"
@@ -1008,7 +1017,12 @@ const announcement = computed(() => {
             :color="nextItemPrimary ? 'primary' : 'neutral'"
             :variant="nextItemPrimary ? 'solid' : 'ghost'"
             trailing-icon="i-lucide-arrow-right"
-            class="min-w-0"
+            class="max-w-full min-w-0"
+            :ui="{
+              label:
+                'line-clamp-2 text-start text-clip break-words whitespace-normal',
+            }"
+            :title="nextAgendaText"
             :label="nextAgendaText"
             :disabled="closed || liveBusy"
             @click="session.debateAgendaTarget(nextAgenda)"
@@ -1018,7 +1032,7 @@ const announcement = computed(() => {
               color="neutral"
               variant="ghost"
               icon="i-lucide-ellipsis"
-              class="shrink-0"
+              class="shrink-0 self-start"
               :label="t('session.now.more')"
               :disabled="liveBusy"
             />

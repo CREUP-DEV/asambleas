@@ -27,24 +27,23 @@ import {
 } from "~~/shared/utils/positions";
 import {
   actsFor,
-  canManageAssemblies,
   canManageDocuments,
   canModerate,
   canReviewAmendments,
   type Actor,
 } from "./actor";
+import { seesDraftAssemblies } from "~~/shared/utils/permissionRules";
 import { isPublicAmendment } from "./publicAmendments";
 
-/** Draft assemblies are only visible to those who manage assemblies. */
+/**
+ * Draft assemblies are only visible to whoever manages assemblies and the
+ * Mesa (seesDraftAssemblies).
+ */
 export function canSeeAssembly(
   actor: Actor,
   assembly: { status: AssemblyStatus },
 ): boolean {
-  return (
-    assembly.status !== "draft" ||
-    canManageAssemblies(actor) ||
-    canModerate(actor)
-  );
+  return assembly.status !== "draft" || seesDraftAssemblies(actor.can);
 }
 
 /**

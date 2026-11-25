@@ -14,11 +14,7 @@ import {
   documentPagesTarget,
   useDocumentPages,
 } from "~/composables/document/useDocumentPages";
-import {
-  applyScrollAnchor,
-  readViewAnchor,
-  scrollParentOf,
-} from "~/utils/scrollAnchor";
+import { applyScrollAnchor, readViewAnchor } from "~/utils/scrollAnchor";
 
 /**
  * The document on screen, read without leaving the live view (user's
@@ -176,14 +172,20 @@ const following = ref(true);
 const readerAnchor = ref<LiveScrollAnchor | null>(null);
 
 const content = ref<HTMLElement | null>(null);
+/**
+ * The box that scrolls the text: a region of its own that takes the focus
+ * when the window opens, so the keys move the text at once (Safari never
+ * focuses a scrolling box by itself).
+ */
 const box = ref<HTMLElement | null>(null);
-watch(
-  content,
-  (element) => {
-    box.value = element ? scrollParentOf(element) : null;
+const modalContent = {
+  onOpenAutoFocus: (event: Event) => {
+    if (!box.value) return;
+    event.preventDefault();
+    // Where it scrolls to is place()'s to say.
+    box.value.focus({ preventScroll: true });
   },
-  { flush: "post" },
-);
+};
 
 /** Puts the window where it should be: the Mesa's part, or the reader's. */
 function place(): void {
@@ -213,12 +215,13 @@ watch(
   },
 );
 
-// Opening, or another document: placed once laid out (a PDF once its pages
-// have their size, `ready`, which also comes after a resize).
+// Opening, another document, or the text back after the skeleton: placed once
+// laid out (a PDF once its pages have their size, `ready`, which also comes
+// after a resize).
 watch(
-  [open, () => shown.value?.id, box],
-  async ([isOpen, id, element]) => {
-    if (!isOpen || !id || !element || isFile.value) return;
+  [open, () => shown.value?.id, box, content],
+  async ([isOpen, id, element, text]) => {
+    if (!isOpen || !id || !element || !text || isFile.value) return;
     await nextTick();
     requestAnimationFrame(place);
   },
@@ -263,56 +266,66 @@ useEventListener(
 </script>
 
 <template>
+  <!--
+    On a phone the window takes the whole screen. While the document is on
+    screen the footer says so («Sigue la proyección» or «Ir a lo
+    proyectado»): the description only says when it no longer is.
+  -->
   <UModal
     v-model:open="open"
     :title="current?.title ?? t('liveView.document.view')"
     :description="
-      !live
-        ? description
-        : onScreen
-          ? t('liveView.document.onScreen')
-          : t('liveView.document.gone')
+      !live ? description : onScreen ? undefined : t('liveView.document.gone')
     "
+    :content="modalContent"
     :ui="{
       content:
-        'max-w-4xl h-[calc(100dvh-2rem)] sm:h-[calc(100dvh-4rem)] max-h-none',
-      body: 'p-3 sm:p-5',
+        'max-w-4xl h-[calc(100dvh-2rem)] sm:h-[calc(100dvh-4rem)] max-h-none max-sm:inset-0 max-sm:h-dvh max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:shadow-none max-sm:ring-0',
+      body: 'flex min-h-0 flex-col overflow-hidden p-0 sm:p-0',
       footer: 'flex flex-wrap items-center gap-2',
     }"
   >
     <template #body>
-      <CommonDocumentSkeleton v-if="loading" />
-      <UAlert
-        v-else-if="failed"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :title="t('liveView.document.loadError')"
-      />
-      <div v-else-if="current" ref="content" class="relative">
-        <template v-if="isFile">
-          <DocumentPdfPages
-            v-if="current.fileUrl"
-            :key="current.id"
-            :url="current.fileUrl"
-            :title="current.title"
-            @ready="place"
-          />
+      <div
+        ref="box"
+        role="region"
+        tabindex="0"
+        :aria-label="current?.title ?? t('liveView.document.view')"
+        class="min-h-0 flex-1 overflow-y-auto p-3 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:p-5"
+      >
+        <CommonDocumentSkeleton v-if="loading" />
+        <UAlert
+          v-else-if="failed"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="t('liveView.document.loadError')"
+        />
+        <div v-else-if="current" ref="content" class="relative">
+          <template v-if="isFile">
+            <DocumentPdfPages
+              v-if="current.fileUrl"
+              :key="current.id"
+              :url="current.fileUrl"
+              :title="current.title"
+              @ready="place"
+            />
+            <p v-else class="text-muted">
+              {{ t("projection.pdfPending") }}
+            </p>
+          </template>
+          <div v-else-if="blocks.length > 0" :key="current.id" class="live-doc">
+            <ContentView
+              :blocks="blocks"
+              :pending="pendingMarks"
+              :pages="textPages"
+              @page="textPage = $event"
+            />
+          </div>
           <p v-else class="text-muted">
-            {{ t("projection.pdfPending") }}
+            {{ t("liveView.document.empty") }}
           </p>
-        </template>
-        <div v-else-if="blocks.length > 0" :key="current.id" class="live-doc">
-          <ContentView
-            :blocks="blocks"
-            :pending="pendingMarks"
-            :pages="textPages"
-            @page="textPage = $event"
-          />
         </div>
-        <p v-else class="text-muted">
-          {{ t("liveView.document.empty") }}
-        </p>
       </div>
     </template>
 
@@ -344,16 +357,20 @@ useEventListener(
           @click="goToProjected"
         />
       </template>
+      <!-- On a phone only its arrow, so the footer keeps to one row. -->
       <UButton
         v-if="path"
         :to="path"
         color="neutral"
         variant="outline"
         size="lg"
-        class="grow justify-center sm:ms-auto sm:grow-0"
+        class="ms-auto"
         trailing-icon="i-lucide-arrow-right"
-        :label="t('liveView.document.openPage')"
-      />
+      >
+        <span class="max-sm:sr-only">
+          {{ t("liveView.document.openPage") }}
+        </span>
+      </UButton>
     </template>
   </UModal>
 </template>

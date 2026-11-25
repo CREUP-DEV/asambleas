@@ -319,6 +319,14 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
               multiple
               :search-input="false"
               :placeholder="t('agenda.container.allKinds')"
+              :aria-label="
+                selectMenuLabel(
+                  t('agenda.container.kinds'),
+                  kindItems,
+                  chosenKinds,
+                  t('agenda.container.allKinds'),
+                )
+              "
               class="w-full"
               data-testid="agenda-container-kinds"
             />

@@ -243,8 +243,10 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
 
 <template>
   <div>
+    <!-- Positioned, so the sr-only texts of its cells stay inside the box
+         that scrolls sideways and never widen the page (E-087). -->
     <div
-      class="border-default hidden overflow-x-auto rounded-lg border lg:block"
+      class="border-default relative hidden overflow-x-auto rounded-lg border lg:block"
     >
       <table
         :class="[
@@ -481,7 +483,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
               :ids="liveNoteMentions(row.amendment)"
             />
           </p>
-          <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <dl class="grid grid-cols-2 gap-2">
             <div>
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.authors") }}
@@ -507,7 +509,9 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 />
               </dd>
             </div>
-            <div v-if="showPositions">
+            <!-- The whole width: an answer («Propone una transaccional»)
+                 does not fit half a phone's card. -->
+            <div v-if="showPositions" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.position") }}
               </dt>
@@ -544,7 +548,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 />
               </dd>
             </div>
-            <div>
+            <div class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.vote") }}
               </dt>
@@ -563,10 +567,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 }}</span>
               </dd>
             </div>
-            <div
-              v-if="internal && row.speakers.length > 0"
-              class="sm:col-span-2"
-            >
+            <div v-if="internal && row.speakers.length > 0" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.speakers") }}
               </dt>
@@ -574,10 +575,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 <ControlSheetSpeakers :speakers="row.speakers" />
               </dd>
             </div>
-            <div
-              v-if="internal && row.sheet?.observations"
-              class="sm:col-span-2"
-            >
+            <div v-if="internal && row.sheet?.observations" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.observations") }}
               </dt>
@@ -585,10 +583,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 {{ row.sheet.observations }}
               </dd>
             </div>
-            <div
-              v-if="ownNotes && notesOf(row).length > 0"
-              class="sm:col-span-2"
-            >
+            <div v-if="ownNotes && notesOf(row).length > 0" class="col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("notes.title") }}
               </dt>

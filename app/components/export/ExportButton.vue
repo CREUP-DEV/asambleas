@@ -87,6 +87,34 @@ const idleLabel = computed(() => {
   return t("export.exportPdf");
 });
 
+/**
+ * The done state's texts, named after the variant so the clean and the
+ * annotated PDF offered side by side do not read alike. A custom `label`
+ * keeps the generic ones: that button stands alone.
+ */
+const doneTexts = computed(() => {
+  const variant = props.label ? undefined : props.variant;
+  if (variant === "annotated") {
+    return {
+      download: t("workspace.export.downloadAnnotated"),
+      ready: t("workspace.export.readyAnnotated"),
+      again: t("workspace.export.againAnnotated"),
+    };
+  }
+  if (variant === "clean") {
+    return {
+      download: t("workspace.export.downloadClean"),
+      ready: t("workspace.export.readyClean"),
+      again: t("workspace.export.againClean"),
+    };
+  }
+  return {
+    download: t("export.download"),
+    ready: t("export.ready"),
+    again: t("workspace.export.again"),
+  };
+});
+
 const busyLabel = computed(() =>
   state.value === "starting" ? t("export.starting") : t("export.generating"),
 );
@@ -98,7 +126,7 @@ const announcement = computed(() => {
     case "polling":
       return busyLabel.value;
     case "done":
-      return t("export.ready");
+      return doneTexts.value.ready;
     case "failed":
       return t("export.failed");
     default:
@@ -138,7 +166,7 @@ async function poll(delay: number, gen: number): Promise<void> {
       stopPolling();
       state.value = "done";
       toast.add({
-        title: t("export.ready"),
+        title: doneTexts.value.ready,
         color: "success",
         icon: "i-lucide-file-check",
       });
@@ -228,7 +256,7 @@ defineExpose({ start });
       color="success"
       :variant="buttonVariant"
       :size="size"
-      :label="t('export.download')"
+      :label="doneTexts.download"
     />
     <UButton
       v-else-if="!hideIdle || state !== 'idle'"
@@ -254,7 +282,7 @@ defineExpose({ start });
       color="neutral"
       variant="ghost"
       :size="size"
-      :aria-label="t('workspace.export.again')"
+      :aria-label="doneTexts.again"
       @click="
         reset();
         start();

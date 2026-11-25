@@ -1,7 +1,11 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 import type { MaybeRefOrGetter } from "vue";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
+import {
+  reviewsAmendments,
+  validatesDocuments,
+  viewsSeating,
+} from "~~/shared/utils/permissionRules";
 import { hasSeatingRoom } from "~~/shared/utils/seating/groups";
 import {
   REVIEW_BADGE_STATE_KEY,
@@ -123,12 +127,11 @@ export function useAssemblySections(
     const current = toValue(assembly);
     if (!current) return [];
     const sections = visibleAssemblySections({
-      validateDocuments: can(PERMISSION_KEYS.DOCUMENT_MANAGE),
-      reviewAmendments: can(PERMISSION_KEYS.AMENDMENT_REVIEW),
+      validateDocuments: validatesDocuments(can),
+      reviewAmendments: reviewsAmendments(can),
       manage: current.can.manage,
       moderate: current.can.moderate,
-      seating:
-        can(PERMISSION_KEYS.SEATING_VIEW) || can(PERMISSION_KEYS.SEATING_EDIT),
+      seating: viewsSeating(can),
       online: !hasSeatingRoom(current.type),
     });
     return groupAssemblySections(sections).map(({ group, sections: list }) => ({

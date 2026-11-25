@@ -79,6 +79,10 @@ useHead({
         :max-size="26"
         class="print:hidden"
         :ui="{ footer: 'lg:border-t lg:border-default' }"
+        :menu="{
+          title: t('shell.sidebar.title'),
+          description: t('shell.sidebar.description'),
+        }"
       >
         <template #header="{ collapsed }">
           <ShellBrand :collapsed="collapsed" />

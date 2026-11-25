@@ -365,7 +365,10 @@ watch(popoverOpen, (open) => {
     <template v-else>
       <DocumentHeader :document="document" :assembly="assembly">
         <template v-if="isPublished && document.format === 'structured'">
+          <!-- The clean PDF prints the voted text; before the final vote the
+               annotated one carries the approved amendments. -->
           <ExportButton
+            v-if="document.consolidatedVersion"
             :assembly="assembly.id"
             :document="document.id"
             variant="clean"

@@ -1,5 +1,6 @@
-import { PgBoss } from "pg-boss";
+import { PgBoss, type WipData } from "pg-boss";
 import { z } from "zod/v4";
+import { logError } from "../core/logger";
 import {
   EXPORT_LOCALES,
   EXPORT_VARIANTS,
@@ -8,6 +9,36 @@ import {
 
 let boss: PgBoss | null = null;
 let starting: Promise<PgBoss> | null = null;
+
+type ExportQueueStarter = (instance: PgBoss) => Promise<void>;
+const starters: { name: string; start: ExportQueueStarter }[] = [];
+
+/**
+ * Runs `start` (registering workers) on the instance whoever starts it: the
+ * worker plugin's boot start, or, when that gave up, the first request that
+ * starts the instance later. Registered before the instance exists, it runs
+ * inside the start, before any caller gets the instance; registered after,
+ * it runs at once. A starter that fails is logged and the others still run:
+ * the instance stays up, and /api/health calls it stalled.
+ */
+export function onExportQueueStart(
+  name: string,
+  start: ExportQueueStarter,
+): void {
+  starters.push({ name, start });
+  if (boss) void runStarter(boss, { name, start });
+}
+
+async function runStarter(
+  instance: PgBoss,
+  starter: { name: string; start: ExportQueueStarter },
+): Promise<void> {
+  try {
+    await starter.start(instance);
+  } catch (error) {
+    logError("export.queue", error, { action: "start", starter: starter.name });
+  }
+}
 
 /** Attempts after the first one. Deterministic failures are never retried. */
 export const EXPORT_RETRY_LIMIT = 2;
@@ -21,8 +52,10 @@ export const EXPORT_RETRY_LIMIT = 2;
 export const EXPORT_QUEUE_BOOT_ATTEMPTS = 20;
 
 /**
- * Connections of the queue's own pool. Both workers take one job at a time,
- * and the shared cluster's budget is small (DEPLOYMENT.md).
+ * Connections of the instance's own pool. Besides the exports it runs the
+ * package, the pages of a text, the account and room photos and the images'
+ * clean-up, each worker one job at a time; the shared cluster's budget is
+ * small (DEPLOYMENT.md).
  */
 const EXPORT_QUEUE_MAX_CONNECTIONS = 3;
 
@@ -52,6 +85,11 @@ async function startExportQueue(attempts: number): Promise<PgBoss> {
     schema: "pgboss",
     max: EXPORT_QUEUE_MAX_CONNECTIONS,
   });
+  // A failed fetch (PostgreSQL restarting) is emitted as "error": with no
+  // listener the emit throws out of the worker's loop and that worker stops
+  // for good while the process lives on. Listened to, the worker logs it and
+  // polls again.
+  instance.on("error", (error) => logError("export.queue", error));
 
   await instance.start({ attempts });
 
@@ -86,12 +124,63 @@ async function startExportQueue(attempts: number): Promise<PgBoss> {
     deleteAfterSeconds: 24 * 3600,
   });
 
+  // The workers, before any caller gets the instance (onExportQueueStart).
+  for (const starter of starters) await runStarter(instance, starter);
+
   boss = instance;
   return boss;
 }
 
 export function getExportQueueInstance(): PgBoss | null {
   return boss;
+}
+
+/** Forgets the instance and the starters (tests only). */
+export function resetExportQueueForTests(): void {
+  boss = null;
+  starting = null;
+  starters.length = 0;
+}
+
+/**
+ * How long an idle worker may go without a successful fetch before the
+ * health check calls the queue stalled. Workers poll every 2 s, every 30 s
+ * at most when NOTIFY wakes them.
+ */
+export const EXPORT_WORKER_STALL_MS = 5 * 60_000;
+
+/**
+ * Whether the export instance's workers have stopped working: the document
+ * export or the package has no worker (the worker plugin failed to start and
+ * a request created the instance without them), or an idle worker has not
+ * fetched for `stallMs` (a database that stays unreachable). A worker busy
+ * with a job is not judged: a package build takes minutes.
+ */
+export function exportWorkersStalled(
+  workers: readonly Pick<
+    WipData,
+    "name" | "count" | "createdOn" | "lastFetchedOn"
+  >[],
+  now: number,
+  stallMs: number = EXPORT_WORKER_STALL_MS,
+): boolean {
+  const required = [EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT, PACKAGE_QUEUE_NAME];
+  if (required.some((name) => !workers.some((w) => w.name === name))) {
+    return true;
+  }
+  return workers.some(
+    (worker) =>
+      worker.count === 0 &&
+      now - (worker.lastFetchedOn ?? worker.createdOn) > stallMs,
+  );
+}
+
+/** The export queue's state, for /api/health to report as `checks.queue`. */
+export function exportQueueHealth(
+  now: number = Date.now(),
+): "unavailable" | "stalled" | "ok" {
+  if (!boss) return "unavailable";
+  return exportWorkersStalled(boss.getWipData(), now) ? "stalled" : "ok";
 }
 
 export const EXPORT_QUEUE_NAMES = {

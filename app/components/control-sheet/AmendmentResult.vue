@@ -83,6 +83,28 @@ const blocker = computed<string | null>(() => {
 
 const busy = ref<string | null>(null);
 
+/**
+ * Once a result is recorded or taken back, the buttons that opened its
+ * dialog give way to others, so the focus goes to the section's heading as
+ * the dialog closes rather than to the page (E-136). On cancel the dialog
+ * gives it back to its button as usual.
+ */
+const heading = ref<HTMLElement | null>(null);
+let recorded = false;
+function focusAfterRecord(): HTMLElement | null {
+  if (!recorded) return null;
+  recorded = false;
+  return heading.value;
+}
+const confirmContent = {
+  onCloseAutoFocus: (event: Event) => {
+    const target = focusAfterRecord();
+    if (!target?.isConnected) return;
+    event.preventDefault();
+    target.focus();
+  },
+};
+
 async function run(action: OutcomeAction): Promise<boolean> {
   if (busy.value) return false;
   busy.value = action.action;
@@ -109,6 +131,7 @@ async function run(action: OutcomeAction): Promise<boolean> {
       color: "success",
       icon: "i-lucide-check",
     });
+    recorded = true;
     emit("changed", result);
     return true;
   } catch (error) {
@@ -188,7 +211,12 @@ async function submitVote(vote: VoteInput): Promise<void> {
 
 <template>
   <section class="space-y-2" aria-labelledby="control-sheet-result">
-    <h3 id="control-sheet-result" class="text-highlighted text-sm font-medium">
+    <h3
+      id="control-sheet-result"
+      ref="heading"
+      tabindex="-1"
+      class="text-highlighted text-sm font-medium outline-none"
+    >
       {{ t("controlSheet.results.title") }}
     </h3>
     <ControlSheetVoteLine
@@ -252,11 +280,13 @@ async function submitVote(vote: VoteInput): Promise<void> {
       :majority="majority"
       :context="context"
       :busy="busy === 'vote'"
+      :focus-on-close="focusAfterRecord"
       @submit="submitVote"
     />
 
     <UModal
       v-model:open="confirmOpen"
+      :content="confirmContent"
       :title="
         confirming
           ? t(`controlSheet.results.confirm.${confirming}`, { code })

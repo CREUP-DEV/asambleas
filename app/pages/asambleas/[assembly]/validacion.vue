@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { TabsItem } from "@nuxt/ui";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import {
+  reviewsAmendments,
+  usesReviewQueue,
+  validatesDocuments,
+} from "~~/shared/utils/permissionRules";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
   type MilestoneKey,
@@ -43,8 +47,9 @@ import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
  * the late ones that wait for the assembly to decide whether to treat them.
  * Validating a transactional always publishes it: it replaces amendments
  * that are already public, and the help says so while one is listed.
- * Documents need document:manage, amendments amendment:review; each part
- * shows only to whoever holds it.
+ * Documents need document:manage, amendments amendment:review (or
+ * amendment:manage, which holds it); each part shows only to whoever holds
+ * it (permissionRules.ts, as the server reads it).
  *
  * The queue shares its fetch key with the hub, which keeps the "Validación"
  * badge and starts the fetch if the permission arrives after setup; every
@@ -65,9 +70,9 @@ useHead({
     [t("review.title"), assembly.value?.label].filter(Boolean).join(" · "),
 });
 
-const canDocuments = computed(() => can(PERMISSION_KEYS.DOCUMENT_MANAGE));
-const canAmendments = computed(() => can(PERMISSION_KEYS.AMENDMENT_REVIEW));
-const allowed = computed(() => canDocuments.value || canAmendments.value);
+const canDocuments = computed(() => validatesDocuments(can));
+const canAmendments = computed(() => reviewsAmendments(can));
+const allowed = computed(() => usesReviewQueue(can));
 
 const result = useFetch<ReviewQueueDto>(() => `${apiBase.value}/review`, {
   key: computed(() => reviewQueueKey(assembly.value?.id ?? "none")),

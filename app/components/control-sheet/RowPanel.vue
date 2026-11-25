@@ -890,8 +890,11 @@ function historyDetail(
           >
             {{ t("controlSheet.columns.speakers") }}
           </h3>
+          <!-- One editor per row: a member chosen for one row is never
+               noted on the next one opened in the panel (E-137). -->
           <SpeakerNotesEditor
             v-if="speakers?.note"
+            :key="subjectId ?? ''"
             :agenda-item-id="target.kind === 'item' ? target.row.id : null"
             :amendment-id="
               target.kind === 'amendment' ? target.row.amendment.id : null

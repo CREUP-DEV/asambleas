@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import { isPastDeadline } from "~~/shared/utils/calendar";
 import { provideAmendmentLinks } from "~/composables/amendment/amendmentLinks";
 import type {
@@ -12,6 +13,8 @@ import { canChangeAmendmentAuthors } from "~~/shared/utils/amendmentAuthors";
 import { canReclassifyAmendment } from "~~/shared/utils/amendmentReclassify";
 import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import { isSessionReplacing } from "~/composables/session/sessionModel";
+import { AMENDMENT_CHANGE_SELECTOR } from "~/utils/amendmentChange";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 import {
   transactionalAuthorTurn,
   transactionalClosure,
@@ -73,7 +76,8 @@ import {
  * links and the answers that are not the viewer's to give, relations and
  * the history. A panel that asks the viewer to act is never folded.
  *
- * Above it all, "Volver a la lista" and, when the page says where the
+ * Above it all, "Volver a la lista" (not in a slideover, `inOverlay`, whose
+ * X does it) and, when the page says where the
  * amendment sits in the list on screen (`nav`), "Anterior · 3 de 17 ·
  * Siguiente", also with the left and right arrows and K / J. The shortcuts
  * are off while typing, inside a dialog, menu, list box or tab list (where
@@ -126,6 +130,12 @@ const props = withDefaults(
      * decision of 2026-11-20).
      */
     transactAny?: boolean;
+    /**
+     * Shown in a slideover whose title is its code and whose X closes it:
+     * no "Volver a la lista", and the code's heading only for screen
+     * readers (it still labels the article and takes the focus).
+     */
+    inOverlay?: boolean;
   }>(),
   {
     overlaps: () => [],
@@ -133,6 +143,7 @@ const props = withDefaults(
     decisionsUrl: undefined,
     canTransact: false,
     transactAny: true,
+    inOverlay: false,
   },
 );
 
@@ -196,6 +207,7 @@ const position = computed(() =>
  */
 async function go(id: string | null | undefined): Promise<void> {
   if (!id) return;
+  stepped = true;
   emit("select", id);
   await nextTick();
   const active = globalThis.document?.activeElement;
@@ -207,6 +219,62 @@ async function go(id: string | null | undefined): Promise<void> {
     heading.value?.focus();
   }
 }
+
+// Its change in view ------------------------------------------------------------
+
+const diffBox = useTemplateRef<HTMLElement>("diffBox");
+const footer = useTemplateRef<HTMLElement>("footer");
+/** The amendment on show came from "Anterior" / "Siguiente". */
+let stepped = false;
+
+/**
+ * An amendment opened from the list, a mark or a link scrolls just enough
+ * for its first change to show above the footer, three lines of it, when a
+ * long paragraph of context (or the header) pushes it below the view: the
+ * header stays in view whenever the change fits under it. Not when stepping
+ * with "Anterior" / "Siguiente", which keep their buttons under the
+ * pointer, nor when the code's heading has the focus.
+ */
+function revealFirstChange(): void {
+  const article = root.value;
+  const mark = diffBox.value?.querySelector<HTMLElement>(
+    AMENDMENT_CHANGE_SELECTOR,
+  );
+  if (!article || !mark || globalThis.document.activeElement === heading.value)
+    return;
+  const scroller = scrollParentOf(article);
+  const bottom = scroller
+    ? scroller.getBoundingClientRect().bottom
+    : globalThis.innerHeight;
+  const line =
+    Number.parseFloat(getComputedStyle(mark).lineHeight) ||
+    Number.parseFloat(getComputedStyle(mark).fontSize) * 1.6 ||
+    24;
+  const limit = bottom - (footer.value?.offsetHeight ?? 0) - line * 3;
+  const by = mark.getBoundingClientRect().top - limit;
+  if (by <= 0) return;
+  const reduceMotion = globalThis.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  const options: ScrollToOptions = {
+    top: by,
+    behavior: reduceMotion ? "auto" : "smooth",
+  };
+  if (scroller) scroller.scrollBy(options);
+  else globalThis.scrollBy(options);
+}
+
+onMounted(() => {
+  watch(
+    () => props.amendment.id,
+    () => {
+      const skip = stepped;
+      stepped = false;
+      if (!skip) requestAnimationFrame(revealFirstChange);
+    },
+    { immediate: true, flush: "post" },
+  );
+});
 
 /**
  * Shortcuts act once per press, never while a request runs or a
@@ -367,6 +435,39 @@ const includeItems = computed(() =>
     onSelect: () => emit("include", item.id, [props.amendment.id]),
   })),
 );
+/**
+ * «Proponer una transaccional», «Incluir otra enmienda» and the open
+ * transactionals to include it in, as one footer menu when more than one
+ * of them applies; null leaves the single one as a button.
+ */
+const transactMenu = computed<DropdownMenuItem[][] | null>(() => {
+  const own: DropdownMenuItem[] = [];
+  if (transactable.value) {
+    own.push({
+      label: t("amendment.detail.transact"),
+      icon: "i-lucide-git-merge",
+      onSelect: () => emit("transact", [props.amendment.id]),
+    });
+  }
+  if (includable.value) {
+    own.push({
+      label: t("transactional.revision.includeMore"),
+      icon: "i-lucide-git-pull-request-arrow",
+      onSelect: () => emit("include", props.amendment.id, []),
+    });
+  }
+  const into = includeItems.value;
+  if (own.length + (into.length > 0 ? 1 : 0) < 2) return null;
+  return into.length > 0
+    ? [
+        own,
+        [
+          { type: "label", label: t("transactional.revision.includeIn") },
+          ...into,
+        ],
+      ]
+    : [own];
+});
 /** This one and the amendments on the same passage that can be combined. */
 const overlapSources = computed(() => {
   if (!transactable.value) return [];
@@ -697,9 +798,14 @@ async function remove(): Promise<void> {
 
 <template>
   <article ref="root" class="flex flex-col gap-5" :aria-labelledby="headingId">
-    <!-- Back to the list, and the amendments before and after this one. -->
-    <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+    <!-- Back to the list, and the amendments before and after this one. In
+         a slideover its X goes back, and its title names it. -->
+    <div
+      v-if="!inOverlay || position"
+      class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"
+    >
       <UButton
+        v-if="!inOverlay"
         icon="i-lucide-arrow-left"
         color="neutral"
         variant="ghost"
@@ -750,6 +856,7 @@ async function remove(): Promise<void> {
           ref="heading"
           tabindex="-1"
           class="text-highlighted text-lg font-semibold tabular-nums outline-none"
+          :class="{ 'sr-only': inOverlay }"
         >
           {{ label }}
         </h2>
@@ -760,6 +867,7 @@ async function remove(): Promise<void> {
           v-if="authors.main"
           :member="authors.main"
           show-name
+          wrap
         />
         <span v-if="authors.others.length > 0" class="text-muted text-sm">
           {{
@@ -826,7 +934,13 @@ async function remove(): Promise<void> {
         :amendment="amendment"
         :base="base"
       >
-        <div class="border-default rounded-md border p-3 sm:p-4">
+        <!-- Text a step smaller than the reader's, and the excerpt's
+             headings at most a little over it (their bar and colours stay),
+             so the change shows sooner in a narrow column. -->
+        <div
+          ref="diffBox"
+          class="border-default rounded-md border p-3 sm:p-4 [&_.cx-heading-2]:text-lg/snug [&_.cx-heading-3]:text-base/snug [&_.cx-heading-4]:text-base/snug [&_.rich-text]:text-base/relaxed lg:max-xl:[&_.rich-text]:text-sm/relaxed"
+        >
           <ContentAmendmentDiff
             :id="amendment.id"
             :base="base"
@@ -871,6 +985,7 @@ async function remove(): Promise<void> {
       :amendments-url="amendmentsUrl"
       :label-of="labelOf"
       :status-of="statusOf"
+      :awaits-admission-of="awaitsAdmissionOf"
       :final-voted="Boolean(document.finalVote)"
       @edit="emit('edit', $event)"
       @replaced="emit('replaced', $event)"
@@ -995,7 +1110,7 @@ async function remove(): Promise<void> {
           </h3>
           <div class="flex flex-col gap-1.5">
             <div v-if="authors.main" class="flex flex-wrap items-center gap-2">
-              <CommonMemberBadge :member="authors.main" show-name />
+              <CommonMemberBadge :member="authors.main" show-name wrap />
               <span v-if="authors.marked" class="text-dimmed text-xs">
                 {{ t("amendment.detail.mainAuthor") }}
               </span>
@@ -1005,6 +1120,7 @@ async function remove(): Promise<void> {
               :key="author.id"
               :member="author"
               show-name
+              wrap
             />
             <p v-if="amendment.submittedAt" class="text-muted text-xs">
               {{
@@ -1309,6 +1425,7 @@ async function remove(): Promise<void> {
         amendment.can.withdraw ||
         transactable
       "
+      ref="footer"
       class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
     >
       <UAlert
@@ -1376,8 +1493,23 @@ async function remove(): Promise<void> {
           :disabled="busy !== null"
           @click="confirming = 'withdraw'"
         />
+        <!-- Proposing a transactional and including it in an open one: one
+             menu when both apply, so the footer keeps to one row. The open
+             transactionals to include it in exist only for one it may
+             transact, so they always go in the menu. -->
+        <UDropdownMenu v-if="transactMenu" :items="transactMenu">
+          <UButton
+            icon="i-lucide-git-merge"
+            trailing-icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :label="t('amendment.detail.transactMenu')"
+            :disabled="busy !== null"
+          />
+        </UDropdownMenu>
         <UButton
-          v-if="transactable"
+          v-else-if="transactable"
           icon="i-lucide-git-merge"
           color="neutral"
           variant="outline"
@@ -1386,18 +1518,8 @@ async function remove(): Promise<void> {
           :disabled="busy !== null"
           @click="emit('transact', [amendment.id])"
         />
-        <UDropdownMenu v-if="includeItems.length > 0" :items="includeItems">
-          <UButton
-            icon="i-lucide-git-pull-request-arrow"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :label="t('transactional.revision.includeIn')"
-            :disabled="busy !== null"
-          />
-        </UDropdownMenu>
         <UButton
-          v-if="includable"
+          v-if="includable && !transactMenu"
           icon="i-lucide-git-pull-request-arrow"
           color="neutral"
           variant="outline"

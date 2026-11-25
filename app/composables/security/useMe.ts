@@ -1,5 +1,8 @@
 import type { MeDto, MeImpersonationDto, MemberRef } from "~~/shared/types/api";
-import type { PermissionKey } from "~~/shared/constants/permissions";
+import {
+  holdsPermission,
+  type PermissionKey,
+} from "~~/shared/constants/permissions";
 import { errorStatus } from "../api/useApi";
 
 /**
@@ -20,6 +23,28 @@ export function meIdentityChanged(
     previous.id !== next.id ||
     (previous.impersonation?.id ?? null) !== (next.impersonation?.id ?? null)
   );
+}
+
+type MePermissions = Pick<MeDto, "isAdmin" | "permissions">;
+
+/** Whether `me` was granted `key` as such; nobody signed in holds nothing. */
+export function meGranted(
+  me: MePermissions | null | undefined,
+  key: PermissionKey,
+): boolean {
+  if (!me) return false;
+  return me.isAdmin || me.permissions.includes(key);
+}
+
+/**
+ * Whether `me` holds `key`, itself or through a key that implies it
+ * (holdsPermission), as the server's rules read it.
+ */
+export function meCan(
+  me: MePermissions | null | undefined,
+  key: PermissionKey,
+): boolean {
+  return holdsPermission((granted) => meGranted(me, granted), key);
 }
 
 /** One in-flight /api/me request per Nuxt app (i.e. per SSR request). */
@@ -67,9 +92,21 @@ export function useMe() {
     () => me.value?.seesExecutiveMembers ?? false,
   );
 
+  /**
+   * Whether the account holds `permission`, itself or through a key that
+   * implies it (PERMISSION_IMPLIED_BY): what every check of the UI reads.
+   */
   function can(permission: PermissionKey): boolean {
-    if (!me.value) return false;
-    return me.value.isAdmin || me.value.permissions.includes(permission);
+    return meCan(me.value, permission);
+  }
+
+  /**
+   * Whether `permission` is granted as such, without implications: for the
+   * grant rules of the admin panel, which the server checks against the
+   * keys as granted (adminGrantViolation, `not_held`).
+   */
+  function granted(permission: PermissionKey): boolean {
+    return meGranted(me.value, permission);
   }
 
   /**
@@ -128,6 +165,7 @@ export function useMe() {
     permissions,
     impersonation,
     can,
+    granted,
     refresh,
     ensure,
     clear,
