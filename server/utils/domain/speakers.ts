@@ -19,10 +19,7 @@ import type {
 } from "~~/shared/types/api";
 import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import { DEFAULT_SPEAKING_LIMIT_SECONDS } from "~~/shared/utils/schemas/assembly";
-import {
-  getOptimisticLockTimestampMs,
-  STALE_WRITE_DATA,
-} from "../optimisticLock";
+import { isStale, keepUpdatedAt, STALE_WRITE_DATA } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, canNoteSpeakers, type Actor } from "./actor";
 import { loadVisibleAmendmentIds } from "./documents";
@@ -303,7 +300,7 @@ async function renumberQueue(
     if (id === skipId || current.get(id) === position) continue;
     await executor
       .update(speakingTurns)
-      .set({ position, updatedAt: sql`${speakingTurns.updatedAt}` })
+      .set({ position, updatedAt: keepUpdatedAt(speakingTurns.updatedAt) })
       .where(eq(speakingTurns.id, id));
   }
 }
@@ -450,10 +447,7 @@ export async function updateSpeakingTurn(
       );
     if (!turn) fail(404, "Turno de palabra no encontrado");
     // Every write holds the assembly lock, so this comparison cannot race.
-    if (
-      getOptimisticLockTimestampMs(turn.updatedAt) !==
-      getOptimisticLockTimestampMs(body.updatedAt)
-    ) {
+    if (isStale(turn.updatedAt, body.updatedAt)) {
       fail(
         409,
         "La lista de palabras ha cambiado. Recarga la página",

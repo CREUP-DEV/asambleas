@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { and, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { Job, PgBoss } from "pg-boss";
 import { z } from "zod/v4";
+import { userIdSchema } from "~~/shared/utils/schemas/primitives";
 import { db } from "../../db";
 import { userAvatars, users } from "../../db/schema";
 import { logError, logInfo, logWarn } from "../core/logger";
@@ -47,7 +48,7 @@ const AVATAR_FETCH_TIMEOUT_MS = 10_000;
 const AVATAR_RETRY_LIMIT = 3;
 
 const userAvatarJobSchema = z.object({
-  userId: z.string().regex(/^[A-Za-z0-9]{8,64}$/),
+  userId: userIdSchema,
 });
 export type UserAvatarJob = z.infer<typeof userAvatarJobSchema>;
 

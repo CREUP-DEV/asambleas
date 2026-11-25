@@ -1,11 +1,11 @@
 import { z } from "zod/v4";
 import type { ReadMarksBody } from "../../types/api";
+import { entityIdSchema } from "./primitives";
 
 /** Most documents or amendments one request marks. */
 export const READ_MARKS_MAX_IDS = 500;
 
-const entityId = z.string().regex(/^[a-z0-9]{20,32}$/);
-const ids = z.array(entityId).max(READ_MARKS_MAX_IDS).optional();
+const ids = z.array(entityIdSchema).max(READ_MARKS_MAX_IDS).optional();
 
 /** PUT /api/assemblies/[assembly]/read-marks (ReadMarksBody). */
 export const readMarksBodySchema = z

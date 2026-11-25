@@ -24,18 +24,17 @@ import { BULK_DOCUMENTS_MAX } from "../agendaSubmissions";
 import { passageWordingBodySchema } from "./amendment";
 import { blocksSchema } from "./content";
 import { voteInputSchema } from "./vote";
+import {
+  entityIdSchema,
+  isoInstantSchema,
+  updatedAtSchema,
+} from "./primitives";
 
 /**
  * Request bodies of the document endpoints. They mirror the types in
  * shared/types/api.ts (DocumentCreateBody, DocumentUpdateBody,
  * DocumentContentBody, CorrectionBody, FinalVoteBody, FinalVoteAnnulBody).
  */
-
-const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
-
-export const entityIdSchema = z.string().regex(ENTITY_ID_PATTERN);
-
-export const isoDateSchema = z.iso.datetime({ offset: true });
 
 /** More co-presenters than this is surely a mistake. */
 export const MAX_CO_PROPONENTS = 20;
@@ -69,7 +68,7 @@ export const documentCreateSchema = z.object({
   voted: z.boolean().optional(),
   majority: z.enum(MAJORITIES).optional(),
   blocks: blocksSchema.optional(),
-  dueAt: isoDateSchema.nullable().optional(),
+  dueAt: isoInstantSchema.nullable().optional(),
 });
 
 /**
@@ -86,7 +85,7 @@ export const bulkDocumentsSchema = z.object({
         kind: z.enum(DOCUMENT_KINDS),
         format: z.enum(DOCUMENT_FORMATS),
         proponentMemberId: entityIdSchema.nullable().optional(),
-        dueAt: isoDateSchema.nullable().optional(),
+        dueAt: isoInstantSchema.nullable().optional(),
       }),
     )
     .min(1)
@@ -105,11 +104,11 @@ export const documentUpdateSchema = z.object({
   voted: z.boolean().optional(),
   majority: z.enum(MAJORITIES).optional(),
   acceptedAmendments: z.enum(ACCEPTED_AMENDMENT_RULES).optional(),
-  amendmentsOpenAt: isoDateSchema.nullable().optional(),
-  amendmentsCloseAt: isoDateSchema.nullable().optional(),
-  dueAt: isoDateSchema.nullable().optional(),
+  amendmentsOpenAt: isoInstantSchema.nullable().optional(),
+  amendmentsCloseAt: isoInstantSchema.nullable().optional(),
+  dueAt: isoInstantSchema.nullable().optional(),
   status: z.enum(["withdrawn", "postponed", "submitted"]).optional(),
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 export const CORRECTION_NOTE_MAX_LENGTH = 2_000;
@@ -120,7 +119,7 @@ export const CORRECTION_NOTE_MAX_LENGTH = 2_000;
  */
 export const correctionBodySchema = z.object({
   note: z.string().trim().min(1).max(CORRECTION_NOTE_MAX_LENGTH),
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 /**
@@ -133,7 +132,7 @@ export const correctionBodySchema = z.object({
 export const amendmentCorrectionBodySchema = z
   .object({
     note: z.string().trim().max(CORRECTION_NOTE_MAX_LENGTH),
-    updatedAt: isoDateSchema,
+    updatedAt: updatedAtSchema,
     correctable: z.boolean().optional(),
   })
   .refine((body) => body.correctable === false || body.note.length > 0, {
@@ -144,12 +143,12 @@ export const amendmentCorrectionBodySchema = z
 /** Body of PUT .../documents/[document]/positions (PositionsPublicationBody). */
 export const positionsPublicationBodySchema = z.object({
   public: z.boolean(),
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 /** Body of POST .../amendments/[amendment]/unvalidate (UndoValidationBody). */
 export const undoValidationBodySchema = z.object({
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 /** SHA-256 hex digest, as produced by hashContent. */
@@ -197,12 +196,12 @@ export const formCorrectionDecisionSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .optional(),
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 /** Body of DELETE .../form-corrections/[correction]. */
 export const formCorrectionWithdrawSchema = z.object({
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
 });
 
 /** Time a published document was open (DocumentReadingBody). */
@@ -220,7 +219,7 @@ export const documentPresenceSchema = z.strictObject({
 
 /** Optional body of submit and publish: the updatedAt the client last saw. */
 export const documentActionSchema = z
-  .object({ updatedAt: isoDateSchema.optional() })
+  .object({ updatedAt: updatedAtSchema.optional() })
   .default({});
 
 // One vote input for every vote body (./vote.ts).
@@ -241,7 +240,7 @@ export const finalVoteSchema = z.object({
 
 /** Body of DELETE .../final-vote (FinalVoteAnnulBody). An empty note is null. */
 export const finalVoteAnnulSchema = z.object({
-  updatedAt: isoDateSchema,
+  updatedAt: updatedAtSchema,
   note: z
     .string()
     .trim()

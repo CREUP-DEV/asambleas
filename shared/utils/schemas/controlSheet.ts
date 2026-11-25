@@ -4,6 +4,7 @@ import type {
   ControlSheetAmendmentBody,
   ControlSheetItemBody,
 } from "../../types/api";
+import { entityIdSchema, updatedAtSchema } from "./primitives";
 
 /**
  * Longest observations a sheet row keeps, well under an Excel cell (32,767
@@ -11,7 +12,11 @@ import type {
  */
 export const CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH = 5000;
 
-const token = z.iso.datetime({ offset: true }).nullable();
+/**
+ * A field's lock token: the `updatedAt` the client read, null while the
+ * field was never written (`sameToken` in server/utils/domain/controlSheet.ts).
+ */
+const token = updatedAtSchema.nullable();
 
 const field = <T extends z.ZodType>(value: T) =>
   z.strictObject({ value, updatedAt: token });
@@ -62,7 +67,7 @@ export function appendObservations(current: string, addition: string): string {
 
 /** GET .../control-sheet/history: one row of the sheet. */
 export const controlSheetHistoryQuerySchema = z.strictObject({
-  row: z.string().regex(/^[a-z][a-z0-9]{23}$/),
+  row: entityIdSchema,
 });
 
 // Compile-time check: the parsed bodies are assignable to their API types.

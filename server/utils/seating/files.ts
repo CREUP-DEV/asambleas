@@ -1,4 +1,8 @@
 import { join } from "node:path";
+import {
+  ENTITY_ID_PATTERN,
+  ENTITY_ID_SOURCE,
+} from "~~/shared/utils/schemas/primitives";
 import { getUploadDir } from "../core/uploadPaths";
 import type { SeatingImageKind } from "./intranet";
 
@@ -11,8 +15,9 @@ import type { SeatingImageKind } from "./intranet";
  */
 
 /** `logo-<group id>-<version>.webp` or `photo-<person id>-<version>.webp`. */
-export const SEATING_IMAGE_FILE_PATTERN =
-  /^(logo|photo)-([a-z0-9]{20,32})-([a-z0-9]{1,64})\.webp$/;
+export const SEATING_IMAGE_FILE_PATTERN = new RegExp(
+  `^(logo|photo)-(${ENTITY_ID_SOURCE})-([a-z0-9]{1,64})\\.webp$`,
+);
 
 /** An Intranet image version that may name a file. */
 export const SEATING_IMAGE_VERSION_PATTERN = /^[a-z0-9]{1,64}$/;
@@ -44,12 +49,10 @@ export function parseSeatingImageFileName(
   };
 }
 
-/** Plan ids are cuid2: never a path of their own. */
-const PLAN_ID_PATTERN = /^[a-z0-9]{20,32}$/;
-
 /** Where a plan's images live. */
 export function seatingImageDir(planId: string): string {
-  if (!PLAN_ID_PATTERN.test(planId)) {
+  // Plan ids are cuid2: never a path of their own.
+  if (!ENTITY_ID_PATTERN.test(planId)) {
     throw new RangeError("Invalid seating plan id");
   }
   return join(getUploadDir(), "seating", planId);

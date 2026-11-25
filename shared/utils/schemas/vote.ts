@@ -22,6 +22,7 @@ import type {
   VoteVoidBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
+import { updatedAtSchema } from "./primitives";
 
 /**
  * The one vote input every vote body takes (a document's final vote, an
@@ -99,8 +100,6 @@ export const voteInputSchema = z
     }
   });
 
-const updatedAt = z.iso.datetime({ offset: true });
-
 /**
  * Body of POST .../amendments/alternatives (AlternativesVoteBody): as many
  * options as ALTERNATIVES_OPTION_COUNT, none empty, no amendment in two;
@@ -113,7 +112,12 @@ export const alternativesVoteBodySchema = z
       .array(
         z.object({
           items: z
-            .array(z.object({ id: z.string().min(1).max(64), updatedAt }))
+            .array(
+              z.object({
+                id: z.string().min(1).max(64),
+                updatedAt: updatedAtSchema,
+              }),
+            )
             .min(1)
             .max(200),
           count,
@@ -254,7 +258,9 @@ export const itemVoteBodySchema = z
 export const blocVoteBodySchema = z
   .object({
     items: z
-      .array(z.object({ id: z.string().min(1).max(64), updatedAt }))
+      .array(
+        z.object({ id: z.string().min(1).max(64), updatedAt: updatedAtSchema }),
+      )
       .min(2)
       .max(200)
       .refine(
@@ -270,12 +276,12 @@ export const blocVoteBodySchema = z
   });
 
 /** Body of DELETE .../votes/[vote] (VoteVoidBody). */
-export const voteVoidBodySchema = z.object({ updatedAt });
+export const voteVoidBodySchema = z.object({ updatedAt: updatedAtSchema });
 
 /** Body of PATCH .../votes/[vote]/unanimity (VoteUnanimityBody). */
 export const voteUnanimityBodySchema = z.object({
   unanimous: z.boolean(),
-  updatedAt,
+  updatedAt: updatedAtSchema,
 });
 
 // Compile-time checks: every parsed body is assignable to its API type.

@@ -53,7 +53,7 @@ import type {
   seatingPersonUpdateBodySchema,
   seatingSourceBodySchema,
 } from "~~/shared/utils/schemas/seating";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
+import { isStale } from "../optimisticLock";
 import { validateCuid } from "../validation";
 import {
   assignmentsLostByLayout,
@@ -133,8 +133,13 @@ const NOT_FOUND = { reason: SEATING_NOT_FOUND_REASON };
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
 
+/**
+ * Whether a group's, a person's or the layout's token still holds. Null on
+ * both sides matches: the layout's `updatedAt` is null while there is none
+ * (saveSeatingLayout spells that case out before it compares).
+ */
 const sameInstant = (stored: Date | null, sent: string | null) =>
-  getOptimisticLockTimestampMs(stored) === getOptimisticLockTimestampMs(sent);
+  !isStale(stored, sent);
 
 // Guards ---------------------------------------------------------------------
 

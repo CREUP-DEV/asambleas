@@ -9,7 +9,7 @@ import {
 } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AcceptanceDto, MemberDto, MemberRef } from "~~/shared/types/api";
-import { entityIdSchema } from "~~/shared/utils/schemas/amendment";
+import { entityIdSchema } from "~~/shared/utils/schemas/primitives";
 import type { Actor } from "./actor";
 
 // Only the pure rules run here: the loaders need the database.

@@ -20,6 +20,7 @@ import {
 import { LOOSE_CHAIRS_RUN } from "../seating/runs";
 import { DOUBLE_U_LIMITS, doubleUParamsProblem } from "../seating/templates";
 import { intranetIdSchema } from "./member";
+import { entityIdSchema, updatedAtSchema, userIdSchema } from "./primitives";
 
 /**
  * Bodies of the seating endpoints (docs/seating-plan.md, section 8) and the
@@ -49,14 +50,6 @@ export const SEATING_LIMITS = {
   /** Rows of each list the Intranet sends. */
   intranetRows: 5_000,
 } as const;
-
-/** Ids the server and the layout mint (cuid2). */
-const entityId = z.string().regex(/^[a-z0-9]{20,32}$/);
-
-/** better-auth's user ids. */
-const userId = z.string().regex(/^[a-zA-Z0-9]{32}$/);
-
-const isoDate = z.iso.datetime({ offset: true });
 
 /**
  * Control characters, which Postgres refuses in a text column (NUL) or
@@ -88,7 +81,7 @@ const rotation = z
   .refine((value) => value % 15 === 0, { message: "Giro de 15 en 15 grados" });
 
 const seatSchema = z.strictObject({
-  id: entityId,
+  id: entityIdSchema,
   side: z.enum(SEATING_SIDES),
   index: z.number().int().min(0).max(SEATING_LIMITS.seatIndex),
   disabled: z.boolean().optional(),
@@ -96,7 +89,7 @@ const seatSchema = z.strictObject({
 });
 
 const tableSchema = z.strictObject({
-  id: entityId,
+  id: entityIdSchema,
   slot: z
     .string()
     .regex(/^[a-z0-9:-]{1,60}$/)
@@ -118,7 +111,7 @@ const tableSchema = z.strictObject({
 });
 
 const chairSchema = z.strictObject({
-  id: entityId,
+  id: entityIdSchema,
   x: coordinate,
   y: coordinate,
   rotation,
@@ -126,7 +119,7 @@ const chairSchema = z.strictObject({
 });
 
 const fixtureSchema = z.strictObject({
-  id: entityId,
+  id: entityIdSchema,
   kind: z.enum(SEATING_FIXTURE_KINDS),
   x: coordinate,
   y: coordinate,
@@ -236,10 +229,10 @@ export type _SeatingLayoutSchemaCheck = Assignable<
 /** PUT .../seating/layout (SeatingLayoutBody). */
 export const seatingLayoutBodySchema = z.strictObject({
   layout: seatingLayoutSchema,
-  updatedAt: isoDate.nullable(),
+  updatedAt: updatedAtSchema.nullable(),
   /** The seats and people a 409 `seating_seats_occupied` named, confirmed. */
   releaseSeats: z
-    .array(z.strictObject({ seatId: entityId, personId: entityId }))
+    .array(z.strictObject({ seatId: entityIdSchema, personId: entityIdSchema }))
     .max(SEATING_LIMITS.seats)
     .optional(),
 });
@@ -250,9 +243,9 @@ export const seatingAssignmentsBodySchema = z
     ops: z
       .array(
         z.strictObject({
-          seatId: entityId,
-          expected: entityId.nullable(),
-          next: entityId.nullable(),
+          seatId: entityIdSchema,
+          expected: entityIdSchema.nullable(),
+          next: entityIdSchema.nullable(),
         }),
       )
       .min(1)
@@ -282,17 +275,17 @@ export const seatingGroupCreateBodySchema = z.strictObject({
   acronym: text(SEATING_LIMITS.acronym),
   name: text(SEATING_LIMITS.groupName),
   kind: z.enum(SEATING_MANUAL_GROUP_KINDS).optional(),
-  memberId: entityId.nullable().optional(),
+  memberId: entityIdSchema.nullable().optional(),
 });
 
 /** PATCH .../seating/groups/[group] (SeatingGroupUpdateBody). */
 export const seatingGroupUpdateBodySchema = z
   .strictObject({
-    updatedAt: isoDate,
+    updatedAt: updatedAtSchema,
     acronym: text(SEATING_LIMITS.acronym).optional(),
     name: text(SEATING_LIMITS.groupName).optional(),
     kind: z.enum(SEATING_MANUAL_GROUP_KINDS).optional(),
-    memberId: entityId.nullable().optional(),
+    memberId: entityIdSchema.nullable().optional(),
   })
   .refine(atLeastOne, { message: "Nada que cambiar" });
 
@@ -303,16 +296,16 @@ const surname = text(SEATING_LIMITS.surname).nullable();
 export const seatingPersonCreateBodySchema = z.discriminatedUnion("source", [
   z.strictObject({
     source: z.literal("manual"),
-    groupId: entityId,
+    groupId: entityIdSchema,
     firstName,
     surname: surname.optional(),
     label: label.nullable().optional(),
     needsSeat: z.boolean().optional(),
-    userId: userId.nullable().optional(),
+    userId: userIdSchema.nullable().optional(),
   }),
   z.strictObject({
     source: z.literal("placeholder"),
-    groupId: entityId,
+    groupId: entityIdSchema,
     label: label.nullable().optional(),
     needsSeat: z.boolean().optional(),
   }),
@@ -321,20 +314,20 @@ export const seatingPersonCreateBodySchema = z.discriminatedUnion("source", [
 /** PATCH .../seating/people/[person] (SeatingPersonUpdateBody). */
 export const seatingPersonUpdateBodySchema = z
   .strictObject({
-    updatedAt: isoDate,
+    updatedAt: updatedAtSchema,
     needsSeat: z.boolean().optional(),
     label: label.nullable().optional(),
     position: z.number().int().min(0).max(SEATING_LIMITS.position).optional(),
     firstName: firstName.optional(),
     surname: surname.optional(),
-    userId: userId.nullable().optional(),
+    userId: userIdSchema.nullable().optional(),
   })
   .refine(atLeastOne, { message: "Nada que cambiar" });
 
 /** PUT .../seating/source (SeatingSourceBody). */
 export const seatingSourceBodySchema = z.strictObject({
-  sourceAssemblyId: entityId.nullable(),
-  expected: entityId.nullable(),
+  sourceAssemblyId: entityIdSchema.nullable(),
+  expected: entityIdSchema.nullable(),
 });
 
 // The Intranet ------------------------------------------------------------------

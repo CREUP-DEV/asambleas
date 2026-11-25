@@ -12,10 +12,7 @@ import type {
   DocumentNoteUpdateBody,
 } from "~~/shared/types/api";
 import { DOCUMENT_NOTES_MAX } from "~~/shared/utils/documentNotes";
-import {
-  getOptimisticLockTimestampMs,
-  staleWriteError,
-} from "../optimisticLock";
+import { isStale, staleWriteError } from "../optimisticLock";
 import type { Actor } from "./actor";
 import { recordAudit } from "./audit";
 import type { DocumentRouteContext } from "./documents";
@@ -159,10 +156,7 @@ export async function updateDocumentNote(
       .for("update");
     if (!current) notFound(NOTE_NOT_FOUND);
     // The account may be open in several places: the later save says so.
-    if (
-      getOptimisticLockTimestampMs(body.updatedAt) !==
-      getOptimisticLockTimestampMs(current.updatedAt)
-    ) {
+    if (isStale(current.updatedAt, body.updatedAt)) {
       throw staleWriteError("La nota ha cambiado desde que la abriste");
     }
     const [row] = await tx

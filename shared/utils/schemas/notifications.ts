@@ -7,6 +7,7 @@ import {
   type NotificationKindSettings,
   type NotificationSettings,
 } from "../../constants/notifications";
+import { updatedAtSchema } from "./primitives";
 
 /**
  * The email notification settings (docs/api.md, "Email notifications"):
@@ -37,7 +38,7 @@ export const notificationSettingsSchema = z.strictObject({
 export const notificationSettingsBodySchema = z.strictObject({
   settings: notificationSettingsSchema,
   /** The `updatedAt` the client read; null while nothing was stored. */
-  updatedAt: z.string().datetime({ offset: true }).nullable(),
+  updatedAt: updatedAtSchema.nullable(),
 });
 
 /** Sorted, without repeats: equal settings compare equal in the audit. */

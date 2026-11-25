@@ -19,6 +19,7 @@ import {
 import type { Actor } from "./actor";
 import { titleDocumentPayload } from "./agendaWrites";
 import { recordEvent, type Executor } from "./events";
+import { keepUpdatedAt } from "../optimisticLock";
 import { loadItemVoteRows } from "./votes";
 
 /**
@@ -60,7 +61,7 @@ export async function stampProjected(
     .update(documents)
     .set({
       firstProjectedAt: sql`now()`,
-      updatedAt: sql`${documents.updatedAt}`,
+      updatedAt: keepUpdatedAt(documents.updatedAt),
     })
     .where(
       and(eq(documents.id, documentId), isNull(documents.firstProjectedAt)),
@@ -85,7 +86,7 @@ export async function stampAmendmentsProjected(
     .update(amendments)
     .set({
       firstProjectedAt: sql`now()`,
-      updatedAt: sql`${amendments.updatedAt}`,
+      updatedAt: keepUpdatedAt(amendments.updatedAt),
     })
     .where(
       and(inArray(amendments.id, ids), isNull(amendments.firstProjectedAt)),

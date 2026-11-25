@@ -43,7 +43,6 @@ vi.mock("../../../../utils/auth/rbac", () => ({
 vi.mock("../../../../utils/auth/impersonation", () => ({ endImpersonations }));
 vi.mock("../../../../utils/domain/audit", () => ({ recordAudit }));
 vi.mock("../../../../utils/validation", () => ({
-  isDefaultCuid: () => true,
   validateAuthId: (id: string) => id,
 }));
 vi.mock("../../../../db", () => {

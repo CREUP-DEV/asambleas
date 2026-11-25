@@ -2225,10 +2225,13 @@ export async function submitDocument(
 
   await db.transaction(async (tx) => {
     const current = await lockDocument(tx, ctx.document.id);
+    // Optional on purpose: the body of submit may be empty
+    // (documentActionSchema).
     assertOptimisticLock(
       body.updatedAt,
       current.updatedAt,
       STALE_DOCUMENT_MESSAGE,
+      { optional: true },
     );
     if (current.status !== "draft")
       fail(409, "Solo se pueden presentar borradores");
@@ -2423,10 +2426,12 @@ export async function publishDocument(
 
   await db.transaction(async (tx) => {
     const current = await lockDocument(tx, ctx.document.id);
+    // Optional on purpose, as for submit (documentActionSchema).
     assertOptimisticLock(
       body.updatedAt,
       current.updatedAt,
       STALE_DOCUMENT_MESSAGE,
+      { optional: true },
     );
     if (!isPublishable(current)) {
       fail(409, "El documento no se puede publicar en su estado actual");
@@ -3692,10 +3697,12 @@ export async function attachDocumentFile(
   try {
     previous = await db.transaction(async (tx) => {
       const current = await lockDocument(tx, ctx.document.id);
+      // The multipart `updatedAt` field is optional.
       assertOptimisticLock(
         updatedAt,
         current.updatedAt,
         STALE_DOCUMENT_MESSAGE,
+        { optional: true },
       );
       requireDocumentEditor(actor, current);
       assertFileReplaceable(current);

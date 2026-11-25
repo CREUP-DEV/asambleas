@@ -19,6 +19,13 @@ import type {
   MeActivityQuery,
 } from "../../types/api";
 import { normalizeText } from "./content";
+import {
+  ENTITY_ID_PATTERN,
+  ENTITY_ID_SOURCE,
+  entityIdSchema,
+  isoInstantSchema,
+  userIdSchema,
+} from "./primitives";
 
 /**
  * Bodies and queries of impersonation and the activity lists (docs/api.md,
@@ -26,10 +33,6 @@ import { normalizeText } from "./content";
  * repeated parameter is an array, everything else a string.
  */
 
-/** better-auth user ids (users.id): 32 letters and digits. */
-export const USER_ID_PATTERN = /^[a-zA-Z0-9]{32}$/;
-/** cuid2 ids of the domain rows (members, impersonations, events...). */
-const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
 /** An assembly slug ("80-ago") or id. */
 const ASSEMBLY_REF_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Cursor times: UTC ISO 8601 with up to microseconds. */
@@ -40,19 +43,7 @@ export const ACTIVITY_SEARCH_MAX_LENGTH = 100;
 /** Most values one list filter takes. */
 export const ACTIVITY_FILTER_MAX_VALUES = 50;
 
-const userId = z.string().regex(USER_ID_PATTERN);
-const entityId = z.string().regex(ENTITY_ID_PATTERN);
 const assemblyRef = z.string().regex(ASSEMBLY_REF_PATTERN);
-/**
- * An ISO date-time Postgres can cast (`::timestamptz`): the format alone
- * lets year 0000 through, which Postgres refuses.
- */
-const isoDateTime = z.iso
-  .datetime({ offset: true })
-  .refine((value) => Number(value.slice(0, 4)) >= 1, {
-    message: "Fecha fuera de rango",
-  });
-
 // Cursor -------------------------------------------------------------------
 
 function toBase64Url(text: string): string {
@@ -182,8 +173,8 @@ export const impersonationStartBodySchema = z.object({
 
 /** GET /api/admin/impersonations. */
 export const adminImpersonationQuerySchema = z.object({
-  admin: userId.optional(),
-  target: userId.optional(),
+  admin: userIdSchema.optional(),
+  target: userIdSchema.optional(),
   active: booleanParam,
   cursor: activityCursorSchema.optional(),
   limit: limitParam(ADMIN_ACTIVITY_MAX_LIMIT),
@@ -197,8 +188,8 @@ export const meActivityQuerySchema = z
     tab: z.enum(ME_ACTIVITY_TABS).default("by"),
     assembly: assemblyRef.optional(),
     category: listParam(z.enum(ACTIVITY_CATEGORIES)),
-    from: isoDateTime.optional(),
-    to: isoDateTime.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
     cursor: activityCursorSchema.optional(),
     limit: limitParam(ME_ACTIVITY_MAX_LIMIT),
   })
@@ -207,19 +198,19 @@ export const meActivityQuerySchema = z
 /** GET /api/admin/activity (Admin only). */
 export const adminActivityQuerySchema = z
   .object({
-    actor: userId.optional(),
-    target: userId.optional(),
-    user: userId.optional(),
-    member: entityId.optional(),
+    actor: userIdSchema.optional(),
+    target: userIdSchema.optional(),
+    user: userIdSchema.optional(),
+    member: entityIdSchema.optional(),
     assembly: assemblyRef.optional(),
     action: listParam(z.string().regex(/^[a-z][a-z_.]{0,63}$/)),
     category: listParam(z.enum(ACTIVITY_CATEGORIES)),
     kind: listParam(z.enum(ACTIVITY_KINDS)),
     source: listParam(z.enum(AUDIT_SOURCES)),
     impersonated: booleanParam,
-    impersonation: entityId.optional(),
-    from: isoDateTime.optional(),
-    to: isoDateTime.optional(),
+    impersonation: entityIdSchema.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
     q: searchParam,
     cursor: activityCursorSchema.optional(),
     limit: limitParam(ADMIN_ACTIVITY_MAX_LIMIT),
@@ -238,7 +229,7 @@ export const controlSheetActivityQuerySchema = z
     group: listParam(z.enum(CONTROL_SHEET_ACTIVITY_GROUP_KEYS)),
     subject: z
       .string()
-      .regex(/^(item|document|amendment):[a-z0-9]{20,32}$/)
+      .regex(new RegExp(`^(item|document|amendment):${ENTITY_ID_SOURCE}$`))
       .optional()
       .transform((value) => {
         if (!value) return undefined;
@@ -248,9 +239,9 @@ export const controlSheetActivityQuerySchema = z
         ];
         return { type, id };
       }),
-    actor: userId.optional(),
-    from: isoDateTime.optional(),
-    to: isoDateTime.optional(),
+    actor: userIdSchema.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
     cursor: activityCursorSchema.optional(),
     limit: limitParam(CONTROL_SHEET_ACTIVITY_MAX_LIMIT),
   })

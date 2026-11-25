@@ -66,9 +66,12 @@ describe("file names", () => {
   it("never build a path out of anything else", () => {
     expect(() => avatarFileName("../etc", "0123456789abcdef")).toThrow();
     expect(() => avatarFileName(USER, "nothex")).toThrow();
+    // Only an account id as better-auth makes it: 32 letters and digits.
+    expect(() => avatarFileName(USER.slice(1), "0123456789abcdef")).toThrow();
     for (const name of [
       null,
       "",
+      `${USER}x-0123456789abcdef.webp`,
       `${USER}-0123456789abcdef.png`,
       `../${USER}-0123456789abcdef.webp`,
       `${USER}-0123456789ABCDEF.webp`,

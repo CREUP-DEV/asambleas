@@ -8,7 +8,7 @@ import {
   RECORD_TEXT_MAX_LENGTH,
 } from "../agreementsRecord";
 import { normalizeText } from "./content";
-import { entityIdSchema } from "./document";
+import { entityIdSchema, updatedAtSchema } from "./primitives";
 
 /** POST .../agreements-record (AgreementsRecordCreateBody). */
 export const agreementsRecordCreateBodySchema = z.strictObject({
@@ -25,7 +25,7 @@ export const agreementRecordTextBodySchema = z.strictObject({
     .transform((value) => normalizeText(value).replace(/\s*\n\s*/g, " "))
     .nullable(),
   omitted: z.boolean(),
-  updatedAt: z.iso.datetime({ offset: true }).nullable(),
+  updatedAt: updatedAtSchema.nullable(),
 });
 
 type Assignable<T, U extends T> = U;

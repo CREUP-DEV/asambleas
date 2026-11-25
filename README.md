@@ -81,19 +81,19 @@ En local, las variables de la Intranet pueden quedar vacías: todas las cuentas 
 
 ## Scripts
 
-| Comando                       | Uso                                 |
-| ----------------------------- | ----------------------------------- |
-| `pnpm dev`                    | Servidor de desarrollo              |
-| `pnpm build`                  | Build de producción                 |
-| `pnpm preview`                | Previsualización del build          |
-| `pnpm lint` / `pnpm lint:fix` | ESLint                              |
-| `pnpm typecheck`              | Tipado de Nuxt/Vue                  |
-| `pnpm db:generate`            | Generar migraciones Drizzle         |
-| `pnpm db:migrate`             | Aplicar migraciones                 |
-| `pnpm db:seed`                | Sembrar roles y permisos            |
-| `pnpm db:studio`              | Drizzle Studio                      |
-| `pnpm i18n:check`             | Paridad de claves de traducción     |
-| `pnpm i18n:audit-identical`   | Auditoría de traducciones idénticas |
+| Comando                       | Uso                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm dev`                    | Servidor de desarrollo                                                             |
+| `pnpm build`                  | Build de producción                                                                |
+| `pnpm preview`                | Previsualización del build                                                         |
+| `pnpm lint` / `pnpm lint:fix` | ESLint                                                                             |
+| `pnpm typecheck`              | Tipado de Nuxt/Vue                                                                 |
+| `pnpm db:generate`            | Generar una migración Drizzle (con `--name <cambio_en_snake_case>`, ver AGENTS.md) |
+| `pnpm db:migrate`             | Aplicar migraciones                                                                |
+| `pnpm db:seed`                | Sembrar roles y permisos                                                           |
+| `pnpm db:studio`              | Drizzle Studio                                                                     |
+| `pnpm i18n:check`             | Paridad de claves de traducción                                                    |
+| `pnpm i18n:audit-identical`   | Auditoría de traducciones idénticas                                                |
 
 ## Estructura
 

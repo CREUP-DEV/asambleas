@@ -39,10 +39,7 @@ import {
   type VoteBallot,
   type VoteBallotInput,
 } from "~~/shared/utils/rollCall";
-import {
-  getOptimisticLockTimestampMs,
-  STALE_WRITE_DATA,
-} from "../optimisticLock";
+import { isStale, STALE_WRITE_DATA } from "../optimisticLock";
 import { canModerate, type Actor } from "./actor";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
@@ -496,10 +493,7 @@ export async function updateHeadcount(
         ),
       );
     if (!row) fail(404, "Recuento no encontrado");
-    if (
-      getOptimisticLockTimestampMs(row.updatedAt) !==
-      getOptimisticLockTimestampMs(body.updatedAt)
-    ) {
+    if (isStale(row.updatedAt, body.updatedAt)) {
       fail(409, "El recuento ha cambiado. Recarga la página", STALE_WRITE_DATA);
     }
 

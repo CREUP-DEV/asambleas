@@ -30,6 +30,11 @@ import {
   ELECTION_RULES,
 } from "../election";
 import { VOTE_QUESTION_MAX_LENGTH } from "./vote";
+import {
+  entityIdSchema,
+  isoInstantSchema,
+  updatedAtSchema,
+} from "./primitives";
 
 /**
  * Request bodies and queries of the assembly, calendar, agenda and live
@@ -53,9 +58,6 @@ export const MILESTONE_NOTE_MAX_LENGTH = 500;
 export const LIVE_BLOC_MAX_AMENDMENTS = 200;
 export const ASSEMBLY_LIST_PAGE_SIZE = 20;
 
-const assemblyIdPattern = /^[a-z0-9]{20,32}$/;
-const assemblyEntityId = z.string().regex(assemblyIdPattern);
-const isoDateTime = z.iso.datetime({ offset: true });
 const assemblyTypeSchema = z.enum(
   ALL_ASSEMBLY_TYPES as [AssemblyType, ...AssemblyType[]],
 );
@@ -87,8 +89,8 @@ export const assemblyCreateBodySchema = z
   .object({
     number: z.number().int().min(1).max(9_999),
     type: assemblyTypeSchema,
-    startDate: isoDateTime,
-    endDate: isoDateTime,
+    startDate: isoInstantSchema,
+    endDate: isoInstantSchema,
     location: singleLine(ASSEMBLY_LOCATION_MAX_LENGTH),
     applyDefaultCalendar: z.boolean().optional(),
   })
@@ -106,20 +108,20 @@ export const assemblyUpdateBodySchema = z
   .object({
     number: z.number().int().min(1).max(9_999).optional(),
     type: assemblyTypeSchema.optional(),
-    startDate: isoDateTime.optional(),
-    endDate: isoDateTime.optional(),
+    startDate: isoInstantSchema.optional(),
+    endDate: isoInstantSchema.optional(),
     location: singleLine(ASSEMBLY_LOCATION_MAX_LENGTH).optional(),
     convocationIntro: multiLine(CONVOCATION_INTRO_MAX_LENGTH)
       .nullable()
       .optional(),
     settings: assemblySettingsPatchSchema.optional(),
-    updatedAt: isoDateTime,
+    updatedAt: updatedAtSchema,
   })
   .refine(endAfterStart, { message: "end_before_start", path: ["endDate"] });
 
 export const assemblyStatusBodySchema = z.object({
   status: z.enum(ASSEMBLY_STATUSES),
-  updatedAt: isoDateTime,
+  updatedAt: updatedAtSchema,
 });
 
 export const calendarBodySchema = z.object({
@@ -127,7 +129,7 @@ export const calendarBodySchema = z.object({
     .array(
       z.object({
         key: z.enum(MILESTONE_KEYS),
-        at: isoDateTime.nullable(),
+        at: isoInstantSchema.nullable(),
         note: multiLine(MILESTONE_NOTE_MAX_LENGTH).nullable().optional(),
       }),
     )
@@ -156,7 +158,7 @@ export const assemblyListQuerySchema = z.object({
 export const AGENDA_FINAL_CONFLICT_CODE = "agenda_final";
 
 export const agendaItemBodySchema = z.object({
-  parentId: assemblyEntityId.nullable().optional(),
+  parentId: entityIdSchema.nullable().optional(),
   title: singleLine(AGENDA_TITLE_MAX_LENGTH),
   description: multiLine(AGENDA_DESCRIPTION_MAX_LENGTH).nullable().optional(),
   acceptsSubmissions: z.boolean().optional(),
@@ -169,14 +171,13 @@ export const agendaItemBodySchema = z.object({
     .optional(),
   // Never a default: a PUT that leaves it out keeps what is stored.
   voted: z.boolean().optional(),
-  updatedAt: isoDateTime.optional(),
   confirmFinal: z.boolean().optional(),
 });
 
 /** DELETE of an item has no body: the confirmation travels in the query. */
 /** DELETE of the signed convocatoria: `updatedAt` of the assembly, for the lock. */
 export const convocationDeleteQuerySchema = z.object({
-  updatedAt: isoDateTime,
+  updatedAt: updatedAtSchema,
 });
 
 export const agendaItemDeleteQuerySchema = z.object({
@@ -186,17 +187,20 @@ export const agendaItemDeleteQuerySchema = z.object({
     .transform((value) => value === "true"),
 });
 
-/** PUT on an existing item: `updatedAt` is required for optimistic locking. */
+/**
+ * PUT on an existing item: `updatedAt` is required for optimistic locking.
+ * The create body above has none: a POST that sends one has it dropped.
+ */
 export const agendaItemUpdateBodySchema = agendaItemBodySchema.extend({
-  updatedAt: isoDateTime,
+  updatedAt: updatedAtSchema,
 });
 
 export const agendaReorderBodySchema = z.object({
   items: z
     .array(
       z.object({
-        id: assemblyEntityId,
-        parentId: assemblyEntityId.nullable(),
+        id: entityIdSchema,
+        parentId: entityIdSchema.nullable(),
         order: z.number().int().min(0).max(100_000),
       }),
     )
@@ -214,11 +218,11 @@ export const agendaReorderBodySchema = z.object({
 // Live session -----------------------------------------------------------
 
 export const liveStateBodySchema = z.object({
-  agendaItemId: assemblyEntityId.nullable().optional(),
-  documentId: assemblyEntityId.nullable().optional(),
-  amendmentId: assemblyEntityId.nullable().optional(),
+  agendaItemId: entityIdSchema.nullable().optional(),
+  documentId: entityIdSchema.nullable().optional(),
+  amendmentId: entityIdSchema.nullable().optional(),
   amendmentBloc: z
-    .array(assemblyEntityId)
+    .array(entityIdSchema)
     .max(LIVE_BLOC_MAX_AMENDMENTS)
     .refine((ids) => new Set(ids).size === ids.length, {
       message: "duplicate_id",
@@ -228,7 +232,7 @@ export const liveStateBodySchema = z.object({
   // The bloc as alternatives: each option's amendments (nextLivePointer
   // checks they split the bloc exactly).
   amendmentBlocOptions: z
-    .array(z.array(assemblyEntityId).min(1).max(LIVE_BLOC_MAX_AMENDMENTS))
+    .array(z.array(entityIdSchema).min(1).max(LIVE_BLOC_MAX_AMENDMENTS))
     .min(2)
     .max(10)
     .nullable()
@@ -236,10 +240,13 @@ export const liveStateBodySchema = z.object({
   // What the bloc proposes besides approving it (nextLivePointer checks it
   // comes with a bloc and without options).
   amendmentBlocPurpose: z.enum(LIVE_BLOC_PURPOSES).nullable().optional(),
-  voteId: assemblyEntityId.nullable().optional(),
+  voteId: entityIdSchema.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
   speakersVisible: z.boolean().optional(),
-  recess: z.object({ until: isoDateTime.nullable() }).nullable().optional(),
+  recess: z
+    .object({ until: isoInstantSchema.nullable() })
+    .nullable()
+    .optional(),
   speakingLimitSeconds: z
     .number()
     .int()
@@ -262,7 +269,7 @@ export const projectionControlBodySchema = z.object({
 });
 
 export const liveScrollBodySchema = z.object({
-  documentId: assemblyEntityId,
+  documentId: entityIdSchema,
   anchor: z.union([
     z.object({
       block: z.string().min(1).max(100),
@@ -296,7 +303,7 @@ export const LIVE_POINTER_MAX_EVENTS = 60;
 
 /** POST .../live-pointer: what the Mesa's pointer did on the document. */
 export const livePointerBodySchema = z.object({
-  documentId: assemblyEntityId,
+  documentId: entityIdSchema,
   events: z
     .array(
       z.discriminatedUnion("type", [
@@ -349,7 +356,7 @@ export const liveTallyBodySchema = z.object({
       subject: z
         .object({
           type: z.enum(VOTE_SUBJECTS),
-          id: assemblyEntityId.nullable(),
+          id: entityIdSchema.nullable(),
         })
         .nullable(),
       question: z

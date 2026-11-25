@@ -764,6 +764,7 @@ export interface AgendaItemBody {
    * keeps what is stored.
    */
   voted?: boolean;
+  /** The item's lock token: required on PUT, dropped on POST. */
   updatedAt?: IsoDate;
   /**
    * Go ahead although the agenda is final. Needed to create, move or rename

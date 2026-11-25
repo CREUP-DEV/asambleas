@@ -40,13 +40,25 @@ The usual AGENTS.md handler order applies:
   - `[document]` accepts the slug or the id within the assembly.
   - `[amendment]` and `[item]` are CUIDs.
   - All resolvers live in `server/utils/domain/resolvers.ts`, and they return
-    404 whenever the actor cannot see the target (`visibility.ts`).
+    404 whenever the actor cannot see the target (`visibility.ts`). A
+    malformed id answers 404 as well, on the control sheet's PATCH too.
+  - A param without a resolver answers 400 when malformed (`validateCuid`,
+    `validateAuthId` in `server/utils/validation.ts`).
+  - Ids and instants are checked against one definition each
+    (`shared/utils/schemas/primitives.ts`): a row's id is 20 to 32
+    lowercase letters and digits (cuid2, and the fixed ids such as the
+    CEA's generic member), an account's id 32 letters and digits, an instant
+    ISO 8601 with its offset and a year from 0001.
 - **Mutations.** CSRF and same-origin are enforced by the `serverHandlers`
   middleware. Every new top-level API section (`/api/members`, `/api/me`) needs
   its entry in `nuxt.config.ts`.
 - **Optimistic locking.** Shared PUT, PATCH and POST mutations of existing
   rows take `updatedAt` and use `buildOptimisticLockCondition`, so the write is
-  atomic. A conflict returns 409 with `data.reason: "stale_write"`
+  atomic, or `assertOptimisticLock` on a row locked first. A missing
+  `updatedAt` is refused like a stale one, except where an endpoint says it
+  is optional (a document's `POST .../submit` and `POST .../publish`, the
+  PDF upload's multipart field, the signed acta's). A conflict returns 409
+  with `data.reason: "stale_write"`
   (`STALE_WRITE_DATA` / `staleWriteError` in `server/utils/optimisticLock.ts`;
   `assertOptimisticLock` adds it). Any other 409 is a rule of the current
   state: it carries its own reason or `messageKey`, or none, and the client
@@ -481,7 +493,7 @@ two, its only call otherwise. There is no first-call quorum.
 | ------ | ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                                                                                                                                                                  |
 | POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                                                                                                                                                           |
-| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                                                                                                                                                               |
+| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt` (required; a POST drops it). Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                                                                                                                                   |
 | DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated; 409 `agenda_item_sheet` while the control sheet noted something about one of them or one of them has a vote of its own (voided ones too). See "Deleting an item" below. |
 | PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                                                                                                                                                                         |
 | POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                                                                                                                                                                  |

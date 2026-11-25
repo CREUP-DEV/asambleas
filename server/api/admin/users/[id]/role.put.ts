@@ -16,10 +16,11 @@ import {
 } from "../../../../utils/auth/rbac";
 import { endImpersonations } from "../../../../utils/auth/impersonation";
 import { recordAudit } from "../../../../utils/domain/audit";
-import { isDefaultCuid, validateAuthId } from "../../../../utils/validation";
+import { validateAuthId } from "../../../../utils/validation";
+import { entityIdSchema } from "~~/shared/utils/schemas/primitives";
 
 const bodySchema = z.object({
-  roleId: z.string().refine(isDefaultCuid),
+  roleId: entityIdSchema,
 });
 
 function targetRevokedError() {

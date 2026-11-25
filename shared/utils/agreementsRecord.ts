@@ -36,6 +36,7 @@ import type { DocumentKind, DocumentStatus } from "../constants/domain";
 import type { Block, Mark } from "../types/content";
 import { ASSEMBLY_NAMES } from "./content/approvalLine";
 import { formatLongDate } from "./dates";
+import { ENTITY_ID_SOURCE } from "./schemas/primitives";
 import {
   isItemVotedDocument,
   isUnanimousVote,
@@ -64,8 +65,9 @@ export const RECORD_HEADER_KEYS = [
 export type RecordHeaderKey = (typeof RECORD_HEADER_KEYS)[number];
 
 /** Keys a correction may name: the header's, or a line's. */
-export const RECORD_KEY_PATTERN =
-  /^(?:secretary_name|secretary_title|city|self|(?:item|doc|group|minutes):[a-z0-9]{20,32}(?::[a-z_]{1,24}:(?:approved|rejected))?)$/;
+export const RECORD_KEY_PATTERN = new RegExp(
+  `^(?:secretary_name|secretary_title|city|self|(?:item|doc|group|minutes):${ENTITY_ID_SOURCE}(?::[a-z_]{1,24}:(?:approved|rejected))?)$`,
+);
 
 /** Longest correction. */
 export const RECORD_TEXT_MAX_LENGTH = 2000;

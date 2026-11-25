@@ -1,4 +1,4 @@
-import { fail } from "../core/http";
+import { fail, notFound } from "../core/http";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { z } from "zod/v4";
 import { db } from "../../db";
@@ -39,8 +39,8 @@ import {
   type controlSheetAmendmentBodySchema,
   type controlSheetItemBodySchema,
 } from "~~/shared/utils/schemas/controlSheet";
-import { getOptimisticLockTimestampMs } from "../optimisticLock";
-import { validateCuid } from "../validation";
+import { isStale } from "../optimisticLock";
+import { isEntityId } from "~~/shared/utils/schemas/primitives";
 import {
   canEditControlSheet,
   canManageDocuments,
@@ -642,26 +642,33 @@ export async function loadDocumentSheetObservations(
 
 // Subjects ----------------------------------------------------------------
 
-/** An agenda item of the assembly the actor gets, or 404. */
+/**
+ * An agenda item of the assembly the actor gets, or 404: a malformed id
+ * answers like one the actor does not get, as `resolveItem` does.
+ */
 export async function resolveSheetItem(
   actor: Actor,
   assembly: AssemblyRow,
   param: string | undefined,
 ): Promise<AgendaItemRow> {
-  const id = validateCuid(param, "Punto");
-  const item = (await loadVisibleItems(actor, assembly.id)).get(id);
-  if (!item) fail(404, "Punto no encontrado");
+  if (!isEntityId(param)) notFound("Punto no encontrado");
+  const item = (await loadVisibleItems(actor, assembly.id)).get(param);
+  if (!item) notFound("Punto no encontrado");
   return item;
 }
 
-/** An amendment past draft of the assembly the actor sees, or 404. */
+/**
+ * An amendment past draft of the assembly the actor sees, or 404: a
+ * malformed id answers like one the actor does not see, as
+ * `resolveAmendment` does.
+ */
 export async function resolveSheetAmendment(
   actor: Actor,
   assembly: AssemblyRow,
   param: string | undefined,
 ): Promise<{ id: string; documentId: string }> {
-  const id = validateCuid(param, "Enmienda");
-  const [row] = await findAmendmentsByIds([id]);
+  if (!isEntityId(param)) notFound("Enmienda no encontrada");
+  const [row] = await findAmendmentsByIds([param]);
   if (!row || row.status === "draft") fail(404, "Enmienda no encontrada");
   const [document] = await db.query.documents
     .findMany({
@@ -683,10 +690,14 @@ export async function resolveSheetAmendment(
 
 // Writes ------------------------------------------------------------------
 
+/**
+ * Whether a sheet field's token still holds. Each field has its own
+ * (`observationsUpdatedAt`, `resultUpdatedAt`…), null while it was never
+ * written: null sent against null stored matches, so the first write of a
+ * field needs no token, and a field someone wrote meanwhile is stale.
+ */
 function sameToken(stored: Date | null, sent: string | null): boolean {
-  return (
-    getOptimisticLockTimestampMs(stored) === getOptimisticLockTimestampMs(sent)
-  );
+  return !isStale(stored, sent);
 }
 
 function requireEdit(actor: Actor): void {

@@ -17,6 +17,8 @@ vi.mock("../auth/rbac", () => ({
 
 const {
   redactItemRowDto,
+  resolveSheetAmendment,
+  resolveSheetItem,
   sheetItemBodyOnlyTreated,
   sheetItemBodyTreats,
   sheetPositions,
@@ -377,5 +379,24 @@ describe("redactItemRowDto", () => {
       observationsEdited: null,
       observationsUpdatedAt: at,
     });
+  });
+});
+
+describe("resolveSheetItem and resolveSheetAmendment", () => {
+  // As resolveItem and resolveAmendment: a malformed id answers like one
+  // the actor does not get, before any read.
+  const assembly = { id: "s".repeat(24) } as Parameters<
+    typeof resolveSheetItem
+  >[1];
+
+  it("answer 404 to a missing or malformed id", async () => {
+    for (const param of [undefined, "", "not an id", "A".repeat(24)]) {
+      await expect(
+        resolveSheetItem(CEA_READER, assembly, param),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        resolveSheetAmendment(CEA_READER, assembly, param),
+      ).rejects.toMatchObject({ statusCode: 404 });
+    }
   });
 });

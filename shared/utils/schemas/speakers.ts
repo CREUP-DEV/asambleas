@@ -10,6 +10,7 @@ import {
   SPEAKING_LIMIT_MAX_SECONDS,
   SPEAKING_LIMIT_MIN_SECONDS,
 } from "./assembly";
+import { entityIdSchema, updatedAtSchema } from "./primitives";
 
 /**
  * Request bodies of the speaking turns API (docs/api.md, "Speaking turns").
@@ -21,8 +22,6 @@ export const SPEAKER_NAME_MAX_LENGTH = 120;
 /** Waiting turns of one assembly; a longer queue is refused. */
 export const SPEAKING_QUEUE_MAX_LENGTH = 200;
 const MAX_QUEUE_POSITION = 10_000;
-
-const entityId = z.string().regex(/^[a-z0-9]{20,32}$/);
 
 /** A single line; blank means no name (null). */
 const speakerNameSchema = z
@@ -37,9 +36,9 @@ const speakerNameSchema = z
 
 /** POST /api/assemblies/[assembly]/speakers (SpeakingTurnBody). */
 export const speakingTurnBodySchema = z.object({
-  memberId: entityId.nullable().optional(),
+  memberId: entityIdSchema.nullable().optional(),
   speaker: speakerNameSchema,
-  agendaItemId: entityId.nullable().optional(),
+  agendaItemId: entityIdSchema.nullable().optional(),
   limited: z.boolean().optional(),
   priority: z.boolean().optional(),
 });
@@ -57,15 +56,15 @@ export const speakingTurnUpdateBodySchema = z.object({
     .nullable()
     .optional(),
   expectHead: z.boolean().optional(),
-  expectedSpeakingId: entityId.nullable().optional(),
-  updatedAt: z.iso.datetime({ offset: true }),
+  expectedSpeakingId: entityIdSchema.nullable().optional(),
+  updatedAt: updatedAtSchema,
 });
 
 /** POST /api/assemblies/[assembly]/speakers/notes (SpeakerNoteBody). */
 export const speakerNoteBodySchema = z.object({
-  agendaItemId: entityId.nullable(),
-  amendmentId: entityId.nullable().optional(),
-  memberId: entityId.nullable().optional(),
+  agendaItemId: entityIdSchema.nullable(),
+  amendmentId: entityIdSchema.nullable().optional(),
+  memberId: entityIdSchema.nullable().optional(),
   speaker: speakerNameSchema,
 });
 

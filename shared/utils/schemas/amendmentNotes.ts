@@ -4,6 +4,7 @@ import type {
   AmendmentNoteUpdateBody,
 } from "../../types/api";
 import { AMENDMENT_NOTE_MAX_LENGTH } from "../amendmentNotes";
+import { updatedAtSchema } from "./primitives";
 
 const body = z
   .string()
@@ -16,7 +17,7 @@ export const amendmentNoteCreateBodySchema = z.strictObject({ body });
 /** PUT .../amendments/[amendment]/notes/[note] (AmendmentNoteUpdateBody). */
 export const amendmentNoteUpdateBodySchema = z.strictObject({
   body,
-  updatedAt: z.iso.datetime({ offset: true }),
+  updatedAt: updatedAtSchema,
 });
 
 // Compile-time check: the parsed bodies are assignable to their API types.

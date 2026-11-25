@@ -7,12 +7,11 @@ import {
   assemblies,
   documents,
 } from "../../db/schema";
+import { ENTITY_ID_PATTERN } from "~~/shared/utils/schemas/primitives";
 import { parseAssemblySlug } from "~~/shared/utils/slug";
 import type { Actor } from "./actor";
 import { loadCoProponentIds } from "./presenters";
 import { canSeeAssembly, canSeeDocument } from "./visibility";
-
-const CUID_PATTERN = /^[a-z0-9]{20,32}$/;
 
 /** Resolves `80-ago` or an id. Hidden assemblies answer 404, not 403. */
 export async function resolveAssembly(actor: Actor, param: string | undefined) {
@@ -25,7 +24,7 @@ export async function resolveAssembly(actor: Actor, param: string | undefined) {
           eq(assemblies.number, parsed.number),
         ),
       })
-    : CUID_PATTERN.test(param)
+    : ENTITY_ID_PATTERN.test(param)
       ? await db.query.assemblies.findFirst({ where: eq(assemblies.id, param) })
       : undefined;
   if (!assembly || !canSeeAssembly(actor, assembly))
@@ -45,7 +44,7 @@ export async function resolveDocument(
 ) {
   if (!param) notFound("Documento no encontrado");
   // A long hyphen-free slug can look like a CUID, so fall back to the slug.
-  const byId = CUID_PATTERN.test(param)
+  const byId = ENTITY_ID_PATTERN.test(param)
     ? await db.query.documents.findFirst({
         where: and(
           eq(documents.assemblyId, assemblyId),
@@ -75,7 +74,7 @@ export async function resolveAgendaItem(
   assemblyId: string,
   param: string | undefined,
 ) {
-  if (!param || !CUID_PATTERN.test(param)) notFound("Punto no encontrado");
+  if (!param || !ENTITY_ID_PATTERN.test(param)) notFound("Punto no encontrado");
   const item = await db.query.agendaItems.findFirst({
     where: and(
       eq(agendaItems.id, param),
@@ -91,7 +90,8 @@ export async function resolveAmendment(
   documentId: string,
   param: string | undefined,
 ) {
-  if (!param || !CUID_PATTERN.test(param)) notFound("Enmienda no encontrada");
+  if (!param || !ENTITY_ID_PATTERN.test(param))
+    notFound("Enmienda no encontrada");
   const amendment = await db.query.amendments.findFirst({
     where: and(eq(amendments.id, param), eq(amendments.documentId, documentId)),
   });

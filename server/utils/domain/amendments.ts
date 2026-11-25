@@ -127,7 +127,7 @@ import { alternativesSplitConflict } from "../../../shared/utils/alternativesSpl
 import { isUniqueConstraintViolation } from "../errors";
 import {
   buildOptimisticLockCondition,
-  getOptimisticLockTimestampMs,
+  isStale,
   STALE_WRITE_DATA,
 } from "../optimisticLock";
 import {
@@ -153,6 +153,7 @@ import {
   type LiveMessage,
 } from "./events";
 import { logError } from "../core/logger";
+import { isEntityId } from "~~/shared/utils/schemas/primitives";
 import { loadPassageWordings, toPassageWordingDto } from "./wordings";
 import { goneAmendmentIds, linkedAmendmentIds } from "./amendmentDependencies";
 import { amendmentsMeet } from "../../../shared/utils/content/passages";
@@ -5830,10 +5831,12 @@ export async function setAmendmentPosition(
     }
 
     const stored = (await lockPositions(tx, [amendment.id])).get(amendment.id);
+    // The answer seen when the form opened: null means none was seen, so
+    // an answer recorded meanwhile is stale too. Left out, nothing is
+    // checked: the field is optional in PositionBody.
     if (
       body.positionUpdatedAt !== undefined &&
-      getOptimisticLockTimestampMs(stored?.updatedAt ?? null) !==
-        getOptimisticLockTimestampMs(body.positionUpdatedAt)
+      isStale(stored?.updatedAt ?? null, body.positionUpdatedAt)
     ) {
       fail(
         409,
@@ -8601,7 +8604,7 @@ export async function deleteAmendmentRelation(
   const { actor, document } = ctx;
   assertRelationRole(ctx);
   assertNotFinal(ctx);
-  if (!relationParam || !/^[a-z0-9]{20,32}$/.test(relationParam)) {
+  if (!isEntityId(relationParam)) {
     fail(404, "Relación no encontrada");
   }
 

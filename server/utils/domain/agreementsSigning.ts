@@ -420,7 +420,11 @@ export async function attachSignedRecord(
       if (row.versionId !== current.consolidatedVersionId) {
         fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
       }
-      assertOptimisticLock(updatedAt, row.updatedAt, STALE_MESSAGE);
+      // The multipart `updatedAt` field may come empty: the record's page
+      // sends "" while it read no signing.
+      assertOptimisticLock(updatedAt, row.updatedAt, STALE_MESSAGE, {
+        optional: true,
+      });
       await tx
         .update(agreementRecordSignings)
         .set({

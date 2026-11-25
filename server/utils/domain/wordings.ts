@@ -13,6 +13,7 @@ import type {
 } from "../../../shared/types/api";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { inApprovalOrder } from "../../../shared/utils/approvalOrder";
+import { isEntityId } from "../../../shared/utils/schemas/primitives";
 import {
   consolidateApproved,
   passageKey,
@@ -251,7 +252,7 @@ export async function removePassageWording(
 ): Promise<{ success: true }> {
   assertCanWord(ctx);
   const { actor, assembly, document } = ctx;
-  if (!wordingParam || !/^[a-z0-9]{20,32}$/.test(wordingParam)) {
+  if (!isEntityId(wordingParam)) {
     fail(404, "Redacción no encontrada");
   }
   await db.transaction(async (tx) => {

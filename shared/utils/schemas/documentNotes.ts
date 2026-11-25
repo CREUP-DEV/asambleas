@@ -7,6 +7,7 @@ import {
   DOCUMENT_NOTE_MAX_LENGTH,
   DOCUMENT_NOTE_QUOTE_MAX_LENGTH,
 } from "../documentNotes";
+import { updatedAtSchema } from "./primitives";
 
 /** Longest block text a stretch can point into. */
 const MAX_OFFSET = 1_000_000;
@@ -34,7 +35,7 @@ export const documentNoteCreateBodySchema = z.strictObject({
 /** PUT .../documents/[document]/notes/[note] (DocumentNoteUpdateBody). */
 export const documentNoteUpdateBodySchema = z.strictObject({
   body,
-  updatedAt: z.iso.datetime({ offset: true }),
+  updatedAt: updatedAtSchema,
 });
 
 // Compile-time check: the parsed bodies are assignable to their API types.

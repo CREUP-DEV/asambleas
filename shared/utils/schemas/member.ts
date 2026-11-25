@@ -5,6 +5,7 @@ import type {
   RosterMemberKind,
 } from "../../types/api";
 import { normalizeText } from "./content";
+import { entityIdSchema, updatedAtSchema } from "./primitives";
 
 /**
  * Request bodies of the members API (docs/api.md, "Members and me"). There
@@ -60,7 +61,7 @@ export const memberUpdateBodySchema = z.object({
   active: z.boolean().optional(),
   university: memberDetailSchema,
   region: memberDetailSchema,
-  updatedAt: z.iso.datetime({ offset: true }),
+  updatedAt: updatedAtSchema,
 });
 
 /**
@@ -85,10 +86,7 @@ export type MemberUpdateBody = z.input<typeof memberUpdateBodySchema>;
  * for, or unlinks it with null, when role sync cannot (missing initials).
  */
 export const userMemberLinkBodySchema = z.object({
-  memberId: z
-    .string()
-    .regex(/^[a-z0-9]{20,32}$/)
-    .nullable(),
+  memberId: entityIdSchema.nullable(),
 });
 
 /** The member kinds the intranet roster lists (RosterMemberKind). */

@@ -8,7 +8,10 @@ import {
   type MeActivityTab,
 } from "~~/shared/constants/activity";
 import { ASSEMBLY_TIME_ZONE } from "~~/shared/utils/calendar";
-import { USER_ID_PATTERN } from "~~/shared/utils/schemas/activity";
+import {
+  ENTITY_ID_PATTERN,
+  USER_ID_PATTERN,
+} from "~~/shared/utils/schemas/primitives";
 
 /**
  * Filters of "Mi actividad" (/actividad) and of the Admin's activity log
@@ -29,8 +32,6 @@ export type ActivityRouteQuery = Record<string, unknown>;
 export type ActivityApiQuery = Record<string, string | undefined>;
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-/** cuid2 ids of domain rows (members, impersonations). */
-const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
 /** An assembly slug ("80-ago") or id. */
 const ASSEMBLY_REF_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 

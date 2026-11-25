@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  USER_ID_PATTERN,
+  USER_ID_SOURCE,
+} from "~~/shared/utils/schemas/primitives";
 import { getUploadDir } from "../core/uploadPaths";
 import { logError } from "../core/logger";
 
@@ -24,11 +28,13 @@ const AVATAR_SOURCE_MAX_LENGTH = 2048;
 /** Side of the stored photo, the size asked of Google too. */
 export const AVATAR_SIDE = 192;
 
-/** better-auth ids are alphanumeric (32 characters today). */
-const USER_ID_PATTERN = /^[A-Za-z0-9]{8,64}$/;
-
-/** `<userId>-<version>.webp`, version 16 hex digits. */
-export const AVATAR_FILE_PATTERN = /^([A-Za-z0-9]{8,64})-([a-f0-9]{16})\.webp$/;
+/**
+ * `<userId>-<version>.webp`: the account's id as better-auth makes it
+ * (USER_ID_PATTERN, 32 letters and digits), version 16 hex digits.
+ */
+export const AVATAR_FILE_PATTERN = new RegExp(
+  `^(${USER_ID_SOURCE})-([a-f0-9]{16})\\.webp$`,
+);
 
 /**
  * Whether `users.image` may be fetched: an https URL on Google's photo

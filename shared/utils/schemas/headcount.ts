@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import type { HeadcountBody, HeadcountUpdateBody } from "../../types/api";
 import { ATTENDANCE_MARKS } from "../headcount";
 import { normalizeText } from "./content";
+import { entityIdSchema, updatedAtSchema, userIdSchema } from "./primitives";
 
 /**
  * Request bodies of the headcounts API (docs/api.md, "Headcounts"). Each
@@ -12,8 +13,6 @@ import { normalizeText } from "./content";
 export const HEADCOUNT_NOTE_MAX_LENGTH = 300;
 /** Most members a headcount lists; more is refused. */
 export const HEADCOUNT_MAX_ENTRIES = 500;
-
-const entityId = z.string().regex(/^[a-z0-9]{20,32}$/);
 
 const noteSchema = z
   .string()
@@ -26,24 +25,21 @@ const noteSchema = z
   .optional();
 
 const entrySchema = z.strictObject({
-  memberId: entityId,
+  memberId: entityIdSchema,
   mark: z.enum(ATTENDANCE_MARKS),
-  delegateId: entityId.nullable().optional(),
+  delegateId: entityIdSchema.nullable().optional(),
 });
-
-/** An account id (better-auth). */
-const accountId = z.string().regex(/^[a-zA-Z0-9]{32}$/);
 
 /** POST /api/assemblies/[assembly]/headcounts (HeadcountBody). */
 export const headcountBodySchema = z.strictObject({
   entries: z.array(entrySchema).max(HEADCOUNT_MAX_ENTRIES),
-  guests: z.array(accountId).max(HEADCOUNT_MAX_ENTRIES).optional(),
+  guests: z.array(userIdSchema).max(HEADCOUNT_MAX_ENTRIES).optional(),
   note: noteSchema,
 });
 
 /** PUT /api/assemblies/[assembly]/headcounts/[headcount]. */
 export const headcountUpdateBodySchema = headcountBodySchema.extend({
-  updatedAt: z.iso.datetime({ offset: true }),
+  updatedAt: updatedAtSchema,
 });
 
 // Compile-time checks: every parsed body is assignable to its API type.

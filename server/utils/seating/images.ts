@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Job, PgBoss } from "pg-boss";
 import sharp from "sharp";
 import { z } from "zod/v4";
 import { intranetIdSchema } from "~~/shared/utils/schemas/member";
+import { entityIdSchema } from "~~/shared/utils/schemas/primitives";
 import { db } from "../../db";
+import { keepUpdatedAt } from "../optimisticLock";
 import { seatingGroups, seatingPeople, seatingPlans } from "../../db/schema";
 import { logError, logInfo, logWarn } from "../core/logger";
 import { notifyLive, type Executor } from "../domain/events";
@@ -51,14 +53,12 @@ const SEATING_IMAGE_MAX_INPUT_PIXELS = 40_000_000;
 /** Retries of a fetch the Intranet could not answer. */
 const SEATING_IMAGE_RETRY_LIMIT = 3;
 
-const entityId = z.string().regex(/^[a-z0-9]{20,32}$/);
-
 export const seatingImageJobSchema = z.object({
   assemblyId: z.string().min(1),
-  planId: entityId,
+  planId: entityIdSchema,
   kind: z.enum(["logo", "photo"]),
   /** The group (logo) or the person (photo). */
-  id: entityId,
+  id: entityIdSchema,
   intranetId: intranetIdSchema,
   version: z.string().regex(SEATING_IMAGE_VERSION_PATTERN),
 });
@@ -309,7 +309,10 @@ async function claimImageRow(
   if (job.kind === "logo") {
     const rows = await tx
       .update(seatingGroups)
-      .set({ logoFile: name, updatedAt: sql`${seatingGroups.updatedAt}` })
+      .set({
+        logoFile: name,
+        updatedAt: keepUpdatedAt(seatingGroups.updatedAt),
+      })
       .where(
         and(
           eq(seatingGroups.id, job.id),
@@ -323,7 +326,10 @@ async function claimImageRow(
   }
   const rows = await tx
     .update(seatingPeople)
-    .set({ photoFile: name, updatedAt: sql`${seatingPeople.updatedAt}` })
+    .set({
+      photoFile: name,
+      updatedAt: keepUpdatedAt(seatingPeople.updatedAt),
+    })
     .where(
       and(
         eq(seatingPeople.id, job.id),

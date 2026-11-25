@@ -87,6 +87,7 @@ import {
   formatAssemblyLabel,
   parseAssemblySlug,
 } from "~~/shared/utils/slug";
+import { ENTITY_ID_PATTERN } from "~~/shared/utils/schemas/primitives";
 import { deletedTitleWithheld } from "~~/shared/utils/agendaSubmissions";
 import {
   endImpersonations,
@@ -2772,8 +2773,6 @@ export async function loadControlSheetActivityPeople(
   );
 }
 
-const CUID_PATTERN = /^[a-z0-9]{20,32}$/;
-
 /**
  * The Admin's `assembly` filter: a slug ("80-ago") or an id. An id is
  * kept even when the assembly no longer exists, so the audit rows of a
@@ -2793,7 +2792,7 @@ async function resolveAdminAssemblyId(param: string): Promise<string> {
       )
       .limit(1);
     if (row) return row.id;
-  } else if (CUID_PATTERN.test(param)) {
+  } else if (ENTITY_ID_PATTERN.test(param)) {
     return param;
   }
   throw createError({ statusCode: 404, message: "Asamblea no encontrada" });

@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
+import { ENTITY_ID_PATTERN } from "~~/shared/utils/schemas/primitives";
 import { logError } from "../../core/logger";
 import type { ExportLocale } from "../labels";
 import { getExportStorageDir } from "../storage";
@@ -49,7 +50,6 @@ export function packageVariant(format: PackageFormat): PackageVariant {
   return format.justified ? base : `${base}-ragged`;
 }
 
-const ASSEMBLY_ID = /^[a-z0-9]{10,40}$/;
 const KEY = /^[a-z0-9:._-]{1,120}$/i;
 
 export function packagesDir(): string {
@@ -57,7 +57,10 @@ export function packagesDir(): string {
 }
 
 export function assemblyPackageDir(assemblyId: string): string {
-  if (!ASSEMBLY_ID.test(assemblyId)) throw new Error("Invalid assembly id");
+  // Assembly ids are cuid2: never a path of their own.
+  if (!ENTITY_ID_PATTERN.test(assemblyId)) {
+    throw new Error("Invalid assembly id");
+  }
   return join(packagesDir(), assemblyId);
 }
 

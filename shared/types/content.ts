@@ -7,6 +7,7 @@
  */
 
 import type { CellFillName } from "../constants/cellFills";
+import { ENTITY_ID_PATTERN } from "../utils/schemas/primitives";
 
 /**
  * - `formula`: a displayed formula, its `text` the LaTeX source (user's
@@ -126,8 +127,8 @@ export interface BlockImage {
   alt: string;
 }
 
-/** Ids of stored images (cuid2). */
-export const IMAGE_ASSET_PATTERN = /^[a-z0-9]{20,32}$/;
+/** Ids of stored images: domain row ids (cuid2). */
+export const IMAGE_ASSET_PATTERN = ENTITY_ID_PATTERN;
 
 /** Where stored images are served, by asset id. */
 export const IMAGE_URL_PREFIX = "/api/uploads/images/";

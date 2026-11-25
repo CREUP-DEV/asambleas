@@ -3,6 +3,7 @@ import { MILESTONE_KEYS, type MilestoneKey } from "../../constants/domain";
 import type { CalendarRulesBody } from "../../types/api";
 import type { CalendarRules, MilestoneOffset } from "../calendar";
 import type { QuorumThreshold } from "../headcount";
+import { updatedAtSchema } from "./primitives";
 
 /**
  * The calendar rules of an assembly type (docs/api.md, "Calendar rules"):
@@ -66,7 +67,7 @@ export const calendarRulesSchema = z.strictObject({
 export const calendarRulesBodySchema = z.strictObject({
   rules: calendarRulesSchema,
   /** The `updatedAt` the client read (optimistic locking); null: no row yet. */
-  updatedAt: z.iso.datetime({ offset: true }).nullable(),
+  updatedAt: updatedAtSchema.nullable(),
 });
 
 /**

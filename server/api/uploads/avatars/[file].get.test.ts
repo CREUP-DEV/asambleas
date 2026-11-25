@@ -46,7 +46,10 @@ vi.mock("../../../db", () => {
 });
 
 const { default: handler } = await import("./[file].get");
-const event = {} as H3Event;
+// sendReadStream listens for the response's close to destroy the stream.
+const event = {
+  node: { res: { once: () => undefined } },
+} as unknown as H3Event;
 
 let uploads: string;
 
