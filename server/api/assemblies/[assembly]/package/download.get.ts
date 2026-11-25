@@ -1,11 +1,7 @@
+import { sendReadStream } from "../../../../utils/core/http";
 import { createReadStream } from "node:fs";
 import type { Readable } from "node:stream";
-import {
-  createError,
-  defineEventHandler,
-  sendStream,
-  setResponseHeaders,
-} from "h3";
+import { createError, defineEventHandler, setResponseHeaders } from "h3";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { db } from "../../../../db";
 import { recordAudit } from "../../../../utils/domain/audit";
@@ -66,7 +62,7 @@ export default defineEventHandler(async (event) => {
       "Content-Disposition": attachmentDisposition(part.filename),
       "Cache-Control": "private, no-store",
     });
-    return sendStream(
+    return sendReadStream(
       event,
       packageZipStream(request.assemblyId, part.entries) as Readable,
     );
@@ -85,5 +81,5 @@ export default defineEventHandler(async (event) => {
     "Content-Disposition": attachmentDisposition(file.filename),
     "Cache-Control": "private, no-store",
   });
-  return sendStream(event, createReadStream(file.path));
+  return sendReadStream(event, createReadStream(file.path));
 });

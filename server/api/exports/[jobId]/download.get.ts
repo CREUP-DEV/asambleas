@@ -1,9 +1,5 @@
-import {
-  defineEventHandler,
-  createError,
-  setResponseHeaders,
-  sendStream,
-} from "h3";
+import { sendReadStream } from "../../../utils/core/http";
+import { defineEventHandler, createError, setResponseHeaders } from "h3";
 import { createReadStream } from "node:fs";
 import { getAuthUserWithRole } from "../../../utils/auth/requireAuth";
 import { hasPermission } from "../../../utils/auth/rbac";
@@ -51,5 +47,5 @@ export default defineEventHandler(async (event) => {
     "Content-Disposition": `attachment; filename="${metadata.filename}"`,
   });
 
-  return sendStream(event, createReadStream(metadata.filePath));
+  return sendReadStream(event, createReadStream(metadata.filePath));
 });

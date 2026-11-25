@@ -1,10 +1,5 @@
-import { notFound } from "../../../utils/core/http";
-import {
-  defineEventHandler,
-  getRouterParam,
-  sendStream,
-  setResponseHeaders,
-} from "h3";
+import { notFound, sendReadStream } from "../../../utils/core/http";
+import { defineEventHandler, getRouterParam, setResponseHeaders } from "h3";
 import { eq } from "drizzle-orm";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -76,5 +71,5 @@ export default defineEventHandler(async (event) => {
     "X-Content-Type-Options": "nosniff",
     "Content-Disposition": "inline",
   });
-  return sendStream(event, createReadStream(path));
+  return sendReadStream(event, createReadStream(path));
 });

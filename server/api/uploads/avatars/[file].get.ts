@@ -1,9 +1,5 @@
-import {
-  defineEventHandler,
-  getRouterParam,
-  sendStream,
-  setResponseHeaders,
-} from "h3";
+import { sendReadStream } from "../../../utils/core/http";
+import { defineEventHandler, getRouterParam, setResponseHeaders } from "h3";
 import { createReadStream } from "node:fs";
 import { requireActor } from "../../../utils/domain/actor";
 import { resolveAvatarFile } from "../../../utils/auth/avatarRoute";
@@ -23,5 +19,5 @@ export default defineEventHandler(async (event) => {
     "X-Content-Type-Options": "nosniff",
     "Content-Disposition": "inline",
   });
-  return sendStream(event, createReadStream(path));
+  return sendReadStream(event, createReadStream(path));
 });

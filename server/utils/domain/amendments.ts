@@ -614,9 +614,10 @@ export function withdrawNeedsMesa(input: {
  * Whether withdrawing (or lapsing) this amendment settles a transactional in
  * force: validated and accepted by every main author, so the amendments it
  * replaced are `transacted` for good and stay so. Read on the locked row and
- * its locked parties. Records `replacedSources` on amendment_withdrawn, by
- * an author (withdrawAmendment) or by the Mesa from the console
- * (recordAmendmentOutcome), and their authors are told (news.ts).
+ * its locked parties. Its withdrawal, by an author (withdrawAmendment) or by
+ * the Mesa from the console (recordAmendmentOutcome), records
+ * `replacedSources` on amendment_withdrawn when it did replace some of its
+ * sources (transactedSourceIds), and their authors are told (news.ts).
  */
 export function replacesSourcesNow(
   kind: AmendmentKind,
@@ -628,6 +629,24 @@ export function replacesSourcesNow(
     validatedAt !== null &&
     authorsApproval({ kind, acceptances: parties }) === "accepted"
   );
+}
+
+/**
+ * The amendments a transactional in force (replacesSourcesNow) did replace:
+ * its sources that are `transacted`, read on their locked rows. A late one
+ * still waiting for admission stays `submitted` (sourcesToReplace), and one
+ * presented under the earlier rule replaced nothing before its approval, so
+ * the withdrawal records `replacedSources` and `replacedSourceIds` only when
+ * this is not empty, and only these amendments' authors are told (news.ts).
+ */
+export function transactedSourceIds(
+  sourceIds: readonly string[],
+  rows: readonly { id: string; status: AmendmentStatus }[],
+): string[] {
+  const ids = new Set(sourceIds);
+  return rows
+    .filter((row) => ids.has(row.id) && row.status === "transacted")
+    .map((row) => row.id);
 }
 
 /**
@@ -3381,8 +3400,9 @@ function instantReview(instant: boolean, actor: Actor, now: Date) {
  * checked again once it is locked: the last acceptance may have put it in
  * force meanwhile. The withdrawal of a transactional in force (validated and
  * accepted by every main author, whoever withdraws it; replacesSourcesNow)
- * records `replacedSources`: the amendments it replaced stay `transacted`,
- * and their authors are told (news.ts, isNewsEvent). The Mesa's withdrawal
+ * records `replacedSources` and `replacedSourceIds` when some of its sources
+ * are `transacted` (transactedSourceIds): those stay so, and their authors
+ * are told (news.ts, isNewsEvent). The Mesa's withdrawal
  * from the console (recordAmendmentOutcome) records it the same way.
  */
 export async function withdrawAmendment(
@@ -3422,20 +3442,29 @@ export async function withdrawAmendment(
     const dependents = await findCompetitors(tx, ctx.document.id, null, [
       amendment.id,
     ]);
-    const locked = await lockAmendments(tx, ctx.document.id, [
-      amendment.id,
-      ...dependents.ids,
-    ]);
-    let replacedSources = false;
+    // Its own sources too, to tell which of them it replaced.
+    const sourceIds =
+      amendment.kind === "transactional"
+        ? amendment.sources.map((source) => source.sourceId)
+        : [];
+    const locked = await lockAmendments(
+      tx,
+      ctx.document.id,
+      unique([amendment.id, ...dependents.ids, ...sourceIds]),
+    );
+    let replacedSourceIds: string[] = [];
     if (amendment.kind === "transactional") {
       const row = locked.find((entry) => entry.id === amendment.id);
       const parties = await lockParties(tx, [amendment.id], "share");
       if (row && needsMesa(row.validatedAt, parties)) {
         fail(409, REPLACED_SOURCES_WITHDRAW_MESSAGE);
       }
-      replacedSources =
+      if (
         row !== undefined &&
-        replacesSourcesNow(amendment.kind, row.validatedAt, parties);
+        replacesSourcesNow(amendment.kind, row.validatedAt, parties)
+      ) {
+        replacedSourceIds = transactedSourceIds(sourceIds, locked);
+      }
     }
     const updated = await tx
       .update(amendments)
@@ -3456,7 +3485,9 @@ export async function withdrawAmendment(
       type: "amendment_withdrawn",
       payload: {
         by: ctx.isAuthor ? "author" : "moderator",
-        ...(replacedSources ? { replacedSources: true } : {}),
+        ...(replacedSourceIds.length > 0
+          ? { replacedSources: true, replacedSourceIds }
+          : {}),
       },
       actor,
     });
@@ -6300,20 +6331,25 @@ async function recordAmendmentOutcome(
       const dependents = await findCompetitors(tx, document.id, amendment.id, [
         amendment.id,
       ]);
-      const locked = await lockAmendments(tx, document.id, [
-        amendment.id,
-        ...dependents.ids,
-      ]);
+      // Its own sources too, to tell which of them it replaced.
+      const locked = await lockAmendments(
+        tx,
+        document.id,
+        unique([amendment.id, ...dependents.ids, ...sourceIds]),
+      );
       // A transactional in force keeps what it replaced `transacted`: its
-      // withdrawal is news for their authors (replacesSourcesNow). A lapse
-      // is not (isReplacingWithdrawal).
-      let replacedSources = false;
+      // withdrawal is news for their authors (replacesSourcesNow,
+      // transactedSourceIds). A lapse is not (isReplacingWithdrawal).
+      let replacedSourceIds: string[] = [];
       if (transactional && body.action === "withdraw") {
         const row = locked.find((entry) => entry.id === amendment.id);
         const parties = await lockParties(tx, [amendment.id], "share");
-        replacedSources =
+        if (
           row !== undefined &&
-          replacesSourcesNow(amendment.kind, row.validatedAt, parties);
+          replacesSourcesNow(amendment.kind, row.validatedAt, parties)
+        ) {
+          replacedSourceIds = transactedSourceIds(sourceIds, locked);
+        }
       }
       const updated = await tx
         .update(amendments)
@@ -6342,7 +6378,9 @@ async function recordAmendmentOutcome(
             : "amendment_lapsed",
         payload: {
           by: "moderator",
-          ...(replacedSources ? { replacedSources: true } : {}),
+          ...(replacedSourceIds.length > 0
+            ? { replacedSources: true, replacedSourceIds }
+            : {}),
         },
       });
       await closeDependents(tx, ctx, dependents, locked, [

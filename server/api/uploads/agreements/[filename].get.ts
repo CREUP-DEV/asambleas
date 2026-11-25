@@ -1,11 +1,10 @@
-import { notFound } from "../../../utils/core/http";
+import { notFound, sendReadStream } from "../../../utils/core/http";
 import {
   createError,
   defineEventHandler,
   getRequestHeader,
   getRouterParam,
   sendNoContent,
-  sendStream,
   setResponseHeaders,
 } from "h3";
 import { eq } from "drizzle-orm";
@@ -116,5 +115,5 @@ export default defineEventHandler(async (event) => {
     ),
   });
 
-  return sendStream(event, createReadStream(filePath));
+  return sendReadStream(event, createReadStream(filePath));
 });

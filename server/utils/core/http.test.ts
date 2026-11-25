@@ -4,9 +4,17 @@ import { fileURLToPath } from "node:url";
 import { createEvent } from "h3";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
-import { fail, notFound, parseWith, readBodyWith, readQueryWith } from "./http";
+import {
+  fail,
+  notFound,
+  parseWith,
+  readBodyWith,
+  readQueryWith,
+  sendReadStream,
+} from "./http";
 
 const thrown = async (run: () => unknown) => {
   try {
@@ -152,5 +160,19 @@ describe("server/utils/domain", () => {
       ),
     );
     expect(copies.map((file) => relative(root, file))).toEqual([]);
+  });
+});
+
+describe("sendReadStream", () => {
+  it("destroys the stream when the response closes before it ends", () => {
+    const req = new IncomingMessage(new Socket());
+    const res = new ServerResponse(req);
+    const event = createEvent(req, res);
+    // Never ends on its own, like a long file the reader stops downloading.
+    const stream = new Readable({ read() {} });
+    void sendReadStream(event, stream);
+    expect(stream.destroyed).toBe(false);
+    res.emit("close");
+    expect(stream.destroyed).toBe(true);
   });
 });

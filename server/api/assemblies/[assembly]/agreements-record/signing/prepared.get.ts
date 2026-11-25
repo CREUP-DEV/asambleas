@@ -1,10 +1,10 @@
+import { sendReadStream } from "../../../../../utils/core/http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
   createError,
   defineEventHandler,
   getRouterParam,
-  sendStream,
   setResponseHeaders,
 } from "h3";
 import { requireActor } from "../../../../../utils/domain/actor";
@@ -40,5 +40,5 @@ export default defineEventHandler(async (event) => {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   });
-  return sendStream(event, createReadStream(file.path));
+  return sendReadStream(event, createReadStream(file.path));
 });

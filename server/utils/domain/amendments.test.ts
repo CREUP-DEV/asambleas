@@ -70,6 +70,7 @@ const {
   reIdInsertedBlocks,
   redactAmendmentEventPayload,
   replacesSourcesNow,
+  transactedSourceIds,
   requestedDraftAuthorIds,
   sourcesAreOpen,
   toPositionDto,
@@ -531,6 +532,31 @@ describe("amendmentCapabilities", () => {
         ]),
       ).toBe(true);
       expect(replacesSourcesNow("partial", at, accepted)).toBe(false);
+    });
+
+    it("names only the sources the transactional did replace", () => {
+      // A late source still waiting for admission stays `submitted`, and one
+      // presented under the earlier rule replaced nothing before approval.
+      expect(
+        transactedSourceIds(
+          ["a", "late"],
+          [
+            { id: "t", status: "submitted" },
+            { id: "a", status: "transacted" },
+            { id: "late", status: "submitted" },
+            { id: "other", status: "transacted" },
+          ],
+        ),
+      ).toEqual(["a"]);
+      expect(
+        transactedSourceIds(
+          ["a", "b"],
+          [
+            { id: "a", status: "submitted" },
+            { id: "b", status: "submitted" },
+          ],
+        ),
+      ).toEqual([]);
     });
 
     it("refuses the author's withdrawal on the server with a reason", async () => {

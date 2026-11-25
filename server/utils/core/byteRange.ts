@@ -1,8 +1,8 @@
+import { sendReadStream } from "./http";
 import { createReadStream } from "node:fs";
 import {
   getRequestHeader,
   sendNoContent,
-  sendStream,
   setResponseHeader,
   setResponseHeaders,
   setResponseStatus,
@@ -87,11 +87,11 @@ export function sendFileRange(
       "Content-Range": `bytes ${range.start}-${range.end}/${size}`,
       "Content-Length": String(range.end - range.start + 1),
     });
-    return sendStream(
+    return sendReadStream(
       event,
       createReadStream(filePath, { start: range.start, end: range.end }),
     );
   }
   setResponseHeader(event, "Content-Length", size);
-  return sendStream(event, createReadStream(filePath));
+  return sendReadStream(event, createReadStream(filePath));
 }

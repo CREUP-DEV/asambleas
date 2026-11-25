@@ -65,8 +65,9 @@ import {
  * - For the authors of an amendment a transactional replaced: that
  *   transactional withdrawn once in force (amendment_withdrawn with
  *   `replacedSources`, by the Mesa or by an author whose own amendments
- *   were the only ones), since their amendment stays replaced
- *   (isReplacingWithdrawal).
+ *   were the only ones), since their amendment stays replaced; only the
+ *   authors of the amendments in its `replacedSourceIds` are told
+ *   (isReplacingWithdrawal, replacedOwnSource).
  * - For the presenters of a document (main and co-presenters): what the
  *   Secretaría, the Mesa or the assembly settled about it
  *   (NEWS_DOCUMENT_TYPES), with no amendment.
@@ -194,6 +195,25 @@ export function isReplacingWithdrawal(
   return type === "amendment_withdrawn" && payload.replacedSources === true;
 }
 
+/**
+ * A replacing withdrawal (isReplacingWithdrawal) that replaced one of
+ * `ownSourceIds`, the member's amendments the transactional groups: it is
+ * news only for the authors of the amendments it did replace
+ * (`replacedSourceIds`), not for one it left open, such as a late one still
+ * waiting for admission.
+ */
+export function replacedOwnSource(
+  type: string,
+  payload: Record<string, unknown>,
+  ownSourceIds: readonly string[],
+): boolean {
+  if (!isReplacingWithdrawal(type, payload)) return false;
+  const replaced = Array.isArray(payload.replacedSourceIds)
+    ? (payload.replacedSourceIds as unknown[])
+    : [];
+  return ownSourceIds.some((id) => replaced.includes(id));
+}
+
 /** A transactional that closed or came back by itself. */
 export function isAutomaticChange(
   type: string,
@@ -215,6 +235,8 @@ export interface NewsScope {
   authored: boolean;
   /** A transactional over an amendment the member wrote. */
   overOwn: boolean;
+  /** With `overOwn`, the member's amendments that transactional groups. */
+  ownSourceIds: readonly string[];
 }
 
 /**
@@ -249,7 +271,7 @@ export function isNewsEvent(
     scope.authored ||
     (scope.overOwn &&
       (isAutomaticChange(type, payload) ||
-        isReplacingWithdrawal(type, payload)))
+        replacedOwnSource(type, payload, scope.ownSourceIds)))
   );
 }
 
@@ -457,7 +479,10 @@ export async function loadWorkNews(
       .where(and(inAssemblies, eq(amendmentAuthors.memberId, memberId))),
     // Transactionals over amendments the member wrote.
     db
-      .selectDistinct({ id: amendmentSources.transactionalId })
+      .selectDistinct({
+        id: amendmentSources.transactionalId,
+        sourceId: amendmentSources.sourceId,
+      })
       .from(amendmentSources)
       .innerJoin(
         amendmentAuthors,
@@ -471,6 +496,14 @@ export async function loadWorkNews(
   const answeredIds = new Set(answered.map((row) => row.id));
   const authoredIds = new Set(authored.map((row) => row.id));
   const overOwnIds = new Set(overOwn.map((row) => row.id));
+  // The member's amendments each of those transactionals groups.
+  const ownSourcesOf = new Map<string, string[]>();
+  for (const row of overOwn) {
+    ownSourcesOf.set(row.id, [
+      ...(ownSourcesOf.get(row.id) ?? []),
+      row.sourceId,
+    ]);
+  }
 
   // Broad scopes for the query; isNewsEvent decides on each row.
   const onAmendments = eq(events.entityType, "amendment");
@@ -582,6 +615,7 @@ export async function loadWorkNews(
       answered: answeredIds.has(row.entityId),
       authored: authoredIds.has(row.entityId),
       overOwn: overOwnIds.has(row.entityId),
+      ownSourceIds: ownSourcesOf.get(row.entityId) ?? [],
     }),
   );
   if (candidates.length === 0) return [];

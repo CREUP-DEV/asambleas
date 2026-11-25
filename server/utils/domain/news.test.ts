@@ -456,6 +456,7 @@ describe("isNewsEvent", () => {
     answered: false,
     authored: false,
     overOwn: false,
+    ownSourceIds: [] as string[],
   };
   const onAmendment = (
     type: string,
@@ -543,9 +544,21 @@ describe("isNewsEvent", () => {
   });
 
   it("tells the parties of a transactional in force that it was withdrawn", () => {
-    const party = { ...none, overOwn: true };
+    const party = { ...none, overOwn: true, ownSourceIds: ["a"] };
     // The Mesa withdraws one that already replaced their amendments: they
     // stay replaced.
+    const replacing = onAmendment("amendment_withdrawn", {
+      by: "moderator",
+      replacedSources: true,
+      replacedSourceIds: ["a", "b"],
+    });
+    expect(isNewsEvent(replacing, party)).toBe(true);
+    // Its late source still waiting for admission was not replaced: that
+    // amendment is still open, so its author is not told it stays replaced.
+    expect(isNewsEvent(replacing, { ...party, ownSourceIds: ["late"] })).toBe(
+      false,
+    );
+    // Nor without the amendments it replaced named.
     expect(
       isNewsEvent(
         onAmendment("amendment_withdrawn", {
@@ -554,7 +567,15 @@ describe("isNewsEvent", () => {
         }),
         party,
       ),
-    ).toBe(true);
+    ).toBe(false);
+    // One that replaced nothing (a late source pending, or presented under
+    // the earlier rule) records no `replacedSources`.
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", { by: "moderator" }),
+        party,
+      ),
+    ).toBe(false);
     // A pending one its proposer withdraws leaves their amendments open.
     expect(
       isNewsEvent(onAmendment("amendment_withdrawn", { by: "author" }), party),
@@ -640,6 +661,7 @@ describe("isAutomaticRestore", () => {
       answered: false,
       authored: false,
       overOwn: false,
+      ownSourceIds: [] as string[],
     };
     expect(isNewsEvent(event, { ...none, overOwn: true })).toBe(true);
     expect(

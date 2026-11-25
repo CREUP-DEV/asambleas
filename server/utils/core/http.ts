@@ -1,5 +1,6 @@
 import type { H3Event } from "h3";
-import { createError, getQuery, readBody } from "h3";
+import type { Readable } from "node:stream";
+import { createError, getQuery, readBody, sendStream } from "h3";
 import type { z } from "zod/v4";
 
 /**
@@ -108,4 +109,15 @@ export function readQueryWith<S extends z.ZodType>(
     fail(400, options.message ?? INVALID_QUERY_MESSAGE, options.data);
   }
   return parsed.data;
+}
+
+/**
+ * Sends a stream as the response body and destroys it if the response closes
+ * first (the reader aborted the download). h3's sendStream only calls
+ * `abort()` on close, which a file or zip stream does not have, so without
+ * this its descriptor would stay open for the life of the process.
+ */
+export function sendReadStream(event: H3Event, stream: Readable) {
+  event.node.res.once("close", () => stream.destroy());
+  return sendStream(event, stream);
 }
