@@ -622,7 +622,7 @@ function voteCreated(): void {
               :key="party.member.id"
               class="inline-flex items-center gap-1"
             >
-              <CommonMemberBadge :member="party.member" size="sm" />
+              <CommonMemberBadge :member="party.member" />
               <span class="text-muted text-xs">
                 {{
                   t("session.acceptance.mainAuthorOf", {

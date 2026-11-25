@@ -2,6 +2,7 @@
 import { voteTextKey } from "~~/shared/utils/votes";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
+import { GLOBAL_REPLACE_ROOM_BLOCKS } from "~~/shared/utils/content/globalReplace";
 import {
   isSessionAwaitingAuthors,
   isSessionAwaitingValidation,
@@ -403,7 +404,6 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           v-for="author in amendment.authors"
           :key="author.id"
           :member="author"
-          size="xs"
         />
       </span>
       <span class="ms-auto inline-flex flex-wrap items-center gap-1">
@@ -466,7 +466,6 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             v-if="amendment.admission !== 'admitted'"
             kind="admission"
             :value="amendment.admission"
-            size="sm"
           />
           <!-- Closed by a main author or by the server, or left behind by
                another transactional: say that, not the status it carries. -->
@@ -492,7 +491,6 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             v-else
             kind="amendment"
             :value="amendment.status"
-            size="sm"
           />
         </template>
       </span>
@@ -592,7 +590,6 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           <CommonStatusBadge
             kind="position"
             :value="amendment.position.position"
-            size="xs"
             :icon="
               amendment.position.comment ? 'i-lucide-message-square' : undefined
             "
@@ -666,12 +663,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       >
         {{ amendment.justification }}
       </p>
-      <ContentAmendmentDiff
-        :id="amendment.id"
+      <AmendmentGlobalReplace
+        v-slot="{ ops: shownOps }"
+        :amendment="amendment"
         :base="session.base.value"
-        :ops="amendment.ops"
-        class="text-sm"
-      />
+        :limit="GLOBAL_REPLACE_ROOM_BLOCKS"
+        text-class="text-sm"
+      >
+        <ContentAmendmentDiff
+          :id="amendment.id"
+          :base="session.base.value"
+          :ops="shownOps"
+          class="text-sm"
+        />
+      </AmendmentGlobalReplace>
       <SessionAcceptanceList
         v-if="amendment.kind === 'transactional' && !decided"
         :amendment="amendment"

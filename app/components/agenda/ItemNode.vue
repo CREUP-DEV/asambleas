@@ -252,6 +252,7 @@ const containerLabel = computed(() => {
           class="max-w-full"
           :document="merged"
           :edit-to="ctx.documentEditPath(merged)"
+          :to="ctx.documentPath(merged)"
         />
 
         <UButton

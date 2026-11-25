@@ -284,7 +284,6 @@ async function undo(): Promise<void> {
                 v-for="author in amendment.authors"
                 :key="author.id"
                 :member="author"
-                size="xs"
               />
               <UBadge
                 v-if="amendment.kind === 'transactional'"

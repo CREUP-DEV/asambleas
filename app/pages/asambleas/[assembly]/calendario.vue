@@ -376,7 +376,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
                   v-if="warnedKeys.has(key)"
                   color="warning"
                   variant="soft"
-                  size="sm"
+                  size="md"
                   icon="i-lucide-triangle-alert"
                   :label="t('calendar.hasWarning')"
                 />
@@ -384,7 +384,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
                   v-if="changedKeys.includes(key)"
                   color="info"
                   variant="soft"
-                  size="sm"
+                  size="md"
                   :label="t('calendar.changed')"
                 />
               </div>

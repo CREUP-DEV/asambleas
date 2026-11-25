@@ -61,6 +61,8 @@ const open = defineModel<boolean>("open", { default: false });
 const emit = defineEmits<{ confirm: [addAnother: boolean] }>();
 
 const { t, locale } = useI18n();
+/** The shared clock: a deadline blocks from its exact minute, open or not. */
+const now = useAppNow();
 
 type CheckState = "ok" | "warning" | "error" | "info";
 
@@ -159,7 +161,7 @@ const deadlineCheck = computed<Check>(() => {
       title: t("document.publish.checks.noDeadline"),
     };
   }
-  if (closeDate.getTime() < Date.now()) {
+  if (closeDate.getTime() < now.value) {
     return {
       key: "deadline",
       state: props.manager ? "warning" : "error",
@@ -180,7 +182,7 @@ const deadlineCheck = computed<Check>(() => {
 const dueCheck = computed<Check | null>(() => {
   const due = toDate(props.document.dueAt ?? null);
   if (!due) return null;
-  return due.getTime() < Date.now()
+  return due.getTime() < now.value
     ? {
         key: "due",
         state: "warning",
@@ -215,7 +217,6 @@ const windowCheck = computed<Check>(() => {
     : t("document.publish.checks.windowCalendar");
   const closes = toDate(closesAt);
   const opens = toDate(opensAt);
-  const now = Date.now();
 
   if (!closes) {
     return {
@@ -225,7 +226,7 @@ const windowCheck = computed<Check>(() => {
       description: source,
     };
   }
-  if (closes.getTime() <= now) {
+  if (closes.getTime() <= now.value) {
     return {
       key: "window",
       state: "warning",
@@ -237,7 +238,7 @@ const windowCheck = computed<Check>(() => {
     key: "window",
     state: "ok",
     title:
-      opens && opens.getTime() > now
+      opens && opens.getTime() > now.value
         ? t("document.publish.checks.windowRange", {
             opens: date(opensAt),
             closes: date(closesAt),

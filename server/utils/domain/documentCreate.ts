@@ -20,6 +20,10 @@ import {
   requireSubmissionTarget,
   uniqueDocumentSlug,
 } from "./documents";
+import {
+  ASSEMBLY_CLOSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_REASON,
+} from "./documentRefusals";
 import { recordEvent } from "./events";
 import { resolveBodyMembers } from "./executiveMembers";
 import {
@@ -96,9 +100,15 @@ async function requireMemberMayCreate(
     fail(403, "No tienes permiso para presentar documentos");
   }
   if (!actor.memberId) fail(403, UNLINKED_ACCOUNT_MESSAGE);
-  if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
+  if (assembly.status === "closed") {
+    fail(409, "La asamblea ya está cerrada", {
+      reason: ASSEMBLY_CLOSED_REASON,
+    });
+  }
   if (documentsDeadlinePassed(await loadMilestones(assembly.id))) {
-    fail(409, "El plazo de presentación de documentos ha terminado");
+    fail(409, "El plazo de presentación de documentos ha terminado", {
+      reason: DOCUMENTS_DEADLINE_PASSED_REASON,
+    });
   }
 }
 

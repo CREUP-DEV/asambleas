@@ -12,6 +12,7 @@ import {
   documentPagesTarget,
   useDocumentPages,
 } from "~/composables/document/useDocumentPages";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 
 /**
  * The published documents of an agenda item, read in place: one on show at
@@ -28,7 +29,8 @@ import {
  *   documents, what is left to read, "Marcar como leído", and "Anterior" /
  *   "Siguiente" in the order of the whole agenda, which open the document
  *   in its item's reader: past the item's last one comes the first of the
- *   next item.
+ *   next item. Its arrows ("6 de 69") come again after the text, so the
+ *   next one opens without going back up.
  * - Reading only: the text shows clean, with no amendment marks. What the
  *   document holds besides (its amendments, the editor) is one button away,
  *   on the document's page: always "Ver enmiendas" (when it has any) or
@@ -173,6 +175,44 @@ useDocumentReading(() =>
 // Reaching the end of its text marks it read, as on its own page.
 const textEnd = useTemplateRef<HTMLElement>("textEnd");
 useAutoReadMark("document", () => current.value?.id, textEnd);
+
+/**
+ * Another document on show starts at its title: the hub's scroll area
+ * outlives the reader (and a new item's page), so the arrows after the text
+ * would leave it where the last one ended, its end in view at once (marked
+ * read unread) or partway into it. Scrolled before the new end can be seen.
+ * The focus goes to the title when it was on what the change took away
+ * (those arrows), so the keyboard carries on from the new document's start.
+ */
+const articleEl = useTemplateRef<HTMLElement>("articleEl");
+const titleEl = useTemplateRef<HTMLElement>("titleEl");
+onMounted(() => {
+  watch(
+    () => current.value?.id,
+    (id, old) => {
+      const article = articleEl.value;
+      if (!id || !article) return;
+      // On arriving, only when a document was asked for (the arrows always
+      // name one): a plain visit to the item keeps its own heading first.
+      if (!old && !wanted.value) return;
+      const box = scrollParentOf(article);
+      const top = box ? box.getBoundingClientRect().top : 0;
+      if (article.getBoundingClientRect().top < top) {
+        article.scrollIntoView({ block: "start" });
+      }
+      if (!old) return;
+      const active = globalThis.document.activeElement;
+      if (
+        !active ||
+        active === globalThis.document.body ||
+        article.contains(active)
+      ) {
+        titleEl.value?.focus({ preventScroll: true });
+      }
+    },
+    { immediate: true, flush: "post" },
+  );
+});
 
 // What the header says ---------------------------------------------------------------
 
@@ -370,6 +410,7 @@ function pick(slug: unknown): void {
     </nav>
 
     <article
+      ref="articleEl"
       class="border-default rounded-lg border"
       :aria-labelledby="`item-reader-title-${current.id}`"
     >
@@ -385,7 +426,9 @@ function pick(slug: unknown): void {
         <div class="min-w-0 space-y-1.5">
           <h4
             :id="`item-reader-title-${current.id}`"
-            class="text-highlighted font-semibold break-words sm:text-lg"
+            ref="titleEl"
+            tabindex="-1"
+            class="text-highlighted font-semibold break-words focus:outline-none sm:text-lg"
           >
             <NuxtLink
               :to="documentPath(current)"
@@ -574,6 +617,16 @@ function pick(slug: unknown): void {
           </p>
           <!-- Reaching it marks the document read (useAutoReadMark). -->
           <div :key="detail.id" ref="textEnd" aria-hidden="true" class="h-px" />
+          <!-- Past the end, the way on without going back up: the reading
+               bar's arrows again, in one row. -->
+          <DocumentReadBar
+            :document="current"
+            :to="readerPath"
+            compact
+            trail
+            :label="t('readMarks.bar.endLabel')"
+            class="border-default mt-6 justify-items-center border-t pt-3"
+          />
         </template>
       </div>
     </article>

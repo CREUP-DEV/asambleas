@@ -90,7 +90,6 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         v-else
         kind="vote"
         :value="vote.result"
-        size="sm"
         :label="
           unanimous ? t('controlSheet.result.approved_unanimous') : undefined
         "

@@ -80,7 +80,9 @@ import {
  * Emits `saved` with the updated DocumentDto (store it), and `stale` after an
  * optimistic-lock conflict (refetch the document; the form then reloads).
  * `save()` (exposed) validates and stores pending changes without a toast,
- * so a page can save them before sending the document.
+ * so a page can save them before sending the document. Without `actions`
+ * the container shows the buttons (a submit with `form` set to `formId`,
+ * and the exposed `reset` and `saving`).
  */
 const props = withDefaults(
   defineProps<{
@@ -91,8 +93,16 @@ const props = withDefaults(
      * primary action and saves these changes before it).
      */
     secondarySave?: boolean;
+    /** The form element's id, for a submit button outside it (`form`). */
+    formId?: string;
+    /**
+     * Show "Deshacer cambios" and "Guardar datos" at its end. A container
+     * with its own footer (DocumentRecordDialog) sets it to false and puts
+     * them there, with `formId`, `reset` and `saving`.
+     */
+    actions?: boolean;
   }>(),
-  { secondarySave: false },
+  { secondarySave: false, formId: undefined, actions: true },
 );
 
 const emit = defineEmits<{
@@ -769,11 +779,12 @@ async function save(): Promise<boolean> {
   return persist(false);
 }
 
-defineExpose({ reset: resetForm, check, save });
+defineExpose({ reset: resetForm, check, save, saving });
 </script>
 
 <template>
   <UForm
+    :id="formId"
     ref="form"
     :state="state"
     :validate="validate"
@@ -1161,7 +1172,10 @@ defineExpose({ reset: resetForm, check, save });
       :member="mainPresenterAcronym"
     />
 
-    <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+    <div
+      v-if="actions"
+      class="flex flex-wrap items-center justify-end gap-2 pt-1"
+    >
       <UButton
         v-if="dirty"
         color="neutral"

@@ -329,13 +329,15 @@ export function consolidate(
  * otherwise, get that number as `start` (fragmentListStarts), so an
  * amendment to "k)" reads "k)" and a run does not carry on the numbers of
  * the run before it. A deleted item that begins a run gets the number the
- * next item of its list shows, so it opens a list of its own too.
+ * next item of its list shows, so it opens a list of its own too. The first
+ * block of every run but the first carries `gapBefore`: text is left out
+ * there, and the renders say so («[…]»).
  */
 export function previewAmendment(
   base: Block[],
   amendment: AmendmentInput,
   context = 0,
-): ConsolidatedBlock[] {
+): FragmentBlock[] {
   const { annotated } = consolidate(base, [amendment]);
   const touched = annotated
     .map((block, i) => ({ block, i }))
@@ -351,14 +353,21 @@ export function previewAmendment(
 }
 
 /**
+ * A block of a fragment of a text. `gapBefore`: text of the whole is left
+ * out before it (it opens a run that does not follow the one before).
+ */
+export type FragmentBlock = ConsolidatedBlock & { gapBefore?: boolean };
+
+/**
  * The blocks at `indices` of an annotated text, with `context` neighbours
- * on each side, numbered as they read in the whole text.
+ * on each side, numbered as they read in the whole text. The first block of
+ * each run after the first is marked `gapBefore`.
  */
 export function annotatedFragment(
   annotated: ConsolidatedBlock[],
   indices: number[],
   context = 0,
-): ConsolidatedBlock[] {
+): FragmentBlock[] {
   const keep = new Set<number>();
   for (const i of indices) {
     for (let k = i - context; k <= i + context; k += 1) {
@@ -379,8 +388,9 @@ export function annotatedFragment(
     runStarts,
     struckNext: struckListNext(annotated, counted),
   });
-  return fragment.map((block) => {
+  return fragment.map((block, i): FragmentBlock => {
     const start = starts.get(block.id);
-    return start === undefined ? block : { ...block, start };
+    const shaped = start === undefined ? block : { ...block, start };
+    return i > 0 && runStarts.has(i) ? { ...shaped, gapBefore: true } : shaped;
   });
 }

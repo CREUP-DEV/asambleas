@@ -36,7 +36,7 @@ const props = withDefaults(
   {
     labelled: false,
     maxOthers: Number.POSITIVE_INFINITY,
-    size: "sm",
+    size: "md",
     showName: false,
   },
 );

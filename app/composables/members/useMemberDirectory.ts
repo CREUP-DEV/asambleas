@@ -5,7 +5,8 @@ import type { MemberDto } from "~~/shared/types/api";
  * offices collapsed into the generic "CEA" for whoever may not see them),
  * by id, for the cards an acronym opens on hover (CommonMemberCard): a
  * council's university and acronym, who holds a CEA office. Fetched once
- * per page load, the first time a card asks for it; nothing before.
+ * per page load, the first time a card, or a council's badge that can be
+ * pointed at, focused or named (CommonMemberBadge on mount), asks for it.
  */
 export function useMemberDirectory() {
   const api = useApi();

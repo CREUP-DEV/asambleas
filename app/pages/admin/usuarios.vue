@@ -1167,7 +1167,7 @@ function goToPage(next: number): void {
                   :label="t('admin.users.you')"
                   color="neutral"
                   variant="outline"
-                  size="sm"
+                  size="md"
                   class="ms-1"
                 />
               </p>
@@ -1269,7 +1269,7 @@ function goToPage(next: number): void {
                 v-if="!row.original.member.active"
                 color="neutral"
                 variant="outline"
-                size="sm"
+                size="md"
                 :label="t('admin.members.inactive')"
               />
             </div>

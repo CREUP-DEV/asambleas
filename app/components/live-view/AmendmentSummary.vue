@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AmendmentDto, DocumentDto } from "~~/shared/types/api";
+import { GLOBAL_REPLACE_ROOM_BLOCKS } from "~~/shared/utils/content/globalReplace";
 import {
   LIVE_STATE_COLORS,
   liveAmendmentCode,
@@ -138,14 +139,23 @@ const positionLine = computed(() => {
       {{ positionLine }}
     </p>
 
-    <div class="live-text border-default rounded-lg border p-3 sm:p-4">
-      <ContentAmendmentDiff
-        :id="amendment.id"
-        :base="base"
-        :ops="amendment.ops"
-        :context="1"
-      />
-    </div>
+    <!-- A global replacement: one line says it, then its first paragraphs. -->
+    <AmendmentGlobalReplace
+      v-slot="{ ops: shownOps }"
+      :amendment="amendment"
+      :base="base"
+      :limit="GLOBAL_REPLACE_ROOM_BLOCKS"
+      text-class=""
+    >
+      <div class="live-text border-default rounded-lg border p-3 sm:p-4">
+        <ContentAmendmentDiff
+          :id="amendment.id"
+          :base="base"
+          :ops="shownOps"
+          :context="1"
+        />
+      </div>
+    </AmendmentGlobalReplace>
 
     <template v-if="justification">
       <UCollapsible v-if="foldJustification" v-model:open="justificationOpen">

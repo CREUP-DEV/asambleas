@@ -2,6 +2,7 @@
 import { voteTextKey } from "~~/shared/utils/votes";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
+import { GLOBAL_REPLACE_ROOM_BLOCKS } from "~~/shared/utils/content/globalReplace";
 import {
   isSessionClosureReversible,
   isSessionPublishable,
@@ -446,24 +447,29 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
       class="text-default flex flex-wrap items-center gap-1.5 text-sm"
     >
       <span class="text-muted">{{ positionLabel }}</span>
-      <CommonStatusBadge
-        kind="position"
-        :value="amendment.position.position"
-        size="sm"
-      />
+      <CommonStatusBadge kind="position" :value="amendment.position.position" />
       <span v-if="amendment.position.comment" class="text-muted min-w-0 italic">
         {{ amendment.position.comment }}
       </span>
     </p>
     <p v-if="positionWait" class="text-muted text-sm">{{ positionWait }}</p>
 
-    <ContentAmendmentDiff
-      :id="amendment.id"
+    <!-- A global replacement: one line says it, then its first paragraphs. -->
+    <AmendmentGlobalReplace
+      v-slot="{ ops: shownOps }"
+      :amendment="amendment"
       :base="session.base.value"
-      :ops="amendment.ops"
-      :context="1"
-      class="text-base sm:text-lg"
-    />
+      :limit="GLOBAL_REPLACE_ROOM_BLOCKS"
+      text-class="text-base sm:text-lg"
+    >
+      <ContentAmendmentDiff
+        :id="amendment.id"
+        :base="session.base.value"
+        :ops="shownOps"
+        :context="1"
+        class="text-base sm:text-lg"
+      />
+    </AmendmentGlobalReplace>
 
     <div v-if="amendment.justification">
       <UButton

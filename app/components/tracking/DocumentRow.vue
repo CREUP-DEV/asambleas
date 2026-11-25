@@ -9,6 +9,10 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  * (useDocumentProgress). Drafts show their deadline on a line of its own;
  * an overdue one is marked with an icon and words, not only with colour. In
  * edit mode drafts offer "Cambiar plazo", or "Poner plazo" if they have none.
+ *
+ * The title's link covers the row, so the whole row opens the document; the
+ * row's own controls and what explains itself on hover (who presents it, the
+ * exact date) sit above it.
  */
 const props = withDefaults(
   defineProps<{
@@ -69,6 +73,12 @@ function absolute(value: string | null): string {
   return formatDateTime(value, { locale: locale.value, style: "long" });
 }
 
+interface RowDate {
+  label: string;
+  at: string;
+  quiet?: boolean;
+}
+
 function relative(value: string | null): string {
   return value
     ? formatRelative(value, { locale: locale.value, now: now.value })
@@ -77,9 +87,11 @@ function relative(value: string | null): string {
 
 /**
  * The date worth showing once it left the presenter's hands, or since the
- * Secretaría sent it back to them.
+ * Secretaría sent it back to them. Once published the status badge already
+ * says «Publicado», so the line keeps its label for screen readers only
+ * (`quiet`).
  */
-const when = computed<{ label: string; at: string } | null>(() => {
+const when = computed<RowDate | null>(() => {
   const document = props.document;
   if (document.status === "draft" && document.correctionRequestedAt) {
     return {
@@ -91,7 +103,11 @@ const when = computed<{ label: string; at: string } | null>(() => {
     return { label: t("tracking.row.sent"), at: document.submittedAt };
   }
   if (document.status === "published" && document.publishedAt) {
-    return { label: t("tracking.row.publishedOn"), at: document.publishedAt };
+    return {
+      label: t("tracking.row.publishedOn"),
+      at: document.publishedAt,
+      quiet: true,
+    };
   }
   return null;
 });
@@ -99,13 +115,13 @@ const when = computed<{ label: string; at: string } | null>(() => {
 
 <template>
   <div
-    class="border-default flex flex-col gap-3 rounded-md border px-3 py-3 sm:flex-row sm:items-start sm:justify-between"
+    class="border-default hover:bg-elevated/50 focus-within:bg-elevated/50 relative flex flex-col gap-3 rounded-md border px-3 py-3 sm:flex-row sm:items-start sm:justify-between"
     :class="progress.overdue ? 'border-s-error border-s-4' : ''"
   >
     <div class="min-w-0 flex-1 space-y-1.5">
       <NuxtLink
         :to="props.to"
-        class="text-highlighted focus-visible:outline-primary block min-w-0 rounded-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+        class="text-highlighted focus-visible:outline-primary block min-w-0 rounded-sm font-medium after:absolute after:inset-0 after:rounded-md hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         <UIcon
           :name="
@@ -137,6 +153,7 @@ const when = computed<{ label: string; at: string } | null>(() => {
             :document="document"
             :max-others="2"
             show-name
+            class="relative z-[1]"
           />
           <span v-else class="text-warning font-medium">
             {{ t("tracking.row.noPresenter") }}
@@ -153,10 +170,13 @@ const when = computed<{ label: string; at: string } | null>(() => {
           class="size-4 shrink-0"
           aria-hidden="true"
         />
-        <span>{{ when.label }}</span>
-        <time :datetime="when.at" :title="absolute(when.at)">{{
-          relative(when.at)
-        }}</time>
+        <span :class="when.quiet ? 'sr-only' : ''">{{ when.label }}</span>
+        <time
+          :datetime="when.at"
+          :title="absolute(when.at)"
+          class="relative z-[1]"
+          >{{ relative(when.at) }}</time
+        >
       </p>
 
       <p
@@ -201,7 +221,7 @@ const when = computed<{ label: string; at: string } | null>(() => {
           color="neutral"
           variant="link"
           size="xs"
-          class="ms-5.5 px-0"
+          class="relative z-[1] ms-5.5 px-0"
           :label="
             sentenceOpen
               ? t('tracking.row.showLess')
@@ -229,6 +249,7 @@ const when = computed<{ label: string; at: string } | null>(() => {
         variant="outline"
         size="sm"
         icon="i-lucide-calendar-cog"
+        class="relative z-[1]"
         :label="
           document.dueAt
             ? t('tracking.row.changeDeadline')

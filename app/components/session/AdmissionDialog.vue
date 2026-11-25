@@ -52,7 +52,11 @@ const open = computed({
 
 const selected = ref<string[]>([]);
 const decision = ref<SessionAdmissionDecision>("admitted");
-const method = ref<DecisionMethod>("mesa");
+/**
+ * Starts unselected each time, as in Validación's AdmissionModal (UXS-3):
+ * the record says who decided, so the Mesa chooses it, never a default.
+ */
+const method = ref<DecisionMethod | undefined>(undefined);
 const note = ref("");
 const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 
@@ -78,7 +82,7 @@ watch(open, (isOpen) => {
   // The decision first: the candidates depend on it.
   decision.value = session.admissionDialog.decision;
   selected.value = [...session.admissionDialog.ids];
-  method.value = "mesa";
+  method.value = undefined;
   note.value = "";
   // "Present" opens empty: the latest headcount fills it (VoteDialog).
   vote.value = sessionEmptyVote("simple");
@@ -168,6 +172,7 @@ const noteField = computed(() => {
 const blocked = computed(
   () =>
     chosen.value.length === 0 ||
+    !method.value ||
     proposalMismatch.value ||
     (method.value === "vote" && !isSessionVoteReady(vote.value, outcome.value)),
 );
@@ -227,13 +232,14 @@ async function toggleProposal(): Promise<void> {
 }
 
 async function submit(): Promise<void> {
-  if (blocked.value) return;
+  const chosenMethod = method.value;
+  if (blocked.value || !chosenMethod) return;
   const ok = await session.decideAdmission({
     amendmentIds: chosen.value,
     decision: decision.value,
-    method: method.value,
+    method: chosenMethod,
     note: note.value.trim() || null,
-    vote: method.value === "vote" ? sessionCleanVote(vote.value) : null,
+    vote: chosenMethod === "vote" ? sessionCleanVote(vote.value) : null,
   });
   if (ok) open.value = false;
 }
@@ -297,7 +303,6 @@ async function submit(): Promise<void> {
                 v-for="author in amendment.authors"
                 :key="author.id"
                 :member="author"
-                size="xs"
               />
               <UBadge
                 v-if="amendment.late"
@@ -310,7 +315,6 @@ async function submit(): Promise<void> {
                 v-if="amendment.admission !== 'admitted'"
                 kind="admission"
                 :value="amendment.admission"
-                size="sm"
               />
               <p
                 v-if="transactionalsLine(amendment)"
@@ -377,6 +381,14 @@ async function submit(): Promise<void> {
           orientation="horizontal"
           :ui="{ fieldset: 'flex-wrap gap-x-4 gap-y-2' }"
         />
+        <!-- Why the main button waits: the Mesa chooses the method (UXS-3). -->
+        <p
+          v-if="!method && chosen.length > 0"
+          class="text-muted text-xs"
+          role="status"
+        >
+          {{ t("session.admission.methodRequired") }}
+        </p>
 
         <SessionVoteFields
           v-if="method === 'vote'"

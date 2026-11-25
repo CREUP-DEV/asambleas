@@ -9,7 +9,10 @@ import { readNeighbours } from "~~/shared/utils/readMarks";
  * before and after it, what is left to read (which opens the next one with
  * something left) and its read mark (reading it to its end marks it read;
  * the button takes that back). It stands above the document's
- * title, so going through every document never needs the lists. The page
+ * title, and its compact variant comes again after the text (the
+ * document's page and the item reader), named apart (`label`) and with the
+ * next one's title beside its arrows (`trail`), so going through every
+ * document never needs the lists. The page
  * of an agenda item shows it over its reader, and there the documents open
  * in that reader (`to`) instead of on their own page.
  *
@@ -35,8 +38,24 @@ const props = withDefaults(
     compact?: boolean;
     /** Folded away, animated (CommonCollapse): its height, or compact its width. */
     hidden?: boolean;
+    /**
+     * The landmark's name, when the page holds another reading bar (the one
+     * after the text), so the two are told apart.
+     */
+    label?: string;
+    /**
+     * With `compact`: the next document's title beside the arrows, muted and
+     * wrapping, so on a touch screen, with no tooltip, the way on is named.
+     */
+    trail?: boolean;
   }>(),
-  { to: undefined, compact: false, hidden: false },
+  {
+    to: undefined,
+    compact: false,
+    hidden: false,
+    label: undefined,
+    trail: false,
+  },
 );
 
 const { t } = useI18n();
@@ -117,8 +136,9 @@ const note = computed<"changed" | "amendments" | null>(() => {
   <CommonCollapse v-if="shown" :open="!hidden" :axis="compact ? 'x' : 'y'">
     <nav
       v-if="compact"
-      class="flex shrink-0 items-center gap-0.5 text-sm"
-      :aria-label="t('readMarks.bar.label')"
+      class="flex items-center gap-0.5 text-sm"
+      :class="trail ? 'min-w-0' : 'shrink-0'"
+      :aria-label="label ?? t('readMarks.bar.label')"
       data-testid="document-read-bar"
     >
       <UTooltip :text="previousLabel" :disabled="!position.previous">
@@ -155,13 +175,24 @@ const note = computed<"changed" | "amendments" | null>(() => {
           data-testid="read-bar-next"
         />
       </UTooltip>
+      <!-- The arrow's name already says it: a wider target for the eye and
+           the finger, out of the tab order and of what is read aloud. -->
+      <ULink
+        v-if="trail && position.next"
+        :to="pathOf(position.next)"
+        class="text-muted hover:text-default min-w-0 ps-1 text-start text-sm break-words"
+        tabindex="-1"
+        aria-hidden="true"
+        data-testid="read-bar-trail"
+        >{{ position.next.title }}</ULink
+      >
     </nav>
     <!-- Below md: ‹ | position over the mark | ›, then what is left.
          From md: ‹ | position | what is left | mark | ›. -->
     <nav
       v-else
       class="border-default bg-elevated/40 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1.5 rounded-lg border p-1.5 text-sm md:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] md:gap-x-3 md:px-2"
-      :aria-label="t('readMarks.bar.label')"
+      :aria-label="label ?? t('readMarks.bar.label')"
       data-testid="document-read-bar"
     >
       <UTooltip :text="previousLabel" :disabled="!position.previous">

@@ -126,7 +126,6 @@ function technical(item: ActivityItemDto): string {
           <CommonMemberBadge
             v-if="row.original.actor?.member"
             :member="row.original.actor.member"
-            size="sm"
           />
           <ShellRoleBadge
             v-if="actorRole(row.original)"

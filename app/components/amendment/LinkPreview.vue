@@ -31,14 +31,12 @@ const { t } = useI18n();
         v-for="author in amendment.authors"
         :key="author.id"
         :member="author"
-        size="xs"
         :tooltip="false"
       />
       <CommonStatusBadge
         v-if="amendment.status !== 'submitted'"
         kind="amendment"
         :value="amendment.status"
-        size="sm"
       />
     </div>
     <div

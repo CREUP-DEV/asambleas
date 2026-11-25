@@ -14,6 +14,7 @@ import {
   IMAGE_URL_PREFIX,
 } from "../../types/content";
 import { cellFillOf } from "../../constants/cellFills";
+import type { FragmentBlock } from "./consolidate";
 import { withAutolinks } from "./autolink";
 import { renderFormula } from "./formula";
 import { markerOf } from "./lists";
@@ -180,7 +181,20 @@ type RenderableBlock = Pick<
    * list again, so the next item that counts shows that number.
    */
   uncounted?: boolean;
+  /** Text is left out before it (FragmentBlock): «[…]» goes first. */
+  gapBefore?: boolean;
 };
+
+/**
+ * Where a fragment leaves text out: «[…]» on a line of its own, muted, and
+ * said in words to screen readers when there is a label. It carries no
+ * `data-block-id`, so it is no block to pick, count or page.
+ */
+function gapHtml(label: string | undefined): string {
+  return label
+    ? `<p class="cx-gap text-muted"><span aria-hidden="true">[…]</span><span class="sr-only">${escapeHtml(label)}</span></p>`
+    : `<p class="cx-gap text-muted">[…]</p>`;
+}
 
 export interface RenderOptions {
   /**
@@ -193,15 +207,23 @@ export interface RenderOptions {
 /**
  * Blocks to HTML: tables (groupTables) as <table>, each cell's blocks laid
  * out like the text around them, inside a wrapper that scrolls sideways on
- * narrow screens.
+ * narrow screens. `gap` is the HTML of a gap (gapHtml): a table that opens
+ * a run takes it before the table, any other block before itself.
  */
-function wrapBlocks(items: RenderableBlock[], headings = true): string {
+function wrapBlocks(
+  items: RenderableBlock[],
+  headings = true,
+  gap = "",
+): string {
   let html = "";
   for (const run of groupTables(items)) {
-    html +=
-      run.kind === "blocks"
-        ? wrapFlow(run.items, headings)
-        : tableHtml(run.table, headings);
+    if (run.kind === "blocks") {
+      html += wrapFlow(run.items, headings, gap);
+      continue;
+    }
+    const first = run.table.rows[0]?.cells[0]?.blocks[0];
+    if (first?.gapBefore) html += gap;
+    html += tableHtml(run.table, headings, gap, first);
   }
   return html;
 }
@@ -209,6 +231,9 @@ function wrapBlocks(items: RenderableBlock[], headings = true): string {
 function tableHtml(
   table: TableGroup<RenderableBlock>,
   headings: boolean,
+  gap = "",
+  /** The block whose gap went before the table. */
+  opened?: RenderableBlock,
 ): string {
   // Its width and place (main.css reads them), escaped as any attribute.
   const layout = Object.entries(tableLayoutAttributes(tableLayoutOf(table)))
@@ -250,7 +275,7 @@ function tableHtml(
         attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
       if (cell.cell.rowspan)
         attrs += ` rowspan="${Math.trunc(cell.cell.rowspan)}"`;
-      html += `<${tag}${attrs}>${wrapFlow(cell.blocks, headings)}</${tag}>`;
+      html += `<${tag}${attrs}>${wrapFlow(cell.blocks, headings, gap, opened)}</${tag}>`;
     }
     html += "</tr>";
   }
@@ -268,8 +293,17 @@ function imageHtml(image: BlockImage | undefined): string {
   return `<img src="${IMAGE_URL_PREFIX}${image.asset}" alt="${escapeHtml(image.alt)}" width="${width}" height="${height}" loading="lazy" decoding="async">`;
 }
 
-/** Blocks outside tables, or inside one cell: paragraphs, lists, headings. */
-function wrapFlow(items: RenderableBlock[], headings: boolean): string {
+/**
+ * Blocks outside tables, or inside one cell: paragraphs, lists, headings.
+ * A block with `gapBefore` (but `opened`, whose gap is already out) ends
+ * the lists open and follows `gap`; its own `start` numbers it.
+ */
+function wrapFlow(
+  items: RenderableBlock[],
+  headings: boolean,
+  gap = "",
+  opened?: RenderableBlock,
+): string {
   let html = "";
   const stack: ListFrame[] = [];
   const closeFrame = () => {
@@ -297,6 +331,10 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
   };
 
   for (const item of items) {
+    if (item.gapBefore && item !== opened && gap) {
+      while (stack.length > 0) closeFrame();
+      html += gap;
+    }
     const attrs = attrsOf(item);
     if (item.type === "list_item") {
       const level = Math.max(0, Math.min(6, item.level ?? 0));
@@ -395,6 +433,11 @@ export interface AnnotatedOptions extends RenderOptions {
   label?: (amendmentId: string) => string;
   /** Highlights the segments of one amendment. */
   focus?: string | null;
+  /**
+   * Visually hidden words that say what the «[…]» before a block with
+   * `gapBefore` means (e.g. "Text left out"), in any mode.
+   */
+  omitted?: string;
   /**
    * Visually hidden words read before each insertion and removal in diff
    * mode (e.g. "Added:"), so the change is not told by colour alone.
@@ -615,13 +658,18 @@ function amendedRanges(
  *   a note at the end of the block (`cx-fmt-label`);
  * - `provenance`: clean text with every amended fragment linked to its amendment;
  * - `clean`: the consolidated text alone.
+ *
+ * A fragment (previewAmendment) shows «[…]» where it leaves text out
+ * (`gapBefore`), also when the block that carries it is not shown.
  */
 export function renderAnnotated(
-  blocks: ConsolidatedBlock[],
+  blocks: FragmentBlock[],
   options: AnnotatedOptions,
 ): string {
   const items: RenderableBlock[] = [];
+  let gapBefore = false;
   for (const block of blocks) {
+    gapBefore ||= block.gapBefore === true;
     if (block.status === "deleted" && options.mode !== "diff") continue;
 
     let offset = 0;
@@ -715,9 +763,12 @@ export function renderAnnotated(
       className,
       // Shown struck, it takes no number (only diff mode shows it).
       uncounted: block.status === "deleted",
+      // Nothing shown before it, nothing left out between.
+      gapBefore: gapBefore && items.length > 0,
     });
+    gapBefore = false;
   }
-  return wrapBlocks(items, options.headings);
+  return wrapBlocks(items, options.headings, gapHtml(options.omitted));
 }
 
 /**

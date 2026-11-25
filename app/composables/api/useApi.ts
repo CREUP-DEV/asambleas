@@ -120,6 +120,10 @@ const REASON_KEYS: Record<string, string> = {
   seating_seats_occupied: "common.errors.seatingSeatsOccupied",
   // A group, a person or a whole room that is no longer there (or an AGET).
   seating_not_found: "common.errors.seatingNotFound",
+  // Calendar rules, not a stale read (server/utils/domain/documentRefusals.ts):
+  // the conflict text stays for the optimistic lock.
+  assembly_closed: "common.errors.assemblyClosed",
+  documents_deadline_passed: "common.errors.documentsDeadlinePassed",
 };
 
 /**

@@ -90,6 +90,7 @@ export function useAssemblySections(
         label: t("shell.assembly.liveNow"),
         color: "error",
         variant: "soft",
+        size: "md",
       };
       item["aria-label"] = t("shell.assembly.liveInSession");
     }
@@ -104,6 +105,7 @@ export function useAssemblySections(
           label: String(pending),
           color: "warning",
           variant: "solid",
+          size: "md",
         };
         item["aria-label"] = t(
           "shell.assembly.validationPending",

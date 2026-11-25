@@ -71,6 +71,7 @@ import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { ROOM_VIEW_QUERY } from "~~/shared/constants/roomView";
 import { LIVE_TALLY_TTL_MS } from "~~/shared/utils/schemas/assembly";
+import { GLOBAL_REPLACE_ROOM_BLOCKS } from "~~/shared/utils/content/globalReplace";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
@@ -1769,20 +1770,31 @@ useHead(() => ({
                the screen (see "The amendment on screen"). -->
           <!-- Focusable: a keyboard reads what does not fit (the room never
                scrolls it; the page brings the change into view). -->
-          <div
-            ref="diffBox"
-            role="region"
-            tabindex="0"
-            aria-labelledby="projection-amendment-title"
-            class="projection-text projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
+          <!-- A global replacement: one line says it, then its first
+               paragraphs and how many occurrences are left. -->
+          <AmendmentGlobalReplace
+            v-slot="{ ops: shownOps }"
+            :amendment="debated"
+            :base="base"
+            :limit="GLOBAL_REPLACE_ROOM_BLOCKS"
+            text-class="text-[clamp(1.25rem,2vw,2rem)] leading-tight"
+            class="min-h-0 flex-1"
           >
-            <ContentAmendmentDiff
-              :id="debated.id"
-              :base="base"
-              :ops="debated.ops"
-              :context="0"
-            />
-          </div>
+            <div
+              ref="diffBox"
+              role="region"
+              tabindex="0"
+              aria-labelledby="projection-amendment-title"
+              class="projection-text projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
+            >
+              <ContentAmendmentDiff
+                :id="debated.id"
+                :base="base"
+                :ops="shownOps"
+                :context="0"
+              />
+            </div>
+          </AmendmentGlobalReplace>
         </div>
         <!-- A bloc: the codes, large, each with its main author (and what a
              transactional transacts); each turns green as it is approved. -->

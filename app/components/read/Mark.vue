@@ -32,7 +32,7 @@ const shown = computed<ReadState | null>(() => {
     v-if="shown === 'changed'"
     color="warning"
     variant="subtle"
-    size="sm"
+    size="md"
     icon="i-lucide-refresh-cw"
     :label="t(`readMarks.changed.${kind}`)"
     data-testid="read-mark"

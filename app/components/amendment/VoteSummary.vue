@@ -63,12 +63,7 @@ const summary = computed(() =>
 
 <template>
   <div v-if="compact" class="flex flex-wrap items-center gap-2 text-sm">
-    <CommonStatusBadge
-      v-if="!alternatives"
-      kind="vote"
-      :value="vote.result"
-      size="xs"
-    />
+    <CommonStatusBadge v-if="!alternatives" kind="vote" :value="vote.result" />
     <span class="text-muted tabular-nums">{{ summary }}</span>
   </div>
 

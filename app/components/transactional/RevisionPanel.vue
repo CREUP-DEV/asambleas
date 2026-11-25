@@ -146,7 +146,7 @@ function answer(memberId: string, decision: "accepted" | "rejected"): void {
         :key="party.member.id"
         class="flex flex-wrap items-center gap-2 text-sm"
       >
-        <CommonMemberBadge :member="party.member" size="sm" />
+        <CommonMemberBadge :member="party.member" />
         <span class="text-muted">
           {{ t(`transactional.revision.decision.${party.decision}`) }}
         </span>

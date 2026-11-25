@@ -102,7 +102,6 @@ function minutes(item: AdminImpersonationDto): number | null {
           <CommonMemberBadge
             v-if="row.original.target.member"
             :member="row.original.target.member"
-            size="sm"
           />
           <ShellRoleBadge :role="row.original.target.role" size="sm" />
         </div>

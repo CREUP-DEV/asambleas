@@ -352,7 +352,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
             <td class="px-3 py-2 text-center">
               <UBadge
                 v-bind="KIND_BADGES[kindOf(row.amendment)]"
-                size="sm"
+                size="md"
                 class="whitespace-nowrap"
                 :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
               />
@@ -362,7 +362,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                 v-if="row.awaitsAnswer"
                 color="warning"
                 variant="subtle"
-                size="sm"
+                size="md"
                 :label="t('controlSheet.answer.pending')"
               />
               <CommonStatusBadge
@@ -387,7 +387,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
             <td class="space-y-1 px-3 py-2 text-center">
               <UBadge
                 v-bind="stateBadge(row.state)"
-                size="sm"
+                size="md"
                 class="whitespace-nowrap"
                 :label="t(`liveView.state.${row.state}.label`)"
               />
@@ -471,7 +471,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
             </span>
             <UBadge
               v-bind="stateBadge(row.state)"
-              size="sm"
+              size="md"
               :label="t(`liveView.state.${row.state}.label`)"
             />
           </div>
@@ -502,7 +502,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
               <dd>
                 <UBadge
                   v-bind="KIND_BADGES[kindOf(row.amendment)]"
-                  size="sm"
+                  size="md"
                   :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
                 />
               </dd>
@@ -516,7 +516,7 @@ function openFromRow(event: MouseEvent, row: AmendmentSheetRow): void {
                   v-if="row.awaitsAnswer"
                   color="warning"
                   variant="subtle"
-                  size="sm"
+                  size="md"
                   :label="t('controlSheet.answer.pending')"
                 />
                 <CommonStatusBadge

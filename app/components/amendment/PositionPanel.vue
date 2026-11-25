@@ -492,7 +492,7 @@ async function save(): Promise<void> {
       <!-- Who answered, what and when. -->
       <div v-if="answer !== 'pending'" class="flex flex-col gap-1.5">
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <CommonStatusBadge kind="position" :value="answer" size="xs" />
+          <CommonStatusBadge kind="position" :value="answer" />
           <span class="text-default">{{ answerText }}</span>
           <span v-if="answeredAt" class="text-dimmed text-xs">
             {{ answeredAt }}

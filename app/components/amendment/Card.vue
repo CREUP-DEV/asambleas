@@ -172,11 +172,7 @@ const readMark = computed(() => {
         }}
       </span>
       <span v-if="showStatus" class="ms-auto flex items-center">
-        <CommonStatusBadge
-          kind="amendment"
-          :value="amendment.status"
-          size="xs"
-        />
+        <CommonStatusBadge kind="amendment" :value="amendment.status" />
       </span>
     </span>
 

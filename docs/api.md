@@ -659,7 +659,9 @@ for any members (see presenters below) and with no content. Members with
 `document:create` (Asociado, Sectorial and CEA accounts) can create one under
 an agenda item that has `acceptsSubmissions`, of a kind the item takes
 (`submissionKinds`; 422 `submission_kind` otherwise), until the
-`documents_close` milestone, always as one of its presenters. Under such an
+`documents_close` milestone (409 `data.reason` `documents_deadline_passed`;
+`assembly_closed` once the assembly is closed), always as one of its
+presenters. Under such an
 item the document gets its own automatic sub-item (see Agenda), whoever
 creates it.
 
@@ -775,7 +777,9 @@ rest of the assembly until the Secretaría has checked it.
   Secretaría (`submitted`, `submittedAt`). Presenting it again after a
   correction clears `correctionNote` and `correctionRequestedAt`. Members
   must do it before `documents_close` unless the document is expected (see
-  above); managers are not bound by it.
+  above; 409 `data.reason` `documents_deadline_passed`); managers are not
+  bound by it. Nobody sends one once the assembly is closed (409
+  `assembly_closed`).
 - Publishing (`POST .../publish`) is the validation: see the rules below. It
   also clears a pending correction.
 - `POST .../correction` (`document:manage`, `CorrectionBody`: a note of 1 to
@@ -908,7 +912,8 @@ reads `worded`.
 `FinalVoteAnnulBody` (`updatedAt` of the document for the optimistic lock,
 optional `note`) corrects a wrongly recorded final vote.
 
-- `session:moderate`, and the assembly must not be `closed` (409).
+- `session:moderate`, and the assembly must not be `closed` (409,
+  `data.messageKey` `common.errors.voteAssemblyClosed`, as for an item vote).
 - 409 when the document has no final vote, or when `updatedAt` is stale.
 - The vote row and the consolidated version stay for the record. The document
   loses `finalVoteId` and `consolidatedVersionId`, so its amendments can be

@@ -390,7 +390,7 @@ async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
         class="flex flex-col gap-2 py-2"
       >
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <CommonMemberBadge :member="party.member" size="xs" show-name />
+          <CommonMemberBadge :member="party.member" show-name />
           <span class="text-dimmed text-xs">{{ roleLabel(party) }}</span>
         </div>
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">

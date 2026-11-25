@@ -167,7 +167,7 @@ const takenAt = computed(() => {
             v-for="(name, index) in attendance.guests"
             :key="'guest-' + index"
           >
-            <UBadge color="neutral" variant="subtle" size="sm" :label="name" />
+            <UBadge color="neutral" variant="subtle" size="md" :label="name" />
           </li>
         </ul>
       </details>

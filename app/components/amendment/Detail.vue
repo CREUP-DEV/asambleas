@@ -759,7 +759,6 @@ async function remove(): Promise<void> {
         <CommonMemberBadge
           v-if="authors.main"
           :member="authors.main"
-          size="xs"
           show-name
         />
         <span v-if="authors.others.length > 0" class="text-muted text-sm">
@@ -822,37 +821,20 @@ async function remove(): Promise<void> {
       <h3 class="text-highlighted text-sm font-semibold">
         {{ t("amendment.detail.whatChanges") }}
       </h3>
-      <p v-if="amendment.globalReplace" class="text-sm">
-        <UIcon
-          name="i-lucide-replace-all"
-          class="text-muted me-1 size-4 align-middle"
-          aria-hidden="true"
-        />
-        {{
-          t("amendment.detail.globalReplace", {
-            find: amendment.globalReplace.find,
-            replace: amendment.globalReplace.replace,
-          })
-        }}
-        <span class="text-muted">
-          ·
-          {{
-            t(
-              "amendment.detail.occurrences",
-              { count: amendment.ops.length },
-              amendment.ops.length,
-            )
-          }}
-        </span>
-      </p>
-      <div class="border-default rounded-md border p-3 sm:p-4">
-        <ContentAmendmentDiff
-          :id="amendment.id"
-          :base="base"
-          :ops="amendment.ops"
-          :context="1"
-        />
-      </div>
+      <AmendmentGlobalReplace
+        v-slot="{ ops: shownOps }"
+        :amendment="amendment"
+        :base="base"
+      >
+        <div class="border-default rounded-md border p-3 sm:p-4">
+          <ContentAmendmentDiff
+            :id="amendment.id"
+            :base="base"
+            :ops="shownOps"
+            :context="1"
+          />
+        </div>
+      </AmendmentGlobalReplace>
       <UButton
         v-if="amendment.ops.length > 0"
         class="self-start"
@@ -1013,7 +995,7 @@ async function remove(): Promise<void> {
           </h3>
           <div class="flex flex-col gap-1.5">
             <div v-if="authors.main" class="flex flex-wrap items-center gap-2">
-              <CommonMemberBadge :member="authors.main" size="xs" show-name />
+              <CommonMemberBadge :member="authors.main" show-name />
               <span v-if="authors.marked" class="text-dimmed text-xs">
                 {{ t("amendment.detail.mainAuthor") }}
               </span>
@@ -1022,7 +1004,6 @@ async function remove(): Promise<void> {
               v-for="author in authors.others"
               :key="author.id"
               :member="author"
-              size="xs"
               show-name
             />
             <p v-if="amendment.submittedAt" class="text-muted text-xs">
@@ -1056,7 +1037,6 @@ async function remove(): Promise<void> {
                 v-if="!awaitingDecision && showAmendmentAdmission(amendment)"
                 kind="admission"
                 :value="amendment.admission"
-                size="sm"
               />
               <UBadge
                 v-for="change in amendment.changeKinds"

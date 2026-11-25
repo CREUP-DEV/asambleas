@@ -316,7 +316,7 @@ const itemRows = computed(() =>
                 v-if="row.live"
                 color="primary"
                 variant="subtle"
-                size="xs"
+                size="md"
                 class="ms-1 align-middle"
                 :label="t('controlSheet.live')"
               />
@@ -352,7 +352,7 @@ const itemRows = computed(() =>
                     v-if="row.live"
                     color="primary"
                     variant="subtle"
-                    size="xs"
+                    size="md"
                     class="ms-1 align-middle"
                     :label="t('controlSheet.live')"
                   />
@@ -387,7 +387,7 @@ const itemRows = computed(() =>
                   v-if="awaitingOf(ownDocument(row))"
                   color="warning"
                   variant="subtle"
-                  size="xs"
+                  size="md"
                   class="ms-2 align-middle"
                   :label="
                     t(
@@ -453,7 +453,7 @@ const itemRows = computed(() =>
                       v-if="awaitingOf(document)"
                       color="warning"
                       variant="subtle"
-                      size="xs"
+                      size="md"
                       class="self-center"
                       :label="
                         t(
@@ -546,7 +546,7 @@ const itemRows = computed(() =>
             v-if="row.live"
             color="primary"
             variant="subtle"
-            size="xs"
+            size="md"
             class="ms-1 align-middle"
             :label="t('controlSheet.live')"
           />
@@ -587,7 +587,7 @@ const itemRows = computed(() =>
                 v-if="row.live"
                 color="primary"
                 variant="subtle"
-                size="xs"
+                size="md"
                 class="ms-1 align-middle"
                 :label="t('controlSheet.live')"
               />
@@ -622,7 +622,7 @@ const itemRows = computed(() =>
               v-if="awaitingOf(ownDocument(row))"
               color="warning"
               variant="subtle"
-              size="xs"
+              size="md"
               class="ms-2 align-middle"
               :label="
                 t(
@@ -682,7 +682,7 @@ const itemRows = computed(() =>
                   v-if="awaitingOf(document)"
                   color="warning"
                   variant="subtle"
-                  size="xs"
+                  size="md"
                   class="self-center"
                   :label="
                     t(

@@ -393,7 +393,15 @@ type AmendmentOp =
 
 `replace` covers suppression (`text: ""`), addition (`from === to`) and
 modification. A global term replacement is stored as a group of `replace`
-operations with the search term recorded for display. The change typology
+operations with the search term recorded for display: in the amendment
+detail, the review card, the projection, the live view and the console its
+diff opens with one line that says it («Sustituye «X» por «Y» en todo el
+texto · N apariciones», `AmendmentGlobalReplace`), and the room views
+(projection, live view, console) show only the occurrences of its first
+paragraphs (`globalReplaceExcerpt`). An amendment fragment marks where it
+leaves text out (`gapBefore`) with a muted «[…]» on a line of its own, in
+the PDF too; on screen its meaning is said to screen readers (`omitted`).
+The change typology
 (supresión, adición, modificación) is derived from the operations.
 
 A `replace` also amends the formatting of text that is already there, still
@@ -1016,7 +1024,17 @@ A published document's page starts with the reading bar (`DocumentReadBar`):
 agenda (`documentsInAgendaOrder`), what is left in the whole assembly (which
 opens the next document with something left) and "Marcar como leído". With
 the breadcrumb, which leads back to the document's agenda item, the whole
-documentation can be read without going back to a list.
+documentation can be read without going back to a list. Its compact variant
+(the arrows and "3 de 25") comes again after the text, in one row, with the
+next document's title beside the arrows (muted, wrapping: a phone has no
+tooltip) and its own landmark name ("Continuar la lectura"), so the
+next document opens without going back up: in an agenda item's reader and
+after a PDF always, and after the text of the document's page below `lg`
+(from `lg` the folded header holds it over the text). The document it opens
+starts at its top, never where the last one ended (the hub's scroll area
+outlives the page, and an end left in view would mark it read unread): the
+document's page scrolls that area back up as it opens one, and the reader
+brings its title into view, with the focus when the arrows had it.
 
 Every change of marks is recorded (`read_marks.set`, counts only), like any
 other mutation.

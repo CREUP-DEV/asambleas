@@ -15,7 +15,9 @@ export interface DirtyDialogQuestion {
  * with the console's own confirmation (SessionConfirmDialog). Bind it as
  * `:open="open" :dismissible="dismissible" @update:open="onOpenUpdate"`,
  * never `v-model:open`: a close after saving sets `open` itself and never
- * asks.
+ * asks. A dialog outside the console may instead bind `@close:prevent` to
+ * `onOpenUpdate(false)`, so Escape and a click outside ask too
+ * (DocumentRecordDialog, a slideover edited like a page).
  *
  * `confirm` is the console's (`session.confirm`); a dialog used outside
  * the console (the wording dialog on the consolidated text) opens the same

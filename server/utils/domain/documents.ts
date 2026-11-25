@@ -67,6 +67,10 @@ import {
   withholdItemTitles,
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
+import {
+  ASSEMBLY_CLOSED_REASON,
+  DOCUMENTS_DEADLINE_PASSED_REASON,
+} from "./documentRefusals";
 import { recordEvent } from "./events";
 import { loadSignedRecordFile } from "./agreementsSignedFile";
 import { assertSessionOpen } from "./sessionOpen";
@@ -90,7 +94,7 @@ import {
   withCoProponentIds,
 } from "./presenters";
 import { resolveAssembly, resolveDocument } from "./resolvers";
-import { toVoteDto, type VoteRow } from "./votes";
+import { toVoteDto, VOTE_MESSAGE_KEYS, type VoteRow } from "./votes";
 import {
   canSeeAmendment,
   canSeeDocument,
@@ -2157,7 +2161,11 @@ export async function submitDocument(
   if (!manager && !isProponentSide(actor, ctx.document)) {
     fail(403, "Solo quien presenta el documento puede enviarlo");
   }
-  if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
+  if (assembly.status === "closed") {
+    fail(409, "La asamblea ya está cerrada", {
+      reason: ASSEMBLY_CLOSED_REASON,
+    });
+  }
   const milestones = manager ? {} : await loadMilestones(assembly.id);
 
   await db.transaction(async (tx) => {
@@ -2178,7 +2186,9 @@ export async function submitDocument(
         .from(agendaItems)
         .where(eq(agendaItems.id, current.agendaItemId));
       if (item && presentationClosed(current, item, milestones)) {
-        fail(409, "El plazo de presentación de documentos ha terminado");
+        fail(409, "El plazo de presentación de documentos ha terminado", {
+          reason: DOCUMENTS_DEADLINE_PASSED_REASON,
+        });
       }
     }
     if (!(await hasContent(tx, current))) emptyDocumentError(current);
@@ -3212,7 +3222,11 @@ export async function annulFinalVote(
   const { actor, assembly } = ctx;
   if (!canRecordResults(actor))
     fail(403, "No tienes permiso para anular votaciones");
-  if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
+  if (assembly.status === "closed") {
+    fail(409, "La asamblea ya está cerrada", {
+      messageKey: VOTE_MESSAGE_KEYS.closed,
+    });
+  }
 
   await db.transaction(async (tx) => {
     // The projection may stop showing the vote: assembly before document.

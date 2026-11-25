@@ -18,11 +18,11 @@ import type {
   BlockAlign,
   BlockCell,
   BlockImage,
-  ConsolidatedBlock,
   FormatChange,
   ListMarker,
   Mark,
 } from "../../../shared/types/content";
+import type { FragmentBlock } from "../../../shared/utils/content/consolidate";
 import {
   CELL_FILLS,
   cellFillOf,
@@ -1130,12 +1130,24 @@ function formatNote(
  * Text whose formatting an amendment changes shows its new format over a
  * dotted line, followed by what changes in words; a block whose own format
  * changes (to a heading, a list...) starts with those words.
+ * A fragment (previewAmendment) prints «[…]», in grey, on a line of its
+ * own where it leaves text out (`gapBefore`), as renderAnnotated does.
  */
 export function annotatedToPdf(
-  blocks: ConsolidatedBlock[],
+  blocks: FragmentBlock[],
   ctx: AnnotatedContext,
 ): Content[] {
-  const items: Item[] = blocks.map((block) => {
+  const items: Item[] = blocks.flatMap((block, index): Item[] => {
+    const gap: Item[] =
+      block.gapBefore && index > 0
+        ? [
+            {
+              shape: { type: "paragraph" },
+              inlines: [{ text: "[…]", color: MUTED_GREY }],
+              countable: true,
+            },
+          ]
+        : [];
     const inlines: Inline[] = [];
     if (block.format && block.status === "kept") {
       const note = formatNote(
@@ -1198,24 +1210,27 @@ export function annotatedToPdf(
         });
       }
     });
-    return {
-      shape: block,
-      inlines,
-      countable: block.status !== "deleted",
-      ...(block.type === "formula"
-        ? {
-            formula: {
-              source: block.segments
-                .filter((segment) => !segment.removed)
-                .map((segment) => segment.text)
-                .join(""),
-              changed:
-                block.status === "kept" &&
-                block.segments.some((segment) => segment.source),
-            },
-          }
-        : {}),
-    };
+    return [
+      ...gap,
+      {
+        shape: block,
+        inlines,
+        countable: block.status !== "deleted",
+        ...(block.type === "formula"
+          ? {
+              formula: {
+                source: block.segments
+                  .filter((segment) => !segment.removed)
+                  .map((segment) => segment.text)
+                  .join(""),
+                changed:
+                  block.status === "kept" &&
+                  block.segments.some((segment) => segment.source),
+              },
+            }
+          : {}),
+      },
+    ];
   });
   return assemble(items, ctx);
 }

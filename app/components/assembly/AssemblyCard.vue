@@ -91,7 +91,7 @@ const headingTag = computed(() => `h${props.headingLevel}`);
           :label="t('assemblies.card.live')"
           color="success"
           variant="subtle"
-          size="sm"
+          size="md"
           icon="i-lucide-radio"
         />
         <CommonStatusBadge
@@ -104,7 +104,7 @@ const headingTag = computed(() => `h${props.headingLevel}`);
           :label="t('assemblies.card.agendaProvisional')"
           color="neutral"
           variant="outline"
-          size="sm"
+          size="md"
           icon="i-lucide-lock-open"
         />
       </div>

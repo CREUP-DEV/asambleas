@@ -189,7 +189,6 @@ async function answer(decision: AcceptanceBody["decision"]): Promise<void> {
         v-if="showOutcome"
         kind="amendment"
         :value="transactional.status"
-        size="xs"
       />
       <TransactionalProgress
         :amendment="transactional"

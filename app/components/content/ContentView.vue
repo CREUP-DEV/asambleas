@@ -133,6 +133,7 @@ const html = computed(() => {
       label: props.label,
       focus: props.focus,
       headings,
+      omitted: t("common.content.omitted"),
       diffLabels:
         props.mode === "diff"
           ? {
@@ -151,7 +152,11 @@ const html = computed(() => {
   }
   if (props.blocks) return renderBlocks(props.blocks, { headings });
   if (props.annotated)
-    return renderAnnotated(props.annotated, { mode: "clean", headings });
+    return renderAnnotated(props.annotated, {
+      mode: "clean",
+      headings,
+      omitted: t("common.content.omitted"),
+    });
   return "";
 });
 

@@ -91,7 +91,6 @@ async function submit(): Promise<void> {
                 v-for="author in amendment.authors"
                 :key="author.id"
                 :member="author"
-                size="xs"
               />
               <!-- Lapsing it withdraws a pending transactional over it. -->
               <p

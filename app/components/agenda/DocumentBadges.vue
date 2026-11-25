@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { isPendingProgress } from "~/composables/document/documentProgress";
+import { unreadAmendmentsPath } from "~/composables/document/documentLinks";
 
 /**
  * What the agenda says of a document at a glance: its status (once published,
  * only to its presenters: useDocumentStatusShown), whether
  * the account has read it (ReadMark), how many amendments it has, in words
- * ("4 enmiendas"), how many of them are left to read, and, for the
+ * ("4 enmiendas"), how many of them are left to read (a link to the
+ * document's page with only those listed, given `to`), and, for the
  * presenter's own draft (`editTo`), the next step as a button. Used by the compact document
  * row and by an agenda item that shows its only document in its own row.
  */
@@ -15,8 +17,10 @@ const props = withDefaults(
     document: DocumentSummaryDto;
     /** The editor of the user's own draft, for the call to action. */
     editTo?: string | null;
+    /** The document's page, so «N sin leer» opens it with only those listed. */
+    to?: string | null;
   }>(),
-  { editTo: null },
+  { editTo: null, to: null },
 );
 
 const { t } = useI18n();
@@ -50,7 +54,7 @@ const showAmendments = computed(
       v-if="pending"
       :color="progress.color"
       variant="subtle"
-      size="sm"
+      size="md"
       :label="progress.label"
     />
     <CommonStatusBadge
@@ -68,7 +72,7 @@ const showAmendments = computed(
       v-if="showAmendments"
       color="neutral"
       variant="soft"
-      size="sm"
+      size="md"
       icon="i-lucide-message-square-diff"
       class="tabular-nums"
       :label="
@@ -80,11 +84,31 @@ const showAmendments = computed(
       "
       data-testid="document-amendment-count"
     />
+    <NuxtLink
+      v-if="amendmentsLeft > 0 && to"
+      :to="unreadAmendmentsPath(to)"
+      class="focus-visible:outline-primary inline-flex rounded-md hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"
+      data-testid="document-amendments-left"
+    >
+      <UBadge
+        color="primary"
+        variant="subtle"
+        size="md"
+        class="tabular-nums"
+        :label="
+          t(
+            'readMarks.amendmentsHere',
+            { count: amendmentsLeft },
+            amendmentsLeft,
+          )
+        "
+      />
+    </NuxtLink>
     <UBadge
-      v-if="amendmentsLeft > 0"
+      v-else-if="amendmentsLeft > 0"
       color="primary"
       variant="subtle"
-      size="sm"
+      size="md"
       class="tabular-nums"
       :label="
         t('readMarks.amendmentsHere', { count: amendmentsLeft }, amendmentsLeft)

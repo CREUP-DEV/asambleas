@@ -1575,7 +1575,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
                     v-for="author in item.authors"
                     :key="author.id"
                     :member="author"
-                    size="xs"
                   />
                 </p>
                 <ContentAmendmentDiff

@@ -93,7 +93,9 @@ export function statusLabelKey(kind: StatusKind, value: string): string {
  * Coloured badge for a domain status (assembly, document, amendment,
  * admission, proponent position, vote result, transactional acceptance).
  * Unknown values fall back to a neutral badge with the raw value. `label`
- * words it otherwise (who answered, say), keeping the status colour.
+ * words it otherwise (who answered, say), keeping the status colour. At
+ * 12px (`md`) unless the caller asks otherwise: the theme's `sm` and `xs`
+ * are 10px and 8px.
  */
 const props = withDefaults(
   defineProps<{
@@ -105,7 +107,7 @@ const props = withDefaults(
     /** Overrides the translated status label. */
     label?: string;
   }>(),
-  { size: "sm", variant: "subtle", icon: undefined, label: undefined },
+  { size: "md", variant: "subtle", icon: undefined, label: undefined },
 );
 
 const { t, te } = useI18n();

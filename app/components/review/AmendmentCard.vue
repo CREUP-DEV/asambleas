@@ -334,14 +334,14 @@ const moreBusy = computed(
             v-if="kindLabel"
             color="neutral"
             variant="outline"
-            size="sm"
+            size="md"
             :label="kindLabel"
           />
           <UBadge
             v-if="amendment.late"
             color="warning"
             variant="subtle"
-            size="sm"
+            size="md"
             icon="i-lucide-clock-alert"
             :label="t('amendment.late')"
           />
@@ -349,7 +349,7 @@ const moreBusy = computed(
             v-if="stage === 'late' && isPublic"
             color="neutral"
             variant="subtle"
-            size="sm"
+            size="md"
             icon="i-lucide-eye"
             :label="t('review.late.public')"
           />
@@ -388,7 +388,7 @@ const moreBusy = computed(
             :key="source.id"
             color="neutral"
             variant="outline"
-            size="sm"
+            size="md"
             class="tabular-nums"
           >
             <AmendmentCodeLinks
@@ -488,19 +488,11 @@ const moreBusy = computed(
         :aria-describedby="titleId"
       />
       <template #content>
-        <div class="space-y-2">
-          <p v-if="amendment.globalReplace" class="text-sm">
-            <UIcon
-              name="i-lucide-replace-all"
-              class="text-muted me-1 size-4 align-middle"
-              aria-hidden="true"
-            />{{
-              t("amendment.detail.globalReplace", {
-                find: amendment.globalReplace.find,
-                replace: amendment.globalReplace.replace,
-              })
-            }}
-          </p>
+        <AmendmentGlobalReplace
+          v-slot="{ ops: shownOps }"
+          :amendment="amendment"
+          :base="base"
+        >
           <div class="border-default rounded-md border p-3">
             <div
               v-if="base === null && baseLoading"
@@ -520,10 +512,10 @@ const moreBusy = computed(
               v-else
               :id="amendment.id"
               :base="base"
-              :ops="amendment.ops"
+              :ops="shownOps"
             />
           </div>
-        </div>
+        </AmendmentGlobalReplace>
       </template>
     </UCollapsible>
 

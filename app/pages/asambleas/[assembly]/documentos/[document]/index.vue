@@ -64,6 +64,7 @@ import {
   documentPagesTarget,
   useDocumentPages,
 } from "~/composables/document/useDocumentPages";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 
 /**
  * Document workspace (inside the assembly hub). Its one primary action, for
@@ -996,6 +997,26 @@ const textEnd = useTemplateRef<HTMLElement>("textEnd");
 provideSheetObservations(() => document.value?.id);
 useAutoReadMark("document", () => document.value?.id, textEnd);
 
+/**
+ * A document opens at its top. Below lg, and for a PDF on any screen, the
+ * page scrolls in the hub's scroll area, which outlives it: opened from the
+ * end of another one (the reading bar's arrows after the text) it would
+ * keep that offset, partway into the text or at its end, where the end
+ * would be in view at once and mark it read unread. Done on mounting, before
+ * the end can be seen, and ahead of what lands on an amendment.
+ */
+const pageRoot = useTemplateRef<HTMLElement>("pageRoot");
+onMounted(() => {
+  watch(
+    () => document.value?.id,
+    (id) => {
+      const root = pageRoot.value;
+      if (id && root) scrollParentOf(root)?.scrollTo({ top: 0 });
+    },
+    { immediate: true, flush: "post" },
+  );
+});
+
 /** Their marks go on the original text only: the other views show another. */
 function notesRoot(): HTMLElement | null {
   return textMode.value === "original" && !composer.value
@@ -1765,7 +1786,7 @@ const filteredBlockLabel = computed(() =>
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
+  <div ref="pageRoot" class="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
     <!-- On large screens this root fills the hub body, so the workspace
          below takes what the header leaves and the page never scrolls
          besides the text. min-h-0: its size comes from the body, never from
@@ -2013,6 +2034,16 @@ const filteredBlockLabel = computed(() =>
         ref="textEnd"
         aria-hidden="true"
         class="h-px"
+      />
+      <!-- Past its last page, the way on without going back up: the reading
+           bar's arrows again, in one row (no header folds over a PDF). -->
+      <DocumentReadBar
+        v-if="document.format === 'file'"
+        :document="document"
+        compact
+        trail
+        :label="t('readMarks.bar.endLabel')"
+        class="border-default justify-items-center border-t pt-3"
       />
 
       <!-- Not published yet -->
@@ -2553,6 +2584,19 @@ const filteredBlockLabel = computed(() =>
                 ref="textEnd"
                 aria-hidden="true"
                 class="h-px"
+              />
+              <!-- Past the end, the way on without going back up: the reading
+                   bar's arrows again, in one row. Below lg only: from lg the
+                   folded header already holds them over the text. -->
+              <DocumentReadBar
+                v-if="
+                  !composing && (textMode !== 'amended' || selectedAmendment)
+                "
+                :document="document"
+                compact
+                trail
+                :label="t('readMarks.bar.endLabel')"
+                class="border-default mt-6 justify-items-center border-t pt-3 lg:hidden"
               />
             </template>
           </UDashboardPanel>

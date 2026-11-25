@@ -79,7 +79,7 @@ const contentId = computed(() => `home-fold-${props.id}-content`);
             :label="String(count)"
             color="neutral"
             variant="subtle"
-            size="sm"
+            size="md"
           />
         </span>
       </UButton>

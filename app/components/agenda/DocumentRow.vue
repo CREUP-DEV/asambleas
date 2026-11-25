@@ -21,6 +21,11 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  *
  * The `actions` slot puts the page's own buttons at the end of the row,
  * above the link that covers it (the documents page: «Editar la ficha»).
+ * The strip of badges lets a click through to that link, in its gaps and on
+ * a plain badge, so the whole card opens the document; only links, buttons
+ * and what explains itself on hover (who presents it, the amendment count,
+ * the read mark's title) keep the pointer, as does the window countdown,
+ * whose exact date is its title.
  *
  * `compact` (the agenda page) keeps only what is needed to find a document
  * and see how it stands: format icon, title, status, the amendment count in
@@ -113,7 +118,9 @@ const SENTENCE_COLORS: Record<string, string> = {
         </template>
         <template v-if="windowCountdown">
           <span aria-hidden="true">·</span>
+          <!-- Above the link, so its exact date (title) shows on hover. -->
           <CommonCountdown
+            class="relative z-[1]"
             :to="windowCountdown.at"
             :label="windowCountdown.label"
             icon="i-lucide-timer"
@@ -141,18 +148,23 @@ const SENTENCE_COLORS: Record<string, string> = {
       v-if="compact"
       :document="document"
       :edit-to="editTo"
-      class="relative z-[1] sm:justify-end"
+      :to="props.to"
+      class="pointer-events-none relative z-[1] sm:justify-end [&>:is(a,button,[title])]:pointer-events-auto"
     />
     <div
       v-else
-      class="relative z-[1] flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end"
+      class="pointer-events-none relative z-[1] flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end [&>:is(a,button,[title])]:pointer-events-auto"
     >
-      <DocumentPresenters :document="document" :max-others="2" />
+      <DocumentPresenters
+        :document="document"
+        :max-others="2"
+        class="pointer-events-auto"
+      />
       <UBadge
         v-if="pending"
         :color="progress.color"
         variant="subtle"
-        size="sm"
+        size="md"
         :label="progress.label"
       />
       <CommonStatusBadge
@@ -172,7 +184,7 @@ const SENTENCE_COLORS: Record<string, string> = {
         v-if="document.consolidated && document.pendingConciliation > 0"
         color="warning"
         variant="outline"
-        size="sm"
+        size="md"
         icon="i-lucide-git-merge"
         :label="t('document.pendingConciliation.status')"
       />
@@ -180,7 +192,7 @@ const SENTENCE_COLORS: Record<string, string> = {
         v-else-if="document.consolidated"
         color="success"
         variant="outline"
-        size="sm"
+        size="md"
         icon="i-lucide-badge-check"
         :label="t('agenda.document.consolidated')"
       />
@@ -191,8 +203,9 @@ const SENTENCE_COLORS: Record<string, string> = {
         <UBadge
           color="neutral"
           variant="soft"
-          size="sm"
+          size="md"
           icon="i-lucide-message-square-diff"
+          class="pointer-events-auto"
         >
           <span aria-hidden="true">{{ document.amendmentCount }}</span>
           <span class="sr-only">{{ amendmentsLabel }}</span>
@@ -207,7 +220,7 @@ const SENTENCE_COLORS: Record<string, string> = {
         <UBadge
           color="primary"
           variant="subtle"
-          size="sm"
+          size="md"
           class="tabular-nums"
           :label="
             t(

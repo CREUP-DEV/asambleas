@@ -107,7 +107,7 @@ const sources = computed(() =>
         {{ label }}
       </component>
       <template v-if="authors.main">
-        <CommonMemberBadge :member="authors.main" size="xs" />
+        <CommonMemberBadge :member="authors.main" />
         <span v-if="authors.marked" class="text-dimmed text-xs">
           {{ t("amendment.card.mainAuthor") }}
         </span>
@@ -116,14 +116,12 @@ const sources = computed(() =>
         v-for="author in authors.others"
         :key="author.id"
         :member="author"
-        size="xs"
       />
       <!-- Closed by a main author's rejection: the line below says so. -->
       <CommonStatusBadge
         v-if="!rejectedBy"
         kind="amendment"
         :value="amendment.status"
-        size="xs"
         class="ms-auto"
       />
     </div>

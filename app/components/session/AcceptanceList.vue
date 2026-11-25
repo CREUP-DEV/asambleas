@@ -203,12 +203,11 @@ async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
         :key="party.member.id"
         class="flex flex-wrap items-center gap-2 px-3 py-2"
       >
-        <CommonMemberBadge :member="party.member" size="sm" />
+        <CommonMemberBadge :member="party.member" />
         <span class="text-muted text-xs">{{ answersFor(party) }}</span>
         <CommonStatusBadge
           kind="acceptance"
           :value="party.decision"
-          size="sm"
           class="ms-auto"
         />
         <UFieldGroup

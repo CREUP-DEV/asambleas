@@ -34,7 +34,7 @@ const color = computed(() => (props.result ? COLORS[props.result] : "warning"));
   <UBadge
     :color="color"
     variant="subtle"
-    size="sm"
+    size="md"
     class="whitespace-nowrap"
     :label="t(`controlSheet.result.${result ?? 'pending'}`)"
   />

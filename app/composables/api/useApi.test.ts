@@ -8,6 +8,21 @@ import {
   isConflict,
   isIdentityChanged,
 } from "./useApi";
+import es from "../../../i18n/locales/es.json";
+import en from "../../../i18n/locales/en.json";
+
+/** The message at a dotted key of a locale file, or undefined. */
+function messageIn(locale: unknown, key: string): unknown {
+  return key
+    .split(".")
+    .reduce<unknown>(
+      (node, part) =>
+        node && typeof node === "object"
+          ? (node as Record<string, unknown>)[part]
+          : undefined,
+      locale,
+    );
+}
 
 /** What ofetch throws: the JSON error body Nitro sent, in `data`. */
 function fetchError(statusCode: number, data?: Record<string, unknown>) {
@@ -64,6 +79,29 @@ describe("errorReasonKey", () => {
     expect(
       errorReasonKey(fetchError(422, { reason: "executive_author_main" })),
     ).toBeNull();
+  });
+
+  it("words the calendar 409s apart from the optimistic lock", () => {
+    expect(errorReasonKey(fetchError(409, { reason: "assembly_closed" }))).toBe(
+      "common.errors.assemblyClosed",
+    );
+    expect(
+      errorReasonKey(
+        createError({
+          statusCode: 409,
+          data: { reason: "documents_deadline_passed" },
+        }),
+      ),
+    ).toBe("common.errors.documentsDeadlinePassed");
+    for (const key of [
+      "common.errors.assemblyClosed",
+      "common.errors.documentsDeadlinePassed",
+    ]) {
+      expect(messageIn(es, key)).toBeTypeOf("string");
+      expect(messageIn(en, key)).toBeTypeOf("string");
+    }
+    // The lock's own 409 names no reason and keeps the conflict text.
+    expect(errorReasonKey(fetchError(409))).toBeNull();
   });
 
   it("is null for other reasons and for none", () => {

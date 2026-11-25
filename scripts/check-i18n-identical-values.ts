@@ -31,6 +31,10 @@ const ALLOWLIST: AllowlistEntry[] = [
     reason: "Brand name stays the same across locales.",
   },
   {
+    pattern: /^controlSheet\.moreMembers$/,
+    reason: "«+N» followed by the names: only placeholders and punctuation.",
+  },
+  {
     pattern: /^common\.no$/,
     reason: "Short negative answer is identical in Spanish and English.",
   },

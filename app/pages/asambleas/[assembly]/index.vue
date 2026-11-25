@@ -580,11 +580,13 @@ const warnedKeys = computed(() =>
           <li
             v-for="row in rows"
             :key="row.item.id"
-            class="grid items-start gap-x-3 gap-y-1 py-2 @xl:grid-cols-[minmax(0,1fr)_auto]"
+            class="hover:bg-elevated/50 focus-within:bg-elevated/50 relative -mx-2 grid items-start gap-x-3 gap-y-1 px-2 py-2 @xl:grid-cols-[minmax(0,1fr)_auto]"
           >
+            <!-- The link covers its row, so the whole row opens the item;
+                 the focus ring stays on the title -->
             <NuxtLink
               :to="agendaItemPath(sectionPath(), row.item)"
-              class="text-default hover:text-primary focus-visible:outline-primary min-w-0 justify-self-start rounded-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
+              class="text-default hover:text-primary focus-visible:outline-primary min-w-0 justify-self-start rounded-sm font-medium after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               <AgendaItemNumber
                 :number="row.number"

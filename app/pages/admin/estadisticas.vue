@@ -637,7 +637,7 @@ const detailSections = computed(() => {
               :label="`${t(`common.status.amendment.${entry.status}`)} ${entry.count}`"
               :color="OUTCOME_COLORS[entry.status]"
               variant="subtle"
-              size="sm"
+              size="md"
             />
           </div>
         </template>
