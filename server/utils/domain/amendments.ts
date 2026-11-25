@@ -6785,6 +6785,106 @@ export async function decideAlternatives(
 }
 
 /**
+ * computeApprovalWarnings for several amendments approved by one vote,
+ * merged: each against the document's approved amendments and its live
+ * "incompatible" links (seen from either end), leaving out the amendments of
+ * the vote itself (`voted`). Null when none was approved.
+ */
+export function collectApprovalWarnings(input: {
+  targets: { id: string; ops: AmendmentOp[] }[];
+  approved: { id: string; ops: AmendmentOp[] }[];
+  links: { fromId: string; toId: string }[];
+  live: ReadonlySet<string>;
+  voted: ReadonlySet<string>;
+}): ApprovalWarnings | null {
+  if (input.targets.length === 0) return null;
+  const overlaps: string[] = [];
+  const incompatible: string[] = [];
+  for (const target of input.targets) {
+    const linked = input.links.flatMap((link) =>
+      link.fromId === target.id
+        ? [link.toId]
+        : link.toId === target.id
+          ? [link.fromId]
+          : [],
+    );
+    const found = computeApprovalWarnings(
+      target,
+      input.approved,
+      linked.filter((id) => input.live.has(id)),
+    );
+    overlaps.push(...found.overlapsWithApproved);
+    incompatible.push(...found.incompatible);
+  }
+  return {
+    overlapsWithApproved: unique(overlaps.filter((id) => !input.voted.has(id))),
+    incompatible: unique(incompatible.filter((id) => !input.voted.has(id))),
+  };
+}
+
+/**
+ * approvalWarnings for every amendment a vote approved, read once under the
+ * vote's locks (the approved amendments, the "incompatible" links of all of
+ * them and the status of what they link to) and merged in memory
+ * (collectApprovalWarnings), not two or three reads per amendment.
+ */
+async function votedApprovalWarnings(
+  tx: Tx,
+  documentId: string,
+  input: {
+    targets: { id: string; ops: AmendmentOp[] }[];
+    voted: ReadonlySet<string>;
+  },
+): Promise<ApprovalWarnings | null> {
+  if (input.targets.length === 0) return null;
+  const targetIds = input.targets.map((target) => target.id);
+  const approved = await tx
+    .select({ id: amendments.id, ops: amendments.ops })
+    .from(amendments)
+    .where(
+      and(
+        eq(amendments.documentId, documentId),
+        eq(amendments.status, "approved"),
+      ),
+    );
+  const links = await tx
+    .select({
+      fromId: amendmentRelations.fromId,
+      toId: amendmentRelations.toId,
+    })
+    .from(amendmentRelations)
+    .where(
+      and(
+        eq(amendmentRelations.kind, "incompatible"),
+        or(
+          inArray(amendmentRelations.fromId, targetIds),
+          inArray(amendmentRelations.toId, targetIds),
+        ),
+      ),
+    );
+  const linkedIds = unique(links.flatMap((link) => [link.fromId, link.toId]));
+  const live =
+    linkedIds.length > 0
+      ? await tx
+          .select({ id: amendments.id })
+          .from(amendments)
+          .where(
+            and(
+              inArray(amendments.id, linkedIds),
+              inArray(amendments.status, ["submitted", "approved"]),
+            ),
+          )
+      : [];
+  return collectApprovalWarnings({
+    targets: input.targets,
+    approved,
+    links,
+    live: new Set(live.map((row) => row.id)),
+    voted: input.voted,
+  });
+}
+
+/**
  * One vote that decides several amendments of the document at once: a vote
  * between alternatives (decideAlternatives) or on a bloc (decideBlocVote).
  * In one transaction: `underLock` checks under the assembly's share lock
@@ -7029,26 +7129,10 @@ async function recordMultiAmendmentVote(
     const approvedIds = decided
       .filter((entry) => entry.status === "approved")
       .map((entry) => entry.id);
-    const collected: ApprovalWarnings = {
-      overlapsWithApproved: [],
-      incompatible: [],
-    };
-    for (const id of approvedIds) {
-      const found = await approvalWarnings(tx, document.id, byId.get(id)!);
-      collected.overlapsWithApproved.push(...found.overlapsWithApproved);
-      collected.incompatible.push(...found.incompatible);
-    }
-    const warnings: ApprovalWarnings | null =
-      approvedIds.length > 0
-        ? {
-            overlapsWithApproved: unique(
-              collected.overlapsWithApproved.filter((id) => !allSet.has(id)),
-            ),
-            incompatible: unique(
-              collected.incompatible.filter((id) => !allSet.has(id)),
-            ),
-          }
-        : null;
+    const warnings = await votedApprovalWarnings(tx, document.id, {
+      targets: approvedIds.map((id) => byId.get(id)!),
+      voted: allSet,
+    });
     if (input.project) {
       await pointLiveVote(tx, {
         assemblyId: ctx.assembly.id,
@@ -7060,6 +7144,10 @@ async function recordMultiAmendmentVote(
     return { voteRow: voteRow!, decision: decision!, warnings };
   });
 
+  // In one pass (amendmentDtos), not one amendmentDto per id at once: a bloc
+  // of 12-17 took that many connections of the pool as the vote went out.
+  // Every id was checked visible before the vote. In the order given.
+  const dtos = await amendmentDtos(ctx, allIds);
   return {
     decision: {
       id: result.decision.id,
@@ -7070,7 +7158,7 @@ async function recordMultiAmendmentVote(
       vote: toVoteDto(result.voteRow),
       decidedAt: result.decision.decidedAt.toISOString(),
     },
-    amendments: await Promise.all(allIds.map((id) => amendmentDto(ctx, id))),
+    amendments: allIds.flatMap((id) => dtos.get(id) ?? []),
     warnings: result.warnings,
   };
 }

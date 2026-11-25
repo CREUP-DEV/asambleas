@@ -908,6 +908,12 @@ export interface DocumentPagesDto {
   base: PageMapDto | null;
   consolidated: PageMapDto | null;
   pending: boolean;
+  /**
+   * Only while `pending`: seconds until the queued job may run (its
+   * `startAfter`, past the package's prebuild in a convened or sitting
+   * assembly), never under 5. A hint for the next ask, not a promise.
+   */
+  retryAfter?: number;
 }
 
 export interface DocumentCapabilities {

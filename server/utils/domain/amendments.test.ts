@@ -60,6 +60,7 @@ const {
   amendmentSortKey,
   buildAcceptanceParties,
   canProposeTransactional,
+  collectApprovalWarnings,
   composerAuthorsAccess,
   computeApprovalWarnings,
   evaluateVoteInput,
@@ -711,6 +712,58 @@ describe("computeApprovalWarnings", () => {
       overlapsWithApproved: ["a2"],
       incompatible: ["a4"],
     });
+  });
+});
+
+describe("collectApprovalWarnings", () => {
+  const a1 = { id: "a1", ops: [replace("b1", 0, 6, "Inicial")] };
+  const a2 = { id: "a2", ops: [replace("b2", 0, 7, "Segundo")] };
+  const approved = [
+    a1,
+    a2,
+    // Outside the vote: a3 collides with a1, a4 with a2.
+    { id: "a3", ops: [replace("b1", 2, 10, "otra cosa")] },
+    { id: "a4", ops: [replace("b2", 1, 5, "algo")] },
+    // In the vote too, and colliding with a1: left out.
+    { id: "a5", ops: [replace("b1", 0, 3, "Ini")] },
+  ];
+
+  it("merges every approved amendment's warnings, outside the vote", () => {
+    expect(
+      collectApprovalWarnings({
+        targets: [a1, a2],
+        approved,
+        links: [
+          { fromId: "a1", toId: "a6" },
+          // Seen from the other end, and again for the other target.
+          { fromId: "a6", toId: "a2" },
+          { fromId: "a7", toId: "a1" },
+          // Linked to one of the vote: left out.
+          { fromId: "a2", toId: "a5" },
+          // Not live any more.
+          { fromId: "a1", toId: "a8" },
+          // Of neither target.
+          { fromId: "a9", toId: "a10" },
+        ],
+        live: new Set(["a5", "a6", "a7", "a10"]),
+        voted: new Set(["a1", "a2", "a5"]),
+      }),
+    ).toEqual({
+      overlapsWithApproved: ["a3", "a4"],
+      incompatible: ["a6", "a7"],
+    });
+  });
+
+  it("answers null when the vote approved none", () => {
+    expect(
+      collectApprovalWarnings({
+        targets: [],
+        approved,
+        links: [],
+        live: new Set(),
+        voted: new Set(["a1"]),
+      }),
+    ).toBeNull();
   });
 });
 

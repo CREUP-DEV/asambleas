@@ -98,17 +98,21 @@ const activeIndex = computed(() => {
             v-if="item.next"
             color="primary"
             variant="soft"
-            size="sm"
+            size="md"
             :label="t('calendar.next')"
           />
-          <UTooltip v-if="item.warned" :text="t('calendar.hasWarning')">
+          <!-- Said in words, for touch and screen readers alike -->
+          <span
+            v-if="item.warned"
+            class="text-muted inline-flex items-center gap-1 text-xs font-normal"
+          >
             <UIcon
               name="i-lucide-triangle-alert"
-              class="text-warning size-4"
-              :aria-label="t('calendar.hasWarning')"
-              role="img"
+              class="text-warning size-4 shrink-0"
+              aria-hidden="true"
             />
-          </UTooltip>
+            {{ t("calendar.hasWarning") }}
+          </span>
         </span>
       </template>
       <template #description="{ item }">

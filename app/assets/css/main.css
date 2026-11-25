@@ -570,6 +570,44 @@ html {
   }
 
   /*
+   * A table wider than its column shows a shadow on the side that hides
+   * more of it (M-044, E-048), in CSS alone: two covers in the background
+   * colour travel with the content (`local`) and hide the two edge shadows
+   * (`scroll`) at either end. The covers must match what the text sits on:
+   * a reader on another background sets `--cx-table-cover`. A cell with its
+   * own fill (the header row, `cx-fill-*`) paints over the shadow.
+   */
+  .rich-text .cx-table-wrap {
+    --cx-table-shade: color-mix(in oklab, var(--ui-text) 15%, transparent);
+
+    background:
+      linear-gradient(
+          to right,
+          var(--cx-table-cover, var(--ui-bg)) 50%,
+          transparent
+        )
+        left / 1.5rem 100% no-repeat local,
+      linear-gradient(
+          to left,
+          var(--cx-table-cover, var(--ui-bg)) 50%,
+          transparent
+        )
+        right / 1.5rem 100% no-repeat local,
+      radial-gradient(
+          farthest-side at 0 50%,
+          var(--cx-table-shade),
+          transparent
+        )
+        left / 0.75rem 100% no-repeat scroll,
+      radial-gradient(
+          farthest-side at 100% 50%,
+          var(--cx-table-shade),
+          transparent
+        )
+        right / 0.75rem 100% no-repeat scroll;
+  }
+
+  /*
    * In a wide editor the text keeps a comfortable measure (about 90
    * characters, near a line of the PDF), starting where the toolbar does
    * (centred, it began far from the edge it is read from), and tables keep
@@ -902,6 +940,29 @@ html {
   .rich-text .cx-heading-5 {
     margin-top: 1.25rem;
     font-size: 1em;
+  }
+
+  /*
+   * On a phone the first two levels come down a step (M-042): at 1.75rem a
+   * long title took five lines of a 286 px column. The text keeps its size;
+   * excerpts still follow it. After the rules above, which it overrides.
+   */
+  @media (width < 40rem) {
+    .rich-text h2 {
+      font-size: 1.375rem;
+    }
+
+    .rich-text h3 {
+      font-size: 1.2rem;
+    }
+
+    .rich-text .cx-heading-2 {
+      font-size: calc(1em * 1.375 / 1.0625);
+    }
+
+    .rich-text .cx-heading-3 {
+      font-size: calc(1em * 1.2 / 1.0625);
+    }
   }
 
   /* What follows keeps the spacing it has after a real heading. */
@@ -1615,6 +1676,11 @@ html {
   .rich-text blockquote {
     orphans: 3;
     widows: 3;
+  }
+
+  /* No scroll shadows on paper. */
+  .rich-text .cx-table-wrap {
+    background: none;
   }
 
   .cx-gutter {

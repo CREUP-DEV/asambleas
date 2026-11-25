@@ -3,6 +3,7 @@ import { CALENDAR_RULES_PERMISSION } from "~~/shared/constants/calendarRules";
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
+import { namedWhenCollapsed } from "./-navigation";
 
 /**
  * Routes of the assembly sections, kept with the list of sections in
@@ -27,6 +28,10 @@ export {
  * has not started or is over, so shared links keep working and the menu
  * does not shift when the session starts. While it is in session the item
  * carries a "now" mark.
+ *
+ * Folded, the theme hides every label, so each link takes it as its
+ * accessible name (namedWhenCollapsed); unfolded, the "now" mark never
+ * squeezes the label it follows.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
@@ -180,9 +185,20 @@ const adminItems = computed<NavigationMenuItem[]>(() => {
     : [];
 });
 
+const mainMenu = computed(() =>
+  namedWhenCollapsed(mainItems.value, props.collapsed),
+);
+const assemblyMenu = computed(() =>
+  namedWhenCollapsed(assemblyItems.value, props.collapsed),
+);
+const adminMenu = computed(() =>
+  namedWhenCollapsed(adminItems.value, props.collapsed),
+);
+
 const menuUi = {
   link: "min-h-9",
   linkLeadingIcon: "size-5",
+  linkTrailing: "shrink-0",
   label: "pt-3 text-xs uppercase tracking-wide text-dimmed truncate",
 };
 </script>
@@ -190,7 +206,7 @@ const menuUi = {
 <template>
   <div class="flex flex-col gap-2">
     <UNavigationMenu
-      :items="mainItems"
+      :items="mainMenu"
       orientation="vertical"
       :collapsed="props.collapsed"
       tooltip
@@ -205,7 +221,7 @@ const menuUi = {
     <template v-if="assemblyItems.length > 0">
       <USeparator v-if="props.collapsed" class="px-2" />
       <UNavigationMenu
-        :items="assemblyItems"
+        :items="assemblyMenu"
         orientation="vertical"
         :collapsed="props.collapsed"
         tooltip
@@ -219,7 +235,7 @@ const menuUi = {
     <template v-if="adminItems.length > 0">
       <USeparator v-if="props.collapsed" class="px-2" />
       <UNavigationMenu
-        :items="adminItems"
+        :items="adminMenu"
         orientation="vertical"
         :collapsed="props.collapsed"
         tooltip

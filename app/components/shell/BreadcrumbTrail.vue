@@ -11,6 +11,10 @@ import type { Breadcrumb } from "~/composables/shell/useBreadcrumbs";
  * ellipsis (its full label as a tooltip). When even that does not fit, the
  * middle levels fold, from the start, into «…», a menu that opens them.
  * It refits whenever its box changes size or the trail changes.
+ *
+ * A level whose name its page has not registered yet (`pending`) shows as
+ * a skeleton of fixed width, its provisional label only for screen
+ * readers, so the row does not read «Documento» and then jump.
  */
 const props = defineProps<{
   crumbs: Breadcrumb[];
@@ -82,7 +86,10 @@ async function fit(): Promise<void> {
 
 useResizeObserver(list, () => void fit());
 watch(
-  () => props.crumbs.map((crumb) => crumb.label).join("\u0000"),
+  () =>
+    props.crumbs
+      .map((crumb) => `${crumb.pending ? "?" : ""}${crumb.label}`)
+      .join("\u0000"),
   () => void fit(),
 );
 onMounted(() => void fit());
@@ -94,6 +101,7 @@ onMounted(() => void fit());
 const SHORT_LABEL = 16;
 
 function shrinkOf(entry: Extract<Entry, { type: "crumb" }>): string {
+  if (entry.crumb.pending) return "shrink-0";
   if (entry.position === "middle" && entry.crumb.label.length <= SHORT_LABEL) {
     return "shrink-0";
   }
@@ -133,7 +141,15 @@ const SHRINK: Record<"first" | "middle" | "last", string> = {
         </li>
         <li v-else class="flex" :class="shrinkOf(entry)">
           <span
-            v-if="entry.crumb.current"
+            v-if="entry.crumb.pending"
+            class="flex items-center"
+            :aria-current="entry.crumb.current ? 'page' : undefined"
+          >
+            <USkeleton aria-hidden="true" class="h-4 w-20" />
+            <span class="sr-only">{{ entry.crumb.label }}</span>
+          </span>
+          <span
+            v-else-if="entry.crumb.current"
             class="text-highlighted truncate text-sm font-semibold"
             :title="entry.crumb.label"
             aria-current="page"

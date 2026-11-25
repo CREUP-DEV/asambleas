@@ -8,6 +8,7 @@ import {
   homeWorkReviewPending,
   homeWorkTasks,
 } from "~/components/home/-work";
+import { warnedMilestoneKeys } from "~/components/calendar/-warnings";
 import { welcomeAudience } from "~/components/shell/-welcome";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
 import { useAddDocument } from "~/composables/document/useAddDocument";
@@ -37,8 +38,9 @@ import { formatDateTime } from "~/utils/format";
  *    milestone and its countdown in the header, then every milestone (with
  *    its warnings for managers). The key figures follow it in the same
  *    column, as one quiet list.
- * The managers' alerts (calendar warnings, an overdue final agenda) are
- * notices, not blocks, and stay on top.
+ * The calendar's warnings, for managers, are one quiet line on top that
+ * counts the milestones to review and opens the calendar page, where each
+ * warning is told in full; never a box per warning here.
  */
 
 const { t, locale } = useI18n();
@@ -286,20 +288,43 @@ const figures = computed(() =>
   ].filter((figure) => figure.key !== "windows" || figure.value > 0),
 );
 
+/** The milestones the calendar warnings touch, each once. */
 const warnedKeys = computed(() =>
-  (assembly.value?.calendarWarnings ?? []).flatMap((warning) => warning.keys),
+  warnedMilestoneKeys(assembly.value?.calendarWarnings ?? []),
 );
 </script>
 
 <template>
-  <div v-if="assembly" class="space-y-6">
+  <div v-if="assembly" class="mx-auto w-full max-w-7xl space-y-6">
+    <!-- Capped (max-w-7xl) so that, on a wide screen, a text and its action
+         stay close -->
     <h2 class="sr-only">{{ t("assembly.overview.title") }}</h2>
 
-    <CalendarWarningList
-      v-if="assembly.can.manage && assembly.calendarWarnings.length > 0"
-      :warnings="assembly.calendarWarnings"
-      :edit-to="sectionPath('calendario')"
-    />
+    <!-- The calendar's warnings: one quiet line for managers; each warning,
+         with what it breaks, is on the calendar page -->
+    <p
+      v-if="assembly.can.manage && warnedKeys.length > 0"
+      class="flex items-start gap-2 text-sm"
+      data-testid="overview-calendar-warnings"
+    >
+      <UIcon
+        name="i-lucide-triangle-alert"
+        class="text-warning mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <ULink
+        :to="sectionPath('calendario')"
+        class="text-default hover:text-primary underline underline-offset-2"
+      >
+        {{
+          t(
+            "assembly.overview.calendarWarnings",
+            { count: warnedKeys.length },
+            warnedKeys.length,
+          )
+        }}
+      </ULink>
+    </p>
 
     <!-- 1. What the user has to do here -->
     <section
@@ -323,11 +348,11 @@ const warnedKeys = computed(() =>
         <div class="min-w-0 space-y-1">
           <h4
             id="overview-add-document-title"
-            class="text-highlighted flex items-center gap-2 font-semibold"
+            class="text-highlighted flex items-start gap-2 font-semibold"
           >
             <UIcon
               name="i-lucide-file-plus"
-              class="text-primary size-5 shrink-0"
+              class="text-primary mt-0.5 size-5 shrink-0"
               aria-hidden="true"
             />
             {{
@@ -490,7 +515,8 @@ const warnedKeys = computed(() =>
               v-if="assembly.status !== 'draft'"
               size="sm"
               color="neutral"
-              variant="ghost"
+              variant="link"
+              class="px-0"
               icon="i-lucide-folder-down"
               :label="t('assembly.package.button')"
               data-testid="overview-package"

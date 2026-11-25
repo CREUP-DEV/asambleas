@@ -23,8 +23,10 @@ const props = withDefaults(
     disabled?: boolean;
     /** One column, for the side panel. */
     compact?: boolean;
+    /** The total under the fields; the gallery says it in its own footer. */
+    showCapacity?: boolean;
   }>(),
-  { disabled: false, compact: false },
+  { disabled: false, compact: false, showCapacity: true },
 );
 
 const emit = defineEmits<{
@@ -72,6 +74,16 @@ const seatOptions = computed(() =>
 );
 
 const capacity = computed(() => doubleUCapacity(local.value));
+
+/**
+ * − and + fit a finger below sm (M-098): 40 px there, 32 px from sm up.
+ * The media query is read on the client during setup, before hydration, so
+ * the size waits for mount: the server and the hydrating client both render
+ * xl, and the switch to md after mount is a real change Vue patches.
+ */
+const wide = useMediaQuery("(min-width: 640px)");
+const mounted = useMounted();
+const compactSteppers = computed(() => mounted.value && wide.value);
 </script>
 
 <template>
@@ -80,22 +92,29 @@ const capacity = computed(() => doubleUCapacity(local.value));
       class="grid gap-3"
       :class="compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'"
     >
+      <!-- The label grows, so the fields of a row line up at its foot even
+           when one label takes two lines (E-110). -->
       <UFormField
         v-for="field in DOUBLE_U_FIELDS"
         :key="field"
         :label="t(`seating.doubleU.fields.${field}`)"
-        :hint="field === 'gap' ? t('seating.doubleU.unitCm') : undefined"
+        :description="field === 'gap' ? t('seating.doubleU.unitCm') : undefined"
         :error="
           problem && problem.field === field
             ? t(problem.key, problem.values)
             : undefined
         "
+        :class="field === 'seatsPerTable' && !compact ? 'sm:col-span-2' : ''"
+        :ui="{ root: 'flex flex-col', wrapper: 'flex-1' }"
       >
         <URadioGroup
           v-if="field === 'seatsPerTable'"
           :model-value="local.seatsPerTable"
           :items="seatOptions"
           orientation="horizontal"
+          variant="card"
+          :aria-label="t('seating.doubleU.fields.seatsPerTable')"
+          :ui="{ item: 'flex-1', label: 'whitespace-nowrap' }"
           :disabled="disabled"
           @update:model-value="(value) => set('seatsPerTable', Number(value))"
         />
@@ -105,6 +124,7 @@ const capacity = computed(() => doubleUCapacity(local.value));
           :min="DOUBLE_U_LIMITS[field].min"
           :max="DOUBLE_U_LIMITS[field].max"
           :step="field === 'gap' ? DOUBLE_U_LIMITS.gap.step : 1"
+          :size="compactSteppers ? 'md' : 'xl'"
           :disabled="disabled"
           class="w-full"
           @update:model-value="(value) => set(field, value)"
@@ -118,7 +138,7 @@ const capacity = computed(() => doubleUCapacity(local.value));
     >
       {{ t(problem.key, problem.values) }}
     </p>
-    <p class="text-muted text-sm">
+    <p v-if="showCapacity" class="text-muted text-sm">
       {{ t("seating.doubleU.capacity", { count: capacity }, capacity) }}
     </p>
   </div>

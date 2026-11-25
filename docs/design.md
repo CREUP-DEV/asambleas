@@ -570,7 +570,11 @@ published. Minimums in days or months count calendar days in Europe/Madrid,
 whatever the hour (`respectsNotice`): a convocation sent on 18 October at any
 time gives a month's notice for an assembly starting on 18 November. Minimums
 in hours count exactly. Warnings are computed on read, so past assemblies are checked
-against the rules in force. The convocatoria is generated from the assembly
+against the rules in force. Only managers see them: the calendar page tells
+each one in a box (`CalendarWarningList`), the overview puts one line on top
+counting the milestones to review (`warnedMilestoneKeys`) with a link to that
+page, and the timeline writes «Revisa este plazo» beside each of those
+milestones. The convocatoria is generated from the assembly
 data, the agenda and the milestones (`ConvocationSheet`). Its page is a
 section of the hub like any other (`convocatoria/index.vue`); "Imprimir"
 opens the generated one alone, outside the shell, ready to print
@@ -1462,10 +1466,13 @@ rules:
 
 One authenticated shell built on Nuxt UI dashboard components
 (`UDashboardGroup`, `UDashboardSidebar`, `UDashboardPanel`) with the CREUP
-identity. The sidebar becomes a drawer on mobile.
+identity. The sidebar becomes a drawer on mobile. Unfolded, it keeps its
+resizable share of the screen between 15rem and 18rem, so «En directo» with
+its mark, the administration labels and the account fit at 1024; folded, each
+link takes its label as its accessible name.
 
 Every page of the shell shows a breadcrumb row under its navbar
-(`ShellBreadcrumbs`): `Asambleas › 80.ª AGO › Documentos › R-3 › Editar`.
+(`ShellBreadcrumbs`): `Asambleas › 80.ª AGO › Documentos › Informe de gestión › Editar`.
 The administration pages have none: they hang straight from the sidebar,
 which names the section, and their navbar names the page. The last crumb is the page on show; below `lg` the
 row is a single link to the level above. The trail comes from the route
@@ -1481,10 +1488,18 @@ order, all from the agenda the hub already loads. Its trail names the items
 above it: `Asambleas › 80.ª AGO › Orden del día › 3. Resoluciones › 3.2 …`.
 A document hangs from an agenda item, and its trail goes through it whatever
 page it was opened from: `Asambleas › 80.ª AGO › Orden del día › 3.
-Resoluciones › RES 4` (`useDocumentBreadcrumb` registers the items from the
-agenda; a document whose item the viewer does not get keeps the route's
-trail, `Documentos › RES 4`). So the way back from a document is the item it
-belongs to.
+Resoluciones › Resolución sobre la financiación` (`useDocumentBreadcrumb`
+registers the items from the agenda; a document whose item the viewer does
+not get keeps the route's trail, `Documentos › Informe de gestión`). So the
+way back from a document is the item it
+belongs to. The document's step is always its title, never its reference,
+and its own automatic sub-item, whose title repeats it, reads as its number
+alone: `… › 3.12 › Informe de gestión › Respuestas`, «‹ 3.12» on a phone. A
+level its page has not named yet (the document, an agenda item, or the
+«Documentos» step a document's trail may still swap for its items) shows as
+a skeleton from the first HTML, its generic name only for screen readers,
+so the row never reads «Documento» and then jumps; a document that never
+loads (its page shows the error inline) reads `Documentos › Documento`.
 The sections of an assembly come from one list
 (`app/composables/assembly/-sections.ts`, `useAssemblySections`) for the
 sidebar and the phone toolbar of the hub; whoever has a section of the

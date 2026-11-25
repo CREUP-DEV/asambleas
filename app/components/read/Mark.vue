@@ -38,24 +38,41 @@ const shown = computed<ReadState | null>(() => {
     data-testid="read-mark"
     data-state="changed"
   />
+  <!-- The dot and the tick name themselves in a tooltip over a 24 px box
+       (E-031), whose negative margin keeps the footprint of the 8 px dot or
+       the 16 px tick, so rows and pills keep their height. The box takes
+       the pointer back from a strip that lets clicks through (DocumentRow).
+       No tab stop: screen readers hear the sr-only text. -->
   <span
     v-else-if="shown === 'unread'"
     class="inline-flex shrink-0 items-center"
-    :title="t(`readMarks.unread.${kind}`)"
     data-testid="read-mark"
     data-state="unread"
   >
-    <span class="bg-primary size-2 rounded-full" aria-hidden="true" />
+    <UTooltip :text="t(`readMarks.unread.${kind}`)">
+      <span
+        class="pointer-events-auto -m-2 inline-flex size-6 shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
+        <span class="bg-primary size-2 rounded-full" />
+      </span>
+    </UTooltip>
     <span class="sr-only">{{ t(`readMarks.unread.${kind}`) }}</span>
   </span>
   <span
     v-else-if="shown === 'read'"
     class="text-muted inline-flex shrink-0 items-center"
-    :title="t(`readMarks.read.${kind}`)"
     data-testid="read-mark"
     data-state="read"
   >
-    <UIcon name="i-lucide-check" class="size-4" aria-hidden="true" />
+    <UTooltip :text="t(`readMarks.read.${kind}`)">
+      <span
+        class="pointer-events-auto -m-1 inline-flex size-6 shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
+        <UIcon name="i-lucide-check" class="size-4" />
+      </span>
+    </UTooltip>
     <span class="sr-only">{{ t(`readMarks.read.${kind}`) }}</span>
   </span>
 </template>

@@ -282,7 +282,11 @@ export async function regenerateAgreementsRecord(
   const contentHash = await hashBlocks(blocks);
 
   return db.transaction(async (tx) => {
-    const current = await lockDocument(tx, found.id, "update");
+    // NO KEY UPDATE, as every write of a document that keeps the row ("Row
+    // locks" in documents.ts): it serializes with the record's final vote
+    // and the other writers, and lets an insert that references the record
+    // (a version, live_state) go on without waiting.
+    const current = await lockDocument(tx, found.id);
     // Read again under the lock: a vote may have come in meanwhile, and
     // the next change of the assembly writes it.
     if (
@@ -497,7 +501,7 @@ export async function regenerateApprovedRecord(
   const contentHash = await hashBlocks(blocks);
 
   const removed = await db.transaction(async (tx) => {
-    const current = await lockDocument(tx, found.id, "update");
+    const current = await lockDocument(tx, found.id);
     if (
       current.finalVoteId !== found.finalVoteId ||
       current.consolidatedVersionId !== found.consolidatedVersionId
@@ -575,7 +579,7 @@ export async function createAgreementsRecord(
   if (!created) fail(500, "No se pudo crear el acta de acuerdos");
 
   await db.transaction(async (tx) => {
-    const current = await lockDocument(tx, created.id, "update");
+    const current = await lockDocument(tx, created.id);
     const [working] = await tx
       .select()
       .from(documentVersions)

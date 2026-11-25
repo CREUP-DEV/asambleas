@@ -6,8 +6,8 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
 /**
  * One document under an agenda item: title and reference linking to the
  * document, kind, who presents it ("CEUM con UPV", at most two co-presenters
- * before "N más"), amendment count and the countdown of its amendment
- * window.
+ * before "N más"), amendment count in words ("4 enmiendas") and the
+ * countdown of its amendment window.
  *
  * Once published its status badge is only for its presenters
  * (useDocumentStatusShown); everyone gets whether the account
@@ -23,9 +23,9 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  * above the link that covers it (the documents page: «Editar la ficha»).
  * The strip of badges lets a click through to that link, in its gaps and on
  * a plain badge, so the whole card opens the document; only links, buttons
- * and what explains itself on hover (who presents it, the amendment count,
- * the read mark's title) keep the pointer, as does the window countdown,
- * whose exact date is its title.
+ * and what explains itself on hover (who presents it, the read mark's
+ * tooltip) keep the pointer, as does the window countdown, whose exact date
+ * is its title.
  *
  * `compact` (the agenda page) keeps only what is needed to find a document
  * and see how it stands: format icon, title, status, the amendment count in
@@ -196,21 +196,16 @@ const SENTENCE_COLORS: Record<string, string> = {
         icon="i-lucide-badge-check"
         :label="t('agenda.document.consolidated')"
       />
-      <UTooltip
+      <UBadge
         v-if="!pending && (document.amendable || document.amendmentCount > 0)"
-        :text="amendmentsLabel"
-      >
-        <UBadge
-          color="neutral"
-          variant="soft"
-          size="md"
-          icon="i-lucide-message-square-diff"
-          class="pointer-events-auto"
-        >
-          <span aria-hidden="true">{{ document.amendmentCount }}</span>
-          <span class="sr-only">{{ amendmentsLabel }}</span>
-        </UBadge>
-      </UTooltip>
+        color="neutral"
+        variant="soft"
+        size="md"
+        icon="i-lucide-message-square-diff"
+        class="tabular-nums"
+        :label="amendmentsLabel"
+        data-testid="document-amendment-count"
+      />
       <NuxtLink
         v-if="amendmentsLeft > 0"
         :to="unreadAmendmentsPath(props.to)"

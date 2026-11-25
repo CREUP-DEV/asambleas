@@ -541,6 +541,7 @@
       "calendarTitle": "Calendar",
       "openAgenda": "See the full agenda",
       "editCalendar": "Edit the calendar",
+      "calendarWarnings": "No calendar deadline to review | 1 calendar deadline to review | {count} calendar deadlines to review",
       "review": {
         "title": "Waiting for review"
       },
@@ -2670,7 +2671,6 @@
       }
     },
     "online": {
-      "label": "Online",
       "hint": "Online: used the platform in the last {minutes} minutes"
     }
   },
@@ -2944,7 +2944,6 @@
       "assembly": "Assembly",
       "agendaItem": "Item",
       "document": "Document",
-      "view": "View",
       "views": {
         "edit": "Edit",
         "answers": "Answers",
@@ -3651,7 +3650,6 @@
     "emptyTitle": "No deadlines",
     "emptyDescription": "No deadlines have been set for this assembly yet.",
     "warningMilestones": "Affects: {milestones}",
-    "reviewCalendar": "Review the calendar",
     "milestones": {
       "convocation": "Notice of meeting",
       "agenda_requests_close": "Agenda item requests close",
@@ -5084,8 +5082,10 @@
   "documents": {
     "title": "Documents",
     "byAgenda": "View in the agenda",
-    "searchPlaceholder": "Search by title, reference or member",
-    "searchLabel": "Search documents",
+    "searchPlaceholder": "Search documents",
+    "searchLabel": "Search documents by title, reference or member",
+    "filters": "Filters",
+    "filtersCount": "Filters ({count})",
     "statusFilter": "Filter by status",
     "kindFilter": "Filter by type",
     "allStatuses": "All statuses",

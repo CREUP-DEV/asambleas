@@ -28,3 +28,22 @@ export function pagesJobStartAfter(status: string): number | undefined {
   if (!PREBUILD_STATUSES.has(status)) return undefined;
   return Math.ceil((PREBUILD_DELAY_MS + PAGES_JOB_MARGIN_MS) / 1000);
 }
+
+/** The least `retryAfter` a pending GET …/pages answers, in seconds. */
+export const PAGES_RETRY_AFTER_MIN_S = 5;
+
+/**
+ * The `retryAfter` of a pending GET …/pages, in seconds: what is left of
+ * the job's `startAfter` (`startAfterSeconds`, undefined when it runs at
+ * once) since it was queued at `queuedAt` (ms), never under
+ * PAGES_RETRY_AFTER_MIN_S: a job already due, or rendering, gets the floor.
+ */
+export function pagesRetryAfter(
+  queuedAt: number,
+  startAfterSeconds: number | undefined,
+  now: number,
+): number {
+  if (startAfterSeconds === undefined) return PAGES_RETRY_AFTER_MIN_S;
+  const left = Math.ceil(startAfterSeconds - (now - queuedAt) / 1000);
+  return Math.max(PAGES_RETRY_AFTER_MIN_S, left);
+}

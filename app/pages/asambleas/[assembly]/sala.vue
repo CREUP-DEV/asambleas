@@ -1499,8 +1499,10 @@ const failed = computed(() => Boolean(seating.error.value) && !plan.value);
 
     <template v-else>
       <!-- Header -->
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 space-y-1">
+      <div
+        class="flex flex-wrap items-start justify-between gap-3 lg:flex-nowrap"
+      >
+        <div class="min-w-0 space-y-1 lg:flex-1">
           <h2 class="text-highlighted text-xl font-semibold">
             {{ t("seating.title") }}
           </h2>
@@ -1525,6 +1527,7 @@ const failed = computed(() => Boolean(seating.error.value) && !plan.value);
           variant="outline"
           :icon="moreList[0]!.icon"
           :label="moreList[0]!.label"
+          class="shrink-0"
           @click="moreList[0]!.run()"
         />
         <UDropdownMenu
@@ -1537,6 +1540,7 @@ const failed = computed(() => Boolean(seating.error.value) && !plan.value);
             variant="outline"
             icon="i-lucide-ellipsis"
             :label="t('seating.more')"
+            class="shrink-0"
           />
         </UDropdownMenu>
       </div>

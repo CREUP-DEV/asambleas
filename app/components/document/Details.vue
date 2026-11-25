@@ -111,7 +111,7 @@ const amendmentWindow = computed(() => {
       color="neutral"
       variant="ghost"
       size="sm"
-      class="shrink-0"
+      class="relative shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-2"
       :aria-label="t('document.details.label')"
       data-testid="document-details"
       @pointerenter="hoverIn"
@@ -120,7 +120,7 @@ const amendmentWindow = computed(() => {
     />
     <template #content>
       <dl
-        class="grid w-max max-w-sm grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 p-3 text-sm"
+        class="grid w-max max-w-[min(24rem,calc(100vw-2rem))] grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 p-3 text-sm"
       >
         <dt class="text-muted">{{ t("document.details.kind") }}</dt>
         <dd class="text-default">

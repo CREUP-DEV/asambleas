@@ -78,7 +78,7 @@ const { document, pending, error, stale, refresh } = await useDocument(
 );
 
 // Names the document in the breadcrumb row, from the DTO loaded above.
-useDocumentBreadcrumb(document);
+useDocumentBreadcrumb(document, error);
 
 /** Secretaría-level management (document:manage) at any stage. */
 const manager = computed(() => Boolean(document.value?.can.manage));

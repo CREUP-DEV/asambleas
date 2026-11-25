@@ -4,16 +4,15 @@ import type { CalendarWarning } from "~~/shared/utils/calendar";
 /**
  * The calendar warnings of checkCalendar, one UAlert each, naming the
  * milestones involved and the minimum of the calendar rules they break.
- * Announced politely when they change.
+ * Announced politely when they change. Only the calendar page shows them
+ * in full; the overview counts them in one line that links there.
  */
 const props = withDefaults(
   defineProps<{
     warnings: CalendarWarning[];
-    /** Link to the calendar editor, shown when set. */
-    editTo?: string;
     variant?: "soft" | "subtle" | "outline";
   }>(),
-  { editTo: undefined, variant: "subtle" },
+  { variant: "subtle" },
 );
 
 const { t } = useI18n();
@@ -50,19 +49,6 @@ const items = computed(() =>
       icon="i-lucide-triangle-alert"
       :title="item.title"
       :description="item.description"
-      :actions="
-        props.editTo
-          ? [
-              {
-                label: t('calendar.reviewCalendar'),
-                to: props.editTo,
-                color: 'warning',
-                variant: 'link',
-                trailingIcon: 'i-lucide-arrow-right',
-              },
-            ]
-          : undefined
-      "
     />
   </div>
 </template>

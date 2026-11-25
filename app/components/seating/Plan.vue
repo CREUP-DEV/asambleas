@@ -1060,15 +1060,23 @@ const transform = computed(() => viewMatrix(viewport.view.value));
   vector-effect: non-scaling-stroke;
 }
 
+/* A table's edge reaches 3:1 on the floor in both themes, as a free
+   seat's does (the dimmed text colour); the border tokens gave 1.4:1 and
+   1.6:1 (E-112). */
 .table {
   fill: var(--ui-bg-elevated);
-  stroke: var(--ui-border-accented);
+  stroke: var(--ui-text-dimmed);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
 }
 
 .table-presiding {
   fill: var(--ui-bg-accented);
+}
+
+/* The CEA's base, in the primary tint of SEATING_COLOUR_STYLES (-model.ts). */
+.table-cea {
+  fill: color-mix(in oklab, var(--ui-primary) 14%, var(--ui-bg));
 }
 
 .plan-text {

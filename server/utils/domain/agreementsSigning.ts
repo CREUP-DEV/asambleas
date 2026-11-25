@@ -309,7 +309,7 @@ export async function prepareRecordForSigning(
   let previous: string | null;
   try {
     previous = await db.transaction(async (tx) => {
-      const current = await lockDocument(tx, document.id, "update");
+      const current = await lockDocument(tx, document.id);
       if (current.consolidatedVersionId !== versionId) fail(409, STALE_MESSAGE);
       const row = await loadSigningRow(document.id, tx);
       const values = {
@@ -409,7 +409,7 @@ export async function attachSignedRecord(
   let previous: string | null;
   try {
     previous = await db.transaction(async (tx) => {
-      const current = await lockDocument(tx, document.id, "update");
+      const current = await lockDocument(tx, document.id);
       const [row] = await tx
         .select()
         .from(agreementRecordSignings)

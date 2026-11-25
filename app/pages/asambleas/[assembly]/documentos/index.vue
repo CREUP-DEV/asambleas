@@ -188,6 +188,19 @@ const filtering = computed(
     onlyLeft.value,
 );
 
+/**
+ * On a phone the search and «Solo lo que me queda por leer» stay in view
+ * and the rest fold behind «Filtros», so the list starts high.
+ */
+const filtersOpen = ref(false);
+const filtersId = useId();
+const foldedActive = computed(
+  () =>
+    Number(status.value !== "all") +
+    Number(kind.value !== "all") +
+    Number(onlyMine.value),
+);
+
 function resetFilters() {
   search.value = "";
   status.value = "all";
@@ -236,6 +249,8 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           {{ t("agenda.documentsCount", total) }}
         </p>
       </div>
+      <!-- Only their icons below sm, their names still read out, so they
+           stay on the title's line. -->
       <div class="flex flex-wrap items-center gap-2">
         <UButton
           v-if="assembly.status !== 'draft'"
@@ -243,6 +258,8 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           variant="outline"
           icon="i-lucide-folder-down"
           :label="t('assembly.package.button')"
+          class="max-sm:px-1.5"
+          :ui="{ label: 'max-sm:sr-only' }"
           data-testid="documents-package"
           @click="packageOpen = true"
         />
@@ -251,6 +268,8 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           variant="outline"
           icon="i-lucide-list-tree"
           :label="t('documents.byAgenda')"
+          class="max-sm:px-1.5"
+          :ui="{ label: 'max-sm:sr-only' }"
           :to="sectionPath('orden-del-dia')"
         />
       </div>
@@ -261,46 +280,88 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
       :api-base="current.apiBase.value"
     />
 
+    <!-- One row from sm, wrapping before the search shrinks; on a phone the
+         search with «Filtros» beside it, and the switch used most. -->
     <div
       v-if="total > 0"
-      class="flex flex-col gap-2 sm:flex-row sm:items-center"
+      class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
       role="search"
     >
-      <UInput
-        v-model="search"
-        icon="i-lucide-search"
-        :placeholder="t('documents.searchPlaceholder')"
-        :aria-label="t('documents.searchLabel')"
-        class="sm:max-w-sm sm:flex-1"
-      />
-      <USelect
-        v-if="showStatusFilter"
-        v-model="status"
-        :items="statusItems"
-        :aria-label="t('documents.statusFilter')"
-        class="sm:w-56"
-      />
-      <USelect
-        v-model="kind"
-        :items="kindItems"
-        :aria-label="t('documents.kindFilter')"
-        class="sm:w-56"
-      />
-      <USwitch
-        v-if="mineCount > 0"
-        v-model="onlyMine"
-        size="sm"
-        :label="
-          t('documents.onlyMine', { member: me.member.value?.acronym ?? '' })
-        "
-      />
+      <div class="flex items-center gap-2 sm:contents">
+        <UInput
+          v-model="search"
+          icon="i-lucide-search"
+          :placeholder="t('documents.searchPlaceholder')"
+          :aria-label="t('documents.searchLabel')"
+          class="min-w-0 flex-1 sm:max-w-sm sm:min-w-64"
+          :ui="{ base: 'max-sm:h-10' }"
+        />
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-list-filter"
+          :trailing-icon="
+            filtersOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+          "
+          class="h-10 shrink-0 sm:hidden"
+          :aria-expanded="filtersOpen"
+          :aria-controls="filtersId"
+          @click="filtersOpen = !filtersOpen"
+        >
+          {{
+            foldedActive > 0
+              ? t("documents.filtersCount", { count: foldedActive })
+              : t("documents.filters")
+          }}
+        </UButton>
+      </div>
+      <div
+        :id="filtersId"
+        class="flex-col gap-2 sm:contents"
+        :class="filtersOpen ? 'flex' : 'hidden'"
+      >
+        <USelect
+          v-if="showStatusFilter"
+          v-model="status"
+          :items="statusItems"
+          :aria-label="t('documents.statusFilter')"
+          class="sm:w-56"
+        />
+        <USelect
+          v-model="kind"
+          :items="kindItems"
+          :aria-label="t('documents.kindFilter')"
+          class="sm:w-56"
+        />
+        <USwitch
+          v-if="mineCount > 0"
+          v-model="onlyMine"
+          size="sm"
+          :ui="{ root: 'max-sm:min-h-11 items-center' }"
+          :label="
+            t('documents.onlyMine', { member: me.member.value?.acronym ?? '' })
+          "
+        />
+      </div>
+      <!-- Names the dot the rows show for what is left to read. -->
       <USwitch
         v-if="leftCount > 0 || onlyLeft"
         v-model="onlyLeft"
         size="sm"
+        :ui="{ root: 'max-sm:min-h-11 items-center' }"
         :label="t('readMarks.onlyLeft', { count: leftCount })"
         data-testid="documents-only-left"
-      />
+      >
+        <template #label="{ label }">
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              class="bg-primary size-2 shrink-0 rounded-full"
+              aria-hidden="true"
+            />
+            {{ label }}
+          </span>
+        </template>
+      </USwitch>
       <UButton
         v-if="filtering"
         color="neutral"

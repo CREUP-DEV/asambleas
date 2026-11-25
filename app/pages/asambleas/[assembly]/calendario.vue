@@ -282,7 +282,12 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
 
 <template>
   <div v-if="assembly" class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-3">
+    <!-- The content is capped as in /admin/calendario, so each date stays
+         near its milestone on a wide screen; the save bar is not, since it
+         spans the panel -->
+    <div
+      class="mx-auto flex w-full max-w-5xl flex-wrap items-start justify-between gap-3"
+    >
       <div class="min-w-0 space-y-1">
         <h2
           ref="heading"
@@ -307,7 +312,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
 
     <!-- Read-only view -->
     <template v-if="!assembly.can.manage">
-      <UCard>
+      <UCard class="mx-auto w-full max-w-5xl">
         <CalendarMilestoneTimeline
           :milestones="assembly.milestones"
           :start-date="assembly.startDate"
@@ -316,134 +321,146 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
     </template>
 
     <form v-else class="space-y-6" novalidate @submit.prevent="save">
-      <UAlert
-        v-if="remoteChanged"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-refresh-ccw"
-        :title="t('calendar.remoteChanged')"
-        :description="t('calendar.remoteChangedDescription')"
-        :actions="[
-          {
-            label: t('calendar.loadRemote'),
-            color: 'info',
-            variant: 'outline',
-            onClick: discard,
-          },
-        ]"
-        role="status"
-      />
+      <div class="mx-auto w-full max-w-5xl space-y-6">
+        <UAlert
+          v-if="remoteChanged"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-refresh-ccw"
+          :title="t('calendar.remoteChanged')"
+          :description="t('calendar.remoteChangedDescription')"
+          :actions="[
+            {
+              label: t('calendar.loadRemote'),
+              color: 'info',
+              variant: 'outline',
+              onClick: discard,
+            },
+          ]"
+          role="status"
+        />
 
-      <CalendarWarningList :warnings="warnings" />
-      <p
-        v-if="warnings.length === 0"
-        class="text-success flex items-center gap-1.5 text-sm"
-      >
-        <UIcon name="i-lucide-circle-check" class="size-4" aria-hidden="true" />
-        {{ t("calendar.noWarnings") }}
-      </p>
+        <CalendarWarningList :warnings="warnings" />
+        <p
+          v-if="warnings.length === 0"
+          class="text-success flex items-center gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-circle-check"
+            class="size-4"
+            aria-hidden="true"
+          />
+          {{ t("calendar.noWarnings") }}
+        </p>
 
-      <UCard :ui="{ body: 'p-0 sm:p-0' }">
-        <template #header>
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h3 class="text-highlighted font-semibold">
-              {{ t("calendar.milestonesTitle") }}
-            </h3>
-            <span class="text-muted flex items-center gap-1.5 text-xs">
-              <UIcon name="i-lucide-globe" class="size-4" aria-hidden="true" />
-              {{ t("calendar.timeZoneHint") }}
-            </span>
-          </div>
-        </template>
-
-        <ul class="divide-default divide-y">
-          <li
-            v-for="key in orderedKeys"
-            :key="key"
-            class="grid gap-3 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"
-            :class="{ 'bg-warning/5': warnedKeys.has(key) }"
-          >
-            <div class="min-w-0 space-y-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <label
-                  :id="fieldId(key, 'label')"
-                  :for="fieldId(key, 'at')"
-                  class="text-highlighted font-medium"
-                >
-                  {{ t(`calendar.milestones.${key}`) }}
-                </label>
-                <UBadge
-                  v-if="warnedKeys.has(key)"
-                  color="warning"
-                  variant="soft"
-                  size="md"
-                  icon="i-lucide-triangle-alert"
-                  :label="t('calendar.hasWarning')"
+        <UCard :ui="{ body: 'p-0 sm:p-0' }">
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-highlighted font-semibold">
+                {{ t("calendar.milestonesTitle") }}
+              </h3>
+              <span class="text-muted flex items-center gap-1.5 text-xs">
+                <UIcon
+                  name="i-lucide-globe"
+                  class="size-4"
+                  aria-hidden="true"
                 />
-                <UBadge
-                  v-if="changedKeys.includes(key)"
-                  color="info"
-                  variant="soft"
-                  size="md"
-                  :label="t('calendar.changed')"
-                />
-              </div>
-              <p class="text-muted text-sm">
-                {{ t(`calendar.explanations.${key}`) }}
-              </p>
-              <p class="text-dimmed text-xs">{{ defaultHint(key) }}</p>
+                {{ t("calendar.timeZoneHint") }}
+              </span>
             </div>
+          </template>
 
-            <div class="space-y-2">
-              <div class="flex items-center gap-2">
-                <CalendarDateTimeInput
-                  :id="fieldId(key, 'at')"
-                  v-model="form.milestones[key].at"
-                  :aria-labelledby="fieldId(key, 'label')"
-                  :invalid="warnedKeys.has(key)"
-                  :disabled="saving"
-                  class="min-w-0 flex-1"
-                />
-                <UTooltip :text="t('calendar.clear')">
-                  <UButton
-                    color="neutral"
-                    variant="ghost"
-                    icon="i-lucide-eraser"
-                    :aria-label="
-                      t('calendar.clearMilestone', {
-                        milestone: t(`calendar.milestones.${key}`),
-                      })
-                    "
-                    :disabled="saving || !form.milestones[key].at"
-                    @click="clearMilestone(key)"
+          <ul class="divide-default divide-y">
+            <li
+              v-for="key in orderedKeys"
+              :key="key"
+              class="grid gap-3 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"
+              :class="{ 'bg-warning/5': warnedKeys.has(key) }"
+            >
+              <div class="min-w-0 space-y-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <label
+                    :id="fieldId(key, 'label')"
+                    :for="fieldId(key, 'at')"
+                    class="text-highlighted font-medium"
+                  >
+                    {{ t(`calendar.milestones.${key}`) }}
+                  </label>
+                  <UBadge
+                    v-if="warnedKeys.has(key)"
+                    color="warning"
+                    variant="soft"
+                    size="md"
+                    icon="i-lucide-triangle-alert"
+                    :label="t('calendar.hasWarning')"
                   />
-                </UTooltip>
+                  <UBadge
+                    v-if="changedKeys.includes(key)"
+                    color="info"
+                    variant="soft"
+                    size="md"
+                    :label="t('calendar.changed')"
+                  />
+                </div>
+                <p class="text-muted text-sm">
+                  {{ t(`calendar.explanations.${key}`) }}
+                </p>
+                <p class="text-dimmed text-xs">{{ defaultHint(key) }}</p>
               </div>
-              <p
-                v-if="form.milestones[key].at"
-                class="text-muted text-xs tabular-nums"
-              >
-                {{ offsetLabel(key) }}
-              </p>
-              <UInput
-                v-if="form.milestones[key].at"
-                :id="fieldId(key, 'note')"
-                v-model="form.milestones[key].note"
-                :placeholder="t('calendar.notePlaceholder')"
-                :aria-label="
-                  t('calendar.noteLabel', {
-                    milestone: t(`calendar.milestones.${key}`),
-                  })
-                "
-                :maxlength="MILESTONE_NOTE_MAX_LENGTH"
-                :disabled="saving"
-                size="sm"
-                class="w-full"
-              />
-            </div>
-          </li>
-        </ul>
-      </UCard>
+
+              <div class="space-y-2">
+                <div class="flex items-center gap-2">
+                  <CalendarDateTimeInput
+                    :id="fieldId(key, 'at')"
+                    v-model="form.milestones[key].at"
+                    :aria-labelledby="fieldId(key, 'label')"
+                    :invalid="warnedKeys.has(key)"
+                    :disabled="saving"
+                    class="min-w-0 flex-1"
+                  />
+                  <UTooltip :text="t('calendar.clear')">
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-eraser"
+                      :aria-label="
+                        t('calendar.clearMilestone', {
+                          milestone: t(`calendar.milestones.${key}`),
+                        })
+                      "
+                      :disabled="saving || !form.milestones[key].at"
+                      @click="clearMilestone(key)"
+                    />
+                  </UTooltip>
+                </div>
+                <p
+                  v-if="form.milestones[key].at"
+                  class="text-muted text-xs tabular-nums"
+                >
+                  {{ offsetLabel(key) }}
+                </p>
+                <!-- Grows with the note, so a long one reads whole -->
+                <UTextarea
+                  v-if="form.milestones[key].at"
+                  :id="fieldId(key, 'note')"
+                  v-model="form.milestones[key].note"
+                  :placeholder="t('calendar.notePlaceholder')"
+                  :aria-label="
+                    t('calendar.noteLabel', {
+                      milestone: t(`calendar.milestones.${key}`),
+                    })
+                  "
+                  :maxlength="MILESTONE_NOTE_MAX_LENGTH"
+                  :disabled="saving"
+                  :rows="1"
+                  autoresize
+                  class="w-full"
+                />
+              </div>
+            </li>
+          </ul>
+        </UCard>
+      </div>
 
       <!--
         Only while there is something to save. It sticks to the panel's
@@ -505,7 +522,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
       </template>
     </UModal>
 
-    <p class="text-muted text-sm">
+    <p class="text-muted mx-auto w-full max-w-5xl text-sm">
       <ULink
         :to="sectionPath('convocatoria')"
         class="inline-flex items-center gap-1"

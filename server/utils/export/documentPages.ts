@@ -18,7 +18,7 @@ import {
   cleanDocumentPageKey,
   type CleanDocumentSource,
 } from "./package/documentPdf";
-import { pagesJobStartAfter } from "./package/prebuild";
+import { pagesJobStartAfter, pagesRetryAfter } from "./package/prebuild";
 import { buildPageMap, type RawPages } from "./pageMap";
 import type { ExportAssembly } from "./pdfBuilder";
 import { renderPdfBatch } from "./pdfRender";
@@ -123,11 +123,13 @@ async function pageSource(
 }
 
 /**
- * Jobs this process queued lately, by key: a reader polling asks once. A job
- * that ends with the map current forgets its key, so a map overwritten
- * afterwards (a package build from an older snapshot) is asked for again.
+ * Jobs this process queued lately, by key: when (ms) and their `startAfter`
+ * (seconds, undefined when they run at once or it is not known). A reader
+ * polling asks once. A job that ends with the map current forgets its key,
+ * so a map overwritten afterwards (a package build from an older snapshot)
+ * is asked for again.
  */
-const queued = new Map<string, number>();
+const queued = new Map<string, { at: number; startAfter?: number }>();
 /** How long a queued (or failed) job keeps the same request from queueing. */
 const REQUEUE_AFTER_MS = 10 * 60 * 1000;
 
@@ -135,39 +137,52 @@ function queuedKey(target: { versionId: string; key: string }): string {
   return `${target.versionId}:${target.key}`;
 }
 
+/**
+ * Queues the job for a missing map unless this process did lately, and
+ * answers the seconds a reader may wait before asking again (its
+ * `retryAfter`, pagesRetryAfter).
+ */
 async function queuePages(
   documentId: string,
   version: Version,
   key: string,
   assemblyStatus: string,
-): Promise<void> {
+): Promise<number> {
   const now = Date.now();
-  for (const [entry, at] of queued) {
+  for (const [entry, { at }] of queued) {
     if (now - at > REQUEUE_AFTER_MS) queued.delete(entry);
   }
-  if (queued.has(key)) return;
-  queued.set(key, now);
+  const known = queued.get(key);
+  if (known) return pagesRetryAfter(known.at, known.startAfter, now);
+  // Where the package is built ahead, after its prebuild (prebuild.ts).
+  const startAfter = pagesJobStartAfter(assemblyStatus);
+  queued.set(key, { at: now, startAfter });
   try {
     const boss = await getExportQueue();
     const data: DocumentPagesJobData = { documentId, version };
-    // Where the package is built ahead, after its prebuild (prebuild.ts).
-    const startAfter = pagesJobStartAfter(assemblyStatus);
-    await boss.send(DOCUMENT_PAGES_QUEUE_NAME, data, {
+    const id = await boss.send(DOCUMENT_PAGES_QUEUE_NAME, data, {
       singletonKey: key,
       ...(startAfter === undefined ? {} : { startAfter }),
     });
+    // Null when a job of that key was already queued (another process, or
+    // this one before a restart): when it runs is unknown, so the floor.
+    if (id === null) queued.set(key, { at: now });
   } catch (error) {
+    queued.set(key, { at: now });
     logWarn("document-pages.queue", {
       documentId,
       reason: error instanceof Error ? error.message : String(error),
     });
   }
+  const entry = queued.get(key);
+  return pagesRetryAfter(now, entry?.startAfter, now);
 }
 
 /**
  * The pages of a document's texts for a reader who sees it (the route
  * checked it): a stored map only while its key matches the text as the PDF
- * would show it now. A missing one is queued and reads as `pending`.
+ * would show it now. A missing one is queued and reads as `pending`, with
+ * the seconds until the soonest of its jobs may run as `retryAfter`.
  */
 export async function loadDocumentPages(
   assembly: AssemblyRow,
@@ -218,12 +233,13 @@ export async function loadDocumentPages(
       result[target.version] = map;
     } else {
       result.pending = true;
-      await queuePages(
+      const retryAfter = await queuePages(
         document.id,
         target.version,
         queuedKey(target),
         assembly.status,
       );
+      result.retryAfter = Math.min(result.retryAfter ?? retryAfter, retryAfter);
     }
   }
   return result;

@@ -1,6 +1,6 @@
 <script lang="ts">
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { scrollParentOf } from "~/utils/scrollAnchor";
 import { createPdfCache, type LoadedPdf, type PdfLease } from "./-pdfCache";
 
@@ -50,9 +50,10 @@ const pdfDocuments = createPdfCache<PDFDocumentProxy>({
  * `[data-page]` block (from 1) sized before it is drawn, so positions line
  * up before the pages render. Client only (`.client`).
  *
- * - A page is drawn once it comes near the view and its pixels are freed
- *   once it is far from it: a drawn page weighs some 18 MB, so a long PDF
- *   kept whole would hold hundreds of megabytes.
+ * - A page is drawn once it comes near the view and its pixels, with what
+ *   pdf.js keeps to draw it (`page.cleanup`), are freed once it is far from
+ *   it or the view goes: a drawn page weighs some 18 MB, so a long PDF kept
+ *   whole would hold hundreds of megabytes.
  * - With `textLayer` (the default) every page also gets pdf.js's text layer,
  *   transparent over the drawing, so its text can be selected, copied,
  *   found with the browser's search and read by a screen reader, and its
@@ -126,6 +127,13 @@ function markShown(number: number, value: boolean): void {
 }
 /** The render under way of each page. */
 const renders = new Map<number, RenderTask>();
+/**
+ * The pages this view has drawn, to free what pdf.js keeps of each
+ * (`page.cleanup`) once it is freed: the tab keeps the PDF itself
+ * (pdfDocuments), and without it every page once drawn would hold its
+ * operator list and its decoded images for as long as the PDF stays.
+ */
+const pdfPages = new Map<number, PDFPageProxy>();
 /** Bumped whenever a page's drawing is started or freed. */
 const pageTokens = new Map<number, number>();
 let loadToken = 0;
@@ -199,6 +207,7 @@ async function draw(number: number): Promise<void> {
     const page = await document.getPage(number);
     const canvas = pageElement(number)?.querySelector("canvas");
     if (!canvas || token !== pageTokens.get(number)) return;
+    pdfPages.set(number, page);
     const base = page.getViewport({ scale: 1 });
     const ratio = window.devicePixelRatio || 1;
     const viewport = page.getViewport({
@@ -225,11 +234,20 @@ async function draw(number: number): Promise<void> {
   }
 }
 
-/** Frees a page's pixels: it is drawn again when it comes back. */
+/**
+ * Frees a page's pixels and what pdf.js keeps to draw it (its operator list
+ * and images): it is drawn again when it comes back. A render still
+ * settling from `cancel` keeps pdf.js from cleaning at once; it cleans a
+ * few seconds after it ends, unless the page is drawn again first. Another
+ * view of the same PDF shares the page: its drawing stays, and only its
+ * next redraw reads the page again.
+ */
 function free(number: number): void {
   bumpToken(number);
   drawn.delete(number);
   renders.get(number)?.cancel();
+  pdfPages.get(number)?.cleanup();
+  pdfPages.delete(number);
   const canvas = pageElement(number)?.querySelector("canvas");
   if (canvas && canvas.width > 0) {
     canvas.width = 0;
@@ -242,6 +260,9 @@ function freeAll(): void {
   for (const number of [...drawn]) free(number);
   for (const task of renders.values()) task.cancel();
   renders.clear();
+  // Pages drawn at an old width and not drawn again since.
+  for (const page of pdfPages.values()) page.cleanup();
+  pdfPages.clear();
 }
 
 function observePages(): void {

@@ -97,7 +97,11 @@ const items = computed(() =>
           :items="items"
           value-key="value"
           :placeholder="t('seating.source.placeholder')"
-          :search-input="labelledSearch(t('seating.source.search'))"
+          :search-input="
+            items.length > 8
+              ? labelledSearch(t('seating.source.search'))
+              : false
+          "
           :aria-label="
             selectMenuLabel(
               t('seating.source.label'),

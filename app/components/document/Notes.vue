@@ -15,6 +15,7 @@ import {
   placeNotes,
 } from "~~/shared/utils/documentNotes";
 import { useSheetObservations } from "~/composables/document/useSheetObservations";
+import { type NoteCardPlace, placeNoteCard } from "./-noteCard";
 
 /**
  * The account's private notes on a published document: the button that
@@ -26,7 +27,9 @@ import { useSheetObservations } from "~/composables/document/useSheetObservation
  * - On the text (`root`, the rendered published text) a note shows as a
  *   soft highlight with a dotted line, drawn with the CSS Custom Highlight
  *   API: the text's own HTML is never touched. Pointing at one, or pressing
- *   it, shows the note with the ways to change or delete it. A browser
+ *   it, shows the note with the ways to change or delete it, in a card that
+ *   stays within the window (`-noteCard.ts`) and closes when the text
+ *   scrolls (not its own) or on Escape. A browser
  *   without that API shows no marks; the notes stay in the panel.
  * - The panel lists them in the order of the text, each with the text it
  *   is on and the way to it (`locate`). One whose text is gone (the document
@@ -360,11 +363,10 @@ onBeforeUnmount(() => {
 
 interface Card {
   note: DocumentNoteDto;
-  top: number;
-  left: number;
+  place: NoteCardPlace;
 }
 const card = ref<Card | null>(null);
-const CARD_WIDTH = 320;
+const cardElement = useTemplateRef<HTMLElement>("cardElement");
 
 function markAt(x: number, y: number): { mark: Mark; box: DOMRect } | null {
   for (const mark of marks) {
@@ -398,13 +400,14 @@ function showAt(event: MouseEvent): boolean {
   keepCard();
   if (card.value?.note.id !== hit.mark.note.id) {
     confirming.value = null;
+    // Within the window at any width, above the passage when it does not
+    // fit under it (M-052).
     card.value = {
       note: hit.mark.note,
-      top: hit.box.bottom + 6,
-      left: Math.min(
-        Math.max(hit.box.left, 8),
-        window.innerWidth - CARD_WIDTH - 8,
-      ),
+      place: placeNoteCard(hit.box, {
+        width: document.documentElement.clientWidth,
+        height: window.innerHeight,
+      }),
     };
   }
   return true;
@@ -426,14 +429,21 @@ useEventListener(rootElement, "mouseleave", () => card.value && leaveCard(), {
 useEventListener(rootElement, "click", (event: MouseEvent) => {
   if (marks.length > 0) showAt(event);
 });
+// Moving the text closes it, but not scrolling a long note inside it (E-051).
 useEventListener(
   window,
   "scroll",
-  () => {
+  (event: Event) => {
+    if (cardElement.value?.contains(event.target as Node)) return;
     card.value = null;
   },
   { capture: true, passive: true },
 );
+useEventListener(window, "keydown", (event: KeyboardEvent) => {
+  if (event.key !== "Escape" || !card.value) return;
+  card.value = null;
+  confirming.value = null;
+});
 
 defineExpose({ annotate, available });
 </script>
@@ -661,11 +671,17 @@ defineExpose({ annotate, available });
     <!-- The note under the pointer, over the text -->
     <div
       v-if="card"
+      ref="cardElement"
       class="border-default bg-default fixed z-40 flex flex-col gap-2 rounded-lg border p-3 shadow-lg"
       :style="{
-        top: `${card.top}px`,
-        left: `${card.left}px`,
-        width: `${CARD_WIDTH}px`,
+        top: card.place.top === undefined ? undefined : `${card.place.top}px`,
+        bottom:
+          card.place.bottom === undefined
+            ? undefined
+            : `${card.place.bottom}px`,
+        left: `${card.place.left}px`,
+        width: `${card.place.width}px`,
+        maxHeight: `${card.place.maxHeight}px`,
       }"
       role="note"
       data-testid="document-note-card"
@@ -673,13 +689,13 @@ defineExpose({ annotate, available });
       @mouseleave="leaveCard"
     >
       <p
-        class="text-default max-h-48 overflow-y-auto text-sm break-words whitespace-pre-line"
+        class="text-default max-h-48 min-h-0 overflow-y-auto overscroll-contain text-sm break-words whitespace-pre-line"
       >
         {{ card.note.body }}
       </p>
-      <div class="flex flex-wrap items-center gap-1">
+      <div class="flex shrink-0 flex-wrap items-center gap-1">
         <UButton
-          size="xs"
+          size="sm"
           color="neutral"
           variant="ghost"
           icon="i-lucide-pencil"
@@ -687,7 +703,7 @@ defineExpose({ annotate, available });
           @click="editNote(card.note)"
         />
         <UButton
-          size="xs"
+          size="sm"
           :color="confirming === card.note.id ? 'error' : 'neutral'"
           :variant="confirming === card.note.id ? 'soft' : 'ghost'"
           icon="i-lucide-trash-2"

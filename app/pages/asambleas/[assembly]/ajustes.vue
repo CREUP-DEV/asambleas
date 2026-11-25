@@ -301,7 +301,7 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div v-if="assembly" class="space-y-6">
+  <div v-if="assembly" class="mx-auto w-full max-w-5xl space-y-6">
     <CommonEmptyState
       v-if="!assembly.can.manage"
       icon="i-lucide-shield-x"

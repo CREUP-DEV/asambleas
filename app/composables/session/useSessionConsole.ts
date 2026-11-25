@@ -1821,9 +1821,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       const result = await track("bloc-vote", () =>
         api.send<BlocVoteDto>(documentApi("/amendments/bloc-vote"), { body }),
       );
-      // The read right after replaces any read on its way (cancel).
-      upsertAmendments(result.amendments, { rereads: true });
-      void refreshAmendments();
+      // What the answer leaves out (the sources replaced, the transactionals
+      // closed) comes with the vote's own event, or now without the stream.
+      upsertAmendments(result.amendments);
+      refreshUnlessLive(refreshAmendments);
       const approved = result.decision.vote?.result === "approved";
       toast.add({
         id: `session-bloc-vote-${result.decision.id}`,

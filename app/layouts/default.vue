@@ -67,7 +67,14 @@ useHead({
     >
       <!-- The banner landmark holds the brand, the navigation, "Ayuda" and
            the user menu (activity, preferences, sign out). On phones the
-           drawer is a dialog instead. -->
+           drawer is a dialog instead. Unfolded it never goes below 15rem,
+           where «En directo» with its mark, the administration labels and
+           the account still fit at 1024, nor past 18rem on a wide screen.
+           Its size, dragged or stored, is a share of the group, and the
+           share's limits are wide enough (8% to 30%) that the 15rem-18rem
+           clamp is the only bound from 1024 to about 2880px: a drag starts
+           from the width on screen, so the handle follows the pointer over
+           the whole range. -->
       <UDashboardSidebar
         id="main"
         v-model:open="sidebarOpen"
@@ -75,9 +82,9 @@ useHead({
         collapsible
         resizable
         :default-size="18"
-        :min-size="14"
-        :max-size="26"
-        class="print:hidden"
+        :min-size="8"
+        :max-size="30"
+        class="lg:data-[collapsed=false]:max-w-72 lg:data-[collapsed=false]:min-w-60 print:hidden"
         :ui="{ footer: 'lg:border-t lg:border-default' }"
         :menu="{
           title: t('shell.sidebar.title'),

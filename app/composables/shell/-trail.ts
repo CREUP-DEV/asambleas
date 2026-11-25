@@ -2,6 +2,7 @@ import {
   ASSEMBLY_SECTION_SEGMENTS,
   type AssemblySection,
 } from "../assembly/-sections";
+import { numberedAgendaTitle } from "~/utils/agendaTree";
 
 /**
  * The breadcrumb trail of a page, worked out from its path alone. Labels
@@ -110,6 +111,108 @@ export function breadcrumbTrail(path: string): Trail {
 
   steps.push({ kind: "documentView", path: pathTo(5), view });
   return done(5);
+}
+
+/**
+ * What the pages have registered for the trail so far (useBreadcrumbs'
+ * state). Each one is registered on the client only, once its page is
+ * mounted.
+ */
+export interface TrailRegistry {
+  /** The names of documents, by `document:<param>`. */
+  labels: Readonly<Record<string, string>>;
+  /** The items above an agenda item and itself, by its `[item]` param. */
+  agendaChains: Readonly<Record<string, readonly unknown[]>>;
+  /**
+   * The items a document hangs from, by `document:<param>`: empty once the
+   * agenda has loaded for a viewer who does not get its item.
+   */
+  documentChains: Readonly<Record<string, readonly unknown[]>>;
+}
+
+/**
+ * Whether a step's name or its place in the trail is not registered yet, so
+ * it shows as a skeleton instead of a generic label that then changes
+ * («Documento», «Punto»): the document's own step until its name is in, an
+ * agenda item's until its chain is, and the «Documentos» step of a document's
+ * trail until it is known whether it becomes «Orden del día › …». Registered
+ * empty is not pending: it keeps the route's trail.
+ */
+export function pendingStep(
+  step: TrailStep,
+  steps: readonly TrailStep[],
+  registry: TrailRegistry,
+): boolean {
+  switch (step.kind) {
+    case "document":
+      return !Object.hasOwn(registry.labels, `document:${step.param}`);
+    case "agendaItem":
+      return !Object.hasOwn(registry.agendaChains, step.param);
+    case "section": {
+      if (step.section !== "documents") return false;
+      const document = steps.find((other) => other.kind === "document");
+      return (
+        document !== undefined &&
+        !Object.hasOwn(registry.documentChains, `document:${document.param}`)
+      );
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * The key a document page settles when its document never loaded (404, 403,
+ * a network error: the page shows its error inline), so its levels stop
+ * being skeletons: `document:<param>`, to register with an empty label (the
+ * row reads the generic «Documento») and an empty chain (the route's
+ * «Documentos» stays). Null while the document may still come, once both are
+ * registered, or without a route param.
+ */
+export function unloadedDocumentKey(
+  param: unknown,
+  failed: boolean,
+  registry: Pick<TrailRegistry, "labels" | "documentChains">,
+): string | null {
+  if (!failed || typeof param !== "string" || !param) return null;
+  const key = `document:${param}`;
+  return Object.hasOwn(registry.labels, key) &&
+    Object.hasOwn(registry.documentChains, key)
+    ? null
+    : key;
+}
+
+/** An agenda node as a document's trail reads it (AgendaTreeNode). */
+export interface DocumentChainNode {
+  number: string | null;
+  item: {
+    slug: string;
+    title: string;
+    auto: boolean;
+    generatedForDocumentId: string | null;
+  };
+}
+
+/**
+ * The steps of the items a document hangs from, from the root one down to
+ * its own: "3. Resoluciones". Its own automatic sub-item (the one created
+ * for it) reads as its number alone, «3.12», since its title repeats the
+ * document's, which is the next step.
+ */
+export function documentItemCrumbs(
+  path: readonly DocumentChainNode[],
+  documentId: string,
+  unlistedMark: string,
+): { id: string; label: string }[] {
+  return path.map((node) => ({
+    id: node.item.slug,
+    label:
+      node.item.auto &&
+      node.item.generatedForDocumentId === documentId &&
+      node.number
+        ? node.number
+        : numberedAgendaTitle(node.number, node.item.title, unlistedMark),
+  }));
 }
 
 /** Cuts a long label at a word when it can: "Resolución sobre la…". */

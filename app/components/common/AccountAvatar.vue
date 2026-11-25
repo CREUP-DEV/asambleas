@@ -12,8 +12,8 @@ import { avatarDisplayText, avatarTextClass } from "~/utils/accountAvatar";
  * In the admin lists (Usuarios, Estadísticas) it carries a green dot while
  * the account is online: it used the platform in the last
  * ONLINE_WINDOW_MINUTES (AdminUserDto.online, server/utils/live/online.ts).
- * The dot is not the only cue: screen readers hear "En línea" and the
- * pointer gets a tooltip that says what it means.
+ * The dot is not the only cue: screen readers hear what it means
+ * (admin.online.hint) and the pointer gets the same text as a tooltip.
  */
 const props = withDefaults(
   defineProps<{
@@ -48,7 +48,7 @@ const avatar = computed(() => ({
         v-bind="avatar"
         :chip="{ color: 'success', position: 'bottom-right', inset: true }"
       />
-      <span class="sr-only">{{ t("admin.online.label") }}</span>
+      <span class="sr-only">{{ hint }}</span>
     </span>
   </UTooltip>
   <UAvatar v-else v-bind="avatar" class="shrink-0" />

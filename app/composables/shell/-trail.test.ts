@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumbTrail, stripLocalePrefix, truncateLabel } from "./-trail";
+import {
+  breadcrumbTrail,
+  documentItemCrumbs,
+  pendingStep,
+  stripLocalePrefix,
+  truncateLabel,
+  unloadedDocumentKey,
+  type TrailRegistry,
+} from "./-trail";
 
 const kinds = (path: string) =>
   breadcrumbTrail(path).steps.map((step) => step.kind);
@@ -166,5 +174,183 @@ describe("truncateLabel", () => {
 
   it("cuts a single long word", () => {
     expect(truncateLabel("a".repeat(60), 10)).toBe(`${"a".repeat(9)}…`);
+  });
+});
+
+describe("pendingStep", () => {
+  const empty: TrailRegistry = {
+    labels: {},
+    agendaChains: {},
+    documentChains: {},
+  };
+  const pending = (path: string, registry: TrailRegistry) => {
+    const { steps } = breadcrumbTrail(path);
+    return steps.map((step) => pendingStep(step, steps, registry));
+  };
+
+  it("leaves the levels named by the route alone", () => {
+    expect(pending("/asambleas/80-ago/documentos", empty)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(pending("/asambleas/80-ago/sesion", empty)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("keeps a document and its section pending until its page registers them", () => {
+    const path = "/asambleas/80-ago/documentos/res-4/revisar";
+    expect(pending(path, empty)).toEqual([false, false, true, true, false]);
+    expect(
+      pending(path, {
+        ...empty,
+        labels: { "document:res-4": "Resolución 4" },
+        documentChains: { "document:res-4": [{ id: "x", label: "3.12" }] },
+      }),
+    ).toEqual([false, false, false, false, false]);
+  });
+
+  it("treats an empty chain as registered: the route's trail stays", () => {
+    const path = "/asambleas/80-ago/documentos/res-4";
+    expect(
+      pending(path, {
+        ...empty,
+        labels: { "document:res-4": "Resolución 4" },
+        documentChains: { "document:res-4": [] },
+      }),
+    ).toEqual([false, false, false, false]);
+  });
+
+  it("keeps an agenda item pending until its chain is registered", () => {
+    const path = "/asambleas/80-ago/orden-del-dia/punto-3";
+    expect(pending(path, empty)).toEqual([false, false, false, true]);
+    expect(
+      pending(path, {
+        ...empty,
+        agendaChains: { "punto-3": [{ id: "punto-3", label: "3. Punto" }] },
+      }),
+    ).toEqual([false, false, false, false]);
+  });
+
+  it("never takes a key of Object.prototype as registered", () => {
+    const path = "/asambleas/80-ago/orden-del-dia/constructor";
+    expect(pending(path, empty)).toEqual([false, false, false, true]);
+  });
+});
+
+describe("unloadedDocumentKey", () => {
+  const empty = { labels: {}, documentChains: {} };
+
+  it("settles the route's document once its load has failed", () => {
+    expect(unloadedDocumentKey("res-4", true, empty)).toBe("document:res-4");
+  });
+
+  it("waits while the document may still come", () => {
+    expect(unloadedDocumentKey("res-4", false, empty)).toBeNull();
+  });
+
+  it("needs a route param", () => {
+    expect(unloadedDocumentKey("", true, empty)).toBeNull();
+    expect(unloadedDocumentKey(undefined, true, empty)).toBeNull();
+    expect(unloadedDocumentKey(["res-4"], true, empty)).toBeNull();
+  });
+
+  it("settles only what is not registered yet", () => {
+    expect(
+      unloadedDocumentKey("res-4", true, {
+        labels: { "document:res-4": "" },
+        documentChains: {},
+      }),
+    ).toBe("document:res-4");
+    expect(
+      unloadedDocumentKey("res-4", true, {
+        labels: { "document:res-4": "" },
+        documentChains: { "document:res-4": [] },
+      }),
+    ).toBeNull();
+  });
+
+  it("leaves both levels settled for pendingStep: «Documentos › Documento»", () => {
+    const path = "/asambleas/80-ago/documentos/res-4/editar";
+    const key = unloadedDocumentKey("res-4", true, empty)!;
+    const registry: TrailRegistry = {
+      labels: { [key]: "" },
+      agendaChains: {},
+      documentChains: { [key]: [] },
+    };
+    const { steps } = breadcrumbTrail(path);
+    expect(steps.map((step) => pendingStep(step, steps, registry))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+});
+
+describe("documentItemCrumbs", () => {
+  const node = (
+    number: string | null,
+    slug: string,
+    title: string,
+    generatedForDocumentId: string | null = null,
+  ) => ({
+    number,
+    item: {
+      slug,
+      title,
+      auto: generatedForDocumentId !== null,
+      generatedForDocumentId,
+    },
+  });
+
+  it("numbers every item from the root down", () => {
+    expect(
+      documentItemCrumbs(
+        [node("3", "resoluciones", "Resoluciones"), node("3.2", "res", "Otra")],
+        "doc-1",
+        "(sin publicar)",
+      ),
+    ).toEqual([
+      { id: "resoluciones", label: "3. Resoluciones" },
+      { id: "res", label: "3.2. Otra" },
+    ]);
+  });
+
+  it("names the document's own automatic sub-item by its number alone", () => {
+    expect(
+      documentItemCrumbs(
+        [
+          node("3", "informes", "Informes"),
+          node("3.12", "informe-x", "Informe X", "doc-1"),
+        ],
+        "doc-1",
+        "(sin publicar)",
+      ),
+    ).toEqual([
+      { id: "informes", label: "3. Informes" },
+      { id: "informe-x", label: "3.12" },
+    ]);
+  });
+
+  it("keeps the title of another document's sub-item or one with no number", () => {
+    expect(
+      documentItemCrumbs(
+        [node("3.1", "otro", "Otro", "doc-2")],
+        "doc-1",
+        "(sin publicar)",
+      ),
+    ).toEqual([{ id: "otro", label: "3.1. Otro" }]);
+    expect(
+      documentItemCrumbs(
+        [node(null, "nuevo", "Nuevo", "doc-1")],
+        "doc-1",
+        "(sin publicar)",
+      ),
+    ).toEqual([{ id: "nuevo", label: "Nuevo (sin publicar)" }]);
   });
 });

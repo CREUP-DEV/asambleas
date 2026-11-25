@@ -6,7 +6,11 @@
  *
  * Large screens show the whole trail (ShellBreadcrumbTrail: its start and
  * its end always show, the middle gives way); the last crumb is the page
- * on show and is not a link. Below `lg` it is a single link to the level above.
+ * on show and is not a link. Below `lg` it is a single link to the level
+ * above, as tall as a thumb needs (the row's 40px, 44px in a navbar) while
+ * it looks as small as before. A level whose name its page has not
+ * registered yet (`pending`) shows as a skeleton, its provisional label
+ * only for screen readers (the link's own name).
  * A page with no level above it gets no row (user's decision of
  * 2026-11-20): its navbar already names it.
  *
@@ -29,6 +33,7 @@ const props = withDefaults(
 
 const { t } = useI18n();
 const { crumbs, parent } = useBreadcrumbs();
+const parentPending = computed(() => parent.value?.pending === true);
 </script>
 
 <template>
@@ -45,7 +50,7 @@ const { crumbs, parent } = useBreadcrumbs();
   >
     <ULink
       :to="parent.to"
-      class="text-muted hover:text-default flex min-w-0 items-center gap-1 text-sm font-medium transition-colors"
+      class="text-muted hover:text-default -my-2 flex min-h-11 min-w-0 items-center gap-1 text-sm font-medium transition-colors"
       :aria-label="t('shell.breadcrumb.backTo', { label: parent.label })"
     >
       <UIcon
@@ -53,7 +58,8 @@ const { crumbs, parent } = useBreadcrumbs();
         class="size-5 shrink-0"
         aria-hidden="true"
       />
-      <span class="truncate">{{ parent.label }}</span>
+      <USkeleton v-if="parentPending" aria-hidden="true" class="h-4 w-20" />
+      <span v-else class="truncate">{{ parent.label }}</span>
     </ULink>
   </nav>
   <!-- Only with a level above it: a top-level page (Asambleas, Mi
@@ -71,12 +77,12 @@ const { crumbs, parent } = useBreadcrumbs();
 
     <nav
       v-if="parent"
-      class="flex min-w-0 lg:hidden"
+      class="flex min-w-0 self-stretch lg:hidden"
       :aria-label="t('shell.breadcrumb.label')"
     >
       <ULink
         :to="parent.to"
-        class="text-muted hover:text-default -ms-1 flex min-w-0 items-center gap-1 text-sm font-medium transition-colors"
+        class="text-muted hover:text-default -ms-1 flex min-w-0 items-center gap-1 self-stretch text-sm font-medium transition-colors"
         :aria-label="t('shell.breadcrumb.backTo', { label: parent.label })"
       >
         <UIcon
@@ -84,7 +90,8 @@ const { crumbs, parent } = useBreadcrumbs();
           class="size-5 shrink-0"
           aria-hidden="true"
         />
-        <span class="truncate">{{ parent.label }}</span>
+        <USkeleton v-if="parentPending" aria-hidden="true" class="h-4 w-20" />
+        <span v-else class="truncate">{{ parent.label }}</span>
       </ULink>
     </nav>
   </div>

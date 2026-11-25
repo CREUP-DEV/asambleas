@@ -569,29 +569,28 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
         </template>
 
         <template #source-cell="{ row }">
-          <UTooltip
-            :text="
-              row.original.syncedAt
-                ? t('admin.members.syncedAt', {
-                    date: formatDay(row.original.syncedAt),
-                  })
-                : undefined
+          <UBadge
+            :label="t(`admin.members.sources.${row.original.source}`)"
+            :icon="
+              row.original.source === 'intranet'
+                ? 'i-lucide-cloud-download'
+                : 'i-lucide-pencil'
             "
-            :disabled="!row.original.syncedAt"
+            :color="
+              row.original.source === 'intranet' ? 'secondary' : 'neutral'
+            "
+            variant="outline"
+          />
+          <span
+            v-if="row.original.syncedAt"
+            class="text-muted mt-1 block text-xs whitespace-nowrap"
           >
-            <UBadge
-              :label="t(`admin.members.sources.${row.original.source}`)"
-              :icon="
-                row.original.source === 'intranet'
-                  ? 'i-lucide-cloud-download'
-                  : 'i-lucide-pencil'
-              "
-              :color="
-                row.original.source === 'intranet' ? 'secondary' : 'neutral'
-              "
-              variant="outline"
-            />
-          </UTooltip>
+            {{
+              t("admin.members.syncedAt", {
+                date: formatDay(row.original.syncedAt),
+              })
+            }}
+          </span>
         </template>
 
         <template #active-cell="{ row }">

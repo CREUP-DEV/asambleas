@@ -38,10 +38,11 @@ export interface PdfCacheOptions<D> {
   /** Reads a PDF from its url. */
   open: (url: string) => Promise<LoadedPdf<D>>;
   /**
-   * Frees a PDF for good (pdf.js `destroy`). Never pdf.js `cleanup` on one
-   * nobody shows: it clears state a quick reopen may already be drawing
-   * with, and a kept PDF weighs only its parsed file (the drawn pages are
-   * freed by the component).
+   * Frees a PDF for good (pdf.js `destroy`). Never the document's pdf.js
+   * `cleanup` on one nobody shows: it clears state a quick reopen may
+   * already be drawing with, and a kept PDF weighs only its parsed file (the
+   * component frees each page it drew, pixels and pdf.js's `page.cleanup`,
+   * before it gives the PDF back).
    */
   close: (document: D) => void;
   /** How many PDFs nobody shows stay loaded. */
