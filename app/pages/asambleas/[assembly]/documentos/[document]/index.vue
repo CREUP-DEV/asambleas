@@ -18,7 +18,10 @@ import type {
 } from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { consolidateApproved } from "~~/shared/utils/content/passages";
-import { usePendingConciliation } from "~/composables/document/pendingConciliation";
+import {
+  sameBlocks,
+  usePendingConciliation,
+} from "~/composables/document/pendingConciliation";
 import {
   screenApprovalFill,
   withFilledApprovalLine,
@@ -629,7 +632,29 @@ function blockReference(blockId: string | null | undefined): string | null {
 
 const mobilePane = ref<Pane>("text");
 const listTab = ref<ListTab>("all");
-const textMode = ref<TextMode>("original");
+/**
+ * The view the reader picked for this document, or null for its default: a
+ * document its final vote approved opens on that text, «Con lo aprobado»
+ * (user's decision of 2026-11-26), any other (rejected, not voted yet, the
+ * acta de acuerdos in force) on the original. Worked out from the document,
+ * so the server draws the same view the browser takes over. Another
+ * document starts again from its own default.
+ */
+const chosenMode = ref<TextMode | null>(null);
+const textMode = computed<TextMode>({
+  get: () =>
+    chosenMode.value ??
+    (finalText.value && !recordInForce.value ? "consolidated" : "original"),
+  set: (mode) => {
+    chosenMode.value = mode;
+  },
+});
+watch(
+  () => document.value?.id ?? null,
+  (id, before) => {
+    if (before && id !== before) chosenMode.value = null;
+  },
+);
 const includeAccepted = ref(false);
 
 const paneItems = computed(() => [
@@ -1769,6 +1794,20 @@ const pendingMarks = computed(() =>
 const approvalFill = computed(() =>
   screenApprovalFill(document.value?.finalVote, assembly.value),
 );
+/**
+ * The text in force once corrected in form after the vote (user's report of
+ * 2026-11-26): «Con lo aprobado» shows it as stored, as «Texto consolidado»
+ * does, since the amendments' marks belong to the voted text and would leave
+ * the corrections out. Null while the text in force is still the one the
+ * approved amendments give.
+ */
+const correctedFinal = computed(() =>
+  finalText.value &&
+  document.value?.consolidatedVersion?.replacesVersionId &&
+  !sameBlocks(finalText.value, consolidation.value?.blocks)
+    ? withFilledApprovalLine(finalText.value, approvalFill.value)
+    : null,
+);
 const shownAnnotated = computed(() =>
   withFilledApprovalLineAnnotated(
     consolidation.value?.annotated ?? [],
@@ -2609,7 +2648,30 @@ const filteredBlockLabel = computed(() =>
                     </ul>
                   </template>
                 </UAlert>
+                <template v-if="correctedFinal">
+                  <UAlert
+                    color="neutral"
+                    variant="subtle"
+                    icon="i-lucide-spell-check"
+                    :title="t('workspace.consolidated.corrected')"
+                    :actions="[
+                      {
+                        label: t('workspace.consolidated.seeCorrections'),
+                        color: 'neutral',
+                        variant: 'outline',
+                        to: documentPath('consolidado'),
+                      },
+                    ]"
+                  />
+                  <ContentView
+                    ref="textView"
+                    :blocks="correctedFinal"
+                    :pending="pendingMarks"
+                    :pages="textPages"
+                  />
+                </template>
                 <ContentView
+                  v-else
                   ref="textView"
                   :annotated="shownAnnotated"
                   mode="provenance"

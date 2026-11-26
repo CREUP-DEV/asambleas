@@ -3876,7 +3876,9 @@
       "conflicts": "Some approved amendments cannot be applied together",
       "conflictWith": "{label} clashes with {others} and was not applied.",
       "conflictInvalid": "{label} no longer fits the text and was not applied.",
-      "pendingWordings": "1 passage where approved amendments collide awaits the Mesa's wording: until then it reads the automatic proposal | {count} passages where approved amendments collide await the Mesa's wording: until then they read the automatic proposal"
+      "pendingWordings": "1 passage where approved amendments collide awaits the Mesa's wording: until then it reads the automatic proposal | {count} passages where approved amendments collide await the Mesa's wording: until then they read the automatic proposal",
+      "corrected": "Text with corrections of form made after the vote.",
+      "seeCorrections": "See the corrections"
     },
     "compare": {
       "original": "Original text",

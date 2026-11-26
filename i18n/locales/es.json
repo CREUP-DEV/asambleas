@@ -3876,7 +3876,9 @@
       "conflicts": "Hay enmiendas aprobadas que no se pueden aplicar juntas",
       "conflictWith": "{label} choca con {others} y no se ha aplicado.",
       "conflictInvalid": "{label} ya no encaja con el texto y no se ha aplicado.",
-      "pendingWordings": "1 pasaje donde chocan enmiendas aprobadas espera la redacción de la Mesa: hasta entonces se lee la propuesta automática | {count} pasajes donde chocan enmiendas aprobadas esperan la redacción de la Mesa: hasta entonces se lee la propuesta automática"
+      "pendingWordings": "1 pasaje donde chocan enmiendas aprobadas espera la redacción de la Mesa: hasta entonces se lee la propuesta automática | {count} pasajes donde chocan enmiendas aprobadas esperan la redacción de la Mesa: hasta entonces se lee la propuesta automática",
+      "corrected": "Texto con correcciones de forma posteriores a la votación.",
+      "seeCorrections": "Ver las correcciones"
     },
     "compare": {
       "original": "Texto original",
