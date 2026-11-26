@@ -82,6 +82,12 @@ const half = (points: number) => Math.round(points * 2);
 
 const CONTENT_WIDTH_PT = PAGE_WIDTH - TEMPLATE_MARGINS[0] - TEMPLATE_MARGINS[2];
 const LIST_INDENT = 360;
+/**
+ * Lists stand in from the margin and leave room between their items, as the
+ * PDF does (user's report of 2026-11-26): 14 pt in, 5 pt after each item.
+ */
+const LIST_OFFSET = 280;
+const LIST_ITEM_SPACING = { after: 100 };
 
 const BULLETS = ["•", "◦", "▪"];
 
@@ -276,9 +282,10 @@ function blockParagraph(
     const level = Math.min(Math.max(block.level ?? 0, 0), 8);
     if (block.list === "ordered") {
       const n = numbers.get(block.id) ?? 1;
-      const left = LIST_INDENT * (level + 1);
+      const left = LIST_OFFSET + LIST_INDENT * (level + 1);
       return new Paragraph({
         alignment: align,
+        spacing: LIST_ITEM_SPACING,
         indent: { left, hanging: LIST_INDENT },
         tabStops: [{ type: TabStopType.LEFT, position: left }],
         children: [
@@ -292,6 +299,7 @@ function blockParagraph(
     }
     return new Paragraph({
       alignment: align,
+      spacing: LIST_ITEM_SPACING,
       numbering: { reference: "bullets", level },
       children: markedRuns(block.text, block.marks, style),
     });
@@ -588,7 +596,7 @@ export async function buildDocumentDocx(
             style: {
               paragraph: {
                 indent: {
-                  left: LIST_INDENT * (level + 1),
+                  left: LIST_OFFSET + LIST_INDENT * (level + 1),
                   hanging: LIST_INDENT,
                 },
               },

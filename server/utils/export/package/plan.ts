@@ -26,7 +26,9 @@ import { NameRegistry, safeName, sortableNumbering } from "./names";
  * Bumped whenever a piece would come out different from the same data (a
  * template or layout change): every piece is rendered again.
  */
-export const PACKAGE_RENDERER_VERSION = 5;
+// 6: lists stand in from the margin with room between items; a block may
+// start a new page (2026-11-26).
+export const PACKAGE_RENDERER_VERSION = 6;
 
 /** Longest folder name taken from an agenda item's title. */
 const FOLDER_TITLE_MAX = 50;

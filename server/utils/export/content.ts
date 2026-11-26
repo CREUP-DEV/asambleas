@@ -101,8 +101,10 @@ export const CONTENT_STYLES: Record<string, Style> = {
     color: "#3d3d3d",
     margin: [18, 0, 18, 12],
   },
-  listItem: { fontSize: 11, lineHeight: 1.15 },
-  list: { margin: [0, 0, 0, 12] },
+  // Lists stand in from the margin and leave room between their items, as
+  // CREUP's Word documents do (user's report of 2026-11-26).
+  listItem: { fontSize: 11, lineHeight: 1.15, margin: [0, 0, 0, 5] },
+  list: { margin: [14, 0, 0, 7] },
   amendmentRef: { color: CREUP_RED, bold: true },
   // What a formatting change does, in words next to the text it changes.
   formatNote: { fontSize: 8, bold: false, italics: true },

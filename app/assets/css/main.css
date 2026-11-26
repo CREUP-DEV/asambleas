@@ -1048,10 +1048,22 @@ html {
     margin-top: 1.5rem;
   }
 
+  /*
+   * Lists stand in from the margin and leave room between their items, as
+   * the PDF and CREUP's Word documents do (user's report of 2026-11-26).
+   */
   .rich-text ul,
   .rich-text ol {
     margin: 1.5rem 0 0;
-    padding-left: 1.5rem;
+    padding-left: 2.75rem;
+  }
+
+  .content-editor :is(ul, ol) {
+    padding-inline-start: 2.75rem;
+  }
+
+  .content-editor li + li {
+    margin-top: 0.75rem;
   }
 
   .rich-text p + ul,
@@ -1070,7 +1082,7 @@ html {
   }
 
   .rich-text li + li {
-    margin-top: 0.5rem;
+    margin-top: 0.75rem;
   }
 
   .rich-text blockquote {
