@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  screenApprovalFill,
+  withFilledApprovalLine,
+} from "~/composables/document/approvalFill";
 import type {
   DocumentDto,
   LivePoint,
@@ -56,12 +60,17 @@ const POINTER_SEND_MS = 40;
 const CLICK_MOVE_PX = 5;
 const CLICK_MS = 350;
 
-const blocks = computed(
-  () =>
-    props.document.consolidatedVersion?.blocks ??
-    props.document.baseVersion?.blocks ??
-    [],
-);
+/** Voted (its approval line filled in, approvalFill.ts), or as published. */
+const blocks = computed(() => {
+  const voted = props.document.consolidatedVersion?.blocks;
+  if (voted) {
+    return withFilledApprovalLine(
+      voted,
+      screenApprovalFill(props.document.finalVote, session.assembly.value),
+    );
+  }
+  return props.document.baseVersion?.blocks ?? [];
+});
 /** Passages approved pending conciliation (user's decisions of 2026-11-21). */
 const { marks: pendingMarksOf } = usePendingConciliation();
 const pendingMarks = computed(() =>

@@ -387,7 +387,9 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   mayoría simple en la 80.ª Asamblea General Ordinaria el 21 de noviembre de
   2026.", always in Spanish, as the text is) instead of the separate vote line
   under the title, and leaves an unfilled one out before that; the stored
-  text never changes.
+  text never changes. Since 2026-11-26 the views of the approved text fill
+  it on screen the same way (`app/composables/document/approvalFill.ts`);
+  the original text shows it as written.
 - It warns about tracked changes, comments, dropped images, images in
   tables, images without a description, flattened tables and highlighting,
   whose meaning is lost.

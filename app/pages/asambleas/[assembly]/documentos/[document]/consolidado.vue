@@ -9,6 +9,11 @@ import {
 import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import { consolidationInputs } from "~/composables/amendment/workspace";
 import {
+  screenApprovalFill,
+  withFilledApprovalLine,
+  withFilledApprovalLineAnnotated,
+} from "~/composables/document/approvalFill";
+import {
   sameBlocks,
   usePendingConciliation,
 } from "~/composables/document/pendingConciliation";
@@ -188,6 +193,24 @@ const consolidation = computed(() =>
         { wordings: list.wordings.value },
       )
     : null,
+);
+/**
+ * The approved text as shown: its approval line filled in from the final
+ * vote, as the PDF writes it (approvalFill.ts); the stored text is not.
+ */
+const approvalFill = computed(() =>
+  screenApprovalFill(document.value?.finalVote, assembly.value),
+);
+const shownFinalText = computed(() =>
+  finalText.value
+    ? withFilledApprovalLine(finalText.value, approvalFill.value)
+    : null,
+);
+const shownAnnotated = computed(() =>
+  withFilledApprovalLineAnnotated(
+    consolidation.value?.annotated ?? [],
+    approvalFill.value,
+  ),
 );
 
 // PDF pages -----------------------------------------------------------------------
@@ -707,7 +730,7 @@ watch(popoverOpen, (open) => {
               :title="t('workspace.formCorrections.correctedText')"
             />
             <ContentView
-              :blocks="finalText"
+              :blocks="shownFinalText!"
               :pending="pendingMarks"
               :pages="textPages"
               @page="textPage = $event"
@@ -725,7 +748,7 @@ watch(popoverOpen, (open) => {
               @keydown.capture="rememberFragment"
             >
               <ContentView
-                :annotated="consolidation.annotated"
+                :annotated="shownAnnotated"
                 mode="provenance"
                 :label="list.shortLabelOf"
                 :focus="popoverOpen ? popoverAmendmentId : null"
@@ -746,7 +769,7 @@ watch(popoverOpen, (open) => {
               :title="t('workspace.consolidatedView.storedOnly')"
             />
             <ContentView
-              :blocks="finalText"
+              :blocks="shownFinalText!"
               :pending="pendingMarks"
               :pages="textPages"
               @page="textPage = $event"

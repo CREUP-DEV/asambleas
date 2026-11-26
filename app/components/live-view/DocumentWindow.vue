@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  screenApprovalFill,
+  withFilledApprovalLine,
+} from "~/composables/document/approvalFill";
 import type {
   AmendmentDto,
   DocumentDto,
@@ -121,13 +125,20 @@ const onScreen = computed(
   () => Boolean(props.document) && props.document?.id === shown.value?.id,
 );
 
-/** The text as the projection shows it: voted, or as published. */
-const blocks = computed(
-  () =>
-    current.value?.consolidatedVersion?.blocks ??
-    current.value?.baseVersion?.blocks ??
-    [],
-);
+/**
+ * The text as the projection shows it: voted (its approval line filled in,
+ * approvalFill.ts), or as published.
+ */
+const blocks = computed(() => {
+  const voted = current.value?.consolidatedVersion?.blocks;
+  if (voted) {
+    return withFilledApprovalLine(
+      voted,
+      screenApprovalFill(current.value?.finalVote, assembly.value),
+    );
+  }
+  return current.value?.baseVersion?.blocks ?? [];
+});
 const isFile = computed(() => current.value?.format === "file");
 /** Passages approved pending conciliation, marked in the text. */
 const { marks: pendingMarksOf } = usePendingConciliation();

@@ -20,6 +20,11 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { consolidateApproved } from "~~/shared/utils/content/passages";
 import { usePendingConciliation } from "~/composables/document/pendingConciliation";
 import {
+  screenApprovalFill,
+  withFilledApprovalLine,
+  withFilledApprovalLineAnnotated,
+} from "~/composables/document/approvalFill";
+import {
   firstTouchedBlockId,
   touchedBlockIds,
   validateOps,
@@ -1756,8 +1761,25 @@ const conciliation = computed(
 const pendingMarks = computed(() =>
   pendingMarksOf(document.value?.consolidatedVersion, list.labelOf),
 );
-const compareBlocks = computed(
-  () => finalText.value ?? consolidation.value?.blocks ?? [],
+/**
+ * The approved text as shown: its approval line filled in from the final
+ * vote, as the PDF writes it (approvalFill.ts). The original keeps it as
+ * written.
+ */
+const approvalFill = computed(() =>
+  screenApprovalFill(document.value?.finalVote, assembly.value),
+);
+const shownAnnotated = computed(() =>
+  withFilledApprovalLineAnnotated(
+    consolidation.value?.annotated ?? [],
+    approvalFill.value,
+  ),
+);
+const compareBlocks = computed(() =>
+  withFilledApprovalLine(
+    finalText.value ?? consolidation.value?.blocks ?? [],
+    approvalFill.value,
+  ),
 );
 
 // PDF pages -----------------------------------------------------------------------
@@ -2589,7 +2611,7 @@ const filteredBlockLabel = computed(() =>
                 </UAlert>
                 <ContentView
                   ref="textView"
-                  :annotated="consolidation.annotated"
+                  :annotated="shownAnnotated"
                   mode="provenance"
                   :label="list.shortLabelOf"
                   :focus="selectedId"

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  screenApprovalFill,
+  withFilledApprovalLine,
+} from "~/composables/document/approvalFill";
 import { alternativeLetter } from "~~/shared/utils/alternativesVote";
 import type {
   AgendaDto,
@@ -693,13 +697,20 @@ const debated = computed(() =>
     : null,
 );
 const base = computed(() => document.value?.baseVersion?.blocks ?? []);
-/** The document's text as the console shows it: voted, or as published. */
-const previewBlocks = computed(
-  () =>
-    document.value?.consolidatedVersion?.blocks ??
-    document.value?.baseVersion?.blocks ??
-    [],
-);
+/**
+ * The document's text as the console shows it: voted (its approval line
+ * filled in, approvalFill.ts), or as published.
+ */
+const previewBlocks = computed(() => {
+  const voted = document.value?.consolidatedVersion?.blocks;
+  if (voted) {
+    return withFilledApprovalLine(
+      voted,
+      screenApprovalFill(document.value?.finalVote, assembly.value),
+    );
+  }
+  return document.value?.baseVersion?.blocks ?? [];
+});
 /**
  * Passages the final vote left pending conciliation (user's decisions of
  * 2026-11-21): marked in the text with the codes the room reads.
