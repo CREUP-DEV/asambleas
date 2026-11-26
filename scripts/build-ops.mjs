@@ -1,7 +1,9 @@
 // Bundles the scripts the production image runs outside Nuxt (migrations,
-// the RBAC seed and the one-off slug and amendment code recalculations) into self-contained files in dist/ops, packages included, so
-// the image needs no node_modules for them. The Dockerfile copies them to
-// /app/ops, next to /app/drizzle, which migrate.mjs finds as ../drizzle.
+// the RBAC seed and the one-off slug and amendment code recalculations) into
+// self-contained files in dist/ops, packages included, so the image needs no
+// node_modules for them. The Dockerfile copies the whole of dist/ops to
+// /app/ops, next to /app/drizzle, which migrate.mjs finds as ../drizzle:
+// ENTRIES is the only list, and a new script needs nothing else.
 import { build } from "esbuild";
 
 const ENTRIES = {

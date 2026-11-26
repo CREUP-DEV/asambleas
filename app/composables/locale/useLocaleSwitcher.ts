@@ -31,12 +31,12 @@ export const useLocaleSwitcher = () => {
     {
       value: "es",
       label: nativeLocaleName(locales.value, "es"),
-      icon: "i-circle-flags-es",
+      icon: "i-local-flag-es",
     },
     {
       value: "en",
       label: nativeLocaleName(locales.value, "en"),
-      icon: "i-circle-flags-gb",
+      icon: "i-local-flag-gb",
     },
   ]);
 

@@ -64,7 +64,7 @@ useHead({
     <UCard class="w-full max-w-sm">
       <template #header>
         <div class="flex flex-col items-center gap-2">
-          <UIcon name="i-tabler-list-numbers" class="size-10 text-primary" />
+          <UIcon name="i-lucide-list-ordered" class="size-10 text-primary" />
           <h1 class="text-2xl font-bold text-primary">
             {{ t("app.title") }}
           </h1>
@@ -85,7 +85,7 @@ useHead({
           :description="signInError"
         />
         <UButton
-          icon="i-tabler-brand-google"
+          icon="i-local-brand-google"
           :label="t('auth.signInWithGoogle')"
           size="lg"
           :loading="isSigningIn"

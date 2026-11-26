@@ -87,26 +87,25 @@ run_verify() {
 VERIFIED_TREE_FILE=node_modules/.cache/verify/tree
 
 # The git tree of the working directory as it is, uncommitted and untracked
-# files included, built in a copy of the index (the real one is never
-# touched); scripts/verify.mjs works it out the same way. Fails when git
-# cannot tell.
+# files included, asked to scripts/verify.mjs, the one place that works it
+# out (for its stamp too). Under WSL through Windows' node, like run_verify,
+# so the git that stamped the tree is the one that hashes it now. Fails when
+# node or git cannot tell, and then verify runs again: the safe side.
 working_tree_hash() {
-  local index tree status=1
-  index="$(mktemp)"
-  if cp "$(git rev-parse --git-path index)" "$index" 2>/dev/null &&
-    GIT_INDEX_FILE="$index" git add -A >/dev/null 2>&1 &&
-    tree="$(GIT_INDEX_FILE="$index" git write-tree 2>/dev/null)"; then
-    printf '%s\n' "$tree"
-    status=0
+  local tree
+  if [ -n "${WSL_DISTRO_NAME:-}" ] && command -v cmd.exe >/dev/null 2>&1; then
+    tree="$(cmd.exe /c node scripts/verify.mjs --tree-hash 2>/dev/null)" || return 1
+  else
+    command -v node >/dev/null 2>&1 || return 1
+    tree="$(node scripts/verify.mjs --tree-hash 2>/dev/null)" || return 1
   fi
-  rm -f "$index"
-  return "$status"
+  tree="$(printf '%s' "$tree" | tr -d '\r\n')"
+  [ -n "$tree" ] || return 1
+  printf '%s\n' "$tree"
 }
 
 # True when `pnpm verify` already passed on this very tree, say a deploy that
 # failed on the VPS and is run again, or a verify run by hand just before.
-# Under WSL the stamp comes from Windows' git, whose line endings may differ:
-# then the hashes never match and it verifies again, which is the safe side.
 already_verified() {
   local tree
   [ "${DEPLOY_REVERIFY:-}" != 1 ] || return 1

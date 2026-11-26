@@ -1,0 +1,60 @@
+# `pnpm verify` (AGENTS.md, "Verification Checklist") on every pull request and
+# every push to main. scripts/deploy.sh runs it too, before anything reaches
+# the VPS; this is the check for a tree that was never deployed from here.
+# No secrets: the suites that need a database are skipped unless their
+# *_DB_TEST variable is set, and the .env is .env.example's placeholders (some
+# suites import server/db or the auth module, which refuse to load without
+# DATABASE_URL, APP_SECRET and the Google client; none of them connects).
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # One step at a time: side by side, the heavier tests (Word import
+      # limits, room images, exports) can time out on a small runner.
+      VERIFY_SERIAL: "1"
+      # vue-tsc -b runs out of Node 22's default heap (about 2 GB on Linux),
+      # with or without tsconfig.scripts.json; a public repository's runner
+      # has 16 GB.
+      NODE_OPTIONS: --max-old-space-size=6144
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The production image's Node (Dockerfile, node:22; package.json engines).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # pnpm at package.json's packageManager version, as the Dockerfile does.
+      - run: corepack enable
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - run: pnpm config set store-dir ~/.local/share/pnpm/store
+
+      # Before the install, whose postinstall (nuxt prepare) reads it too.
+      - run: cp .env.example .env
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify

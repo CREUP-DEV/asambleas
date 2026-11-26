@@ -35,8 +35,8 @@ Sesiones, colas y datos persistentes usan PostgreSQL; la caché de permisos es e
 
 Requisitos:
 
-- Node.js 22+
-- pnpm 10.33+
+- Node.js 22 (la de la imagen; `engines` en `package.json`)
+- pnpm 12.10.1 (`packageManager`; con `corepack enable` se usa esa versión)
 - Docker y Docker Compose
 
 Arranque:
@@ -81,19 +81,7 @@ En local, las variables de la Intranet pueden quedar vacías: todas las cuentas 
 
 ## Scripts
 
-| Comando                       | Uso                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm dev`                    | Servidor de desarrollo                                                             |
-| `pnpm build`                  | Build de producción                                                                |
-| `pnpm preview`                | Previsualización del build                                                         |
-| `pnpm lint` / `pnpm lint:fix` | ESLint                                                                             |
-| `pnpm typecheck`              | Tipado de Nuxt/Vue                                                                 |
-| `pnpm db:generate`            | Generar una migración Drizzle (con `--name <cambio_en_snake_case>`, ver AGENTS.md) |
-| `pnpm db:migrate`             | Aplicar migraciones                                                                |
-| `pnpm db:seed`                | Sembrar roles y permisos                                                           |
-| `pnpm db:studio`              | Drizzle Studio                                                                     |
-| `pnpm i18n:check`             | Paridad de claves de traducción                                                    |
-| `pnpm i18n:audit-identical`   | Auditoría de traducciones idénticas                                                |
+La lista completa de `pnpm <script>`, con lo que hace cada uno, está en [AGENTS.md, «Commands»](AGENTS.md#commands).
 
 ## Estructura
 
@@ -102,9 +90,9 @@ app/              Frontend Nuxt: páginas, layouts, componentes y composables
 server/           API Nitro, auth, workers, DB y utilidades de servidor
 shared/           Constantes, schemas Zod y utilidades compartidas
 i18n/locales/     Traducciones ES/EN
-drizzle/          Migraciones y seed
-ops/              Scripts operativos
-scripts/          Checks auxiliares
+drizzle/          Migraciones, seed y recálculos de una vez
+ops/              Script de migraciones de la imagen
+scripts/          verify, despliegue, rollback, clone-prod-db, build-ops y checks de i18n
 server/assets/    Fuentes y assets empaquetados para servidor
 ```
 
@@ -117,7 +105,7 @@ server/assets/    Fuentes y assets empaquetados para servidor
 
 ## Verificación Antes De PR
 
-La lista que manda es la de [AGENTS.md](AGENTS.md#verification-checklist). `pnpm verify` ejecuta a la vez todo menos el build, y `scripts/deploy.sh` la ejecuta mientras construye la imagen:
+La lista que manda es la de [AGENTS.md](AGENTS.md#verification-checklist). `pnpm verify` ejecuta a la vez todo menos el build; `scripts/deploy.sh` la ejecuta mientras construye la imagen, y GitHub Actions (`.github/workflows/verify.yml`) en cada pull request y en cada push a `main`:
 
 ```bash
 pnpm verify    # nuxt prepare y luego, a la vez, lint, format:check, typecheck, i18n:check, i18n:audit-identical y test

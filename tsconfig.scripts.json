@@ -1,0 +1,20 @@
+{
+  // The TypeScript that runs outside Nuxt: drizzle/ and scripts/ (the RBAC
+  // seed ships in the production image) and the root *.config.ts, on Nitro's
+  // project for the auto-imports server/utils/domain/audit.ts and
+  // i18n.config.ts use. nuxt.config.ts is .nuxt/tsconfig.node.json's. Not
+  // composite: the seed reaches into server/ and shared/, which TS6307 would
+  // then refuse as outside `include`.
+  "extends": "./.nuxt/tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "./.nuxt/tsconfig.scripts.tsbuildinfo"
+  },
+  "include": [
+    "./.nuxt/types/nitro.d.ts",
+    "./drizzle/*.ts",
+    "./scripts/*.ts",
+    "./*.config.ts"
+  ],
+  "exclude": ["./nuxt.config.ts", "./node_modules", "./dist"]
+}

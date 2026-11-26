@@ -82,7 +82,7 @@ function loadLocale(file: string): JSONValue {
 
 function collectIdenticalStrings(
   base: JSONValue,
-  target: JSONValue,
+  target: JSONValue | undefined,
   prefix = "",
 ): IdenticalMatch[] {
   if (typeof base === "string" && typeof target === "string") {

@@ -1,3 +1,21 @@
+# Why a dependency in package.json is not on a caret range (package.json has
+# no comments; AGENTS.md, "Dependencies"). Every other one takes `^`.
+#
+# - @tiptap/* (exact, all the same version): one family, released together;
+#   the editor's extensions share ProseMirror state with @tiptap/core.
+# - @vueuse/core and @vueuse/nuxt (exact, the same version): one family.
+# - pdfmake (exact): server/utils/export/pdfmake.ts patches its layout
+#   (installPdfLayoutPatches, pdfJustify.ts) and writes to its virtual file
+#   system, neither of them published API, which a patch release may move.
+#   @types/pdfmake stays on `^`, which keeps it on 0.3, pdfmake's minor.
+# - h3 (`~`): server code imports it directly, so it stays on the 1.15 line
+#   Nitro (nitropack) itself resolves.
+# - sharp (`~`): only its prebuilt binaries are installed (allowBuilds below),
+#   and each minor moves to another libvips and set of them.
+# - prettier and @nuxt/eslint (exact): a new release reformats or flags code,
+#   and `pnpm format:check` and `pnpm lint` must answer the same everywhere.
+# - @nuxt/a11y (exact): a pre-release, which may break in any version.
+
 # Dependencies allowed to run install scripts. pnpm >= 11 fails on any undeclared one.
 allowBuilds:
   "@parcel/watcher": true

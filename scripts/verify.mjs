@@ -9,7 +9,9 @@
 //
 // A pass leaves the hash of the tree it checked in VERIFIED_TREE_FILE (see
 // treeHash), only when the tree did not change while it ran, so deploy.sh can
-// skip verifying the very same tree again.
+// skip verifying the very same tree again. `node scripts/verify.mjs
+// --tree-hash` prints that hash and verifies nothing: deploy.sh asks it here,
+// so both sides always work it out the same way.
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,8 +22,7 @@ const VERIFIED_TREE_FILE = "node_modules/.cache/verify/tree";
 /**
  * The git tree of the working directory as it is, uncommitted and untracked
  * files included (ignored ones left out), built in a copy of the index so the
- * real one is never touched. Null when git cannot tell. deploy.sh works it out
- * the same way.
+ * real one is never touched. Null when git cannot tell.
  */
 function treeHash() {
   const indexPath = spawnSync("git", ["rev-parse", "--git-path", "index"], {
@@ -41,6 +42,14 @@ function treeHash() {
   } finally {
     rmSync(index, { force: true });
   }
+}
+
+// deploy.sh's question: the hash alone on stdout, exit 1 when git cannot tell.
+if (process.argv.includes("--tree-hash")) {
+  const tree = treeHash();
+  if (!tree) process.exit(1);
+  process.stdout.write(`${tree}\n`);
+  process.exit(0);
 }
 
 const PREPARE = "pnpm exec nuxt prepare";

@@ -31,7 +31,7 @@ function loadLocale(file: string): Map<string, JSONValue> {
 function extractPlaceholders(value: string): string[] {
   const matches = value.matchAll(/\{([a-zA-Z0-9_]+)\}/g);
 
-  return [...new Set([...matches].map((match) => match[1]))].sort();
+  return [...new Set([...matches].map((match) => match[1]!))].sort();
 }
 
 const BASE = "es.json";

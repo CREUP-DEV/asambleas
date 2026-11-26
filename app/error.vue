@@ -84,14 +84,14 @@ const goBack = () => {
           {{ description }}
         </p>
         <div class="mt-8 flex flex-wrap justify-center gap-2">
-          <UButton size="lg" icon="i-tabler-home" @click="goHome">
+          <UButton size="lg" icon="i-lucide-house" @click="goHome">
             {{ t("nav.home") }}
           </UButton>
           <UButton
             size="lg"
             variant="soft"
             color="neutral"
-            icon="i-tabler-arrow-left"
+            icon="i-lucide-arrow-left"
             @click="goBack"
           >
             {{ t("errors.page.goBack") }}

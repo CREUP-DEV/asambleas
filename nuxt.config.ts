@@ -418,13 +418,17 @@ export default defineNuxtConfig({
     },
   },
 
+  // Lucide for every icon; a brand or a flag it lacks goes as an SVG in
+  // app/assets/icons, the `local` collection (i-local-<file name>), never as
+  // another Iconify collection (AGENTS.md, "Dependencies").
   icon: {
     provider: "server",
     fallbackToApi: false,
-    collections: ["tabler", "circle-flags", "lucide"],
+    collections: ["lucide"],
     serverBundle: {
-      collections: ["tabler", "circle-flags", "lucide"],
+      collections: ["lucide"],
     },
+    customCollections: [{ prefix: "local", dir: "./app/assets/icons" }],
   },
 
   runtimeConfig: {

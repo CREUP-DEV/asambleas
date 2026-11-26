@@ -68,6 +68,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 
 ```text
 app/
+  assets/icons/     the local icon collection (i-local-*): brands and flags Lucide lacks
   components/       UI components grouped by domain
   composables/      Auth, permissions, locale, accessibility and workflow helpers
   layouts/          the authenticated dashboard shell
@@ -88,7 +89,9 @@ shared/
 docs/               design, API, integrations and how assemblies run (index: docs/README.md)
 docs/private/       local only, ignored: server values, Intranet internals, working reports
 i18n/locales/       es.json and en.json
-drizzle/            migrations and seed
+drizzle/            migrations, seed and one-off recalculations (typed by tsconfig.scripts.json)
+scripts/            verify, deploy, rollback, clone-prod-db, build-ops and the i18n checks
+.github/workflows/  CI: pnpm verify on pull requests and pushes to main
 server/assets/      server-bundled fonts/assets
 ```
 
@@ -682,7 +685,18 @@ above the chain's head, inside a native-element branch whose first child is an
 element, or in a `<template v-else…>` that carries the directive around the
 branch; never inside a component branch, where it would become slot content.
 
+## Dependencies
+
+- Versions take `^` by default. An exact version (or `~`) only for a family released together (`@tiptap/*`, `@vueuse/*`, each family on one version) or for a version that breaks something concrete; the reason goes in the comment at the top of `pnpm-workspace.yaml`, since `package.json` takes no comments.
+- `dependencies` is what ends up in `.output` or `dist/ops`; `devDependencies` is what only checks or builds. The exceptions, `sortablejs` and `@fontsource/raleway`, are unused and await removal, not a move. Add or remove a package with `pnpm add` / `pnpm remove`, so `pnpm-lock.yaml` follows (the image and CI install with `--frozen-lockfile`).
+- Node is the image's (`node:22`, `engines` in `package.json`, `target: "node22"` in `scripts/build-ops.mjs`, CI); pnpm is `packageManager`'s, through corepack.
+- Review now and then with `pnpm outdated` and `pnpm audit`.
+- `server/db/index.ts` keeps `import "dotenv/config"`: Vitest loads no `.env`, and the suites that open a database (`*.db.test.ts`) read `DATABASE_URL` through it. Some ordinary suites need it too, since `server/db` and the auth module refuse to load without `DATABASE_URL`, `APP_SECRET` and the Google client (they never connect): CI copies `.env.example` to `.env`.
+- Icons are Lucide (`i-lucide-*`, the only Iconify collection installed). A brand or a flag Lucide lacks goes as an SVG in `app/assets/icons`, the local collection (`i-local-<file name>`, `icon.customCollections` in `nuxt.config.ts`), with its source and licence in a comment above `<svg>`; never another `@iconify-json/*` collection, whose whole JSON the server bundles.
+
 ## Commands
+
+Every script in `package.json` (`postinstall` runs `nuxt prepare` on its own after `pnpm install`):
 
 ```bash
 pnpm dev
@@ -692,14 +706,19 @@ pnpm lint
 pnpm lint:fix
 pnpm format
 pnpm format:check
-pnpm typecheck
+pnpm typecheck        # nuxt typecheck: prepare, then vue-tsc -b over tsconfig.json's projects
+pnpm typecheck:tsc    # vue-tsc -b --noEmit alone, on an already prepared .nuxt (what verify runs)
+pnpm test             # vitest run; the *.db.test.ts suites only with their *_DB_TEST variable set
 pnpm db:generate --name <change_in_snake_case>
 pnpm db:migrate
 pnpm db:seed
 pnpm db:studio
+pnpm db:reslug               # one-off slug recalculation (drizzle/reslug-documents.ts; DEPLOYMENT.md)
+pnpm db:recode-amendments    # one-off amendment code recalculation (drizzle/recode-amendments.ts; DEPLOYMENT.md)
+pnpm build:ops        # bundles migrate, the RBAC seed and the recalculations into dist/ops (scripts/build-ops.mjs, ENTRIES), which the image copies whole to /app/ops
 pnpm i18n:check
 pnpm i18n:audit-identical
-pnpm verify    # nuxt prepare, then lint, format:check, typecheck, i18n:check, i18n:audit-identical and test side by side (scripts/verify.mjs)
+pnpm verify    # nuxt prepare, then lint, format:check, typecheck, i18n:check, i18n:audit-identical and test side by side (scripts/verify.mjs); `node scripts/verify.mjs --tree-hash` prints the hash it stamps and verifies nothing
 bash ./scripts/deploy.sh    # pnpm verify while it builds the image, push to GHCR once both pass and roll out on the VPS (DEPLOYMENT.md); refuses a dirty tree without --allow-dirty, asks before deploying while an assembly is in session, dumps the database before migrating; --seed also runs the RBAC seed
 bash ./scripts/rollback.sh  # previous image; refuses one older than the database's migrations without --force (restore the pre-deploy dump first)
 bash ./scripts/clone-prod-db.sh  # replace the local database and uploads with production's (DEPLOYMENT.md); backups/ keeps both sides
@@ -719,7 +738,9 @@ pnpm test
 pnpm build
 ```
 
-`pnpm verify` runs all of it except `pnpm build`, side by side after one `nuxt prepare` (`scripts/verify.mjs`: Vitest on half the cores, the type check through `vue-tsc -b` on incremental build info in `.nuxt`; `VERIFY_SERIAL=1` runs the steps one at a time), and stamps the tree it passed on (`node_modules/.cache/verify/tree`). `scripts/deploy.sh` runs it while the image builds and pushes nothing unless both pass; it skips it only for `DEPLOY_SKIP_VERIFY=1` or a tree that already passed unchanged (`DEPLOY_REVERIFY=1` runs it again; `DEPLOY_SKIP_BUILD=1` does not skip it). `pnpm lint` and `pnpm format:check` keep content caches in `node_modules/.cache`. Tests that spawn processes one after another go in several files, since Vitest runs files side by side (the DOCX converter's `docx*.test.ts` share `server/testing/docx.ts`, outside what Nitro scans).
+The type check covers every `.ts` in the repository: `tsconfig.json` references Nuxt's four projects and `tsconfig.scripts.json` (`drizzle/*.ts`, `scripts/*.ts` and the root `*.config.ts`, on Nitro's project). A `.ts` that none of Nuxt's four projects includes (they take `app/`, `server/`, `shared/`, `i18n/`, `modules/`, `nuxt.config.ts` and the root `*.d.ts`) goes into `tsconfig.scripts.json`'s `include`, or nothing checks it: `tsx` and esbuild strip types without reading them.
+
+`pnpm verify` runs all of it except `pnpm build`, side by side after one `nuxt prepare` (`scripts/verify.mjs`: Vitest on half the cores, the type check through `vue-tsc -b` on incremental build info in `.nuxt`; `VERIFY_SERIAL=1` runs the steps one at a time), and stamps the tree it passed on (`node_modules/.cache/verify/tree`); deploy.sh asks it for the hash to compare (`node scripts/verify.mjs --tree-hash`), so only verify.mjs works it out. `scripts/deploy.sh` runs it while the image builds and pushes nothing unless both pass, and `.github/workflows/verify.yml` runs it (`VERIFY_SERIAL=1`, Node 22 with a 6 GB heap: `vue-tsc -b` runs out of its default 2 GB on Linux) on every pull request and push to `main`; deploy.sh skips it only for `DEPLOY_SKIP_VERIFY=1` or a tree that already passed unchanged (`DEPLOY_REVERIFY=1` runs it again; `DEPLOY_SKIP_BUILD=1` does not skip it). `pnpm lint` and `pnpm format:check` keep content caches in `node_modules/.cache`. Tests that spawn processes one after another go in several files, since Vitest runs files side by side (the DOCX converter's `docx*.test.ts` share `server/testing/docx.ts`, outside what Nitro scans).
 
 Also verify manually when relevant:
 
