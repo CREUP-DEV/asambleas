@@ -18,7 +18,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Each scan reads hundreds of files: beside the whole suite on Windows (and a
+// synced folder reading them too) that takes longer than the usual 5 s.
+vi.setConfig({ testTimeout: 30_000 });
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const toRel = (path: string) => relative(root, path).split(sep).join("/");
