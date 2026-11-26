@@ -93,3 +93,21 @@ describe("toSigningDto", () => {
     expect(dto.signed?.current).toBe(false);
   });
 });
+
+describe("endsWithClosing and annexes", () => {
+  it("reads the end of the text before its first annex", () => {
+    const blocks = [
+      p("a", "Se levanta la sesión."),
+      p("b", "Para que conste a los efectos oportunos, se firma."),
+      p("c", "Nombre Apellido"),
+      {
+        ...p("d", "Anexo - Cuotas"),
+        type: "heading",
+        level: 1,
+        annex: true,
+      } as Block,
+      ...Array.from({ length: 20 }, (_, i) => p(`x${i}`, "Fila.")),
+    ];
+    expect(endsWithClosing(blocks)).toBe(true);
+  });
+});

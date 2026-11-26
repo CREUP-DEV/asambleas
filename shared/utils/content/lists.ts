@@ -16,6 +16,7 @@ export type BlockShape = Pick<
   | "cell"
   | "align"
   | "pageBreak"
+  | "annex"
   | "image"
 >;
 
@@ -32,6 +33,7 @@ export function copyShape<T extends BlockShape>(from: BlockShape, to: T): T {
   if (from.cell !== undefined) to.cell = { ...from.cell };
   if (from.align !== undefined) to.align = from.align;
   if (from.pageBreak) to.pageBreak = true;
+  if (from.annex) to.annex = true;
   if (from.image !== undefined) to.image = { ...from.image };
   return to;
 }

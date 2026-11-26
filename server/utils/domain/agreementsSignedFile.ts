@@ -140,7 +140,9 @@ const CLOSING_TAIL = 12;
  * signed adds them (user's decision of 2026-11-26).
  */
 export function endsWithClosing(blocks: readonly Block[]): boolean {
-  return blocks
+  // An acta's annexes come after its signature: the text ends before them.
+  const annex = blocks.findIndex((block) => block.annex && !block.cell);
+  return (annex < 0 ? blocks : blocks.slice(0, annex))
     .slice(-CLOSING_TAIL)
     .some((block) => CLOSING_FORMULA.test(block.text));
 }

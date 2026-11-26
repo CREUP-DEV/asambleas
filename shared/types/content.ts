@@ -187,6 +187,14 @@ export interface Block {
    * anything else, and absent rather than false.
    */
   pageBreak?: true;
+  /**
+   * An annex's heading (user's decisions of 2026-11-26): it opens a new
+   * page, as `pageBreak` does, reads centred in burgundy, and marks where
+   * the annexes begin (the closing of a signed acta goes before the first
+   * one). Headings outside tables only; absent rather than false. Its title
+   * is the text as written: annexes are never numbered for it.
+   */
+  annex?: true;
   /** Image blocks: the picture. */
   image?: BlockImage;
   text: string;
@@ -195,6 +203,11 @@ export interface Block {
 
 /** The blocks that may start a new page (Block.pageBreak). */
 export const PAGE_BREAK_TYPES: readonly BlockType[] = ["heading", "paragraph"];
+
+/** Whether a block opens a new page: one marked so, or an annex. */
+export function opensPage(block: Pick<Block, "pageBreak" | "annex">): boolean {
+  return block.pageBreak === true || block.annex === true;
+}
 
 /**
  * What a block is besides its text: the fields an amendment may change on a
@@ -210,6 +223,8 @@ export interface BlockFormat {
   align?: BlockAlign;
   /** Starts on a new page (Block.pageBreak). */
   pageBreak?: true;
+  /** An annex's heading (Block.annex). */
+  annex?: true;
 }
 
 /**
@@ -292,6 +307,8 @@ export const FORMAT_CHANGE_CODES = [
   "align_right",
   "page_break_on",
   "page_break_off",
+  "annex_on",
+  "annex_off",
 ] as const;
 export type FormatChangeCode = (typeof FORMAT_CHANGE_CODES)[number];
 
@@ -323,6 +340,7 @@ export interface ConsolidatedBlock {
   cell?: BlockCell;
   align?: BlockAlign;
   pageBreak?: true;
+  annex?: true;
   image?: BlockImage;
   segments: Segment[];
   /** Marks over the clean text of the block (removed segments excluded). */

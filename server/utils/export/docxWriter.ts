@@ -261,7 +261,21 @@ function blockParagraph(
   const align = alignment(block);
   // «Empezar en una página nueva», never inside a table.
   const newPage =
-    block.pageBreak && !block.cell ? { pageBreakBefore: true } : {};
+    (block.pageBreak || block.annex) && !block.cell
+      ? { pageBreakBefore: true }
+      : {};
+  // An annex's heading: centred in burgundy and bold, as the PDF's.
+  if (block.type === "heading" && block.annex && !block.cell) {
+    return new Paragraph({
+      alignment: AlignmentType.CENTER,
+      ...newPage,
+      children: markedRuns(block.text, block.marks, {
+        ...style,
+        bold: true,
+        color: RED,
+      }),
+    });
+  }
   if (block.type === "heading") {
     const level = Math.min(Math.max(block.level ?? 1, 1), 4);
     return new Paragraph({
@@ -340,8 +354,8 @@ function bodyOf(
       for (const block of run.items) {
         // The text's first block never opens with an empty page.
         const placed =
-          children.length === 0 && block.pageBreak
-            ? { ...block, pageBreak: undefined }
+          children.length === 0 && (block.pageBreak || block.annex)
+            ? { ...block, pageBreak: undefined, annex: undefined }
             : block;
         children.push(blockParagraph(placed, numbers, images));
       }

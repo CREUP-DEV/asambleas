@@ -188,6 +188,7 @@ export const blockSchema = z
     cell: cellSchema.optional(),
     align: z.enum(BLOCK_ALIGNMENTS).optional(),
     pageBreak: z.boolean().optional(),
+    annex: z.boolean().optional(),
     image: imageSchema.optional(),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH),
     marks: z.array(markSchema).max(500).default([]),
@@ -239,6 +240,10 @@ export const blockSchema = z
     ) {
       result.pageBreak = true;
     }
+    // An annex is a heading of the text itself, never inside a table.
+    if (block.annex && !block.cell && block.type === "heading") {
+      result.annex = true;
+    }
     return result;
   });
 
@@ -263,11 +268,13 @@ const blockFormatSchema = z
     start: z.number().int().min(0).max(99_999).optional(),
     align: z.enum(BLOCK_ALIGNMENTS).optional(),
     pageBreak: z.boolean().optional(),
+    annex: z.boolean().optional(),
   })
   .transform((format): BlockFormat =>
     normalizeBlockFormat({
       ...format,
       pageBreak: format.pageBreak ? true : undefined,
+      annex: format.annex ? true : undefined,
     }),
   );
 

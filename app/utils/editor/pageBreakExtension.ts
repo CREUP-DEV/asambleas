@@ -12,6 +12,11 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
  * follows it opens a new block on a new page, or the block itself does when
  * the cursor is at its start. Where no page starts (a list, a quote, a
  * table) it stays a line break (HardBreak's).
+ *
+ * An annex's heading (`annex`, Block.annex) opens a page too, reads centred
+ * in burgundy (main.css, `cx-annex`) and marks where the annexes begin;
+ * «Anexo» makes the block at the cursor one (a heading of level 1 when it
+ * is a paragraph) or makes it a plain heading again.
  */
 
 declare module "@tiptap/core" {
@@ -21,6 +26,8 @@ declare module "@tiptap/core" {
       togglePageBreak: () => ReturnType;
       /** A page break at the cursor, as Word's Ctrl + Enter. */
       insertPageBreak: () => ReturnType;
+      /** Makes the block at the cursor an annex's heading, or stops it being one. */
+      toggleAnnex: () => ReturnType;
     };
   }
 }
@@ -36,6 +43,16 @@ function textBlockAtCursor(
   const node = $from.node(1);
   if (!TYPES.includes(node.type.name)) return null;
   return { node, pos: $from.before(1) };
+}
+
+/**
+ * Whether the block at the cursor is an annex's heading; null where none
+ * may be (a list, a quote, a table, an image).
+ */
+export function annexAtCursor(editor: Editor | undefined): boolean | null {
+  if (!editor) return null;
+  const block = textBlockAtCursor(editor.state);
+  return block ? block.node.attrs.annex === true : null;
 }
 
 /**
@@ -65,6 +82,21 @@ export const PageBreakExtension = Extension.create({
             renderHTML: (attributes) =>
               attributes.pageBreak === true
                 ? { "data-page-break": "true", class: "cx-page-break" }
+                : {},
+          },
+        },
+      },
+      {
+        types: ["heading"],
+        attributes: {
+          annex: {
+            default: null,
+            keepOnSplit: false,
+            parseHTML: (element) =>
+              element.getAttribute("data-annex") === "true" ? true : null,
+            renderHTML: (attributes) =>
+              attributes.annex === true
+                ? { "data-annex": "true", class: "cx-annex cx-page-break" }
                 : {},
           },
         },
@@ -101,6 +133,23 @@ export const PageBreakExtension = Extension.create({
           // What follows the cursor opens a block of its own, on a new page
           // (the split never carries the break, keepOnSplit).
           return chain().splitBlock().togglePageBreak().run();
+        },
+      toggleAnnex:
+        () =>
+        ({ state, chain }) => {
+          const block = textBlockAtCursor(state);
+          if (!block) return false;
+          if (block.node.attrs.annex === true) {
+            return chain().updateAttributes("heading", { annex: null }).run();
+          }
+          const level =
+            block.node.type.name === "heading"
+              ? Number(block.node.attrs.level ?? 1)
+              : 1;
+          return chain()
+            .setNode("heading", { level })
+            .updateAttributes("heading", { annex: true })
+            .run();
         },
     };
   },

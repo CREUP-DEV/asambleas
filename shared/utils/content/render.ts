@@ -169,6 +169,7 @@ type RenderableBlock = Pick<
   | "cell"
   | "align"
   | "pageBreak"
+  | "annex"
   | "image"
 > & {
   inner: string;
@@ -314,8 +315,11 @@ function wrapFlow(
     // Alignment from a fixed set (BLOCK_ALIGNMENTS), as a class.
     const align = item.align ? `cx-align-${item.align}` : "";
     // A block that starts a new page in the PDF says so on screen.
-    const pageBreak = item.pageBreak && !item.cell ? "cx-page-break" : "";
-    const names = [...classes, item.className, align, pageBreak]
+    const pageBreak =
+      (item.pageBreak || item.annex) && !item.cell ? "cx-page-break" : "";
+    // An annex's heading reads as one (main.css, cx-annex).
+    const annex = item.annex && !item.cell ? "cx-annex" : "";
+    const names = [...classes, item.className, align, pageBreak, annex]
       .filter(Boolean)
       .join(" ");
     const classAttr = names ? ` class="${escapeHtml(names)}"` : "";

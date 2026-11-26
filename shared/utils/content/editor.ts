@@ -59,6 +59,11 @@ function alignFrom(element: Element): Pick<Block, "align"> {
   return isBlockAlign(value) ? { align: value } : {};
 }
 
+/** An annex's heading, as the DOCX import marks it (`data-annex`). */
+function annexFrom(element: Element): Pick<Block, "annex"> {
+  return element.getAttribute("data-annex") === "true" ? { annex: true } : {};
+}
+
 /** A new page before the block, as the DOCX import marks it. */
 function pageBreakFrom(element: Element): Pick<Block, "pageBreak"> {
   return element.getAttribute("data-page-break") === "true"
@@ -302,6 +307,7 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
                 ...readInline(node.content),
                 ...alignOf(node),
                 ...(context.cell ? {} : pageBreakOf(node)),
+                ...(context.cell ? {} : annexOf(node)),
               },
               context,
             ),
@@ -436,6 +442,16 @@ function pageBreakAttrs(block: Pick<Block, "pageBreak">): {
   pageBreak?: true;
 } {
   return block.pageBreak ? { pageBreak: true } : {};
+}
+
+/** The editor's `annex` of a heading (PageBreakExtension). */
+function annexAttrs(block: Pick<Block, "annex">): { annex?: true } {
+  return block.annex ? { annex: true } : {};
+}
+
+/** A heading's annex mark from its node. */
+function annexOf(node: EditorNode): Pick<Block, "annex"> {
+  return node.attrs?.annex === true ? { annex: true } : {};
 }
 
 /** A block's new page from its node, outside lists, quotes and tables. */
@@ -594,6 +610,7 @@ function flowNodes(blocks: Block[]): EditorNode[] {
           blockId: block.id,
           ...alignAttrs(block),
           ...pageBreakAttrs(block),
+          ...annexAttrs(block),
         },
         ...(inline.length ? { content: inline } : {}),
       });
@@ -852,6 +869,7 @@ export function htmlElementToBlocks(
             ...inline,
             ...alignFrom(child),
             ...(inCell ? {} : pageBreakFrom(child)),
+            ...(inCell ? {} : annexFrom(child)),
           });
         }
       } else if (child.hasAttribute("data-formula") && tag !== "code") {

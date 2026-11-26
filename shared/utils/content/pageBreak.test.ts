@@ -134,3 +134,59 @@ describe("the views", () => {
     expect(html).not.toMatch(/data-block-id="a"[^>]*cx-page-break/);
   });
 });
+
+describe("an annex's heading", () => {
+  it("is stored on headings outside tables only", () => {
+    const blocks = blocksSchema.parse([
+      { id: "anex1", type: "heading", level: 1, text: "Anexo", annex: true },
+      { id: "para2", type: "paragraph", text: "x", annex: true },
+      {
+        id: "cell2",
+        type: "heading",
+        level: 1,
+        text: "x",
+        annex: true,
+        cell: { table: "tab02", row: "row02", cell: "cel02" },
+      },
+    ]);
+    expect(blocks[0]!.annex).toBe(true);
+    expect(blocks[1]).not.toHaveProperty("annex");
+    expect(blocks[2]).not.toHaveProperty("annex");
+  });
+
+  it("goes through the editor and the amendments", () => {
+    const heading: Block = {
+      id: "anx",
+      type: "heading",
+      level: 1,
+      text: "Anexo - Cuotas",
+      marks: [],
+      annex: true,
+    };
+    let n = 0;
+    expect(
+      editorToBlocks(blocksToEditor([p("a", "Uno"), heading]), () => `n${++n}`),
+    ).toEqual([p("a", "Uno"), heading]);
+    const plain = blockFormatOf({ ...heading, annex: undefined })!;
+    expect(blockFormatChanges(plain, blockFormatOf(heading)!)).toEqual([
+      { code: "annex_on" },
+    ]);
+  });
+
+  it("reads as an annex and opens a page in the views", () => {
+    const html = renderBlocks([
+      p("a", "Uno"),
+      {
+        id: "b",
+        type: "heading",
+        level: 1,
+        text: "Anexo",
+        marks: [],
+        annex: true,
+      },
+    ]);
+    expect(html).toMatch(
+      /data-block-id="b"[^>]*class="[^"]*cx-page-break[^"]*cx-annex/,
+    );
+  });
+});

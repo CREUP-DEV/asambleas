@@ -146,7 +146,9 @@
         "formula_on": "becomes a formula",
         "formula_off": "stops being a formula",
         "page_break_on": "starts on a new page",
-        "page_break_off": "no longer starts on a new page"
+        "page_break_off": "no longer starts on a new page",
+        "annex_on": "becomes an annex's heading",
+        "annex_off": "is no longer an annex's heading"
       },
       "fragmentFrom": "{text} (from amendment {label})",
       "outline": {
@@ -277,7 +279,8 @@
         "inline": "Formula inside the text",
         "inlineHint": "Turns the selection, written in LaTeX, into a formula in the sentence."
       },
-      "pageBreak": "Start on a new page"
+      "pageBreak": "Start on a new page",
+      "annex": "Annex heading"
     },
     "staleData": {
       "title": "The data could not be refreshed",

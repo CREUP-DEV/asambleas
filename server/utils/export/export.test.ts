@@ -2089,3 +2089,46 @@ describe("a block that starts a new page", () => {
     expect(third!.pageBreak).toBe("before");
   });
 });
+
+describe("an acta's annexes", () => {
+  const annex: Block = {
+    ...p("anx", "Anexo - Cuotas"),
+    type: "heading",
+    level: 1,
+    annex: true,
+  };
+
+  it("open a page with the annex's own heading", () => {
+    const nodes = blocksToPdf([p("a", "Uno"), annex], {
+      links: new LinkRegistry(),
+    }) as { pageBreak?: string; style?: string }[];
+    expect(nodes[1]).toMatchObject({
+      pageBreak: "before",
+      style: "annexHeading",
+    });
+  });
+
+  it("follow the closing of the PDF made to be signed", () => {
+    const definition = buildDocumentPdf(
+      {
+        assembly,
+        document: { ...meta, kind: "minutes" },
+        body: {
+          variant: "clean",
+          source: "consolidated",
+          blocks: [p("a", "Se levanta la sesión."), annex, p("t", "Tabla")],
+        },
+        generatedAt: new Date("2026-11-26T10:00:00Z"),
+        signingClosing: { name: "Nombre Apellido", office: "Secretaría" },
+      },
+      "es",
+    );
+    const text = JSON.stringify(definition.content);
+    const closing = text.indexOf("a fecha de la firma digital");
+    expect(closing).toBeGreaterThan(text.indexOf("Se levanta la sesión."));
+    expect(closing).toBeLessThan(text.indexOf("Anexo - Cuotas"));
+    expect(text.indexOf("Nombre Apellido")).toBeLessThan(
+      text.indexOf("Anexo - Cuotas"),
+    );
+  });
+});

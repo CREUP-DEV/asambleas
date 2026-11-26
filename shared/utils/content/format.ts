@@ -42,7 +42,8 @@ export function isValidBlockFormat(value: unknown): value is BlockFormat {
     integer(format.start, 0, 99_999) &&
     (format.align === undefined ||
       (BLOCK_ALIGNMENTS as readonly unknown[]).includes(format.align)) &&
-    (format.pageBreak === undefined || format.pageBreak === true)
+    (format.pageBreak === undefined || format.pageBreak === true) &&
+    (format.annex === undefined || format.annex === true)
   );
 }
 
@@ -69,12 +70,21 @@ export function normalizeBlockFormat(format: BlockFormat): BlockFormat {
   if (format.pageBreak && PAGE_BREAK_TYPES.includes(format.type)) {
     result.pageBreak = true;
   }
+  // Only a heading is an annex (Block.annex).
+  if (format.annex && format.type === "heading") result.annex = true;
   return result;
 }
 
 type Formatted = Pick<
   Block,
-  "type" | "level" | "list" | "marker" | "start" | "align" | "pageBreak"
+  | "type"
+  | "level"
+  | "list"
+  | "marker"
+  | "start"
+  | "align"
+  | "pageBreak"
+  | "annex"
 >;
 
 /**
@@ -91,6 +101,7 @@ export function blockFormatOf(block: Formatted): BlockFormat | null {
     start: block.start,
     align: block.align,
     pageBreak: block.pageBreak,
+    annex: block.annex,
   });
 }
 
@@ -104,7 +115,8 @@ export function sameBlockFormat(a: BlockFormat, b: BlockFormat): boolean {
     x.marker === y.marker &&
     x.start === y.start &&
     x.align === y.align &&
-    x.pageBreak === y.pageBreak
+    x.pageBreak === y.pageBreak &&
+    x.annex === y.annex
   );
 }
 
@@ -163,6 +175,9 @@ export function blockFormatChanges(
   }
   if (from.pageBreak !== to.pageBreak) {
     changes.push({ code: to.pageBreak ? "page_break_on" : "page_break_off" });
+  }
+  if (from.annex !== to.annex) {
+    changes.push({ code: to.annex ? "annex_on" : "annex_off" });
   }
   return changes;
 }

@@ -230,6 +230,7 @@ export function consolidate(
           cell: block.cell,
           align: block.align,
           pageBreak: block.pageBreak,
+          annex: block.annex,
           image: block.image,
           segments: [{ text: block.text, source: insert.source }],
           marks: block.marks,
@@ -254,6 +255,7 @@ export function consolidate(
         cell: block.cell,
         align: block.align,
         pageBreak: block.pageBreak,
+        annex: block.annex,
         image: block.image,
         segments: [{ text: block.text, source: deleter, removed: true }],
         marks: [],
@@ -272,6 +274,7 @@ export function consolidate(
         cell: block.cell,
         align: block.align,
         pageBreak: block.pageBreak,
+        annex: block.annex,
         image: block.image,
         segments: buildSegments(block, ops),
         marks: resolveMarks(block, ops),
@@ -290,6 +293,7 @@ export function consolidate(
         kept.start = format.start;
         kept.align = format.align;
         kept.pageBreak = format.pageBreak;
+        kept.annex = format.annex;
         kept.format = {
           source: formatted.source,
           changes: blockFormatChanges(before, format),

@@ -187,7 +187,9 @@ function alignments(document: Document): void {
  * (user's decision of 2026-11-26): the one that holds the break before its
  * text, else the next one with text, blank lines aside. Only the text's own
  * paragraphs and headings start a page, never a list, a quote or a table,
- * which lose the break.
+ * which lose the break. One whose text starts with «Anexo» becomes an
+ * annex's heading (`data-annex`, Block.annex), a paragraph made a heading
+ * of level 1 for it.
  */
 function pageBreaks(document: Document): void {
   const body = document.body;
@@ -209,7 +211,19 @@ function pageBreaks(document: Document): void {
     while (target && tagOf(target) === "p" && !hasText(target)) {
       target = target.nextElementSibling;
     }
-    if (startsPage(target)) target.setAttribute("data-page-break", "true");
+    if (!startsPage(target)) continue;
+    if (/^\s*anexo\b/i.test(target.textContent ?? "")) {
+      let heading = target;
+      if (tagOf(target) === "p") {
+        heading = document.createElement("h1");
+        for (const { name, value } of Array.from(target.attributes)) {
+          heading.setAttribute(name, value);
+        }
+        heading.append(...Array.from(target.childNodes));
+        target.replaceWith(heading);
+      }
+      heading.setAttribute("data-annex", "true");
+    } else target.setAttribute("data-page-break", "true");
   }
 }
 

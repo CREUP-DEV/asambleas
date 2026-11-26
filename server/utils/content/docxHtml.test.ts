@@ -362,9 +362,9 @@ describe("prepareImportedHtml: page breaks", () => {
 
   it("starts on a new page the paragraph a break comes ahead of", () => {
     const { blocks } = prepare(
-      `<p>Firma</p><h2>${page("before")}Anexo I</h2><p>Texto</p>`,
+      `<p>Firma</p><h2>${page("before")}Segunda parte</h2><p>Texto</p>`,
     );
-    expect(breaks(blocks)).toEqual(["Anexo I"]);
+    expect(breaks(blocks)).toEqual(["Segunda parte"]);
   });
 
   it("moves a break alone in its paragraph, or after the text, on", () => {
@@ -382,5 +382,20 @@ describe("prepareImportedHtml: page breaks", () => {
         table(tr(`<td><p>${page("before")}Tres</p></td>`)),
     );
     expect(breaks(blocks)).toEqual([]);
+  });
+});
+
+describe("prepareImportedHtml: annexes", () => {
+  it("brings in as an annex what opens a page with «Anexo»", () => {
+    const { blocks } = prepare(
+      `<p>Firma</p><p><span class="docx-page">before</span>Anexo - Resumen de cuotas</p>` +
+        `<p>Texto</p><p><span class="docx-page">after</span>Más</p><p>Otra parte</p>`,
+    );
+    const annex = blocks.find((block) => block.text.startsWith("Anexo"))!;
+    expect(annex).toMatchObject({ type: "heading", level: 1, annex: true });
+    expect(annex).not.toHaveProperty("pageBreak");
+    const other = blocks.find((block) => block.text === "Otra parte")!;
+    expect(other).toMatchObject({ type: "paragraph", pageBreak: true });
+    expect(other).not.toHaveProperty("annex");
   });
 });

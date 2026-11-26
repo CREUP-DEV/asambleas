@@ -146,7 +146,9 @@
         "formula_on": "pasa a ser una fórmula",
         "formula_off": "deja de ser una fórmula",
         "page_break_on": "pasa a empezar en una página nueva",
-        "page_break_off": "deja de empezar en una página nueva"
+        "page_break_off": "deja de empezar en una página nueva",
+        "annex_on": "pasa a ser el título de un anexo",
+        "annex_off": "deja de ser el título de un anexo"
       },
       "fragmentFrom": "{text} (de la enmienda {label})",
       "outline": {
@@ -277,7 +279,8 @@
         "inline": "Fórmula dentro del texto",
         "inlineHint": "Convierte lo seleccionado, escrito en LaTeX, en una fórmula de la frase."
       },
-      "pageBreak": "Empezar en una página nueva"
+      "pageBreak": "Empezar en una página nueva",
+      "annex": "Título de anexo"
     },
     "staleData": {
       "title": "No se han podido actualizar los datos",

@@ -350,6 +350,22 @@ html {
   font-weight: 400;
 }
 
+/*
+ * An annex's heading (Block.annex, user's decisions of 2026-11-26), any
+ * level: centred, in burgundy and bold, with no bar nor box, as CREUP's
+ * annexes read, in the editor and the views alike. Outside any layer, over
+ * the heading styles above and the rendered ones.
+ */
+:is(.rich-text, .content-editor) .cx-annex {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--content-heading);
+  font-size: 1.25em;
+  font-weight: 700;
+  text-align: center;
+}
+
 /* Images in the editor: on their own line, never wider than the text. */
 .content-editor img.cx-editor-image {
   display: block;

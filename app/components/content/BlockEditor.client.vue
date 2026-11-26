@@ -35,6 +35,7 @@ import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
 import { SpanishQuotesExtension } from "~/utils/editor/spanishQuotesExtension";
 import {
   PageBreakExtension,
+  annexAtCursor,
   pageBreakAtCursor,
 } from "~/utils/editor/pageBreakExtension";
 import {
@@ -242,10 +243,13 @@ const inTable = ref(false);
 const cellFill = ref<CellFill | "mixed" | null>(null);
 /** Whether the block at the cursor starts a new page; null where none may. */
 const pageBreak = ref<boolean | null>(null);
+/** Whether the block at the cursor is an annex's heading; null where none may. */
+const annex = ref<boolean | null>(null);
 
 function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
   pageBreak.value = pageBreakAtCursor(editor.value);
+  annex.value = annexAtCursor(editor.value);
   cellFill.value = cellFillOf(editor.value);
   cellSides.value = cellSidesOf(editor.value);
   cellBorder.value = cellBorderColorOf(editor.value);
@@ -957,6 +961,16 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       { kind: "heading", level: 4, icon: "i-lucide-heading-5" },
       "common.editor.heading4",
     ),
+    // An annex's heading: a page of its own, centred (PageBreakExtension).
+    {
+      icon: "i-lucide-paperclip",
+      "aria-label": t("common.editor.annex"),
+      "aria-pressed": annex.value === true,
+      tooltip: { text: t("common.editor.annex") },
+      active: annex.value === true,
+      disabled: annex.value === null,
+      onClick: () => run((chain) => chain.toggleAnnex()),
+    } as EditorToolbarItem,
     action(
       { kind: "bulletList", icon: "i-lucide-list" },
       "common.editor.bulletList",
@@ -990,8 +1004,8 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
             // would show the icon of whichever entry is active.
             slot: "more",
             items: [
-              structure.slice(0, 4),
-              structure.slice(4),
+              structure.slice(0, 5),
+              structure.slice(5),
               [alignment, newPage],
               marks.slice(2),
               [formula],
@@ -1182,6 +1196,16 @@ function buildContextItems(): void {
         })),
       },
     ];
+    const annexed = annexAtCursor(instance);
+    if (annexed !== null) {
+      block.push({
+        label: t("common.editor.annex"),
+        icon: "i-lucide-paperclip",
+        type: "checkbox" as const,
+        checked: annexed,
+        onSelect: () => run((c) => c.toggleAnnex()),
+      });
+    }
     const breaks = pageBreakAtCursor(instance);
     if (breaks !== null) {
       block.push({

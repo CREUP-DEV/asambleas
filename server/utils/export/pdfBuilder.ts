@@ -760,12 +760,16 @@ function agreementsRecordBody(
   const roomIds = new Set<string>(RECORD_SIGNATURE_ROOM_IDS);
   const body: Block[] = [];
   const closing: Block[] = [];
+  // What follows the closing: an acta's annexes (Block.annex), after the
+  // signature as in CREUP's actas (user's decisions of 2026-11-26).
+  const annexes: Block[] = [];
   for (const block of blocks) {
     // The signature's own room below stands for the web text's blank lines.
     if (RECORD_SIGNATURE_SPACER.test(block.id) || roomIds.has(block.id)) {
       continue;
     }
-    (closingIds.has(block.id) ? closing : body).push(block);
+    if (closingIds.has(block.id)) closing.push(block);
+    else (closing.length > 0 ? annexes : body).push(block);
   }
   const content = body.length > 0 ? blocksToPdf(body, ctx) : [];
   if (closing.length === 0) {
@@ -790,7 +794,21 @@ function agreementsRecordBody(
       }
     : { text: "", margin: [0, 0, 0, SIGNATURE_HEIGHT + 6] };
   content.push({ stack: [...before, mark, ...after], unbreakable: true });
+  if (annexes.length > 0) {
+    content.push(...blocksToPdf(annexes, ctx, undefined, true));
+  }
   return content;
+}
+
+/**
+ * An acta's text with the closing of its signing (signatureClosingBlocks)
+ * where it is signed: before its first annex (Block.annex), else at its end.
+ */
+function withClosingBeforeAnnexes(blocks: Block[], closing: Block[]): Block[] {
+  const at = blocks.findIndex((block) => block.annex && !block.cell);
+  return at < 0
+    ? [...blocks, ...closing]
+    : [...blocks.slice(0, at), ...closing, ...blocks.slice(at)];
 }
 
 // Annex -------------------------------------------------------------------
@@ -1002,13 +1020,13 @@ export function buildDocumentPdf(
       ...(meta.generated === "agreements_record" || data.signingClosing
         ? agreementsRecordBody(
             data.signingClosing
-              ? [
-                  ...(clean?.blocks ?? body.blocks),
-                  ...signatureClosingBlocks(
+              ? withClosingBeforeAnnexes(
+                  clean?.blocks ?? body.blocks,
+                  signatureClosingBlocks(
                     data.signingClosing.name,
                     data.signingClosing.office,
                   ),
-                ]
+                )
               : (clean?.blocks ?? body.blocks),
             ctx,
             t,

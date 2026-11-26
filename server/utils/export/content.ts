@@ -79,6 +79,15 @@ export const CONTENT_STYLES: Record<string, Style> = {
     color: CREUP_RED,
     lineHeight: 1,
   },
+  // An annex's heading: centred in burgundy, no bar nor box.
+  annexHeading: {
+    fontSize: 14,
+    bold: true,
+    color: CREUP_RED,
+    lineHeight: 1.15,
+    alignment: "center",
+    margin: [0, 0, 0, 12],
+  },
   heading2: {
     fontSize: 14,
     bold: true,
@@ -441,6 +450,8 @@ interface BlockShape {
   align?: BlockAlign;
   /** Starts on a new page (Block.pageBreak). */
   pageBreak?: true;
+  /** An annex's heading (Block.annex): a page of its own, centred. */
+  annex?: true;
   image?: BlockImage;
 }
 
@@ -535,12 +546,20 @@ function onBurgundy(inline: Inline): Inline {
  */
 function headingNode(item: Item, ctx: PdfContentContext): Content {
   const level = headingLevel(item.shape.level);
-  const framed = level === 1 || level === 3;
+  // An annex's heading has the look of its own, whatever its level.
+  const annex = item.shape.annex === true && !item.shape.cell;
+  const framed = !annex && (level === 1 || level === 3);
   const bar = framed && level === 1;
   const text: ContentText = {
     text: emptySafe(bar ? item.inlines.map(onBurgundy) : item.inlines),
-    style: framed ? (bar ? "barHeading" : "boxHeading") : `heading${level}`,
-    ...alignment(item.shape),
+    style: annex
+      ? "annexHeading"
+      : framed
+        ? bar
+          ? "barHeading"
+          : "boxHeading"
+        : `heading${level}`,
+    ...(annex ? {} : alignment(item.shape)),
   };
   const label = plainText(item.inlines).slice(0, 120);
   if (ctx.outline && item.countable && label) {
@@ -689,14 +708,20 @@ function blockNode(item: Item, ctx: PdfContentContext): Content {
 }
 
 /** Tables (groupTables) become pdfmake tables; other blocks flow. */
-function assemble(items: Item[], ctx: PdfContentContext): Content[] {
+function assemble(
+  items: Item[],
+  ctx: PdfContentContext,
+  afterContent = false,
+): Content[] {
   const output: Content[] = [];
   const runs = groupTables(
     items.map((item) => ({ ...item, cell: item.shape.cell })),
   );
   for (const run of runs) {
     if (run.kind === "blocks") {
-      output.push(...assembleFlow(run.items, ctx, output.length > 0));
+      output.push(
+        ...assembleFlow(run.items, ctx, afterContent || output.length > 0),
+      );
     } else output.push(tableNode(run.table, ctx));
   }
   return output;
@@ -1025,7 +1050,7 @@ function assembleFlow(
       // for the text's first block, which would leave the title alone on a
       // page, nor inside a table (assemble sends cells elsewhere).
       if (
-        item.shape.pageBreak &&
+        (item.shape.pageBreak || item.shape.annex) &&
         !item.shape.cell &&
         (afterContent || output.length > 0) &&
         typeof node === "object" &&
@@ -1104,6 +1129,11 @@ export function blocksToPdf(
    * E5» before a passage approved pending conciliation.
    */
   notes?: ReadonlyMap<string, string>,
+  /**
+   * Something of the text comes before these blocks (an acta's annexes
+   * after its closing), so their first block may open a page.
+   */
+  afterContent = false,
 ): Content[] {
   return assemble(
     blocks.map((block) => ({
@@ -1128,6 +1158,7 @@ export function blocksToPdf(
         : {}),
     })),
     ctx,
+    afterContent,
   );
 }
 
