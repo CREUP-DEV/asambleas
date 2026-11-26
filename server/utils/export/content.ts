@@ -198,6 +198,11 @@ export interface PdfContentContext {
    * table's cells, whose columns are too narrow for it.
    */
   justify?: boolean;
+  /**
+   * The index the headings of levels 1 to 3 and the annexes go into (a
+   * pdfmake `toc` of that id), when the text opens with one.
+   */
+  tocId?: string;
 }
 
 /** pdfmake's node of a block's text: the cell of a framed heading's table. */
@@ -575,6 +580,32 @@ function headingNode(item: Item, ctx: PdfContentContext): Content {
     text.outlineText = label;
     if (parent) text.outlineParentId = parent;
     open.push({ level, id });
+  }
+  // The index (user's decisions of 2026-11-26): levels 1 to 3 and the
+  // annexes, as CREUP's templates list them: level 1 and annexes in
+  // burgundy and bold, level 2 in bold, level 3 plain, each further in. The
+  // line reads the heading's own text in its own style: on the bar the
+  // white is the bar's style, not the text's.
+  if (
+    ctx.tocId &&
+    item.countable &&
+    label &&
+    !item.shape.cell &&
+    (annex || level <= 3)
+  ) {
+    const top = annex || level === 1;
+    const look = top
+      ? { bold: true, color: CREUP_RED }
+      : level === 2
+        ? { bold: true }
+        : {};
+    const indent = annex ? 0 : (level - 1) * 18;
+    Object.assign(text, {
+      tocItem: ctx.tocId,
+      tocStyle: { fontSize: 11, lineHeight: 1.15, ...look },
+      tocNumberStyle: { fontSize: 11, ...look },
+      tocMargin: [indent, top ? 4 : 1, 0, 1],
+    });
   }
   if (!framed) return { ...text, headlineLevel: level };
 

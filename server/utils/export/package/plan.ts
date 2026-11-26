@@ -27,8 +27,11 @@ import { NameRegistry, safeName, sortableNumbering } from "./names";
  * template or layout change): every piece is rendered again.
  */
 // 6: lists stand in from the margin with room between items; a block may
-// start a new page (2026-11-26).
-export const PACKAGE_RENDERER_VERSION = 6;
+// start a new page. 7: the index of regulations, motions, executive
+// reports, accounts, budgets and positionings, the bands of executive
+// reports and accounting documents, the approval line's own size
+// (2026-11-26).
+export const PACKAGE_RENDERER_VERSION = 7;
 
 /** Longest folder name taken from an agenda item's title. */
 const FOLDER_TITLE_MAX = 50;

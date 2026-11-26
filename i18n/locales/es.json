@@ -2712,7 +2712,8 @@
         "internalMotion": "Moción Interna",
         "ownRegulations": "Normativa propia",
         "positioning": "Posicionamiento",
-        "resolution": "Resolución"
+        "resolution": "Resolución",
+        "accounting": "Documentación contable"
       },
       "emptyDocument": "Este documento no tiene texto.",
       "voteCounts": "votos a favor: {inFavor}, en contra: {against}, abstenciones: {abstentions}",
@@ -2867,7 +2868,8 @@
           "documentStart": "Inicio del documento",
           "noChange": "El cambio ya no encaja en el texto publicado."
         }
-      }
+      },
+      "index": "Índice"
     }
   },
   "validation": {

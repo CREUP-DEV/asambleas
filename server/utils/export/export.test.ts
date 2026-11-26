@@ -2132,3 +2132,51 @@ describe("an acta's annexes", () => {
     );
   });
 });
+
+describe("the index a text opens with", () => {
+  const heading = (id: string, text: string, level: number): Block => ({
+    ...p(id, text),
+    type: "heading",
+    level,
+  });
+  const text = [
+    p(
+      "h1",
+      "Aprobado en la 76.ª Asamblea General Ordinaria el 23 de noviembre de 2024.",
+    ),
+    heading("t1", "Título I", 1),
+    heading("c1", "Capítulo I", 2),
+    heading("a1", "Artículo 1", 3),
+    p("x1", "Texto."),
+    heading("a4", "Nivel cuatro", 4),
+  ];
+  const build = (kind: ExportDocumentMeta["kind"]) =>
+    buildDocumentPdf(
+      {
+        assembly,
+        document: { ...meta, kind },
+        body: { variant: "clean", source: "consolidated", blocks: text },
+        generatedAt: new Date("2026-11-26T10:00:00Z"),
+      },
+      "es",
+    );
+  const json = (kind: ExportDocumentMeta["kind"]) =>
+    JSON.stringify(build(kind).content);
+
+  it("lists levels 1 to 3 after the history lines, the text on a new page", () => {
+    const out = json("regulation");
+    expect(out).toContain('"toc"');
+    expect(out.match(/"tocItem":\["index"\]|"tocItem":"index"/g)).toHaveLength(
+      3,
+    );
+    // The history line comes before the index, the text after it.
+    expect(out.indexOf("Aprobado en la 76.ª")).toBeLessThan(
+      out.indexOf('"toc"'),
+    );
+    expect(out.indexOf('"toc"')).toBeLessThan(out.indexOf("Título I"));
+  });
+
+  it("is left out of a resolution", () => {
+    expect(json("resolution")).not.toContain('"toc"');
+  });
+});

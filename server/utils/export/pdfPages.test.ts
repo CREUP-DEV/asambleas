@@ -214,6 +214,14 @@ describe("pages of a text's PDF", () => {
         true,
       );
       const byId = new Map(blocks.map((block) => [block.id, block]));
+      // The cover and the index come first (indexedBody): the index lists
+      // the headings, so the text is read from the page it starts on.
+      const textStart = map.starts[0]!.page - 1 + firstPage;
+      expect(textStart).toBeGreaterThan(firstPage);
+      const index = texts.slice(firstPage, textStart).join(" ");
+      const firstHeading = blocks.find((block) => block.type === "heading")!;
+      expect(index).toContain(firstWord(firstHeading));
+      if (kind === "positioning") expect(index).toContain("ÍNDICE");
       let previous = 0;
       for (const start of map.starts) {
         expect(start.page).toBeGreaterThan(previous);
@@ -224,18 +232,25 @@ describe("pages of a text's PDF", () => {
         const word = firstWord(byId.get(start.blockId)!);
         if (start.inside) {
           // It began on an earlier page.
-          const began = texts.findIndex((text) => text.includes(word));
+          const began = texts.findIndex(
+            (text, at) => at >= textStart && text.includes(word),
+          );
           expect(began).toBeGreaterThanOrEqual(0);
           expect(began).toBeLessThan(start.page - 1 + firstPage);
         } else {
           expect(page).toContain(word);
           // And on no earlier page.
-          for (let earlier = 0; earlier < start.page - 1 + firstPage; earlier++)
+          for (
+            let earlier = textStart;
+            earlier < start.page - 1 + firstPage;
+            earlier++
+          )
             expect(texts[earlier]).not.toContain(word);
         }
       }
-      // Every printed page holding text has its start.
-      expect(map.starts.length).toBe(map.total);
+      // Every printed page holding text has its start; the index's hold
+      // none of the text's blocks.
+      expect(map.starts.length).toBe(map.total - (textStart - firstPage));
     },
     RENDER_TEST_TIMEOUT,
   );

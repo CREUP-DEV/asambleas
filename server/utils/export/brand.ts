@@ -61,7 +61,38 @@ const BAND_LABELS: Partial<Record<DocumentKind, string>> = {
   statutes: "ownRegulations",
   positioning: "positioning",
   resolution: "resolution",
+  // Accounts and budgets (user's decisions of 2026-11-26).
+  accounts: "accounting",
+  budget: "accounting",
 };
+
+/**
+ * Whether the band names the association itself, in full, as the acta de
+ * acuerdos' does: an executive report (user's decisions of 2026-11-26).
+ */
+export function bandNamesAssociation(kind: DocumentKind): boolean {
+  return kind === "executive_report";
+}
+
+/**
+ * The kinds whose PDF opens with an index of their headings, with their
+ * pages (user's decisions of 2026-11-26), as CREUP's templates do:
+ * regulations, internal motions, executive reports, accounts and budgets,
+ * positionings. A resolution is read straight after its approval line.
+ */
+const INDEXED_KINDS: readonly DocumentKind[] = [
+  "regulation",
+  "statutes",
+  "internal_motion",
+  "executive_report",
+  "accounts",
+  "budget",
+  "positioning",
+];
+
+export function hasIndex(kind: DocumentKind): boolean {
+  return INDEXED_KINDS.includes(kind);
+}
 
 /** What the band says: the kind of document, or "internal document". */
 export function bandLabelKey(kind: DocumentKind): string {

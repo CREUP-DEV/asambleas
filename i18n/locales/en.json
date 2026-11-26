@@ -2712,7 +2712,8 @@
         "internalMotion": "Internal motion",
         "ownRegulations": "Own regulations",
         "positioning": "Position paper",
-        "resolution": "Resolution"
+        "resolution": "Resolution",
+        "accounting": "Accounting documents"
       },
       "emptyDocument": "This document has no text.",
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
@@ -2867,7 +2868,8 @@
           "documentStart": "Start of the document",
           "noChange": "The change no longer fits the published text."
         }
-      }
+      },
+      "index": "Contents"
     }
   },
   "validation": {

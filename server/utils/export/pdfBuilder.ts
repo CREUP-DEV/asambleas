@@ -20,7 +20,10 @@ import type {
   VoteResult,
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
-import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
+import {
+  fillApprovalLines,
+  isApprovalLine,
+} from "../../../shared/utils/content/approvalLine";
 import {
   CREUP_LEGAL,
   RECORD_CLOSING_BLOCK_IDS,
@@ -38,6 +41,8 @@ import {
   TEMPLATE_MARGINS,
   PAGE_HEIGHT,
   bandLabelKey,
+  bandNamesAssociation,
+  hasIndex,
   bandSvg,
   watermarkSvg,
   hasCover,
@@ -249,6 +254,16 @@ const NO_LIGATURES = { liga: false, clig: false } as unknown as NonNullable<
 const STYLES = {
   ...CONTENT_STYLES,
   // The template's title: Raleway Bold 22 pt in burgundy.
+  // The approval line under the title.
+  voteLine: { fontSize: 11, lineHeight: 1.15, color: "#1f1f1f" },
+  // The title of a positioning's index, on the page after its cover.
+  indexTitle: {
+    fontSize: 13,
+    bold: true,
+    color: CREUP_RED,
+    alignment: "center",
+    margin: [0, 18, 0, 12],
+  },
   docTitle: {
     fontSize: 22,
     bold: true,
@@ -576,10 +591,11 @@ function finalVoteLine(
         : vote.unanimous
           ? "finalVote.unanimous"
           : "finalVote.assent";
+  // As CREUP's templates write it under the title: the text's own size,
+  // not bold (user's decisions of 2026-11-26).
   return {
     text: t(key, params),
-    style: "meta",
-    bold: true,
+    style: "voteLine",
     margin: [0, 2, 0, 1],
   };
 }
@@ -647,6 +663,8 @@ function documentHeading(input: {
   title?: boolean;
   /** False when the text's own approval line already says it. */
   vote?: boolean;
+  /** Centred: a positioning's, on the page after its cover. */
+  centered?: boolean;
   outlineId?: string;
   pageBreak?: boolean;
 }): Content[] {
@@ -668,7 +686,11 @@ function documentHeading(input: {
   }
   const vote =
     input.vote === false ? null : finalVoteLine(meta, assembly, locale, t);
-  if (vote) lines.push(vote);
+  if (vote) {
+    lines.push(
+      input.centered ? { ...(vote as ContentText), alignment: "center" } : vote,
+    );
+  }
   // Never as the final text while a passage waits (even when the text's
   // own approval line says it was approved).
   const pending = pendingConciliationLine(meta, locale, t);
@@ -733,6 +755,74 @@ function cleanBody(
 ): Content[] {
   if (blocks.length === 0) return [{ text: t("emptyDocument"), style: "note" }];
   return blocksToPdf(blocks, ctx, notes);
+}
+
+/** The id of the index a text opens with (PdfContentContext.tocId). */
+const INDEX_ID = "index";
+
+/** A heading the index lists: levels 1 to 3 and annexes, with text. */
+function isIndexEntry(block: Block): boolean {
+  return (
+    block.type === "heading" &&
+    !block.cell &&
+    block.text.trim() !== "" &&
+    (block.annex === true || (block.level ?? 1) <= 3)
+  );
+}
+
+/**
+ * The text of a kind that opens with an index (hasIndex; user's decisions
+ * of 2026-11-26), as CREUP's templates lay it out: the approval and
+ * modification lines a regulation's text opens with, the index of its
+ * headings with their pages (a pdfmake `toc`: level 1 and annexes in
+ * burgundy and bold, level 2 in bold, level 3 plain, each further in), and
+ * the text from a new page. A positioning's index, on the page after its
+ * cover, has a title of its own («ÍNDICE»). A text with fewer than two
+ * headings to list has no index.
+ */
+function indexedBody(
+  blocks: Block[],
+  ctx: PdfContentContext,
+  t: Translate,
+  kind: DocumentKind,
+  cover: boolean,
+  notes?: ReadonlyMap<string, string>,
+): Content[] {
+  if (!hasIndex(kind) || blocks.filter(isIndexEntry).length < 2) {
+    return cleanBody(blocks, ctx, t, notes);
+  }
+  // The template's header a regulation keeps (its title again and its
+  // approval and modification lines): up to the last such line before the
+  // first heading, among the text's first blocks.
+  let lead = 0;
+  for (let at = 0; at < Math.min(blocks.length, 12); at++) {
+    const block = blocks[at]!;
+    if (block.type === "heading" || block.cell) break;
+    if (isApprovalLine(block.text)) lead = at + 1;
+  }
+  const indexed: PdfContentContext = { ...ctx, tocId: INDEX_ID };
+  const head =
+    lead > 0 ? blocksToPdf(blocks.slice(0, lead), indexed, notes) : [];
+  const rest = blocksToPdf(blocks.slice(lead), indexed, notes, true);
+  const first = rest[0];
+  if (first && typeof first === "object" && !Array.isArray(first)) {
+    (first as { pageBreak?: string }).pageBreak = "before";
+  }
+  const index: Content = {
+    toc: {
+      id: INDEX_ID,
+      ...(cover
+        ? {
+            title: {
+              text: t("index").toLocaleUpperCase("es-ES"),
+              style: "indexTitle",
+            },
+          }
+        : {}),
+    },
+    margin: [0, 4, 0, 0],
+  };
+  return [...head, index, ...rest];
 }
 
 /** The height kept for the visible signature, in points. */
@@ -1013,6 +1103,7 @@ export function buildDocumentPdf(
     t,
     title: !cover,
     vote: !clean?.filled && !meta.generated,
+    centered: cover,
   });
   if (body.variant === "clean") {
     content.push(
@@ -1032,10 +1123,12 @@ export function buildDocumentPdf(
             t,
             data.signature,
           )
-        : cleanBody(
+        : indexedBody(
             clean?.blocks ?? body.blocks,
             ctx,
             t,
+            meta.kind,
+            cover,
             body.source === "consolidated"
               ? pendingConciliationNotes(meta, locale, t)
               : undefined,
@@ -1078,9 +1171,10 @@ export function buildDocumentPdf(
     content,
     brand,
     // The record is content: the association's name, in Spanish always.
-    bandLabel: meta.generated
-      ? CREUP_LEGAL.name
-      : t(`band.${bandLabelKey(meta.kind)}`),
+    bandLabel:
+      meta.generated || bandNamesAssociation(meta.kind)
+        ? CREUP_LEGAL.name
+        : t(`band.${bandLabelKey(meta.kind)}`),
     cover,
     watermark: draft ? t("watermarkDraft") : undefined,
   });
