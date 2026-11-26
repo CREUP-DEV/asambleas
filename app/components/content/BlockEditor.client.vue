@@ -921,7 +921,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     icon: "i-lucide-separator-horizontal",
     "aria-label": t("common.editor.pageBreak"),
     "aria-pressed": pageBreak.value === true,
-    tooltip: { text: t("common.editor.pageBreak") },
+    tooltip: { text: t("common.editor.pageBreak"), kbds: ["meta", "enter"] },
     active: pageBreak.value === true,
     disabled: pageBreak.value === null,
     onClick: () => run((chain) => chain.togglePageBreak()),

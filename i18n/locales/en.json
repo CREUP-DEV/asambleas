@@ -2952,7 +2952,8 @@
       "announce": "You have {count} new notice | You have {count} new notices",
       "openMenu": "Open menu",
       "openMenuNew": "Open menu, {count} new notice | Open menu, {count} new notices",
-      "closeMenu": "Close menu"
+      "closeMenu": "Close menu",
+      "backToMenu": "Back to the menu"
     },
     "assembly": {
       "navLabel": "{assembly} sections",

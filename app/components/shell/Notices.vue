@@ -95,13 +95,28 @@ watch(unread, async (next, previous) => {
  * again (ShellNavbarToggle), never to the page's body.
  */
 let opener: Element | null = null;
+/**
+ * Opened from the phone's drawer, which closes as the panel opens (the
+ * default layout): an arrow before the title goes back to it (user's
+ * request of 2026-11-26), without closing and opening the menu again.
+ * Read as the panel opens, before the drawer closes.
+ */
+const sidebarOpen = useShellSidebarOpen();
+const fromDrawer = ref(false);
 watch(
   open,
   (value) => {
-    if (value) opener = document.activeElement;
+    if (value) {
+      opener = document.activeElement;
+      fromDrawer.value = sidebarOpen.value;
+    }
   },
   { flush: "sync" },
 );
+function backToMenu(): void {
+  closePanel();
+  sidebarOpen.value = true;
+}
 const panelContent = {
   onCloseAutoFocus: (event: Event) => {
     // A tap that focused nothing leaves the body: the button is better.
@@ -153,6 +168,20 @@ function onOpenUpdate(value: boolean): void {
       :content="panelContent"
       @update:open="onOpenUpdate"
     >
+      <!-- The way back to the drawer when the panel came from it: in the
+           header's row, drawn before the title (order-first). -->
+      <template #actions>
+        <UButton
+          v-if="fromDrawer"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          :aria-label="t('shell.notices.backToMenu')"
+          class="order-first -my-1 -ms-2 shrink-0 self-start lg:hidden"
+          data-testid="notices-back"
+          @click="backToMenu"
+        />
+      </template>
       <template #body>
         <div
           v-if="!data && !failed"
