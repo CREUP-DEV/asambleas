@@ -174,8 +174,9 @@ describe("renderSeatingImage", () => {
   });
 
   // An SVG is drawn in a Node process of its own (svgRender.ts): starting
-  // one and loading sharp takes seconds when the whole suite runs at once.
-  const SLOW = { ...SVG_RENDER_LIMITS, timeoutMs: 60_000 };
+  // one and loading sharp takes seconds when the whole suite runs at once,
+  // and at its usual low priority the suite's own workers starve it.
+  const SLOW = { ...SVG_RENDER_LIMITS, timeoutMs: 60_000, priority: 0 };
 
   it("fits a logo, an SVG too, on white", { timeout: 90_000 }, async () => {
     const out = await renderSeatingImage(SVG, "logo", SLOW);

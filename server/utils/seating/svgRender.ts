@@ -22,6 +22,12 @@ export interface SvgRenderLimits {
   heapMb: number;
   /** Bytes of WebP the process may return. */
   maxOutputBytes: number;
+  /**
+   * The process's niceness: 10 lets the room's requests come first. A test
+   * running beside a full suite gives 0, or the runner's own workers starve
+   * it past its timeout (Windows above all).
+   */
+  priority?: number;
 }
 
 /** A logo is 192 px of WebP, a few KB: ten seconds is plenty for one. */
@@ -143,9 +149,10 @@ function runSvgProcess(
       return;
     }
     // The room's requests come first.
-    if (child.pid !== undefined) {
+    const priority = limits.priority ?? 10;
+    if (child.pid !== undefined && priority !== 0) {
       try {
-        setPriority(child.pid, 10);
+        setPriority(child.pid, priority);
       } catch {
         // Not allowed here: it runs at the app's priority.
       }
