@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AssemblyDto, ReviewQueueDto } from "~~/shared/types/api";
+import type { RouteLocationNormalized } from "vue-router";
 import {
   reviewsAmendments,
   usesReviewQueue,
@@ -13,6 +14,10 @@ import {
   type ReviewBadgeState,
 } from "~/components/review/-queue";
 import { affectsReviewQueue } from "~/components/review/-live";
+import {
+  hubScrollTarget,
+  rememberOffset,
+} from "~/composables/assembly/-hubScroll";
 
 /**
  * Assembly hub: loads the assembly by slug (or id), shares it with the
@@ -273,6 +278,120 @@ function revealActiveSection() {
 }
 onMounted(revealActiveSection);
 watch(() => route.path, revealActiveSection);
+
+// Scroll between pages ------------------------------------------------------
+// A new page opens at the top, Back or Forward where its entry was left, a
+// page that places itself stays put (-hubScroll.ts).
+
+if (import.meta.client) {
+  const router = useRouter();
+  const hubBody = () =>
+    window.document
+      .getElementById("dashboard-panel-assembly-hub")
+      ?.querySelector<HTMLElement>('[data-slot="body"]') ?? null;
+  const saved = new Map<number, number>();
+  let leaving: { left: number; popped: boolean } | null = null;
+  const historyPosition = (): number | null => {
+    const position = (window.history.state as { position?: unknown } | null)
+      ?.position;
+    return typeof position === "number" ? position : null;
+  };
+
+  // The entry on show. On Back or Forward the browser has already moved to
+  // the next one when the router asks (and before its own popstate
+  // listeners run), so the one being left is kept here, and an entry that
+  // is not it means the browser moved.
+  let current = historyPosition();
+
+  // Each change of page's turn: a later one drops what an earlier one
+  // waits for.
+  let turn = 0;
+
+  /**
+   * Once the new page is in the hub (its component's element inside the
+   * panel's body: Suspense keeps the old one on show while it loads), the
+   * scroll goes where hubScrollTarget says.
+   */
+  function settle(
+    to: RouteLocationNormalized,
+    pending: { left: number; popped: boolean },
+    mine: number,
+  ): void {
+    let tries = 300;
+    const step = () => {
+      if (mine !== turn) return;
+      const body = hubBody();
+      const element = to.matched.at(-1)?.instances.default?.$el as
+        Node | undefined;
+      if (!body || !element || !body.contains(element)) {
+        if (tries-- > 0) window.setTimeout(step, 16);
+        return;
+      }
+      const position = historyPosition();
+      const target = hubScrollTarget({
+        left: pending.left,
+        now: body.scrollTop,
+        max: body.scrollHeight - body.clientHeight,
+        popped: pending.popped,
+        saved: position === null ? null : (saved.get(position) ?? null),
+      });
+      if (target === null) return;
+      body.scrollTo({ top: target });
+      if (target === 0) return;
+      keepAt(body, target, mine);
+    };
+    window.setTimeout(step, 0);
+  }
+
+  /**
+   * A page coming back may still load, or reload its data and shrink for a
+   * moment, which cuts the offset short: it is set again for a while, until
+   * the reader moves the page or goes elsewhere.
+   */
+  function keepAt(body: HTMLElement, target: number, mine: number): void {
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+    };
+    const inputs = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const name of inputs) {
+      body.addEventListener(name, cancel, { once: true, passive: true });
+    }
+    let tries = 30;
+    const retry = () => {
+      if (cancelled || mine !== turn || tries-- <= 0) {
+        for (const name of inputs) body.removeEventListener(name, cancel);
+        return;
+      }
+      if (Math.abs(body.scrollTop - target) > 1) {
+        body.scrollTo({ top: target });
+      }
+      window.setTimeout(retry, 50);
+    };
+    window.setTimeout(retry, 50);
+  }
+
+  const stopBefore = router.beforeEach((to, from) => {
+    // A page rewriting its own query (filters, tabs) is no new page.
+    if (to.path === from.path) return;
+    turn++;
+    const body = hubBody();
+    const left = body?.scrollTop ?? 0;
+    if (current !== null) rememberOffset(saved, current, left);
+    const position = historyPosition();
+    leaving = { left, popped: position !== null && position !== current };
+  });
+  const stopAfter = router.afterEach((to, _from, failure) => {
+    current = historyPosition();
+    const pending = leaving;
+    leaving = null;
+    if (pending && !failure) settle(to, pending, turn);
+  });
+  onBeforeUnmount(() => {
+    stopBefore();
+    stopAfter();
+  });
+}
 </script>
 
 <template>
