@@ -19,6 +19,7 @@ import {
   homeWorkNews,
   homeWorkNewsItem,
   homeWorkNewsLink,
+  homeWorkNewsPath,
   homeWorkProponentCounts,
   homeWorkProponentDueAt,
   homeWorkReviewPending,
@@ -1358,5 +1359,56 @@ describe("the Mesa's news", () => {
         amendments: transactionals,
       }).sentence.key,
     ).toBe("home.news.mesa.group.revisionReady");
+  });
+});
+
+describe("an acta to sign again", () => {
+  const voided = (over: Partial<MeWorkNewsDto> = {}) =>
+    homeWorkNewsItem(
+      news("n", {
+        type: "document_signature_voided",
+        amendment: null,
+        by: null,
+        document: { id: "d1", slug: "acta-79", title: "Acta de la 79.ª AGO" },
+        value: "form_correction",
+        ...over,
+      }),
+    );
+
+  it("says why, names nobody and leads to the consolidated text", () => {
+    const item = voided();
+    expect(item.sentence.key).toBe(
+      "home.news.document.signAgain.formCorrection",
+    );
+    expect(item.who).toBeNull();
+    expect(item.phrase).toBeNull();
+    expect(item.tone).toBe("neutral");
+    expect(homeWorkNewsLink(item)).toBe("/consolidado");
+    expect(homeWorkNewsPath(item)).toBe(
+      `/asambleas/${ago.slug}/documentos/acta-79/consolidado`,
+    );
+    expect(voided({ value: "final_vote_annulled" }).sentence.key).toBe(
+      "home.news.document.signAgain.finalVoteAnnulled",
+    );
+    expect(voided({ value: "unanimity_changed" }).sentence.key).toBe(
+      "home.news.document.signAgain.unanimityChanged",
+    );
+    expect(voided({ value: null }).sentence.key).toBe(
+      "home.news.document.signAgain.other",
+    );
+  });
+
+  it("leads to the acta de acuerdos' own page for that one", () => {
+    const item = voided({ agreementsRecord: true });
+    expect(homeWorkNewsPath(item)).toBe(
+      `/asambleas/${ago.slug}/acta-de-acuerdos`,
+    );
+  });
+
+  it("keeps the other rows under the document's path", () => {
+    const item = homeWorkNewsItem(news("n"));
+    expect(homeWorkNewsPath(item)).toBe(
+      `/asambleas/${ago.slug}/documentos/d1/revisar?enmienda=e2`,
+    );
   });
 });

@@ -360,6 +360,14 @@ function when(value: string | null): string {
                 : t("workspace.formCorrections.description")
           }}
         </p>
+        <!-- A signed acta loses its signature with the correction: said
+             before saving (user's decision of 2026-11-26). -->
+        <p
+          v-if="editing && mode === 'direct' && document.signedFile"
+          class="text-warning text-sm"
+        >
+          {{ t("workspace.formCorrections.voidsSignature") }}
+        </p>
       </div>
     </div>
 
@@ -605,6 +613,9 @@ function when(value: string | null): string {
                 ? t("document.pendingConciliation.applyAsk")
                 : t("workspace.formCorrections.applyAsk")
             }}
+            <template v-if="document.signedFile">
+              {{ t("workspace.formCorrections.voidsSignature") }}
+            </template>
           </p>
           <div class="flex flex-wrap justify-end gap-2">
             <UButton

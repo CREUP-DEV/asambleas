@@ -765,6 +765,30 @@ watch(popoverOpen, (open) => {
           :pages="textPages"
           @changed="refreshDocument"
         />
+        <!-- An approved acta, signed by the Secretaría (user's decision of
+             2026-11-26): its managers only, never while correcting. -->
+        <SigningPanel
+          v-if="document.signing && !correcting"
+          :signing="document.signing.state"
+          :approved="document.signing.ready"
+          :title="document.title"
+          :base="`${documentApi}/signing`"
+          :not-yet="
+            document.signing.signer
+              ? t('documentSigning.notYet')
+              : t('documentSigning.noSigner')
+          "
+          :intro="
+            t('documentSigning.intro', { name: document.signing.signer ?? '' })
+          "
+          :warning="
+            document.signing.closingInText
+              ? t('documentSigning.closingInText')
+              : null
+          "
+          @update="refreshDocument()"
+          @stale="refreshDocument()"
+        />
         <SessionWordingDialog
           v-if="document.can.conciliate"
           :context="wordingContext"

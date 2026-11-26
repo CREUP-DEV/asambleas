@@ -41,11 +41,8 @@ import {
   type DocumentRow,
 } from "./documents";
 import { recordEvent, type Executor } from "./events";
-import {
-  clearSigning,
-  loadSigningDto,
-  removeSigningFiles,
-} from "./agreementsSigning";
+import { clearSigning, removeSigningFiles } from "./agreementsSignedFile";
+import { loadSigningDto } from "./agreementsSigning";
 
 /**
  * The acta de acuerdos as a document of the platform (user's decisions of

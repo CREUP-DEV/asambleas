@@ -127,6 +127,10 @@ export const SESSION_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
   "agreements_record_signed",
   "agreements_record_signature_removed",
   "agreements_record_updated",
+  "document_signing_prepared",
+  "document_signed",
+  "document_signature_removed",
+  "document_signature_voided",
 ]);
 
 /**
@@ -158,6 +162,10 @@ export const AGENDA_UNCHANGED_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
   "agreements_record_prepared",
   "agreements_record_signed",
   "agreements_record_signature_removed",
+  "document_signing_prepared",
+  "document_signed",
+  "document_signature_removed",
+  "document_signature_voided",
 ]);
 
 /**

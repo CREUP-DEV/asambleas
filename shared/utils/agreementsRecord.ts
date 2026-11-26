@@ -857,8 +857,20 @@ export function agreementsRecordBlocks(
     }
   }
 
+  blocks.push(...signatureClosingBlocks(name, office));
+  return blocks;
+}
+
+/**
+ * The closing of a text Secretaría signs: the formula, the room for the
+ * signature, then the name and office of whoever certifies in the
+ * signature's box (RECORD_CLOSING_BLOCK_IDS). The acta de acuerdos ends its
+ * own text with it; an approved acta gets it only in the PDF made to be
+ * signed (documentSigning.ts, user's decision of 2026-11-26).
+ */
+export function signatureClosingBlocks(name: string, office: string): Block[] {
   const signatureOffice = `${office} de la ${CREUP_LEGAL.name}`;
-  blocks.push(
+  return [
     paragraph(
       "ar-closing",
       "Para que conste a los efectos oportunos, a fecha de la firma digital.",
@@ -882,8 +894,7 @@ export function agreementsRecordBlocks(
       ),
       cell: { ...SIGNATURE_CELL },
     },
-  );
-  return blocks;
+  ];
 }
 
 /**

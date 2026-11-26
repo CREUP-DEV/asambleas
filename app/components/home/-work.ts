@@ -24,6 +24,7 @@ import type {
 } from "~~/shared/types/api";
 import { dedupeNews } from "~~/shared/utils/notices";
 import { compareAmendmentCodes } from "~/composables/amendment/workspace";
+import { assemblyPath } from "~/composables/assembly/-sections";
 
 /** Something the user has to do, in the order it is most urgent. */
 export type HomeWorkTaskKind =
@@ -456,9 +457,11 @@ export interface HomeWorkNews {
    * review of the main presenter's answers: read-only for a co-presenter
    * reading the main presenter's answer to an amendment of someone else,
    * and where the main presenter answers a new amendment still waiting for
-   * it (MeWorkNewsDto.awaitsAnswer).
+   * it (MeWorkNewsDto.awaitsAnswer); the consolidated text of an acta to
+   * sign again, or the acta de acuerdos' page for that one
+   * (document_signature_voided).
    */
-  target: "document" | "review";
+  target: "document" | "review" | "consolidated" | "agreements";
   /**
    * The Admin who did it while acting as the user's account (the user did
    * not decide it), by name; null otherwise.
@@ -507,6 +510,13 @@ function amendmentPhrase(
       : "home.news.phrase.amendment";
   return { key, params: { code: amendment.code } };
 }
+
+/** The sentence of each reason an acta must be signed again (SignatureVoidReason). */
+const SIGN_AGAIN_REASONS = new Map<string, string>([
+  ["form_correction", "formCorrection"],
+  ["final_vote_annulled", "finalVoteAnnulled"],
+  ["unanimity_changed", "unanimityChanged"],
+]);
 
 /**
  * Puts one news entry into words: what happened, who did it when the
@@ -762,6 +772,17 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
         return make(`home.work.updates.document_${news.value}`);
       }
       return make("home.news.document.other");
+    case "document_signature_voided":
+      // For whoever signs: the acta lost its signed PDF, and why. It leads
+      // to where it is signed again.
+      return make(
+        `home.news.document.signAgain.${SIGN_AGAIN_REASONS.get(news.value ?? "") ?? "other"}`,
+        "neutral",
+        null,
+        null,
+        {},
+        news.agreementsRecord ? "agreements" : "consolidated",
+      );
     default:
       return amendment
         ? make("home.news.amendment.other")
@@ -990,8 +1011,23 @@ export function homeWorkAmendmentQuery(
 export function homeWorkNewsLink(
   item: Pick<HomeWorkNews, "target" | "amendment">,
 ): string {
+  if (item.target === "consolidated") return "/consolidado";
   const query = homeWorkAmendmentQuery(item.amendment);
   return item.target === "review" ? `/revisar${query}` : query;
+}
+
+/**
+ * Where a news item leads, unlocalized: the acta de acuerdos' page for the
+ * one to sign again (its only page), else under the document's path
+ * (homeWorkNewsLink).
+ */
+export function homeWorkNewsPath(
+  item: Pick<HomeWorkNews, "target" | "amendment" | "assembly" | "document">,
+): string {
+  if (item.target === "agreements") {
+    return assemblyPath(item.assembly.slug, "agreements");
+  }
+  return `${assemblyPath(item.assembly.slug, "documents")}/${encodeURIComponent(item.document.slug)}${homeWorkNewsLink(item)}`;
 }
 
 // Calendar -----------------------------------------------------------------------

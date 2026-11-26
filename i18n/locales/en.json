@@ -3327,7 +3327,13 @@
         "approved": "The assembly approved the document's final text.",
         "approvedPending": "The assembly approved the document, with passages pending reconciliation.",
         "rejected": "The assembly rejected the document's final text.",
-        "other": "There is news about the document."
+        "other": "There is news about the document.",
+        "signAgain": {
+          "formCorrection": "The minutes must be signed again: their text was corrected.",
+          "finalVoteAnnulled": "The minutes must be signed again: their final vote was annulled.",
+          "unanimityChanged": "The minutes must be signed again: the unanimity of their final vote changed.",
+          "other": "The minutes must be signed again: the signed PDF was withdrawn."
+        }
       }
     }
   },
@@ -3970,7 +3976,8 @@
         "decide": "The correction could not be updated"
       },
       "correctedText": "Text with corrections of form after the vote. The corrections and their changes are below.",
-      "tableLookOnly": "Only how the tables look changes: colour, borders, width or position. The consolidated text shows it."
+      "tableLookOnly": "Only how the tables look changes: colour, borders, width or position. The consolidated text shows it.",
+      "voidsSignature": "These minutes are signed: applying the correction withdraws the signed PDF, and they must be signed again."
     },
     "export": {
       "clean": "Clean PDF",
@@ -7421,7 +7428,11 @@
       },
       "amendment_validation_undone": "Amendment validation undone by the Secretariat",
       "vote_voided": "Agenda item vote voided",
-      "vote_unanimity_changed": "Vote unanimity changed"
+      "vote_unanimity_changed": "Vote unanimity changed",
+      "document_signing_prepared": "Minutes prepared for signing",
+      "document_signed": "Signed minutes published",
+      "document_signature_removed": "Signed minutes withdrawn",
+      "document_signature_voided": "Minutes signature withdrawn after a change to their text or approval"
     },
     "changes": {
       "milestoneNote": "Note on “{milestone}”",
@@ -7526,5 +7537,11 @@
       "add": "The speaker could not be noted",
       "remove": "The note could not be removed"
     }
+  },
+  "documentSigning": {
+    "notYet": "They are signed once their final vote approves them and no passage is left to conciliate.",
+    "intro": "Prepare them for signing: the PDF ends with the closing formula, the visible signature of the Secretaría Ejecutiva held in the Intranet and the name of {name}. Once signed, it is published instead of the generated PDF.",
+    "noSigner": "The roster has no one in the Secretaría Ejecutiva: without their name the minutes cannot be prepared for signing.",
+    "closingInText": "The text already ends with its own signing formula. Remove it with a correction of form before preparing them: the PDF to sign adds it with the signer's name."
   }
 }

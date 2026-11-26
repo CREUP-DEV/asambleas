@@ -24,6 +24,7 @@ import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
 import {
   CREUP_LEGAL,
   RECORD_CLOSING_BLOCK_IDS,
+  signatureClosingBlocks,
   RECORD_SIGNATURE_ROOM_IDS,
   RECORD_SIGNATURE_SPACER,
 } from "../../../shared/utils/agreementsRecord";
@@ -190,11 +191,17 @@ export interface DocumentExportData {
   /** The images its text shows, by asset id. */
   images?: Record<string, ExportImage>;
   /**
-   * The acta de acuerdos only: the visible signature of whoever certifies,
-   * drawn above their name in the PDF made to be signed (agreementsSigning
-   * .ts). Without it the space stays blank.
+   * The PDF made to be signed (agreementsSigning.ts): the visible signature
+   * of whoever certifies, drawn above their name. Without it the space
+   * stays blank.
    */
   signature?: ExportImage | null;
+  /**
+   * An approved acta prepared to be signed (user's decision of 2026-11-26):
+   * the closing the acta de acuerdos ends with (signatureClosingBlocks),
+   * worded for whoever certifies, follows its text in this PDF only.
+   */
+  signingClosing?: { name: string; office: string } | null;
 }
 
 export interface ExportAgendaNode {
@@ -992,9 +999,17 @@ export function buildDocumentPdf(
   if (body.variant === "clean") {
     content.push(
       ...heading,
-      ...(meta.generated === "agreements_record"
+      ...(meta.generated === "agreements_record" || data.signingClosing
         ? agreementsRecordBody(
-            clean?.blocks ?? body.blocks,
+            data.signingClosing
+              ? [
+                  ...(clean?.blocks ?? body.blocks),
+                  ...signatureClosingBlocks(
+                    data.signingClosing.name,
+                    data.signingClosing.office,
+                  ),
+                ]
+              : (clean?.blocks ?? body.blocks),
             ctx,
             t,
             data.signature,
@@ -1052,7 +1067,10 @@ export function buildDocumentPdf(
     watermark: draft ? t("watermarkDraft") : undefined,
   });
   withContentImages(definition, data.images);
-  if (data.signature && meta.generated === "agreements_record") {
+  if (
+    data.signature &&
+    (meta.generated === "agreements_record" || data.signingClosing)
+  ) {
     definition.images = {
       ...definition.images,
       [SIGNATURE_IMAGE_KEY]: data.signature.dataUrl,

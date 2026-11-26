@@ -294,8 +294,9 @@ export interface MeNoticesDto {
   unread: number;
   /**
    * The documents a notice may come from (presented by the member, or with
-   * amendments it wrote): inside an assembly, a live event about one of them
-   * reads the notices again.
+   * amendments it wrote, and, for an account with document:manage, every
+   * document with a signing): inside an assembly, a live event about one of
+   * them reads the notices again.
    */
   watchDocumentIds: string[];
   /**
@@ -395,6 +396,14 @@ export interface MeWorkNewsDto {
    * Absent otherwise.
    */
   asMesa?: boolean;
+  /**
+   * On a `document_signature_voided` row (for an account with
+   * document:manage: an acta lost its signed PDF and must be signed again,
+   * `value` saying why: form_correction, final_vote_annulled or
+   * unanimity_changed): the document is the acta de acuerdos, signed on its
+   * own page rather than on the consolidated text's. Absent otherwise.
+   */
+  agreementsRecord?: boolean;
   /**
    * With `asPresenter`, for the main presenter: the amendment still waits
    * for its answer, or, on a grouped row, at least one of the group does,
@@ -1153,11 +1162,31 @@ export interface DocumentDto extends DocumentSummaryDto {
    */
   generated: "agreements_record" | null;
   /**
-   * The acta de acuerdos only: its signed PDF, once uploaded for the text in
-   * force; it leads the document and replaces the generated PDF.
+   * The acta de acuerdos or an approved acta: its signed PDF, once uploaded
+   * for the text in force; it leads the document and replaces the
+   * generated PDF.
    */
   signedFile: AgreementsRecordSignedFileDto | null;
+  /**
+   * An acta's signing (user's decision of 2026-11-26), to the document's
+   * managers only, once its final vote approved it; null otherwise.
+   */
+  signing: DocumentSigningDto | null;
   can: DocumentCapabilities;
+}
+
+/** The signing of an approved acta, as its managers read it. */
+export interface DocumentSigningDto {
+  /** Approved, with no passage pending conciliation: it can be prepared. */
+  ready: boolean;
+  /**
+   * Its text ends with a signing formula of its own, which the PDF made to
+   * be signed would repeat: a correction of form takes it out first.
+   */
+  closingInText: boolean;
+  /** Who certifies, as the roster names the Secretaría Ejecutiva. */
+  signer: string | null;
+  state: AgreementsRecordSigningDto | null;
 }
 
 /**

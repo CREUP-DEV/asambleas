@@ -65,7 +65,14 @@ import {
 import { diffChanges, sortedIds } from "./changes";
 import { DOCUMENTS_DEADLINE_PASSED_MESSAGE } from "./documentRefusals";
 import { recordEvent } from "./events";
-import { loadSignedRecordFile } from "./agreementsSignedFile";
+import {
+  hasSigning,
+  isSignableActa,
+  loadActaSigning,
+  loadSignedRecordFile,
+  removeAllSigningFiles,
+  voidSigning,
+} from "./agreementsSignedFile";
 import { assertSessionOpen } from "./sessionOpen";
 import { stampDebateStarted } from "./positionsPublication";
 import { applyOnScreenMarks } from "./sessionProgress";
@@ -699,8 +706,10 @@ export interface DocumentDtoInput {
   baseVersion: VersionRow | null;
   consolidatedVersion: VersionRow | null;
   finalVote: VoteRow | null;
-  /** The acta de acuerdos' signed PDF (agreementsSigning.ts). */
+  /** The signed PDF that leads it (agreementsSigning.ts). */
   signedFile?: DocumentDto["signedFile"];
+  /** An acta's signing, for its managers (documentSigning.ts). */
+  signing?: DocumentDto["signing"];
   now?: Date;
 }
 
@@ -747,6 +756,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
     }),
     generated: document.generated ?? null,
     signedFile: input.signedFile ?? null,
+    signing: input.signing ?? null,
     can: documentCapabilities(
       actor,
       assembly,
@@ -1206,11 +1216,17 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
-  const [counts, anyAmendment, signedFile] = await Promise.all([
+  const [counts, anyAmendment, signedFile, signing] = await Promise.all([
     countVisibleAmendments(actor, [document.id], executor),
     hasAnyAmendment(executor, document.id),
-    document.generated === "agreements_record"
+    hasSigning(document)
       ? loadSignedRecordFile(document, executor)
+      : Promise.resolve(null),
+    // Only an approved acta is signed: a rejected one shows no signing.
+    isSignableActa(document) &&
+    finalVote?.result === "approved" &&
+    canManageDocuments(actor)
+      ? loadActaSigning(document, consolidatedVersion, finalVote, executor)
       : Promise.resolve(null),
   ]);
   return toDocumentDto({
@@ -1219,6 +1235,7 @@ export async function loadDocumentDto(
     document,
     milestones,
     signedFile,
+    signing,
     ...redactPresenters(actor, memberRefOrNull(proponent), coProponents),
     amendmentCount: counts.get(document.id) ?? 0,
     hasAmendments: anyAmendment,
@@ -3288,7 +3305,7 @@ export async function annulFinalVote(
     });
   }
 
-  await db.transaction(async (tx) => {
+  const voided = await db.transaction(async (tx) => {
     // The projection may stop showing the vote: assembly before document.
     await shareLockAssembly(tx, assembly.id);
     const document = await lockDocument(tx, ctx.document.id);
@@ -3340,7 +3357,15 @@ export async function annulFinalVote(
       voteId: document.finalVoteId,
       actor,
     });
+    // Its signed PDF signed an approval that is gone.
+    return voidSigning(
+      tx,
+      { assemblyId: assembly.id, documentId: document.id },
+      actor,
+      "final_vote_annulled",
+    );
   });
+  await removeAllSigningFiles([voided]);
 
   return loadDocumentDto(assembly, ctx.document.id, actor);
 }

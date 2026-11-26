@@ -1921,8 +1921,8 @@ keep working; it goes in the release after.
   the notices again on any document or amendment event (and on a `poll`),
   still at most every 30 s.
 
-An account without a member gets empty `watchDocumentIds`, and empty
-`items` unless it moderates.
+An account without a member gets empty `watchDocumentIds` and `items`
+unless it moderates or manages documents (below).
 Nothing here goes through the email outbox: the notices are computed when
 read, from `events`, and never send anything.
 
@@ -2057,7 +2057,23 @@ What the items carry, by whom (the Mesa's scope is the last one):
   also by the admission they left, so late ones (`value: "pending"`)
   group apart and say the assembly still has to decide; a rejection
   names its party and stays alone. None of this reaches anyone by email:
-  the email rules are unchanged.
+  the email rules are unchanged;
+- for an account that manages documents (`document:manage`,
+  `signingNewsScope`: the Secretaría and the Presidencia by default), with
+  or without a member: a `document_signature_voided` (an approved acta
+  whose signed PDF a correction of form, the annulment of its final vote
+  or a change of that vote's unanimity took away; `value` is the reason,
+  `form_correction`, `final_vote_annulled` or `unanimity_changed`), with
+  `amendment: null`, the latest one per document, and only while the
+  document is not signed again for its text in force (a signed PDF whose
+  `signedVersionId` is the document's `consolidatedVersionId`,
+  `signatureVoidStands`). It is a pending task, not someone else's act, so
+  the account's own correction or vote change brings it too. The client
+  leads it to the consolidated text, where the acta is signed, or to the
+  acta de acuerdos' page (`agreementsRecord: true`). Read apart, up to 60
+  candidates (`NEWS_SIGNING_CANDIDATES`), cutting only themselves; every
+  document of these assemblies with a signing joins `watchDocumentIds`.
+  Never by email.
 
 `by` is the member that decided: null for a transactional that closed by
 itself or came back by itself (`amendment_withdrawn` with
@@ -2195,6 +2211,33 @@ record in `agreement_record_signings`.
 | GET    | `/api/assemblies/[assembly]/agreements-record/signing/prepared` | `document:manage` | The PDF prepared to sign, for the text in force; 404 without one.                                                                                       |
 | POST   | `/api/assemblies/[assembly]/agreements-record/signing/signed`   | `document:manage` | Multipart `file` (PDF up to 20 MB with a digital signature, 422 without one) and `updatedAt` of the signing. Publishes it (`agreements_record_signed`). |
 | DELETE | `/api/assemblies/[assembly]/agreements-record/signing/signed`   | `document:manage` | Withdraws the signed PDF (`agreements_record_signature_removed`).                                                                                       |
+
+### Signing an approved acta
+
+An acta (`kind = 'minutes'`, structured, not the acta de acuerdos) is signed
+the same way once its final vote approved it and no passage is left to
+conciliate (user's decisions of 2026-11-26, `server/utils/domain/documentSigning.ts`).
+Its text never holds the signature: the PDF made to be signed ends with the
+acuerdos' closing (`signatureClosingBlocks`: «Para que conste…», the visible
+signature from the Intranet, the name of whoever holds the Secretaría
+Ejecutiva in the roster and the office), and an acta written with a closing
+of its own has it taken out with a correction of form first
+(`DocumentSigningDto.closingInText` warns). Without anyone in the Secretaría
+Ejecutiva the preparation answers 409. A correction of form or a
+conciliation (`applyText`), annulling the final vote or changing its
+unanimity takes both PDFs away and deletes their files (`voidSigning`); a
+published signature leaves `document_signature_voided`
+(`{ reason, fileName }`), which the managers read in «Avisos», never by
+email. The document's managers read `DocumentDto.signing` (null for anyone
+else and for an acta not approved); the signed PDF is `DocumentDto.signedFile`
+for everyone, as the record's. Each route returns the `DocumentDto`.
+
+| Method | Path                                                               | Who               | Notes                                                                                                                                     |
+| ------ | ------------------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/signing`          | `document:manage` | Renders the PDF to sign (`document_signing_prepared`); the one prepared before goes. 404 for another document, 409 before it is approved. |
+| GET    | `/api/assemblies/[assembly]/documents/[document]/signing/prepared` | `document:manage` | The PDF prepared to sign, for the text in force; 404 without one.                                                                         |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | `document:manage` | Multipart `file` (PDF up to 20 MB with a digital signature) and `updatedAt` of the signing. Publishes it (`document_signed`).             |
+| DELETE | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | `document:manage` | Withdraws the signed PDF (`document_signature_removed`).                                                                                  |
 
 ## Headcounts
 

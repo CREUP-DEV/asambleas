@@ -22,7 +22,7 @@ import {
  * it is read and approved, and to correct line by line. The corrections
  * are kept apart from the text, so every vote writes it again without
  * losing them; its own final vote settles it. Once approved it is signed
- * (AgreementsRecordSigning), and a correction then regenerates it.
+ * (SigningPanel), and a correction then regenerates it.
  */
 
 const { t } = useI18n();
@@ -314,11 +314,17 @@ function letters(agreement: RecordAgreement): (string | null)[] {
           "
         />
 
-        <AgreementsRecordSigning
+        <SigningPanel
           v-if="record.document"
-          :record="record"
-          :api-base="apiBase"
-          @update="record = $event"
+          :signing="record.signing"
+          :approved="record.document.approved"
+          :title="record.document.title"
+          :base="`${apiBase}/agreements-record/signing`"
+          :not-yet="t('agreementsRecord.signing.notYet')"
+          :intro="t('agreementsRecord.signing.intro')"
+          :outdated="record.document.outdated"
+          :regenerate-url="`${apiBase}/agreements-record/regenerate`"
+          @update="record = $event as AgreementsRecordDto"
           @stale="refresh()"
         />
 

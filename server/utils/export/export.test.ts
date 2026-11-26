@@ -735,6 +735,73 @@ describe("acta de acuerdos", () => {
   });
 });
 
+describe("an approved acta prepared to be signed", () => {
+  const actaMeta: ExportDocumentMeta = { ...meta, kind: "minutes" };
+  const text: Block[] = [
+    p("a1", "Se abre la sesión."),
+    p("a2", "Se levanta la sesión."),
+  ];
+  const build = (
+    extra: Pick<DocumentExportData, "signature" | "signingClosing">,
+  ) =>
+    buildDocumentPdf(
+      {
+        assembly,
+        document: actaMeta,
+        body: { variant: "clean", source: "consolidated", blocks: text },
+        generatedAt: new Date("2026-11-26T10:00:00Z"),
+        ...extra,
+      },
+      "es",
+    );
+  const closingStack = (definition: ReturnType<typeof build>) =>
+    (definition.content as Content[]).find(
+      (node) =>
+        typeof node === "object" &&
+        node !== null &&
+        "unbreakable" in node &&
+        node.unbreakable === true,
+    ) as { stack: Content[] } | undefined;
+
+  it("ends with the record's closing, worded for whoever certifies", () => {
+    const signature = {
+      dataUrl: "data:image/png;base64,AAAA",
+      width: 400,
+      height: 160,
+    };
+    const definition = build({
+      signature,
+      signingClosing: {
+        name: "Nombre Apellido",
+        office: "Secretaría Ejecutiva",
+      },
+    });
+    const stack = closingStack(definition)!;
+    expect(stack).toBeDefined();
+    const closing = JSON.stringify(stack);
+    expect(closing).toContain("a fecha de la firma digital");
+    expect(closing).toContain("Nombre Apellido");
+    expect(closing).toContain("Secretaría Ejecutiva de la");
+    // The formula, the signature, then the name and office in their box.
+    expect(stack.stack).toHaveLength(3);
+    expect(stack.stack[1]).toMatchObject({ image: "record-signature" });
+    expect(definition.images?.["record-signature"]).toBe(signature.dataUrl);
+    // The acta's own text comes first, untouched.
+    expect(JSON.stringify(definition.content)).toContain(
+      "Se levanta la sesión.",
+    );
+  });
+
+  it("adds nothing to an acta's PDF that is not made to be signed", () => {
+    const definition = build({});
+    expect(closingStack(definition)).toBeUndefined();
+    expect(JSON.stringify(definition.content)).not.toContain(
+      "a fecha de la firma digital",
+    );
+    expect(definition.images?.["record-signature"]).toBeUndefined();
+  });
+});
+
 describe("annotatedToPdf", () => {
   const { annotated } = consolidate(base, [
     { id: "a2", ops: opsB },

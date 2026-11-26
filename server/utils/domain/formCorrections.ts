@@ -53,6 +53,8 @@ import type {
   FormCorrectionWithdrawBody,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
+import type { SigningFiles } from "./agreementsSignedFile";
+import { removeAllSigningFiles, voidSigning } from "./agreementsSignedFile";
 
 /**
  * Corrections of form to an approved text (user's decisions of
@@ -225,6 +227,8 @@ async function applyText(
     pendingPassages?: PendingPassage[];
   },
   actor: Actor,
+  /** Collects the signed PDFs it voids, removed once the caller commits. */
+  cleanup: SigningFiles[],
 ): Promise<string> {
   const [version] = await tx
     .insert(documentVersions)
@@ -247,6 +251,14 @@ async function applyText(
     .update(documents)
     .set({ consolidatedVersionId: version!.id })
     .where(eq(documents.id, document.id));
+  // A signed acta no longer signs this text: it is signed again.
+  const voided = await voidSigning(
+    tx,
+    { assemblyId: document.assemblyId, documentId: document.id },
+    actor,
+    "form_correction",
+  );
+  if (voided) cleanup.push(voided);
   return version!.id;
 }
 
@@ -267,6 +279,7 @@ export async function createFormCorrection(
   }
   const contentHash = await hashBlocks(body.blocks);
 
+  const cleanup: SigningFiles[] = [];
   await db.transaction(async (tx) => {
     const document = await lockDocument(tx, ctx.document.id);
     const mode = formCorrectionMode(actor, document);
@@ -300,6 +313,7 @@ export async function createFormCorrection(
           document,
           { blocks: body.blocks, contentHash, reason: body.reason },
           actor,
+          cleanup,
         )
       : null;
     const [row] = await tx
@@ -336,6 +350,7 @@ export async function createFormCorrection(
       actor,
     });
   });
+  await removeAllSigningFiles(cleanup);
 
   return listFormCorrections(ctx);
 }
@@ -372,6 +387,7 @@ export async function decideFormCorrection(
   if (!canManageDocuments(actor)) {
     fail(403, "Solo la Secretaría valida las correcciones propuestas");
   }
+  const cleanup: SigningFiles[] = [];
   await db.transaction(async (tx) => {
     const document = await lockDocument(tx, ctx.document.id);
     const row = await lockCorrection(tx, document.id, correctionId);
@@ -412,13 +428,20 @@ export async function decideFormCorrection(
     // passages conciliated since leave it as it was, so it applies while
     // its passage is still pending (conciliatedText).
     if (row.passage) {
-      await applyConciliation(tx, ctx, document, row.passage, {
-        reason: row.reason,
-        madeAs: row.madeAs,
-        correctionId: row.id,
-        proposedByUserId: row.proposedByUserId,
-        note: body.note ?? null,
-      });
+      await applyConciliation(
+        tx,
+        ctx,
+        document,
+        row.passage,
+        {
+          reason: row.reason,
+          madeAs: row.madeAs,
+          correctionId: row.id,
+          proposedByUserId: row.proposedByUserId,
+          note: body.note ?? null,
+        },
+        cleanup,
+      );
       return;
     }
     if (document.consolidatedVersionId !== row.fromVersionId) {
@@ -437,6 +460,7 @@ export async function decideFormCorrection(
       document,
       { blocks: row.blocks, contentHash: row.contentHash, reason: row.reason },
       actor,
+      cleanup,
     );
     await tx
       .update(documentFormCorrections)
@@ -464,6 +488,7 @@ export async function decideFormCorrection(
       actor,
     });
   });
+  await removeAllSigningFiles(cleanup);
   return listFormCorrections(ctx);
 }
 
@@ -665,6 +690,7 @@ async function applyConciliation(
     proposedByUserId: string | null;
     note: string | null;
   },
+  cleanup: SigningFiles[],
 ): Promise<void> {
   const { actor, assembly } = ctx;
   // Refused once its passage is no longer pending (passage_changed).
@@ -686,6 +712,7 @@ async function applyConciliation(
       pendingPassages: text.pending,
     },
     actor,
+    cleanup,
   );
   await tx
     .update(documentFormCorrections)
@@ -732,6 +759,7 @@ export async function createConciliation(
     fail(403, "No puedes conciliar el texto aprobado de este documento");
   }
 
+  const cleanup: SigningFiles[] = [];
   await db.transaction(async (tx) => {
     const document = await lockDocument(tx, ctx.document.id);
     const mode = formCorrectionMode(actor, document);
@@ -759,6 +787,7 @@ export async function createConciliation(
             pendingPassages: text.pending,
           },
           actor,
+          cleanup,
         )
       : null;
     const now = new Date();
@@ -796,6 +825,7 @@ export async function createConciliation(
       actor,
     });
   });
+  await removeAllSigningFiles(cleanup);
 
   return listFormCorrections(ctx);
 }

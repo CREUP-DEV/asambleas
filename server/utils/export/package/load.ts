@@ -7,6 +7,7 @@ import { agendaChildGroups } from "../../../../shared/utils/agendaNumbering";
 import { loadVisibleAmendmentIds, storedPdfName } from "../../domain/documents";
 import { convocationStoredName } from "../../domain/convocation";
 import {
+  hasSigning,
   loadSignedRecordFile,
   signedRecordStoredName,
 } from "../../domain/agreementsSignedFile";
@@ -111,10 +112,11 @@ export async function loadPackageSource(
     ]);
   const { byDocument: amendmentsByDocument, authors } =
     await loadPackageAmendments([...visibleAmendments]);
-  // The acta de acuerdos once signed: its signed PDF stands for its own.
+  // The acta de acuerdos and the actas once signed: the signed PDF stands
+  // for the generated one.
   const signedRecords = new Map<string, string>();
   for (const document of documentRows) {
-    if (document.generated !== "agreements_record") continue;
+    if (!hasSigning(document)) continue;
     const signed = await loadSignedRecordFile(document);
     if (signed) signedRecords.set(document.id, signed.url);
   }

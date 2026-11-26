@@ -59,6 +59,8 @@ import {
   ITEM_IS_CONTAINER_REASON,
   ITEM_TAKES_NO_VOTE_REASON,
 } from "~~/shared/constants/errorReasons";
+import type { SigningFiles } from "./agreementsSignedFile";
+import { removeAllSigningFiles, voidSigning } from "./agreementsSignedFile";
 
 /**
  * Votes on an agenda item itself (a ratification, an election), subject
@@ -482,7 +484,8 @@ export async function setVoteUnanimity(
     });
   }
 
-  return db.transaction(async (tx) => {
+  let voided: SigningFiles | null = null;
+  const result = await db.transaction(async (tx) => {
     const locked = await shareLockAssembly(tx, assembly.id);
     if (!locked) fail(404, "Asamblea no encontrada");
     if (locked.status === "closed") {
@@ -542,8 +545,19 @@ export async function setVoteUnanimity(
       },
       actor,
     });
+    // A signed text whose PDF words its approval «por unanimidad», or not.
+    if (isDocument) {
+      voided = await voidSigning(
+        tx,
+        { assemblyId: assembly.id, documentId: vote.subjectId },
+        actor,
+        "unanimity_changed",
+      );
+    }
     return toItemVoteDto(updated!, titleHidden);
   });
+  await removeAllSigningFiles([voided]);
+  return result;
 }
 
 /**

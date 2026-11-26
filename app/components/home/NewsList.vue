@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import {
-  homeWorkNewsLink,
+  homeWorkNewsPath,
   type HomeWorkNews,
   type HomeWorkPhrase,
   type HomeWorkWho,
 } from "~/components/home/-work";
-import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
  * The notices («Avisos», ShellNotices): what others decided about the
@@ -83,13 +82,12 @@ function exact(item: HomeWorkNews): string {
 }
 
 /**
- * The document, with the amendment open when the news is about one, or the
- * read-only review of the main presenter's answers (homeWorkNewsLink).
+ * The document, with the amendment open when the news is about one, the
+ * read-only review of the main presenter's answers, or where an acta is
+ * signed again (homeWorkNewsPath).
  */
 function path(item: HomeWorkNews): string {
-  return localePath(
-    `${assemblyPath(item.assembly.slug, "documents")}/${encodeURIComponent(item.document.slug)}${homeWorkNewsLink(item)}`,
-  );
+  return localePath(homeWorkNewsPath(item));
 }
 </script>
 

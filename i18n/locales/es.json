@@ -3327,7 +3327,13 @@
         "approved": "La asamblea ha aprobado el texto final del documento.",
         "approvedPending": "La asamblea ha aprobado el documento, con pasajes pendientes de conciliar.",
         "rejected": "La asamblea ha rechazado el texto final del documento.",
-        "other": "Hay cambios en el documento."
+        "other": "Hay cambios en el documento.",
+        "signAgain": {
+          "formCorrection": "Hay que volver a firmar el acta: se ha corregido su texto.",
+          "finalVoteAnnulled": "Hay que volver a firmar el acta: se ha anulado su votación final.",
+          "unanimityChanged": "Hay que volver a firmar el acta: ha cambiado la unanimidad de su votación final.",
+          "other": "Hay que volver a firmar el acta: se ha retirado el PDF firmado."
+        }
       }
     }
   },
@@ -3970,7 +3976,8 @@
         "decide": "No se pudo actualizar la corrección"
       },
       "correctedText": "Texto con correcciones de forma posteriores a la votación. Debajo están las correcciones y sus cambios.",
-      "tableLookOnly": "Solo cambia el aspecto de las tablas: color, bordes, ancho o posición. Se ve en el texto consolidado."
+      "tableLookOnly": "Solo cambia el aspecto de las tablas: color, bordes, ancho o posición. Se ve en el texto consolidado.",
+      "voidsSignature": "El acta está firmada: al aplicar la corrección se retira el PDF firmado y habrá que volver a firmarla."
     },
     "export": {
       "clean": "PDF limpio",
@@ -7421,7 +7428,11 @@
       },
       "amendment_validation_undone": "Validación de una enmienda deshecha por Secretaría",
       "vote_voided": "Votación de un punto anulada",
-      "vote_unanimity_changed": "Unanimidad de una votación cambiada"
+      "vote_unanimity_changed": "Unanimidad de una votación cambiada",
+      "document_signing_prepared": "Acta preparada para firmar",
+      "document_signed": "Acta firmada publicada",
+      "document_signature_removed": "Acta firmada retirada",
+      "document_signature_voided": "Firma del acta retirada por un cambio en su texto o su aprobación"
     },
     "changes": {
       "milestoneNote": "Nota de «{milestone}»",
@@ -7526,5 +7537,11 @@
       "add": "No se pudo anotar la intervención",
       "remove": "No se pudo quitar la intervención"
     }
+  },
+  "documentSigning": {
+    "notYet": "Se firma cuando su votación final la aprueba y no le queda ningún pasaje por conciliar.",
+    "intro": "Prepárala para firmar: el PDF acaba con la fórmula de cierre, la firma visual de la Secretaría Ejecutiva que hay en la Intranet y el nombre de {name}. Una vez firmada, se publica en lugar del PDF generado.",
+    "noSigner": "El censo no tiene a nadie en la Secretaría Ejecutiva: sin su nombre no se puede preparar el acta para firmar.",
+    "closingInText": "El texto ya acaba con su propia fórmula de firma. Quítala con una corrección de forma antes de prepararla: el PDF para firmar la añade con el nombre de quien firma."
   }
 }

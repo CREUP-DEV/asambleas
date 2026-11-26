@@ -1,25 +1,41 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T">
 import type { DropdownMenuItem } from "@nuxt/ui";
-import type { AgreementsRecordDto } from "~~/shared/types/api";
+import type { AgreementsRecordSigningDto } from "~~/shared/types/api";
 import {
   AutoFirmaCancelledError,
   signWithAutoFirma,
 } from "~/composables/agreements-record/autofirma";
 
 /**
- * Signing the approved acta de acuerdos (user's decisions of 2026-11-23):
- * prepare its PDF (with the visible signature of the Secretaría Ejecutiva
- * from the Intranet), sign it with AutoFirma or outside the platform, and
- * publish the signed PDF, which then leads the document. A correction
- * after that regenerates the record, and it is signed again.
+ * Signing an approved text (user's decisions of 2026-11-23 and 2026-11-26):
+ * the acta de acuerdos on its page, an acta on its «Consolidado». Prepare
+ * its PDF (with the visible signature of the Secretaría Ejecutiva from the
+ * Intranet), sign it with AutoFirma or outside the platform, and publish
+ * the signed PDF, which then leads the document. A correction after that
+ * takes it away, and it is signed again. Each step answers what the page
+ * shows (`T`: the record or the document), handed up by `update`.
  */
 const props = defineProps<{
-  record: AgreementsRecordDto;
-  /** The assembly's API base. */
-  apiBase: string;
+  signing: AgreementsRecordSigningDto | null;
+  /** The text may be signed: approved by its final vote. */
+  approved: boolean;
+  /** The document's title, for the signed file's name. */
+  title: string;
+  /** The signing's routes: `{base}`, `{base}/prepared`, `{base}/signed`. */
+  base: string;
+  /** Why it cannot be signed yet, when not approved. */
+  notYet: string;
+  /** What preparing does, before anything is prepared. */
+  intro: string;
+  /** A warning above the steps (an acta with a closing of its own). */
+  warning?: string | null;
+  /** The acta de acuerdos only: corrections it does not hold yet. */
+  outdated?: boolean;
+  /** The acta de acuerdos only: the route that writes them in. */
+  regenerateUrl?: string | null;
 }>();
 const emit = defineEmits<{
-  update: [record: AgreementsRecordDto];
+  update: [value: T];
   stale: [];
 }>();
 
@@ -27,9 +43,8 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 
-const base = computed(() => `${props.apiBase}/agreements-record`);
-const document = computed(() => props.record.document);
-const signing = computed(() => props.record.signing);
+const headingId = useId();
+const signing = computed(() => props.signing);
 const prepared = computed(() =>
   signing.value?.prepared?.current ? signing.value.prepared : null,
 );
@@ -72,7 +87,7 @@ const dialogContent = {
   },
 };
 
-function done(next: AgreementsRecordDto, key: string): void {
+function done(next: T, key: string): void {
   emit("update", next);
   announcement.value = t(key);
   toast.add({ title: t(key), color: "success", icon: "i-lucide-check" });
@@ -90,7 +105,7 @@ async function prepare(): Promise<void> {
   announcement.value = t("agreementsRecord.signing.preparing");
   try {
     done(
-      await api.send<AgreementsRecordDto>(`${base.value}/signing`, {
+      await api.send<T>(props.base, {
         method: "POST",
       }),
       "agreementsRecord.signing.prepared",
@@ -107,7 +122,7 @@ async function upload(file: Blob, name: string): Promise<void> {
   body.append("file", file, name);
   body.append("updatedAt", signing.value?.updatedAt ?? "");
   done(
-    await api.send<AgreementsRecordDto>(`${base.value}/signing/signed`, {
+    await api.send<T>(`${props.base}/signed`, {
       body,
     }),
     "agreementsRecord.signing.published",
@@ -119,7 +134,7 @@ async function signHere(): Promise<void> {
   busy.value = "sign";
   announcement.value = t("agreementsRecord.signing.signing");
   try {
-    const pdf = await $fetch<ArrayBuffer>(`${base.value}/signing/prepared`, {
+    const pdf = await $fetch<ArrayBuffer>(`${props.base}/prepared`, {
       responseType: "arrayBuffer",
     });
     let result: Uint8Array<ArrayBuffer>;
@@ -140,7 +155,7 @@ async function signHere(): Promise<void> {
     }
     await upload(
       new Blob([result], { type: "application/pdf" }),
-      `${document.value?.title ?? "acta"}.pdf`,
+      `${props.title || "acta"}.pdf`,
     );
   } catch (error) {
     failed(error, "agreementsRecord.signing.uploadFailed");
@@ -192,7 +207,7 @@ async function removeSigned(): Promise<void> {
   busy.value = "remove";
   try {
     done(
-      await api.send<AgreementsRecordDto>(`${base.value}/signing/signed`, {
+      await api.send<T>(`${props.base}/signed`, {
         method: "DELETE",
       }),
       "agreementsRecord.signing.removed",
@@ -207,11 +222,11 @@ async function removeSigned(): Promise<void> {
 
 const confirmRegenerate = ref(false);
 async function regenerate(): Promise<void> {
-  if (busy.value) return;
+  if (busy.value || !props.regenerateUrl) return;
   busy.value = "regenerate";
   try {
     done(
-      await api.send<AgreementsRecordDto>(`${base.value}/regenerate`, {
+      await api.send<T>(props.regenerateUrl, {
         method: "POST",
       }),
       "agreementsRecord.signing.regenerated",
@@ -236,7 +251,7 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
       {
         label: t("agreementsRecord.signing.download"),
         icon: "i-lucide-download",
-        to: `${base.value}/signing/prepared`,
+        to: `${props.base}/prepared`,
         external: true,
         download: "",
       },
@@ -272,12 +287,11 @@ function at(value: string): string {
 
 <template>
   <section
-    v-if="document"
     class="border-default space-y-3 rounded-lg border p-4"
-    aria-labelledby="agreements-signing-title"
+    :aria-labelledby="headingId"
   >
     <h3
-      id="agreements-signing-title"
+      :id="headingId"
       ref="heading"
       tabindex="-1"
       class="text-highlighted font-semibold outline-none"
@@ -285,13 +299,20 @@ function at(value: string): string {
       {{ t("agreementsRecord.signing.title") }}
     </h3>
 
-    <p v-if="!document.approved" class="text-muted text-sm">
-      {{ t("agreementsRecord.signing.notYet") }}
+    <p v-if="!approved" class="text-muted text-sm">
+      {{ notYet }}
     </p>
 
     <template v-else>
       <UAlert
-        v-if="document.outdated"
+        v-if="warning"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        :title="warning"
+      />
+      <UAlert
+        v-if="outdated && regenerateUrl"
         color="warning"
         variant="subtle"
         icon="i-lucide-pencil-line"
@@ -333,7 +354,7 @@ function at(value: string): string {
           }}
         </p>
         <p v-else class="text-muted">
-          {{ t("agreementsRecord.signing.intro") }}
+          {{ intro }}
         </p>
         <p v-if="prepared && !prepared.withImage && !signed" class="text-muted">
           {{ t("agreementsRecord.signing.noImage") }}
@@ -358,7 +379,7 @@ function at(value: string): string {
           icon="i-lucide-signature"
           :label="t('agreementsRecord.signing.sign')"
           :loading="busy === 'sign' || busy === 'upload'"
-          :disabled="busy !== null || document.outdated"
+          :disabled="busy !== null || outdated"
           @click="signHere"
         />
         <UButton
@@ -367,7 +388,7 @@ function at(value: string): string {
           icon="i-lucide-file-pen-line"
           :label="t('agreementsRecord.signing.prepare')"
           :loading="busy === 'prepare'"
-          :disabled="busy !== null || document.outdated"
+          :disabled="busy !== null || outdated"
           @click="prepare"
         />
         <UDropdownMenu

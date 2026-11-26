@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fail } from "../core/http";
 import { eq, sql } from "drizzle-orm";
@@ -9,8 +9,8 @@ import type {
   AgreementsRecordSigningDto,
 } from "~~/shared/types/api";
 import { db } from "../../db";
-import { agreementRecordSignings } from "../../db/schema";
-import { logError, logWarn } from "../core/logger";
+import { agreementRecordSignings, votes } from "../../db/schema";
+import { logWarn } from "../core/logger";
 import { getUploadDir } from "../core/uploadPaths";
 import { loadBrand, loadPdfFonts } from "../export/assets";
 import { buildDocumentExportData } from "../export/buildData";
@@ -36,7 +36,9 @@ import {
 } from "./agreementsRecord";
 import {
   AGREEMENTS_URL_PREFIX,
+  removeStoredSigningFile as removeStored,
   signedRecordStoredName,
+  toSigningDto,
 } from "./agreementsSignedFile";
 import type { AssemblyRow } from "./assemblies";
 import {
@@ -179,83 +181,7 @@ export async function loadSigningDto(
   document: DocumentRow,
 ): Promise<AgreementsRecordSigningDto | null> {
   const row = await loadSigningRow(document.id);
-  if (!row) return null;
-  const inForce = document.consolidatedVersionId;
-  return {
-    prepared:
-      row.preparedFile && row.preparedAt
-        ? {
-            at: row.preparedAt.toISOString(),
-            withImage: row.preparedWithImage,
-            current: inForce !== null && row.versionId === inForce,
-          }
-        : null,
-    signed:
-      row.signedFileUrl && row.signedAt
-        ? {
-            url: row.signedFileUrl,
-            name: row.signedFileName ?? "acta-de-acuerdos.pdf",
-            signedAt: row.signedAt.toISOString(),
-            current: inForce !== null && row.signedVersionId === inForce,
-          }
-        : null,
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-/** Files a cleared signing leaves behind, removed once that commits. */
-export interface SigningFiles {
-  prepared: string | null;
-  signed: string | null;
-}
-
-/**
- * Takes both PDFs away from the record's signing (a new version of the
- * record), inside the caller's transaction. Answers the files to remove.
- */
-export async function clearSigning(
-  tx: Executor,
-  documentId: string,
-): Promise<SigningFiles> {
-  const row = await loadSigningRow(documentId, tx);
-  if (!row) return { prepared: null, signed: null };
-  await tx
-    .update(agreementRecordSignings)
-    .set({
-      versionId: null,
-      preparedFile: null,
-      preparedAt: null,
-      preparedByUserId: null,
-      preparedWithImage: false,
-      signedFileUrl: null,
-      signedFileName: null,
-      signedVersionId: null,
-      signedAt: null,
-      signedByUserId: null,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(agreementRecordSignings.documentId, documentId));
-  return {
-    prepared: row.preparedFile,
-    signed: signedRecordStoredName(row.signedFileUrl),
-  };
-}
-
-async function removeStored(name: string | null): Promise<void> {
-  if (!name || !STORED_PDF_NAME.test(name)) return;
-  try {
-    await unlink(join(getUploadDir(), name));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-      logError("agreementsSigning.remove", error);
-    }
-  }
-}
-
-/** Best-effort removal of the files a cleared signing left. */
-export async function removeSigningFiles(files: SigningFiles): Promise<void> {
-  await removeStored(files.prepared);
-  await removeStored(files.signed);
+  return row ? toSigningDto(row, document.consolidatedVersionId) : null;
 }
 
 /** The approved, frozen record of the assembly, or a refusal. */
@@ -273,17 +199,40 @@ async function signableRecord(assembly: AssemblyRow): Promise<DocumentRow> {
 }
 
 /**
+ * What a signing is about: the acta de acuerdos, whose text ends with its
+ * own closing, or an approved acta (documentSigning.ts), whose PDF gets
+ * that closing for whoever certifies (user's decision of 2026-11-26). The
+ * events each one records.
+ */
+export interface SigningSubject {
+  /** The document, already checked as signable by the caller. */
+  document: DocumentRow;
+  /** The closing the PDF adds after the text; null when it has its own. */
+  closing: { name: string; office: string } | null;
+  events: { prepared: string; signed: string; removed: string };
+}
+
+const RECORD_EVENTS: SigningSubject["events"] = {
+  prepared: "agreements_record_prepared",
+  signed: "agreements_record_signed",
+  removed: "agreements_record_signature_removed",
+};
+
+/**
  * Makes the PDF to sign from the text in force, with the visible signature
  * when the Intranet has one, and keeps it for the Secretaría to download.
  * The one prepared before goes.
  */
-export async function prepareRecordForSigning(
+export async function prepareForSigning(
   actor: Actor,
   assembly: AssemblyRow,
-): Promise<AgreementsRecordDto> {
-  requireRecordManager(actor);
-  const document = await signableRecord(assembly);
+  subject: SigningSubject,
+): Promise<void> {
+  const { document } = subject;
   const versionId = document.consolidatedVersionId!;
+  // The PDF words its approval from the final vote (by assent, unanimous):
+  // a change to it while this renders makes the PDF stale.
+  const voteStamp = await finalVoteStamp(db, document.finalVoteId);
   const [data, signature, brand, fonts] = await Promise.all([
     buildDocumentExportData({
       assemblyId: assembly.id,
@@ -299,7 +248,12 @@ export async function prepareRecordForSigning(
     loadPdfFonts(),
   ]);
   const { pdf } = await renderPdf(
-    buildDocumentPdf({ ...data, signature }, "es", brand, { justified: true }),
+    buildDocumentPdf(
+      { ...data, signature, signingClosing: subject.closing },
+      "es",
+      brand,
+      { justified: true },
+    ),
     fonts,
   );
   const name = `${randomUUID()}.pdf`;
@@ -310,8 +264,13 @@ export async function prepareRecordForSigning(
   try {
     previous = await db.transaction(async (tx) => {
       const current = await lockDocument(tx, document.id);
-      if (current.consolidatedVersionId !== versionId)
+      if (
+        current.consolidatedVersionId !== versionId ||
+        current.finalVoteId !== document.finalVoteId ||
+        (await finalVoteStamp(tx, current.finalVoteId, true)) !== voteStamp
+      ) {
         fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
+      }
       const row = await loadSigningRow(document.id, tx);
       const values = {
         versionId,
@@ -335,7 +294,7 @@ export async function prepareRecordForSigning(
         entityType: "document",
         entityId: document.id,
         documentId: document.id,
-        type: "agreements_record_prepared",
+        type: subject.events.prepared,
         payload: { withImage: signature !== null },
         actor,
       });
@@ -346,16 +305,47 @@ export async function prepareRecordForSigning(
     throw error;
   }
   if (previous && previous !== name) await removeStored(previous);
+}
+
+/**
+ * When the final vote was last written (null without one), read FOR SHARE
+ * inside a transaction so a change to it waits for this one.
+ */
+async function finalVoteStamp(
+  executor: Executor,
+  voteId: string | null,
+  lock = false,
+): Promise<number | null> {
+  if (!voteId) return null;
+  const query = executor
+    .select({ updatedAt: votes.updatedAt })
+    .from(votes)
+    .where(eq(votes.id, voteId));
+  const [row] = await (lock ? query.for("share") : query);
+  return row?.updatedAt.getTime() ?? null;
+}
+
+export async function prepareRecordForSigning(
+  actor: Actor,
+  assembly: AssemblyRow,
+): Promise<AgreementsRecordDto> {
+  requireRecordManager(actor);
+  const document = await signableRecord(assembly);
+  await prepareForSigning(actor, assembly, {
+    document,
+    closing: null,
+    events: RECORD_EVENTS,
+  });
   return loadAgreementsRecordDto(assembly);
 }
 
-/** The PDF prepared to sign, for the Secretaría to download or sign. */
-export async function preparedRecordFile(
-  actor: Actor,
-  assembly: AssemblyRow,
+/**
+ * The PDF prepared to sign a document, for the Secretaría to download or
+ * sign; a refusal when there is none for its text in force.
+ */
+export async function preparedSigningFile(
+  document: DocumentRow | null,
 ): Promise<{ path: string; filename: string }> {
-  requireRecordManager(actor);
-  const document = await findAgreementsRecord(assembly.id);
   const row = document ? await loadSigningRow(document.id) : null;
   if (
     !document ||
@@ -369,6 +359,15 @@ export async function preparedRecordFile(
     path: join(getUploadDir(), row.preparedFile),
     filename: `${document.title} (para firmar).pdf`,
   };
+}
+
+/** The record's PDF prepared to sign (preparedSigningFile). */
+export async function preparedRecordFile(
+  actor: Actor,
+  assembly: AssemblyRow,
+): Promise<{ path: string; filename: string }> {
+  requireRecordManager(actor);
+  return preparedSigningFile(await findAgreementsRecord(assembly.id));
 }
 
 /** Whether a PDF carries a digital signature (a signature dictionary). */
@@ -385,19 +384,19 @@ function readUpdatedAt(value: string | undefined): string | null {
 }
 
 /**
- * Publishes the signed record: a PDF with a digital signature, uploaded for
- * the version prepared (it must still be the one in force). Replaces the
+ * Publishes the signed PDF: one with a digital signature, uploaded for the
+ * version prepared (it must still be the one in force). Replaces the
  * signed one before, whose file goes once this commits. `updatedAt` is the
  * signing's lock.
  */
-export async function attachSignedRecord(
+export async function attachSigned(
   actor: Actor,
   assembly: AssemblyRow,
+  subject: SigningSubject,
   file: UploadedFile,
-): Promise<AgreementsRecordDto> {
-  requireRecordManager(actor);
+): Promise<void> {
+  const { document } = subject;
   const updatedAt = readUpdatedAt(file.fields.updatedAt);
-  const document = await signableRecord(assembly);
   // A PDF without a signature is refused before it is stored; anything that
   // is not a PDF, by storePdf.
   const isPdf = file.data.subarray(0, 5).toString("ascii") === "%PDF-";
@@ -420,8 +419,8 @@ export async function attachSignedRecord(
       if (row.versionId !== current.consolidatedVersionId) {
         fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
       }
-      // The multipart `updatedAt` field may come empty: the record's page
-      // sends "" while it read no signing.
+      // The multipart `updatedAt` field may come empty: the page sends ""
+      // while it read no signing.
       assertOptimisticLock(updatedAt, row.updatedAt, STALE_MESSAGE, {
         optional: true,
       });
@@ -441,7 +440,7 @@ export async function attachSignedRecord(
         entityType: "document",
         entityId: document.id,
         documentId: document.id,
-        type: "agreements_record_signed",
+        type: subject.events.signed,
         payload: {
           fileName: stored.fileName,
           replaced: row.signedFileUrl !== null,
@@ -455,22 +454,42 @@ export async function attachSignedRecord(
     throw error;
   }
   if (previous && previous !== storedName) await removeStored(previous);
+}
+
+export async function attachSignedRecord(
+  actor: Actor,
+  assembly: AssemblyRow,
+  file: UploadedFile,
+): Promise<AgreementsRecordDto> {
+  requireRecordManager(actor);
+  const document = await signableRecord(assembly);
+  await attachSigned(
+    actor,
+    assembly,
+    { document, closing: null, events: RECORD_EVENTS },
+    file,
+  );
   return loadAgreementsRecordDto(assembly);
 }
 
 /**
- * Takes the signed PDF away (the generated one stands again), and removes
- * its file once that commits.
+ * Takes a document's signed PDF away (the generated one stands again), and
+ * removes its file once that commits.
  */
-export async function removeSignedRecord(
+export async function removeSigned(
   actor: Actor,
   assembly: AssemblyRow,
-): Promise<AgreementsRecordDto> {
-  requireRecordManager(actor);
-  const document = await findAgreementsRecord(assembly.id);
-  if (!document) fail(404, "La asamblea no tiene acta de acuerdos");
+  document: DocumentRow,
+  eventType: string,
+): Promise<void> {
   const removed = await db.transaction(async (tx) => {
-    const row = await loadSigningRow(document.id, tx);
+    // As attachSigned: the document, then the signing row.
+    await lockDocument(tx, document.id);
+    const [row] = await tx
+      .select()
+      .from(agreementRecordSignings)
+      .where(eq(agreementRecordSignings.documentId, document.id))
+      .for("update");
     if (!row?.signedFileUrl) return null;
     await tx
       .update(agreementRecordSignings)
@@ -488,12 +507,22 @@ export async function removeSignedRecord(
       entityType: "document",
       entityId: document.id,
       documentId: document.id,
-      type: "agreements_record_signature_removed",
+      type: eventType,
       payload: { fileName: row.signedFileName },
       actor,
     });
     return signedRecordStoredName(row.signedFileUrl);
   });
   await removeStored(removed);
+}
+
+export async function removeSignedRecord(
+  actor: Actor,
+  assembly: AssemblyRow,
+): Promise<AgreementsRecordDto> {
+  requireRecordManager(actor);
+  const document = await findAgreementsRecord(assembly.id);
+  if (!document) fail(404, "La asamblea no tiene acta de acuerdos");
+  await removeSigned(actor, assembly, document, RECORD_EVENTS.removed);
   return loadAgreementsRecordDto(assembly);
 }
