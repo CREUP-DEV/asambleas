@@ -9,8 +9,11 @@ import {
 /**
  * «Avisos»: what others decided about the user's documents and amendments,
  * and, for the Mesa (session:moderate), the latest about the assemblies'
- * amendments, in a panel at the right that opens over any page (the sidebar's entry,
- * ShellNavigation), so it never takes the user away from where they are.
+ * amendments, in a panel that opens over any page (the sidebar's entry,
+ * ShellNavigation), so it never takes the user away from where they are. It
+ * comes in from the left, the side of the sidebar and of the phone's drawer
+ * it is opened from (user's decision of 2026-11-26): on a phone the drawer
+ * closes and the panel takes its place, never the other edge.
  * «Nuevos» are the notices later than the mark the account had when the
  * panel opened, «Anteriores» the rest; each row is a link (HomeNewsList),
  * and following one closes the panel. Opening it marks them seen
@@ -144,6 +147,7 @@ function onOpenUpdate(value: boolean): void {
 
     <USlideover
       :open="open"
+      side="left"
       :title="t('shell.notices.title')"
       :description="description"
       :content="panelContent"
