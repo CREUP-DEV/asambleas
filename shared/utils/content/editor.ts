@@ -59,6 +59,13 @@ function alignFrom(element: Element): Pick<Block, "align"> {
   return isBlockAlign(value) ? { align: value } : {};
 }
 
+/** A new page before the block, as the DOCX import marks it. */
+function pageBreakFrom(element: Element): Pick<Block, "pageBreak"> {
+  return element.getAttribute("data-page-break") === "true"
+    ? { pageBreak: true }
+    : {};
+}
+
 /** Whether bold covers the whole of a block's text, spaces aside. */
 function isAllBold(block: Block): boolean {
   if (!block.text.trim()) return false;
@@ -276,6 +283,9 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
                 : "paragraph",
             ...inline,
             ...alignOf(node),
+            ...(context.list || context.quote || context.cell
+              ? {}
+              : pageBreakOf(node)),
           };
           if (context.list) placeInList(block, context);
           blocks.push(inCell(block, context));
@@ -291,6 +301,7 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
                 level: Math.max(1, Math.min(4, level)),
                 ...readInline(node.content),
                 ...alignOf(node),
+                ...(context.cell ? {} : pageBreakOf(node)),
               },
               context,
             ),
@@ -420,11 +431,27 @@ function alignOf(node: EditorNode): Pick<Block, "align"> {
   return isBlockAlign(value) ? { align: value } : {};
 }
 
+/** The editor's `pageBreak` of a heading or paragraph (PageBreakExtension). */
+function pageBreakAttrs(block: Pick<Block, "pageBreak">): {
+  pageBreak?: true;
+} {
+  return block.pageBreak ? { pageBreak: true } : {};
+}
+
+/** A block's new page from its node, outside lists, quotes and tables. */
+function pageBreakOf(node: EditorNode): Pick<Block, "pageBreak"> {
+  return node.attrs?.pageBreak === true ? { pageBreak: true } : {};
+}
+
 function paragraph(block: Block): EditorNode {
   const content = inlineNodes(block);
   return {
     type: "paragraph",
-    attrs: { blockId: block.id, ...alignAttrs(block) },
+    attrs: {
+      blockId: block.id,
+      ...alignAttrs(block),
+      ...pageBreakAttrs(block),
+    },
     ...(content.length ? { content } : {}),
   };
 }
@@ -566,6 +593,7 @@ function flowNodes(blocks: Block[]): EditorNode[] {
           level: block.level ?? 1,
           blockId: block.id,
           ...alignAttrs(block),
+          ...pageBreakAttrs(block),
         },
         ...(inline.length ? { content: inline } : {}),
       });
@@ -823,6 +851,7 @@ export function htmlElementToBlocks(
             level: Math.min(4, Number(tag[1])),
             ...inline,
             ...alignFrom(child),
+            ...(inCell ? {} : pageBreakFrom(child)),
           });
         }
       } else if (child.hasAttribute("data-formula") && tag !== "code") {
@@ -867,6 +896,7 @@ export function htmlElementToBlocks(
             type: quote ? "quote" : "paragraph",
             ...inline,
             ...alignFrom(child),
+            ...(quote || inCell ? {} : pageBreakFrom(child)),
           });
         }
       } else if (tag === "ul" || tag === "ol") {

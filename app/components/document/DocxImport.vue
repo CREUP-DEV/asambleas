@@ -145,11 +145,21 @@ const dropByDefault = computed(
 );
 const dropHeader = ref(dropByDefault.value);
 
-const blocks = computed(() =>
-  dropHeader.value && headerLength.value > 0
-    ? imported.value.slice(headerLength.value)
-    : imported.value,
-);
+/**
+ * What the import brings in. The text's first block never starts a new page:
+ * the template's break after its cover, or after the header just dropped,
+ * would open the text on an empty page.
+ */
+const blocks = computed(() => {
+  const kept =
+    dropHeader.value && headerLength.value > 0
+      ? imported.value.slice(headerLength.value)
+      : imported.value;
+  const [first, ...rest] = kept;
+  if (!first?.pageBreak) return kept;
+  const { pageBreak: _dropped, ...opening } = first;
+  return [opening, ...rest];
+});
 /**
  * Approval lines kept with their placeholders (a regulation's history
  * line): the PDF of the approved text fills them in from the final vote.

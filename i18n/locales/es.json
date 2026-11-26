@@ -144,7 +144,9 @@
         "align_center": "pasa a estar centrado",
         "align_right": "pasa a estar alineado a la derecha",
         "formula_on": "pasa a ser una fórmula",
-        "formula_off": "deja de ser una fórmula"
+        "formula_off": "deja de ser una fórmula",
+        "page_break_on": "pasa a empezar en una página nueva",
+        "page_break_off": "deja de empezar en una página nueva"
       },
       "fragmentFrom": "{text} (de la enmienda {label})",
       "outline": {
@@ -157,7 +159,8 @@
       "pageMarkTitle": "Página {pages} del PDF | Páginas {pages} del PDF",
       "pageOf": "Página {page} de {total}",
       "pageOfTitle": "La página del PDF de la documentación que estás leyendo",
-      "pageBubble": "{page} de {total}"
+      "pageBubble": "{page} de {total}",
+      "pageBreak": "Página nueva"
     },
     "editor": {
       "bold": "Negrita",
@@ -273,7 +276,8 @@
         "blockHint": "Se escribe en LaTeX (\\frac para fracciones, _ para subíndices) y se ve dibujada debajo.",
         "inline": "Fórmula dentro del texto",
         "inlineHint": "Convierte lo seleccionado, escrito en LaTeX, en una fórmula de la frase."
-      }
+      },
+      "pageBreak": "Empezar en una página nueva"
     },
     "staleData": {
       "title": "No se han podido actualizar los datos",

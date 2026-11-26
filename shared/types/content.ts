@@ -180,11 +180,21 @@ export interface Block {
   cell?: BlockCell;
   /** Centred or right-aligned; aligned to the start when absent. */
   align?: BlockAlign;
+  /**
+   * Starts on a new page in the PDF and the Word file (user's decision of
+   * 2026-11-26): an annex, a part that opens a page of its own. Headings
+   * and paragraphs outside tables only (PAGE_BREAK_TYPES); never true on
+   * anything else, and absent rather than false.
+   */
+  pageBreak?: true;
   /** Image blocks: the picture. */
   image?: BlockImage;
   text: string;
   marks: Mark[];
 }
+
+/** The blocks that may start a new page (Block.pageBreak). */
+export const PAGE_BREAK_TYPES: readonly BlockType[] = ["heading", "paragraph"];
 
 /**
  * What a block is besides its text: the fields an amendment may change on a
@@ -198,6 +208,8 @@ export interface BlockFormat {
   marker?: ListMarker;
   start?: number;
   align?: BlockAlign;
+  /** Starts on a new page (Block.pageBreak). */
+  pageBreak?: true;
 }
 
 /**
@@ -278,6 +290,8 @@ export const FORMAT_CHANGE_CODES = [
   "align_start",
   "align_center",
   "align_right",
+  "page_break_on",
+  "page_break_off",
 ] as const;
 export type FormatChangeCode = (typeof FORMAT_CHANGE_CODES)[number];
 
@@ -308,6 +322,7 @@ export interface ConsolidatedBlock {
   start?: number;
   cell?: BlockCell;
   align?: BlockAlign;
+  pageBreak?: true;
   image?: BlockImage;
   segments: Segment[];
   /** Marks over the clean text of the block (removed segments excluded). */

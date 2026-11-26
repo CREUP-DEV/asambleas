@@ -34,6 +34,10 @@ import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
 import { SpanishQuotesExtension } from "~/utils/editor/spanishQuotesExtension";
 import {
+  PageBreakExtension,
+  pageBreakAtCursor,
+} from "~/utils/editor/pageBreakExtension";
+import {
   BlockImageExtension,
   type BlockImageAttrs,
 } from "~/utils/editor/blockImageExtension";
@@ -229,14 +233,19 @@ const extensions = [
   }),
   // A typed " becomes « or » (“ ” inside), and wraps a selection.
   SpanishQuotesExtension,
+  // «Empezar en una página nueva» on a heading or paragraph.
+  PageBreakExtension,
 ];
 
 /** Whether the cursor is in a table, and its cells' fill, for the swatches. */
 const inTable = ref(false);
 const cellFill = ref<CellFill | "mixed" | null>(null);
+/** Whether the block at the cursor starts a new page; null where none may. */
+const pageBreak = ref<boolean | null>(null);
 
 function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
+  pageBreak.value = pageBreakAtCursor(editor.value);
   cellFill.value = cellFillOf(editor.value);
   cellSides.value = cellSidesOf(editor.value);
   cellBorder.value = cellBorderColorOf(editor.value);
@@ -906,6 +915,17 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       label: t(`common.editor.align.${align}`),
     })),
   } as EditorToolbarItem;
+  // «Empezar en una página nueva» (PageBreakExtension): a heading or a
+  // paragraph of the text itself, never in a list, a quote or a table.
+  const newPage = {
+    icon: "i-lucide-separator-horizontal",
+    "aria-label": t("common.editor.pageBreak"),
+    "aria-pressed": pageBreak.value === true,
+    tooltip: { text: t("common.editor.pageBreak") },
+    active: pageBreak.value === true,
+    disabled: pageBreak.value === null,
+    onClick: () => run((chain) => chain.togglePageBreak()),
+  } as EditorToolbarItem;
   const history = [
     action({ kind: "undo", icon: "i-lucide-undo-2" }, "common.editor.undo", [
       "meta",
@@ -972,7 +992,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
             items: [
               structure.slice(0, 4),
               structure.slice(4),
-              [alignment],
+              [alignment, newPage],
               marks.slice(2),
               [formula],
             ].map((group) => group.map(menuEntry)),
@@ -983,7 +1003,15 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
         link,
         history,
       ]
-    : [structure, [alignment], tables, marks, link, [formula], history];
+    : [
+        structure,
+        [alignment, newPage],
+        tables,
+        marks,
+        link,
+        [formula],
+        history,
+      ];
   // What the page adds at the toolbar's end (saving the text, say).
   if (slots["toolbar-end"]) {
     groups.push([{ slot: "toolbar-end" } as EditorToolbarItem]);
@@ -1154,6 +1182,16 @@ function buildContextItems(): void {
         })),
       },
     ];
+    const breaks = pageBreakAtCursor(instance);
+    if (breaks !== null) {
+      block.push({
+        label: t("common.editor.pageBreak"),
+        icon: "i-lucide-separator-horizontal",
+        type: "checkbox" as const,
+        checked: breaks,
+        onSelect: () => run((c) => c.togglePageBreak()),
+      });
+    }
     if (instance.isActive("orderedList")) {
       block.push({
         label: t("common.editor.listMarker"),

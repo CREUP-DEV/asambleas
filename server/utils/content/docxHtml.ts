@@ -182,6 +182,38 @@ function alignments(document: Document): void {
 }
 
 /**
+ * Page breaks (`span.docx-page`, see pageBreakRun in docx.ts) become
+ * `data-page-break` on the paragraph or heading that starts the new page
+ * (user's decision of 2026-11-26): the one that holds the break before its
+ * text, else the next one with text, blank lines aside. Only the text's own
+ * paragraphs and headings start a page, never a list, a quote or a table,
+ * which lose the break.
+ */
+function pageBreaks(document: Document): void {
+  const body = document.body;
+  if (!body) return;
+  const startsPage = (element: Element | null): element is Element =>
+    element !== null &&
+    element.parentElement === body &&
+    /^(p|h[1-6])$/.test(tagOf(element));
+  const hasText = (element: Element) =>
+    Boolean((element.textContent ?? "").trim()) ||
+    element.querySelector("img, [data-formula]") !== null;
+  for (const span of Array.from(document.querySelectorAll("span.docx-page"))) {
+    const where = span.textContent;
+    const block = span.parentElement;
+    span.remove();
+    if (!block || block.parentElement !== body) continue;
+    let target: Element | null =
+      where === "before" && hasText(block) ? block : block.nextElementSibling;
+    while (target && tagOf(target) === "p" && !hasText(target)) {
+      target = target.nextElementSibling;
+    }
+    if (startsPage(target)) target.setAttribute("data-page-break", "true");
+  }
+}
+
+/**
  * Filled cells (`span.docx-cell`, see cellFills in docx.ts, which writes
  * "dark:rrggbb" or "light:rrggbb"): each takes the palette colour nearest
  * to its Word fill (`data-fill`, nearestCellFill), and on a dark fill it
@@ -752,6 +784,8 @@ export function prepareImportedHtml(
   flattenNotes(document);
   listLabels(document);
   alignments(document);
+  // Before the blank lines are told apart: a break alone is no text.
+  pageBreaks(document);
   // After the alignment markers are gone: a centred equation is alone.
   formulas(document, options.onFormulaDropped);
   liftImages(document);

@@ -353,3 +353,34 @@ describe("prepareImportedHtml: tables side by side", () => {
     ]);
   });
 });
+
+describe("prepareImportedHtml: page breaks", () => {
+  const page = (where: "before" | "after") =>
+    `<span class="docx-page">${where}</span>`;
+  const breaks = (blocks: Block[]) =>
+    blocks.filter((block) => block.pageBreak).map((block) => block.text);
+
+  it("starts on a new page the paragraph a break comes ahead of", () => {
+    const { blocks } = prepare(
+      `<p>Firma</p><h2>${page("before")}Anexo I</h2><p>Texto</p>`,
+    );
+    expect(breaks(blocks)).toEqual(["Anexo I"]);
+  });
+
+  it("moves a break alone in its paragraph, or after the text, on", () => {
+    const { blocks } = prepare(
+      `<p>Uno</p><p>${page("before")}</p><p></p><p>Dos</p>` +
+        `<p>${page("after")}Tres</p><h1>Cuatro</h1>`,
+    );
+    expect(breaks(blocks)).toEqual(["Dos", "Cuatro"]);
+    expect(blocks.some((block) => block.text.includes("before"))).toBe(false);
+  });
+
+  it("drops a break before a list or inside a table", () => {
+    const { blocks } = prepare(
+      `<p>${page("after")}Uno</p><ul><li><p>Dos</p></li></ul>` +
+        table(tr(`<td><p>${page("before")}Tres</p></td>`)),
+    );
+    expect(breaks(blocks)).toEqual([]);
+  });
+});

@@ -307,6 +307,8 @@ const STYLE_MAP = [
   "r[style-name='docx-list-label'] => span.docx-list-label",
   // A centred or right-aligned paragraph, for prepareImportedHtml.
   "r[style-name='docx-align'] => span.docx-align",
+  // A page break in or before a paragraph, for prepareImportedHtml.
+  "r[style-name='docx-page'] => span.docx-page",
   // A filled table cell, for prepareImportedHtml (see cellFills).
   "r[style-name='docx-cell'] => span.docx-cell",
   // An unfilled cell with no top or bottom rule, for prepareImportedHtml
@@ -683,6 +685,31 @@ function alignmentRun(documents) {
     return Object.assign({}, paragraph, { children: [run].concat(paragraph.children) });
   };
 }
+// A page break (w:br w:type="page"; never the lastRenderedPageBreak Word
+// scatters, which mammoth skips) goes through a hidden run (docx-page):
+// "before" when it comes ahead of the paragraph's text, "after" when it
+// follows some. prepareImportedHtml (pageBreaks) puts it on the paragraph,
+// or on the next one when it is empty or the break comes after its text.
+// One pass over the paragraph's runs, and those of its links.
+function pageBreakRun(documents) {
+  return (paragraph) => {
+    let seenText = false;
+    let where = null;
+    const visit = (children) => {
+      for (const child of children || []) {
+        if (child.type === "break" && child.breakType === "page") {
+          where = seenText ? "after" : where || "before";
+        } else if (child.type === "text") {
+          if (child.value && child.value.trim()) seenText = true;
+        } else if (child.children) visit(child.children);
+      }
+    };
+    visit(paragraph.children);
+    if (!where) return paragraph;
+    const run = documents.Run([documents.Text(where)], { styleName: "docx-page" });
+    return Object.assign({}, paragraph, { children: [run].concat(paragraph.children) });
+  };
+}
 // A table of contents (Word's and Google Docs', a content control in the
 // "Table of Contents" gallery) is left out: its entries are the headings
 // again, with page numbers that mean nothing on the platform, which shows
@@ -1001,6 +1028,7 @@ process.stdin.on("end", () => {
   };
   const labels = mammoth.transforms.paragraph(numberLabels(documents));
   const aligned = mammoth.transforms.paragraph(alignmentRun(documents));
+  const paged = mammoth.transforms.paragraph(pageBreakRun(documents));
   const capitals = mammoth.transforms.run(upperCaseRun);
   Promise.resolve()
     .then(() =>
@@ -1013,7 +1041,8 @@ process.stdin.on("end", () => {
           // Blank lines stay: Word documents leave room with them, a
           // signature's above all (blankParagraphs in docxHtml.ts).
           ignoreEmptyParagraphs: false,
-          transformDocument: (document) => capitals(aligned(labels(document))),
+          transformDocument: (document) =>
+            capitals(paged(aligned(labels(document)))),
           convertImage: mammoth.images.imgElement(async (image) => {
             const index = await keepImage(image);
             if (index === null) {

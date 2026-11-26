@@ -8,6 +8,7 @@ import type {
 } from "../../types/content";
 import {
   BLOCK_ALIGNMENTS,
+  PAGE_BREAK_TYPES,
   LIST_MARKERS,
   MARK_TYPES,
 } from "../../types/content";
@@ -40,7 +41,8 @@ export function isValidBlockFormat(value: unknown): value is BlockFormat {
       (LIST_MARKERS as readonly unknown[]).includes(format.marker)) &&
     integer(format.start, 0, 99_999) &&
     (format.align === undefined ||
-      (BLOCK_ALIGNMENTS as readonly unknown[]).includes(format.align))
+      (BLOCK_ALIGNMENTS as readonly unknown[]).includes(format.align)) &&
+    (format.pageBreak === undefined || format.pageBreak === true)
   );
 }
 
@@ -63,12 +65,16 @@ export function normalizeBlockFormat(format: BlockFormat): BlockFormat {
     }
   }
   if (format.align) result.align = format.align;
+  // Only a heading or a paragraph starts a page (PAGE_BREAK_TYPES).
+  if (format.pageBreak && PAGE_BREAK_TYPES.includes(format.type)) {
+    result.pageBreak = true;
+  }
   return result;
 }
 
 type Formatted = Pick<
   Block,
-  "type" | "level" | "list" | "marker" | "start" | "align"
+  "type" | "level" | "list" | "marker" | "start" | "align" | "pageBreak"
 >;
 
 /**
@@ -84,6 +90,7 @@ export function blockFormatOf(block: Formatted): BlockFormat | null {
     marker: block.marker,
     start: block.start,
     align: block.align,
+    pageBreak: block.pageBreak,
   });
 }
 
@@ -96,7 +103,8 @@ export function sameBlockFormat(a: BlockFormat, b: BlockFormat): boolean {
     x.list === y.list &&
     x.marker === y.marker &&
     x.start === y.start &&
-    x.align === y.align
+    x.align === y.align &&
+    x.pageBreak === y.pageBreak
   );
 }
 
@@ -152,6 +160,9 @@ export function blockFormatChanges(
   }
   if (from.align !== to.align) {
     changes.push({ code: `align_${to.align ?? "start"}` });
+  }
+  if (from.pageBreak !== to.pageBreak) {
+    changes.push({ code: to.pageBreak ? "page_break_on" : "page_break_off" });
   }
   return changes;
 }

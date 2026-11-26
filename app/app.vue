@@ -32,6 +32,9 @@ onMounted(() => {
 useHead({
   htmlAttrs: {
     lang: locale,
+    // The label of a block that starts a new page (main.css, cx-page-break).
+    style: () =>
+      `--cx-page-break-label: ${JSON.stringify(t("common.content.pageBreak"))}`,
   },
 });
 </script>

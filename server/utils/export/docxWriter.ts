@@ -253,11 +253,15 @@ function blockParagraph(
     });
   }
   const align = alignment(block);
+  // «Empezar en una página nueva», never inside a table.
+  const newPage =
+    block.pageBreak && !block.cell ? { pageBreakBefore: true } : {};
   if (block.type === "heading") {
     const level = Math.min(Math.max(block.level ?? 1, 1), 4);
     return new Paragraph({
       heading: HEADINGS[level - 1],
       alignment: align,
+      ...newPage,
       children: markedRuns(block.text, block.marks, style),
     });
   }
@@ -294,6 +298,7 @@ function blockParagraph(
   }
   return new Paragraph({
     alignment: align,
+    ...newPage,
     children: markedRuns(block.text, block.marks, style),
   });
 }
@@ -325,7 +330,12 @@ function bodyOf(
   for (const run of groupTables(blocks)) {
     if (run.kind === "blocks") {
       for (const block of run.items) {
-        children.push(blockParagraph(block, numbers, images));
+        // The text's first block never opens with an empty page.
+        const placed =
+          children.length === 0 && block.pageBreak
+            ? { ...block, pageBreak: undefined }
+            : block;
+        children.push(blockParagraph(placed, numbers, images));
       }
       continue;
     }

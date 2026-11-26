@@ -437,6 +437,8 @@ interface BlockShape {
   start?: number;
   cell?: BlockCell;
   align?: BlockAlign;
+  /** Starts on a new page (Block.pageBreak). */
+  pageBreak?: true;
   image?: BlockImage;
 }
 
@@ -691,8 +693,9 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
     items.map((item) => ({ ...item, cell: item.shape.cell })),
   );
   for (const run of runs) {
-    if (run.kind === "blocks") output.push(...assembleFlow(run.items, ctx));
-    else output.push(tableNode(run.table, ctx));
+    if (run.kind === "blocks") {
+      output.push(...assembleFlow(run.items, ctx, output.length > 0));
+    } else output.push(tableNode(run.table, ctx));
   }
   return output;
 }
@@ -1003,14 +1006,33 @@ function columnWidths(
  * marker. Ordered items carry an explicit counter so struck items do not
  * consume a number.
  */
-function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
+function assembleFlow(
+  items: Item[],
+  ctx: PdfContentContext,
+  /** Something of the text comes before these blocks. */
+  afterContent = false,
+): Content[] {
   const output: Content[] = [];
   const stack: ListFrame[] = [];
 
   for (const item of items) {
     if (item.shape.type !== "list_item") {
       stack.length = 0;
-      output.push(tagNode(blockNode(item, ctx), item, ctx));
+      const node = tagNode(blockNode(item, ctx), item, ctx);
+      // «Empezar en una página nueva» (user's decision of 2026-11-26), never
+      // for the text's first block, which would leave the title alone on a
+      // page, nor inside a table (assemble sends cells elsewhere).
+      if (
+        item.shape.pageBreak &&
+        !item.shape.cell &&
+        (afterContent || output.length > 0) &&
+        typeof node === "object" &&
+        node !== null &&
+        !Array.isArray(node)
+      ) {
+        (node as { pageBreak?: string }).pageBreak = "before";
+      }
+      output.push(node);
       continue;
     }
 

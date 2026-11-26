@@ -144,7 +144,9 @@
         "align_center": "is centred",
         "align_right": "is aligned to the right",
         "formula_on": "becomes a formula",
-        "formula_off": "stops being a formula"
+        "formula_off": "stops being a formula",
+        "page_break_on": "starts on a new page",
+        "page_break_off": "no longer starts on a new page"
       },
       "fragmentFrom": "{text} (from amendment {label})",
       "outline": {
@@ -157,7 +159,8 @@
       "pageMarkTitle": "Page {pages} of the PDF | Pages {pages} of the PDF",
       "pageOf": "Page {page} of {total}",
       "pageOfTitle": "The page of the documentation PDF you are reading",
-      "pageBubble": "{page} of {total}"
+      "pageBubble": "{page} of {total}",
+      "pageBreak": "New page"
     },
     "editor": {
       "bold": "Bold",
@@ -273,7 +276,8 @@
         "blockHint": "Written in LaTeX (\\frac for fractions, _ for subscripts) and drawn below.",
         "inline": "Formula inside the text",
         "inlineHint": "Turns the selection, written in LaTeX, into a formula in the sentence."
-      }
+      },
+      "pageBreak": "Start on a new page"
     },
     "staleData": {
       "title": "The data could not be refreshed",

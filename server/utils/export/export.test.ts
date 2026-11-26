@@ -2072,3 +2072,20 @@ describe("render process", () => {
     expect(unansweredRenderError(null)).toBeInstanceOf(PdfRenderLimitError);
   });
 });
+
+describe("a block that starts a new page", () => {
+  const ctx = () => ({ links: new LinkRegistry() });
+  const nodes = (blocks: Block[]) =>
+    blocksToPdf(blocks, ctx()) as { pageBreak?: string }[];
+
+  it("opens a page in the PDF, but never as the text's first block", () => {
+    const [first, second, third] = nodes([
+      { ...p("a", "Uno"), pageBreak: true },
+      p("b", "Dos"),
+      { ...p("c", "Anexo"), type: "heading", level: 1, pageBreak: true },
+    ]);
+    expect(first!.pageBreak).toBeUndefined();
+    expect(second!.pageBreak).toBeUndefined();
+    expect(third!.pageBreak).toBe("before");
+  });
+});

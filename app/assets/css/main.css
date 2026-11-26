@@ -903,6 +903,34 @@ html {
     text-align: right;
   }
 
+  /*
+   * A block that starts a new page in the PDF and the Word file
+   * (`pageBreak`): a dashed rule above it, labelled «Página nueva»
+   * (--cx-page-break-label, set by the app in the reader's language).
+   */
+  :is(.rich-text, .content-editor) .cx-page-break {
+    position: relative;
+    margin-top: 2.25em;
+    padding-top: 0.75em;
+    border-top: 1px dashed var(--ui-border-accented);
+  }
+
+  :is(.rich-text, .content-editor) .cx-page-break::before {
+    content: var(--cx-page-break-label, "");
+    position: absolute;
+    top: -0.75em;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0 0.5em;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ui-text-muted);
+    background: var(--ui-bg);
+    white-space: nowrap;
+  }
+
   /* The template's colours (see --content-heading). */
   .rich-text h2,
   .rich-text .cx-heading-2 {

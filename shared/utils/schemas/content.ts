@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { CELL_FILL_NAMES } from "../../constants/cellFills";
 import {
   BLOCK_ALIGNMENTS,
+  PAGE_BREAK_TYPES,
   BLOCK_TYPES,
   CELL_BORDER_STYLES,
   CELL_SIDES,
@@ -186,6 +187,7 @@ export const blockSchema = z
     start: z.number().int().min(0).max(99_999).optional(),
     cell: cellSchema.optional(),
     align: z.enum(BLOCK_ALIGNMENTS).optional(),
+    pageBreak: z.boolean().optional(),
     image: imageSchema.optional(),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH),
     marks: z.array(markSchema).max(500).default([]),
@@ -229,6 +231,14 @@ export const blockSchema = z
     }
     if (block.cell) result.cell = block.cell;
     if (block.align) result.align = block.align;
+    // A page starts at a heading or paragraph, never inside a table.
+    if (
+      block.pageBreak &&
+      !block.cell &&
+      PAGE_BREAK_TYPES.includes(block.type)
+    ) {
+      result.pageBreak = true;
+    }
     return result;
   });
 
@@ -252,8 +262,14 @@ const blockFormatSchema = z
     marker: z.enum(LIST_MARKERS).optional(),
     start: z.number().int().min(0).max(99_999).optional(),
     align: z.enum(BLOCK_ALIGNMENTS).optional(),
+    pageBreak: z.boolean().optional(),
   })
-  .transform((format): BlockFormat => normalizeBlockFormat(format));
+  .transform((format): BlockFormat =>
+    normalizeBlockFormat({
+      ...format,
+      pageBreak: format.pageBreak ? true : undefined,
+    }),
+  );
 
 /**
  * A replacement, with the formatting it may bring (ReplaceOp): `marks` for
