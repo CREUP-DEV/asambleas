@@ -3,9 +3,10 @@
  * assembly overview show: the things a user has to do (present an expected
  * document, fix what the Secretaría sent back, send a draft, answer a
  * transactional over their amendment, answer the amendments to a document
- * they present), where the rest of their documents and amendments stand,
- * what others decided about them ("Novedades"), and the Secretaría's
- * pending review per assembly. No Vue or Nuxt here.
+ * they present), where the rest of their documents and amendments stand
+ * and the Secretaría's pending review per assembly; and GET
+ * /api/me/notices into what others decided about them, in words («Avisos»,
+ * ShellNotices). No Vue or Nuxt here.
  *
  * The "-" prefix keeps Nuxt from registering this module (and its test) as
  * a component; import it explicitly.
@@ -21,6 +22,7 @@ import type {
   MeWorkProponentDto,
   MeWorkReviewDto,
 } from "~~/shared/types/api";
+import { dedupeNews } from "~~/shared/utils/notices";
 import { compareAmendmentCodes } from "~/composables/amendment/workspace";
 
 /** Something the user has to do, in the order it is most urgent. */
@@ -436,14 +438,25 @@ export interface HomeWorkNews {
   sentence: HomeWorkPhrase;
   /** Who decided, when the sentence names it. */
   who: HomeWorkWho | null;
-  /** The amendment as the sentence names it ("tu enmienda CEUM 2"). */
+  /**
+   * The amendment as the sentence names it ("tu enmienda CEUM 2"), or, for
+   * a group, how many ("12 enmiendas").
+   */
   phrase: HomeWorkPhrase | null;
+  /**
+   * For a group (MeWorkNewsDto.count), the codes it names ("UGR1, UGR2,
+   * UGR3 y 9 más", or just the codes when it names them all), passed in as
+   * the parameter `codes`; null otherwise.
+   */
+  codes: HomeWorkPhrase | { name: string } | null;
   /** Tone of its icon: good news, bad news or neutral. */
   tone: "success" | "error" | "neutral";
   /**
-   * Where the sentence leads: the document with the amendment open, or,
-   * for a co-presenter reading the main presenter's answer to an amendment
-   * of someone else, the read-only review of those answers.
+   * Where the sentence leads: the document with the amendment open, or the
+   * review of the main presenter's answers: read-only for a co-presenter
+   * reading the main presenter's answer to an amendment of someone else,
+   * and where the main presenter answers a new amendment still waiting for
+   * it (MeWorkNewsDto.awaitsAnswer).
    */
   target: "document" | "review";
   /**
@@ -452,6 +465,11 @@ export interface HomeWorkNews {
    */
   impersonatedBy: string | null;
   at: string;
+  /**
+   * MeWorkNewsDto.visibleAt: when it reached the reader, if later than
+   * `at`. The notices' panel splits «Nuevos» by it (noticeMoment).
+   */
+  visibleAt?: string;
 }
 
 const POSITION_VALUES = new Set(["accept", "reject", "transact", "pending"]);
@@ -510,7 +528,12 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     amendment,
     impersonatedBy: news.impersonatedBy?.name ?? null,
     at: news.at,
+    ...(news.visibleAt ? { visibleAt: news.visibleAt } : {}),
+    codes: null,
   };
+  if (news.count !== undefined && news.count > 1) {
+    return homeWorkNewsGroup(news, base);
+  }
   const phrase = amendmentPhrase(amendment, mine, transactional);
   const make = (
     key: string,
@@ -527,6 +550,11 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     tone,
     target,
   });
+
+  if (news.asMesa) {
+    const mesa = homeWorkMesaSentence(news);
+    return make(mesa.key, mesa.tone, mesa.named && by ? { name: by } : null);
+  }
 
   switch (news.type) {
     case "position_changed": {
@@ -624,12 +652,28 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
         ? make("home.news.amendment.rejectedByPresenter", "error")
         : make("home.news.amendment.rejected", "error");
     case "amendment_validated":
+    case "amendment_published":
+      // New to a document the member presents: once, whichever let it read
+      // it first. The main presenter answers it in the review.
+      if (news.asPresenter) {
+        return news.awaitsAnswer
+          ? make(
+              "home.news.amendment.arrivedAwaiting",
+              "neutral",
+              null,
+              phrase,
+              {},
+              "review",
+            )
+          : make("home.news.amendment.arrived");
+      }
+      if (news.type === "amendment_published") {
+        return make("home.news.amendment.published");
+      }
       // Validated but late: the assembly still decides whether to treat it.
       return news.value === "pending"
         ? make("home.news.amendment.validatedLate")
         : make("home.news.amendment.validated");
-    case "amendment_published":
-      return make("home.news.amendment.published");
     case "amendment_correction_requested":
       return make("home.news.amendment.correction");
     case "amendment_validation_undone":
@@ -660,9 +704,9 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     case "amendment_lapsed":
       // A transactional the Mesa lapsed after it replaced the reader's
       // amendment (value "replaced"): that amendment stays replaced. Its
-      // own authors read the plain lapse.
+      // own authors, and the document's presenters, read the plain lapse.
       if (news.value === "replaced") {
-        return news.ownAmendment
+        return news.ownAmendment || news.asPresenter
           ? make("home.news.amendment.lapsed")
           : make("home.news.amendment.lapsedReplacing");
       }
@@ -675,9 +719,13 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
         : make("home.news.amendment.lapsed");
     case "amendment_withdrawn":
       // A transactional withdrawn after it replaced the reader's amendment
-      // (value "replaced"): that amendment stays replaced. Its own authors
-      // read the plain withdrawal.
-      if (news.value === "replaced" && !news.ownAmendment) {
+      // (value "replaced"): that amendment stays replaced. Its own authors,
+      // and the document's presenters, read the plain withdrawal.
+      if (
+        news.value === "replaced" &&
+        !news.ownAmendment &&
+        !news.asPresenter
+      ) {
         return make("home.news.amendment.withdrawnReplacing");
       }
       // A transactional closed on its own, not withdrawn by anyone: an
@@ -722,50 +770,163 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
 }
 
 /**
- * The news without the ones a single decision produced twice. Events
- * recorded together share their time, so two news about the same amendment
- * at the same instant come from one decision, and one sentence says it:
- * - a main author's rejection closes the transactional (it is withdrawn):
- *   the rejection says so, the withdrawal is dropped;
- * - the main presenter's acceptance incorporates the amendment: the
- *   incorporation names who accepted it, the answer is dropped;
- * - a new answer takes an incorporated amendment out again (it is
- *   reopened): the answer says so, the reopening is dropped.
+ * What a Mesa's row (MeWorkNewsDto.asMesa) says about one amendment: its
+ * validation, a transactional every party accepted (`ready`) or with an
+ * inclusion every party accepted, a party's rejection (naming the party)
+ * or a withdrawal by its author (naming the author). `named`: the sentence
+ * names who did it (`who`), when known.
  */
-export function homeWorkNewsDeduped(list: MeWorkNewsDto[]): MeWorkNewsDto[] {
-  const keyOf = (news: MeWorkNewsDto) =>
-    news.amendment ? `${news.amendment.id}@${time(news.at) ?? news.at}` : null;
-  const together = new Map<string, Set<string>>();
-  for (const news of list) {
-    const key = keyOf(news);
-    if (!key) continue;
-    const kinds = together.get(key) ?? new Set<string>();
-    kinds.add(news.type);
-    kinds.add(`${news.type}:${news.value ?? ""}`);
-    together.set(key, kinds);
-  }
-  return list.filter((news) => {
-    const key = keyOf(news);
-    const kinds = key ? together.get(key) : undefined;
-    if (!kinds) return true;
-    switch (news.type) {
-      case "amendment_withdrawn":
-        return !kinds.has("acceptance_recorded:rejected");
-      case "position_changed":
-        return !(
-          news.value === "accept" && kinds.has("amendment_approved:proponent")
-        );
-      case "amendment_reopened":
-        return !kinds.has("position_changed");
-      default:
-        return true;
-    }
+function homeWorkMesaSentence(news: MeWorkNewsDto): {
+  key: string;
+  tone: HomeWorkNews["tone"];
+  named: boolean;
+} {
+  const plain = (key: string, tone: HomeWorkNews["tone"] = "neutral") => ({
+    key,
+    tone,
+    named: false,
   });
+  const by = news.by !== null;
+  switch (news.type) {
+    case "amendment_validated":
+      return news.value === "pending"
+        ? plain("home.news.amendment.validatedLate")
+        : plain("home.news.amendment.validated");
+    case "transactional_revision_ready":
+      return plain("home.news.mesa.revisionReady");
+    case "amendment_withdrawn":
+      return by
+        ? {
+            key: "home.news.mesa.withdrawnByAuthor",
+            tone: "neutral",
+            named: true,
+          }
+        : plain("home.news.amendment.withdrawn");
+    case "acceptance_recorded":
+      if (news.value === "rejected") {
+        return by
+          ? { key: "home.news.acceptance.rejected", tone: "error", named: true }
+          : plain("home.news.mesa.rejected", "error");
+      }
+      return plain("home.news.mesa.ready", "success");
+    case "amendment_submitted":
+      return plain("home.news.mesa.ready", "success");
+    default:
+      return plain("home.news.amendment.other");
+  }
 }
 
-/** The news, latest first, in words (homeWorkNewsItem), without repeats. */
-export function homeWorkNews(work: MeWorkDto): HomeWorkNews[] {
-  return homeWorkNewsDeduped(work.news)
+/**
+ * A group of the Mesa's rows (MeWorkNewsDto.asMesa with `count`): the
+ * sentence for its kind, with no one named. Late validations group apart
+ * (newsRunKey), so `value` "pending" is every one's.
+ */
+function homeWorkMesaGroupKey(news: MeWorkNewsDto): string {
+  switch (news.type) {
+    case "amendment_validated":
+      return news.value === "pending"
+        ? "home.news.mesa.group.validatedLate"
+        : "home.news.mesa.group.validated";
+    case "amendment_withdrawn":
+      return "home.news.mesa.group.withdrawn";
+    case "transactional_revision_ready":
+      return "home.news.mesa.group.revisionReady";
+    case "acceptance_recorded":
+    case "amendment_submitted":
+      return news.value === "ready"
+        ? "home.news.mesa.group.ready"
+        : "home.news.group.other";
+    default:
+      return "home.news.group.other";
+  }
+}
+
+/**
+ * A group of presenters' or Mesa's rows (MeWorkNewsDto.count) in words: how
+ * many amendments ("12 enmiendas", "3 transaccionales") with their first
+ * codes, what happened to them, and, while one still waits for the main
+ * presenter's answer, the review. The context names the document, since
+ * there is no single amendment to open.
+ */
+function homeWorkNewsGroup(
+  news: MeWorkNewsDto,
+  base: Omit<HomeWorkNews, "sentence" | "who" | "phrase" | "tone" | "target">,
+): HomeWorkNews {
+  const count = news.count ?? 0;
+  const listed = news.amendments ?? [];
+  const codes = listed
+    .map((item) => item.code)
+    .filter((code): code is string => code !== null);
+  const transactional =
+    listed.length > 0 &&
+    listed.every(
+      (item) =>
+        item.kind === "transactional" || isHomeWorkTransactionalCode(item.code),
+    );
+  const rest = String(count - codes.length);
+  const make = (
+    key: string,
+    params: Record<string, string> = {},
+    target: HomeWorkNews["target"] = "document",
+  ): HomeWorkNews => ({
+    ...base,
+    amendment: null,
+    sentence: { key, params },
+    who: null,
+    phrase: {
+      key: transactional
+        ? "home.news.group.transactionals"
+        : "home.news.group.amendments",
+      params: { count: String(count) },
+    },
+    codes:
+      codes.length === 0
+        ? { key: "home.news.group.codesNone", params: {} }
+        : codes.length < count
+          ? {
+              key: "home.news.group.codesMore",
+              params: { codes: codes.join(", "), rest },
+            }
+          : { name: codes.join(", ") },
+    tone: "neutral",
+    target,
+  });
+  // The Mesa's runs: no document of the reader's, no answer due.
+  if (news.asMesa) return make(homeWorkMesaGroupKey(news));
+  switch (news.type) {
+    case "amendment_validated":
+    case "amendment_published":
+      return news.awaitsAnswer
+        ? make("home.news.group.arrivedAwaiting", {}, "review")
+        : make("home.news.group.arrived");
+    case "amendment_withdrawn":
+      // Transactionals closed by themselves: the amendment named, which
+      // they grouped, was settled (`by: "sources_closed"`).
+      return news.value && news.value !== "replaced"
+        ? make("home.news.group.closedBy", { code: news.value })
+        : make("home.news.group.withdrawn");
+    case "amendment_lapsed":
+      // Left behind because the transactional named already replaced them.
+      return news.value && news.value !== "replaced"
+        ? make("home.news.group.lapsedBy", { code: news.value })
+        : make("home.news.group.lapsed");
+    case "amendment_transacted":
+      return news.value
+        ? make("home.news.group.transactedBy", { code: news.value })
+        : make("home.news.group.transacted");
+    default:
+      return make("home.news.group.other");
+  }
+}
+
+/**
+ * The notices (GET /api/me/notices `items`), latest first, in words
+ * (homeWorkNewsItem), without the rows one decision produced twice
+ * (dedupeNews, shared with the server, which counts the new notices on the
+ * same rows).
+ */
+export function homeWorkNews(news: MeWorkNewsDto[]): HomeWorkNews[] {
+  return dedupeNews(news)
     .map((news) => homeWorkNewsItem(news))
     .sort(
       (a, b) =>
@@ -805,7 +966,7 @@ export function homeWorkForAssembly(
     review: work.review.filter(here),
     proponent: work.proponent.filter(here),
     acceptances: work.acceptances.filter(here),
-    news: work.news.filter(here),
+    news: [],
   };
 }
 

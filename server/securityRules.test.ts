@@ -172,6 +172,8 @@ const ROOM_PATHS = [
   "/api/me",
   "/api/me/work",
   "/api/me/activity",
+  "/api/me/notices",
+  "/api/me/notices/seen",
 ];
 
 const LIMITED_PATHS = [

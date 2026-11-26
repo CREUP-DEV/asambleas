@@ -444,6 +444,9 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
   <UDashboardPanel id="admin-members">
     <template #header>
       <UDashboardNavbar :title="t('admin.members.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

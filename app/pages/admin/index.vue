@@ -85,6 +85,9 @@ const sections = computed(() =>
   <UDashboardPanel id="admin-home">
     <template #header>
       <UDashboardNavbar :title="t('admin.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

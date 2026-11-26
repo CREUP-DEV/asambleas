@@ -150,7 +150,7 @@ Members of the other kinds read the same for everyone.
   reads in the composer, and cannot add another (422 `executive_member`).
   Outside the composer those accounts read
   the generic "CEA", its own draft included: lists, the detail, history,
-  news, activity and PDFs. A list of member ids in a payload always
+  notices, activity and PDFs. A list of member ids in a payload always
   carries the generic id last (`redactPayloadMembers`), so its place never
   tells which office it is.
   Parties of a transactional come from the database, so such an
@@ -810,7 +810,7 @@ reviews each presented amendment and:
 - Not validating, it chooses whether the amendment can be corrected
   ("¿Puede corregirla?", user's decision of 2026-11-19): "No" declares it
   not admitted (`inadmissible`) with the note, which its authors read with
-  the email and the news; they cannot correct it nor present it again, and
+  the email and the notices («Avisos»); they cannot correct it nor present it again, and
   the Mesa may readmit it. Also for one already sent back ("No admitirla"
   on the amendment), and for a late one only before validation.
 
@@ -825,7 +825,35 @@ stands. The time-based `amendmentVisibility` setting is gone.
 
 **Where people see their work.** The home page (`GET /api/me/work`) lists what
 each user has to do (expected documents, corrections requested) and where
-their documents and amendments stand. The Secretaría gets a validation inbox
+their documents and amendments stand. What others decided about them is in
+«Avisos» (`GET /api/me/notices`), and so, for an account that moderates
+(`session:moderate`, with or without a member), is the latest about the
+amendments of the open assemblies: the Secretaría's validations (not for an
+account that validates amendments, which has «Validación»), transactionals
+every party accepted and inclusions in them still awaiting the Secretaría,
+a party's rejection and an author's withdrawal, grouped by document (late
+validations apart) and never what the Mesa records from its console. They
+are on every page: an entry of the sidebar,
+right after Inicio, opens a panel at the right over the page (`ShellNotices`,
+mounted once by the default layout) with «Nuevos» and «Anteriores». They are
+computed when read from `events`, never stored one by one nor sent through
+the email outbox, so they can never become an email. One mark per account
+(`notice_seen`) says how far it has seen them: the sidebar counts what came
+after it, only when there is something (primary and soft, never the solid
+yellow of «Validación»), and on a phone, where that entry is in the drawer,
+a dot on the menu button of every page's navbar (`ShellNavbarToggle`) says
+there is something new; folded on a wide screen, where the badge is
+hidden, a dot on its bell says it. Opening the panel moves the mark to the
+newest notice it shows, and so does each read that lands while it is open,
+never back and never while an Admin acts as the account. An answer to the
+member's amendment counts from when the document's answers became public
+to the member, not from when it was recorded (`visibleAt`).
+The notices are read on the client only, after the page mounts, again on a
+route change and when the tab is shown, and inside an assembly on the live
+events about a document they come from (about any, for the Mesa), at most
+every 30 s (`useNotices`);
+a rise of the count with the page open, and the panel closed, is said once
+to screen readers, never with a toast. The Secretaría gets a validation inbox
 per assembly (`GET .../review`) and the tracking panel. The inbox lists the
 documents to validate, then the amendments in three tabs, each by document:
 "Por revisar" (to validate, and the transactionals still waiting for their
@@ -852,8 +880,15 @@ the Mesa on its behalf) answers the amendments to the document. Likewise an
 amendment with co-authors must name its main author (`mainAuthorId`), and only
 that member answers the transactionals proposed over it. Co-presenters and
 co-authors always see what the main one decided (who, what, when) on the
-document or amendment and in the "Novedades" of their home page. Only the main
-presenter itself or the Secretaría changes who the main presenter is.
+document or amendment and in their notices («Avisos»). There, too,
+every presenter learns of each amendment new to the document once it can read
+it (published, or validated for an office of the CEA and for a transactional),
+grouped when many arrive together ("Han llegado 12 enmiendas a tu documento"),
+and of one it read being withdrawn, lapsing or being replaced. That is only
+there, except that a transactional another member proposed also reaches them by
+email so they can answer it; and they never hear of the arrival of a
+transactional a presenter proposed. Only the main presenter
+itself or the Secretaría changes who the main presenter is.
 
 **Amendment flow.**
 
@@ -911,7 +946,7 @@ When a transactional replaces its originals, any other transactional still
 open over any of them lapses. When an original is settled another way
 (withdrawn, lapsed, declared inadmissible, voted, or incorporated by the main
 presenter's acceptance) before the transactional replaces it, the
-transactional closes by itself, and its authors see why in their news. If
+transactional closes by itself, and its authors see why in their notices. If
 that original goes back to undecided before the final vote (the main
 presenter changes its answer, the Mesa reopens its decision, the rule for
 accepted amendments goes back to vote, the assembly readmits it), the
@@ -1432,7 +1467,7 @@ better-auth's admin plugin is not used.
 - **Effective identity.** `getAuthUserWithRole` loads the real user and, only
   for Admins, the open row of the session. While it applies, the request runs
   entirely as the target: permissions, member, visibility, authorship, exports,
-  news. Role sync never runs for the target, because no session is created for
+  notices. Role sync never runs for the target, because no session is created for
   it.
 - **Safeguards.** The admin section, `/api/members` and
   `/api/calendar-rules` are read-only. Every
@@ -1444,7 +1479,7 @@ better-auth's admin plugin is not used.
   replaces "Cerrar sesión" in the user menu.
 - **Visibility.** Every act carries the impersonation. That an act was done by
   an Admin as the account is shown only to that account (in Mi actividad, its
-  news and histories) and to Admins; everyone else sees the act as the
+  notices and histories) and to Admins; everyone else sees the act as the
   account's.
 
 ## Permissions

@@ -8,13 +8,17 @@ import {
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
- * "Novedades": what others decided about the user's documents and
- * amendments, one plain sentence each ("UPV, proponente principal, aceptó
+ * The notices («Avisos», ShellNotices): what others decided about the
+ * user's documents and amendments, one plain sentence each ("UPV,
+ * proponente principal, aceptó
  * tu enmienda CEUM 2", "CAUB rechazó la transaccional T2: sigue tu
- * enmienda"), with the document, the assembly and when. Each sentence opens
- * the document with the amendment, or, for a co-presenter, the read-only
- * review of the main presenter's answers on it. Long lists show the latest
- * few and fold the rest away.
+ * enmienda"), with the document, the assembly and when. The amendments new
+ * to a document the member presents arrived close together read as one
+ * sentence ("Han llegado 12 enmiendas a tu documento: UGR1, UGR2, UGR3 y 9
+ * más"). Each sentence opens the document with the amendment, or the
+ * review of the main presenter's answers on it: read-only for a
+ * co-presenter, where the main presenter answers a new one. Long lists show
+ * the latest few and fold the rest away.
  */
 const props = withDefaults(
   defineProps<{
@@ -52,6 +56,7 @@ function sentence(item: HomeWorkNews): string {
     ...item.sentence.params,
     who: phrase(item.who),
     amendment: phrase(item.phrase),
+    codes: phrase(item.codes),
   });
 }
 

@@ -2079,7 +2079,7 @@
       "current": "Presented by {members}. If it was presented wrong, you can change it.",
       "action": "Change who presents it",
       "title": "Change who presents it",
-      "description": "Correct who signs this amendment if it was presented wrong. It stays in the history and its authors will see it in their news.",
+      "description": "Correct who signs this amendment if it was presented wrong. It stays in the history and its authors will see it in their notices.",
       "authors": "Presented by",
       "authorsPlaceholder": "Choose the members",
       "authorsRequired": "Choose at least one member.",
@@ -2106,7 +2106,7 @@
         "formal": "It is now an amendment of form",
         "partial": "It is now an amendment of content"
       },
-      "doneDescription": "It stays in the history and its authors will see it in their news.",
+      "doneDescription": "It stays in the history and its authors will see it in their notices.",
       "failed": "The kind of amendment could not be changed",
       "changed": {
         "formal": "From amendment of content to amendment of form",
@@ -2140,7 +2140,7 @@
       "undoneHidden": "It is no longer visible to everyone.",
       "failed": "The validation could not be undone",
       "confirmTitle": "Undo the validation?",
-      "confirmDescription": "It will be pending review again and its authors will see it in their news.",
+      "confirmDescription": "It will be pending review again and its authors will see it in their notices.",
       "hides": "It is published: it will no longer show in the assembly.",
       "clearsAnswer": "The answer of whoever presents the document will be cleared.",
       "errors": {
@@ -2926,7 +2926,29 @@
       "activity": "Activity",
       "calendarRules": "Regulatory deadlines",
       "stats": "Statistics",
-      "notifications": "Email notices"
+      "notifications": "Email notices",
+      "notices": "Notices",
+      "noticesNew": "Notices, {count} new | Notices, {count} new"
+    },
+    "notices": {
+      "title": "Notices",
+      "description": "What others decided about your documents and amendments in the last 30 days.",
+      "fresh": "New",
+      "earlier": "Earlier",
+      "loading": "Loading notices",
+      "loadError": "The notices could not be loaded",
+      "retry": "Try again",
+      "empty": "You have no notices",
+      "emptyDescription": "Here you will see when someone answers your amendments, decides on them or presents amendments to your documents.",
+      "descriptionMesa": "What others decided about your documents and amendments, and the latest on the assemblies' amendments, in the last 30 days.",
+      "descriptionMesaNoMember": "The latest on the assemblies' amendments in the last 30 days.",
+      "emptyDescriptionMesa": "Here you will see the transactional amendments every party accepts, the amendments the parties accept to include in them, the parties' rejections and the amendments their authors withdraw.",
+      "emptyDescriptionMesaValidated": "Here you will see the amendments the Secretariat validates, the transactional amendments every party accepts, the amendments the parties accept to include in them, the parties' rejections and the amendments their authors withdraw.",
+      "emptyDescriptionMesaMember": "You will also see what is decided about your documents and amendments.",
+      "announce": "You have {count} new notice | You have {count} new notices",
+      "openMenu": "Open menu",
+      "openMenuNew": "Open menu, {count} new notice | Open menu, {count} new notices",
+      "closeMenu": "Close menu"
     },
     "assembly": {
       "navLabel": "{assembly} sections",
@@ -3211,7 +3233,6 @@
       "transactionalNoCodeBy": "Transactional amendment by {member}"
     },
     "news": {
-      "title": "News",
       "who": {
         "mainPresenter": "{member}, the main presenter,",
         "mainPresenterUnknown": "The document's presenter",
@@ -3268,7 +3289,37 @@
         "lapsedBy": "Lapsed: transactional {code} already replaces those amendments, so {amendment} does not go ahead.",
         "closedBy": "Closed: {amendment} can no longer go ahead, because amendment {code}, which it grouped, was already decided or withdrawn.",
         "restoredBy": "{amendment} is back on its way: amendment {code} was reopened and every amendment it groups is open again.",
-        "validationUndone": "The Secretariat undid the validation of {amendment}: it is reviewing it again."
+        "validationUndone": "The Secretariat undid the validation of {amendment}: it is reviewing it again.",
+        "arrived": "New on your document: {amendment}.",
+        "arrivedAwaiting": "New on your document: {amendment}. It awaits an answer."
+      },
+      "group": {
+        "amendments": "{count} amendments",
+        "transactionals": "{count} transactional amendments",
+        "codesMore": "{codes} and {rest} more",
+        "codesNone": "no number",
+        "arrived": "New on your document, {amendment}: {codes}.",
+        "arrivedAwaiting": "New on your document, {amendment}: {codes}. Some still await an answer.",
+        "withdrawn": "Withdrawn, {amendment}: {codes}. They will no longer be debated.",
+        "closedBy": "Closed, {amendment}: {codes}. Amendment {code}, which they grouped, was already decided or withdrawn.",
+        "lapsed": "Lapsed, {amendment}: {codes}. They are no longer voted on.",
+        "lapsedBy": "Lapsed, {amendment}: {codes}. Transactional {code} already replaces those amendments.",
+        "transacted": "A transactional amendment replaces {amendment}: {codes}.",
+        "transactedBy": "Transactional {code} replaces {amendment}: {codes}.",
+        "other": "Changes to {amendment}: {codes}."
+      },
+      "mesa": {
+        "ready": "Every party has accepted {amendment}.",
+        "revisionReady": "Every party has accepted including more amendments in {amendment}: the Secretaría still has to validate it.",
+        "rejected": "A party rejected {amendment}: it is closed and the original amendments carry on.",
+        "withdrawnByAuthor": "{who} withdrew {amendment}: it will no longer be debated.",
+        "group": {
+          "validated": "Validated, {amendment}: {codes}.",
+          "validatedLate": "Validated but late, {amendment}: {codes}. The assembly still has to decide whether to treat them.",
+          "ready": "Accepted by every party, {amendment}: {codes}.",
+          "revisionReady": "Every party has accepted including more amendments in {amendment}: {codes}. The Secretaría still has to validate it.",
+          "withdrawn": "Withdrawn by their authors, {amendment}: {codes}. They will no longer be debated."
+        }
       },
       "document": {
         "published": "The document was published: the whole assembly can read it now.",
@@ -5202,7 +5253,7 @@
       "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Not published”.",
       "none": "No amendments are waiting for your validation.",
       "noCode": "No number",
-      "reclassifyHelp": "It stays in the history and its authors will see it in their news.",
+      "reclassifyHelp": "It stays in the history and its authors will see it in their notices.",
       "sent": "Presented",
       "waiting": "Waiting for your validation. Until then only its authors, the Secretariat and the Mesa can see it.",
       "validatedHidden": "Validated, but the whole assembly cannot see it yet. Publish it whenever you want.",

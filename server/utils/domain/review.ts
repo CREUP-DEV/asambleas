@@ -55,12 +55,10 @@ import {
 import { loadAgendaItems, visibleDocumentsCondition } from "./assemblies";
 import { loadExecutiveMemberIds } from "./executiveMembers";
 import {
-  assemblySettings,
   buildDocumentSummaries,
   loadMilestones,
   loadMilestonesByAssembly,
 } from "./documents";
-import { loadWorkNews } from "./news";
 import {
   coPresentedBy,
   loadCoProponentIds,
@@ -115,7 +113,7 @@ export function requireReviewQueue(actor: Actor): void {
   }
 }
 
-function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {
+export function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {
   return {
     id: assembly.id,
     slug: buildAssemblySlug(assembly),
@@ -309,8 +307,11 @@ export async function loadValidatedAmendments(
 
 // Home page -----------------------------------------------------------------------
 
-/** Assemblies that are not closed and that the actor can see, soonest first. */
-async function loadWorkAssemblies(actor: Actor): Promise<AssemblyRow[]> {
+/**
+ * Assemblies that are not closed and that the actor can see, soonest
+ * first: the home page's and the notices' (GET /api/me/notices).
+ */
+export async function loadWorkAssemblies(actor: Actor): Promise<AssemblyRow[]> {
   const rows = await db
     .select()
     .from(assemblies)
@@ -803,28 +804,19 @@ async function loadWorkAcceptances(
  * GET /api/me/work: across the assemblies that are not closed and that the
  * actor can see, the documents their member presents, the amendments it
  * wrote that are not decided yet, what it has to answer as main presenter
- * and as main author, what others decided about its work and, for the
- * Secretaría, what waits for it.
+ * and as main author and, for the Secretaría, what waits for it. What
+ * others decided about its work is in the notices (GET /api/me/notices).
  */
 export async function loadMeWork(actor: Actor): Promise<MeWorkDto> {
   const assemblyRows = await loadWorkAssemblies(actor);
   const now = new Date();
-  const [workDocuments, workAmendments, review, proponent, acceptances, news] =
+  const [workDocuments, workAmendments, review, proponent, acceptances] =
     await Promise.all([
       loadWorkDocuments(actor, assemblyRows, now),
       loadWorkAmendments(actor, assemblyRows),
       loadWorkReview(actor, assemblyRows, now),
       loadWorkProponent(actor, assemblyRows),
       loadWorkAcceptances(actor, assemblyRows),
-      loadWorkNews(
-        actor,
-        assemblyRows.map((row) => ({
-          ref: assemblyRef(row),
-          settings: assemblySettings(row),
-          status: row.status,
-        })),
-        now,
-      ),
     ]);
   return {
     documents: workDocuments,
@@ -832,6 +824,7 @@ export async function loadMeWork(actor: Actor): Promise<MeWorkDto> {
     review,
     proponent,
     acceptances,
-    news,
+    // Pages of the previous release still read it (MeWorkDto.news).
+    news: [],
   };
 }

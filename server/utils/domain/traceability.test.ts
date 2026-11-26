@@ -112,6 +112,11 @@ const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
   // memory only; the vote is recorded (recordEvent) once counted.
   "server/api/assemblies/[assembly]/live-tally.post.ts":
     "running count for the projection, memory only",
+  // How far the account has seen its notices, moved each time it opens
+  // «Avisos»: the notice_seen row is the record. An audit row per opening
+  // would fill the history and say nothing the row does not.
+  "server/api/me/notices/seen.put.ts":
+    "seen mark of the notices, the notice_seen row is the record",
 };
 
 interface ModuleInfo {

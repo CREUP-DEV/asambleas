@@ -354,6 +354,9 @@ useLeaveGuard(
   <UDashboardPanel id="admin-roles">
     <template #header>
       <UDashboardNavbar :title="t('admin.roles.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

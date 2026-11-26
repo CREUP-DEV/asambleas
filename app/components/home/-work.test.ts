@@ -17,7 +17,6 @@ import {
   homeNextDeadline,
   homeWorkForAssembly,
   homeWorkNews,
-  homeWorkNewsDeduped,
   homeWorkNewsItem,
   homeWorkNewsLink,
   homeWorkProponentCounts,
@@ -28,6 +27,7 @@ import {
   homeWorkUpdates,
   isHomeWorkTransactionalCode,
 } from "./-work";
+import { dedupeNews } from "~~/shared/utils/notices";
 
 const ago: MeWorkAssemblyRef = { id: "s1", slug: "80-ago", label: "80.ª AGO" };
 const age: MeWorkAssemblyRef = { id: "s2", slug: "12-age", label: "12.ª AGE" };
@@ -437,7 +437,7 @@ describe("home work", () => {
         presents("p2", { positionsPending: 1 }, age),
       ],
       acceptances: [answer("t1", ["CEUM 1"]), answer("t9", ["CEUM 9"], age)],
-      news: [news("n1"), news("n2", { assembly: age })],
+      news: [],
     };
     const ours = homeWorkForAssembly(work, "s1");
     expect(ours.documents.map((entry) => entry.document.id)).toEqual(["a"]);
@@ -447,7 +447,6 @@ describe("home work", () => {
     expect(ours.acceptances.map((entry) => entry.transactional.id)).toEqual([
       "t1",
     ]);
-    expect(ours.news.map((entry) => entry.id)).toEqual(["n1"]);
   });
 
   describe("news", () => {
@@ -799,10 +798,10 @@ describe("home work", () => {
           at: "2026-11-04T10:00:00.000Z",
         }),
       ];
-      expect(homeWorkNewsDeduped(rejection).map((x) => x.id)).toEqual(["r1"]);
+      expect(dedupeNews(rejection).map((x) => x.id)).toEqual(["r1"]);
       // Withdrawn later by whoever proposed it: both stay.
       expect(
-        homeWorkNewsDeduped([
+        dedupeNews([
           rejection[0]!,
           { ...rejection[1]!, at: "2026-11-04T11:00:00Z" },
         ]).map((x) => x.id),
@@ -818,17 +817,17 @@ describe("home work", () => {
           at,
         }),
       ];
-      expect(homeWorkNewsDeduped(accepted).map((x) => x.id)).toEqual(["p2"]);
+      expect(dedupeNews(accepted).map((x) => x.id)).toEqual(["p2"]);
       // Takes it out again: the answer says so, the reopening goes.
       const changed = [
         news("c1", { ...mine, value: "reject", at }),
         news("c2", { ...mine, type: "amendment_reopened", value: null, at }),
       ];
-      expect(homeWorkNewsDeduped(changed).map((x) => x.id)).toEqual(["c1"]);
+      expect(dedupeNews(changed).map((x) => x.id)).toEqual(["c1"]);
       // Another amendment at the same time is another decision: the
       // amendment settled and the transactional it closed on its own.
       expect(
-        homeWorkNewsDeduped([
+        dedupeNews([
           rejection[0]!,
           {
             ...rejection[1]!,
@@ -838,9 +837,7 @@ describe("home work", () => {
         ]).map((x) => x.id),
       ).toEqual(["r1", "r2"]);
       expect(
-        homeWorkNews(empty({ news: [...rejection, ...accepted] })).map(
-          (x) => x.key,
-        ),
+        homeWorkNews([...rejection, ...accepted]).map((x) => x.key),
       ).toEqual(["p2", "r1"]);
     });
 
@@ -961,38 +958,25 @@ describe("home work", () => {
     });
 
     it("lists the latest first and says whose amendment it is as the server does", () => {
-      const work = empty({
-        news: [
-          news("old", { at: "2026-11-01T10:00:00Z" }),
-          news("new", {
-            ...mine,
-            at: "2026-11-05T09:00:00Z",
-            amendment: { id: "e1", code: "E1", kind: "partial" },
-          }),
-          // Decided and gone from the work list: still the member's.
-          news("voted", {
-            ...mine,
-            type: "amendment_rejected",
-            by: null,
-            value: null,
-            at: "2026-11-03T10:00:00Z",
-          }),
-        ],
-      });
-      const items = homeWorkNews(work);
+      const list = [
+        news("old", { at: "2026-11-01T10:00:00Z" }),
+        news("new", {
+          ...mine,
+          at: "2026-11-05T09:00:00Z",
+          amendment: { id: "e1", code: "E1", kind: "partial" },
+        }),
+        // Decided and gone from the work list: still the member's.
+        news("voted", {
+          ...mine,
+          type: "amendment_rejected",
+          by: null,
+          value: null,
+          at: "2026-11-03T10:00:00Z",
+        }),
+      ];
+      const items = homeWorkNews(list);
       expect(items.map((item) => item.key)).toEqual(["new", "voted", "old"]);
       expect(items.map((item) => item.phrase?.key)).toEqual([
-        "home.news.phrase.yourAmendment",
-        "home.news.phrase.yourAmendment",
-        "home.news.phrase.amendment",
-      ]);
-      // Nothing in the work list makes someone else's amendment "tu
-      // enmienda": only the server's flag does.
-      expect(
-        homeWorkNews({ ...work, amendments: [amend("e2")] }).map(
-          (item) => item.phrase?.key,
-        ),
-      ).toEqual([
         "home.news.phrase.yourAmendment",
         "home.news.phrase.yourAmendment",
         "home.news.phrase.amendment",
@@ -1031,5 +1015,348 @@ describe("homeNextDeadline", () => {
     ];
     expect(homeNextDeadline(list, now)).toBeNull();
     expect(homeNextDeadline([], now)).toBeNull();
+  });
+});
+
+describe("presenters' news", () => {
+  const ucm = { id: "e5", code: "UCM5", kind: "partial" as const };
+  const asPresenter = {
+    asPresenter: true,
+    ownAmendment: false,
+    by: null,
+    amendment: ucm,
+  };
+
+  it("says an amendment is new to the member's document, once", () => {
+    for (const type of ["amendment_validated", "amendment_published"]) {
+      const item = homeWorkNewsItem(
+        news("n", { ...asPresenter, type, value: null }),
+      );
+      expect(item.sentence).toEqual({
+        key: "home.news.amendment.arrived",
+        params: {},
+      });
+      expect(item.phrase).toEqual({
+        key: "home.news.phrase.amendment",
+        params: { code: "UCM5" },
+      });
+      expect(item.who).toBeNull();
+      expect(homeWorkNewsLink(item)).toBe("?enmienda=e5");
+    }
+    // A late one reads the same: new to the document.
+    expect(
+      homeWorkNewsItem(
+        news("n", {
+          ...asPresenter,
+          type: "amendment_validated",
+          value: "pending",
+        }),
+      ).sentence.key,
+    ).toBe("home.news.amendment.arrived");
+    // The author's own validation still reads as before.
+    expect(
+      homeWorkNewsItem(
+        news("n", {
+          ownAmendment: true,
+          type: "amendment_validated",
+          value: "admitted",
+        }),
+      ).sentence.key,
+    ).toBe("home.news.amendment.validated");
+  });
+
+  it("leads the main presenter to the review while it waits for the answer", () => {
+    const item = homeWorkNewsItem(
+      news("n", {
+        ...asPresenter,
+        type: "amendment_published",
+        value: null,
+        awaitsAnswer: true,
+      }),
+    );
+    expect(item.sentence.key).toBe("home.news.amendment.arrivedAwaiting");
+    expect(homeWorkNewsLink(item)).toBe("/revisar?enmienda=e5");
+  });
+
+  it("tells presenters the plain closure of a transactional in force", () => {
+    const t3 = { id: "t3", code: "T3", kind: "transactional" as const };
+    for (const type of ["amendment_withdrawn", "amendment_lapsed"]) {
+      const item = homeWorkNewsItem(
+        news("n", { ...asPresenter, amendment: t3, type, value: "replaced" }),
+      );
+      expect(item.sentence.key, type).toBe(
+        type === "amendment_withdrawn"
+          ? "home.news.amendment.withdrawn"
+          : "home.news.amendment.lapsed",
+      );
+      expect(item.phrase?.key).toBe("home.news.phrase.transactional");
+    }
+  });
+
+  it("says a run of new amendments in one row, with its first codes", () => {
+    const group = (over: Partial<MeWorkNewsDto> = {}) =>
+      homeWorkNewsItem(
+        news("g", {
+          ...asPresenter,
+          amendment: null,
+          type: "amendment_published",
+          value: null,
+          count: 12,
+          amendments: [
+            { id: "a1", code: "UGR1", kind: "partial" },
+            { id: "a2", code: "UGR2", kind: "partial" },
+            { id: "a3", code: "UGR3", kind: "partial" },
+          ],
+          ...over,
+        }),
+      );
+    const item = group();
+    expect(item.amendment).toBeNull();
+    expect(item.sentence).toEqual({
+      key: "home.news.group.arrived",
+      params: {},
+    });
+    expect(item.phrase).toEqual({
+      key: "home.news.group.amendments",
+      params: { count: "12" },
+    });
+    expect(item.codes).toEqual({
+      key: "home.news.group.codesMore",
+      params: { codes: "UGR1, UGR2, UGR3", rest: "9" },
+    });
+    // The document, since no single amendment opens.
+    expect(homeWorkNewsLink(item)).toBe("");
+
+    const awaiting = group({ awaitsAnswer: true });
+    expect(awaiting.sentence.key).toBe("home.news.group.arrivedAwaiting");
+    expect(homeWorkNewsLink(awaiting)).toBe("/revisar");
+
+    // All of them named: no "y N más".
+    expect(
+      group({
+        count: 2,
+        amendments: [
+          { id: "t1", code: "T1", kind: "transactional" },
+          { id: "t2", code: "T2", kind: "transactional" },
+        ],
+      }),
+    ).toMatchObject({
+      phrase: { key: "home.news.group.transactionals", params: { count: "2" } },
+      codes: { name: "T1, T2" },
+    });
+  });
+
+  it("says a run of closures in one row, naming the transactional", () => {
+    const closure = (type: string, value: string | null) =>
+      homeWorkNewsItem(
+        news("g", {
+          ...asPresenter,
+          amendment: null,
+          type,
+          value,
+          count: 2,
+          amendments: [
+            { id: "a1", code: "UGR1", kind: "partial" },
+            { id: "a2", code: "UGR2", kind: "partial" },
+          ],
+        }),
+      ).sentence;
+    expect(closure("amendment_transacted", "T4")).toEqual({
+      key: "home.news.group.transactedBy",
+      params: { code: "T4" },
+    });
+    expect(closure("amendment_transacted", null).key).toBe(
+      "home.news.group.transacted",
+    );
+    expect(closure("amendment_lapsed", "T4")).toEqual({
+      key: "home.news.group.lapsedBy",
+      params: { code: "T4" },
+    });
+    expect(closure("amendment_lapsed", "replaced").key).toBe(
+      "home.news.group.lapsed",
+    );
+    expect(closure("amendment_withdrawn", null).key).toBe(
+      "home.news.group.withdrawn",
+    );
+    expect(closure("amendment_withdrawn", "replaced").key).toBe(
+      "home.news.group.withdrawn",
+    );
+  });
+
+  it("says transactionals closed by themselves in one row, naming what they grouped", () => {
+    const item = homeWorkNewsItem(
+      news("g", {
+        ...asPresenter,
+        amendment: null,
+        type: "amendment_withdrawn",
+        value: "UGR3",
+        count: 2,
+        amendments: [
+          { id: "t1", code: "T1", kind: "transactional" },
+          { id: "t2", code: "T2", kind: "transactional" },
+        ],
+      }),
+    );
+    expect(item.sentence).toEqual({
+      key: "home.news.group.closedBy",
+      params: { code: "UGR3" },
+    });
+    expect(item.phrase?.key).toBe("home.news.group.transactionals");
+  });
+
+  it("keeps a group whole when one decision said something else at once", () => {
+    const list = [
+      news("g", {
+        ...asPresenter,
+        amendment: null,
+        type: "amendment_withdrawn",
+        value: null,
+        count: 2,
+        amendments: [],
+      }),
+      news("r", {
+        type: "acceptance_recorded",
+        value: "rejected",
+      }),
+    ];
+    expect(dedupeNews(list).map((item) => item.id)).toEqual(["g", "r"]);
+  });
+});
+
+describe("the Mesa's news", () => {
+  const t3 = { id: "t3", code: "T3", kind: "transactional" as const };
+  const asMesa = {
+    asMesa: true,
+    ownAmendment: false,
+    by: null,
+    amendment: t3,
+  };
+  const key = (over: Partial<MeWorkNewsDto>) =>
+    homeWorkNewsItem(news("n", { ...asMesa, ...over })).sentence.key;
+
+  it("says a validation, late or not, as the authors read it", () => {
+    const ucm = { id: "e5", code: "UCM5", kind: "partial" as const };
+    expect(
+      key({ amendment: ucm, type: "amendment_validated", value: "admitted" }),
+    ).toBe("home.news.amendment.validated");
+    expect(
+      key({ amendment: ucm, type: "amendment_validated", value: "pending" }),
+    ).toBe("home.news.amendment.validatedLate");
+    const item = homeWorkNewsItem(
+      news("n", {
+        ...asMesa,
+        amendment: ucm,
+        type: "amendment_validated",
+        value: "admitted",
+      }),
+    );
+    // Never "a tu documento" nor "tu enmienda".
+    expect(item.phrase).toEqual({
+      key: "home.news.phrase.amendment",
+      params: { code: "UCM5" },
+    });
+    expect(homeWorkNewsLink(item)).toBe("?enmienda=e5");
+  });
+
+  it("says a transactional every party accepted, whichever event made it so", () => {
+    for (const type of ["acceptance_recorded", "amendment_submitted"]) {
+      const item = homeWorkNewsItem(
+        news("n", { ...asMesa, type, value: "ready", by: upv }),
+      );
+      expect(item.sentence.key, type).toBe("home.news.mesa.ready");
+      expect(item.who).toBeNull();
+      expect(item.tone).toBe("success");
+      expect(item.phrase?.key).toBe("home.news.phrase.transactional");
+    }
+    expect(key({ type: "transactional_revision_ready", value: null })).toBe(
+      "home.news.mesa.revisionReady",
+    );
+  });
+
+  it("names the party that rejected it and the author that withdrew", () => {
+    const rejected = homeWorkNewsItem(
+      news("n", {
+        ...asMesa,
+        type: "acceptance_recorded",
+        value: "rejected",
+        by: upv,
+      }),
+    );
+    expect(rejected.sentence.key).toBe("home.news.acceptance.rejected");
+    expect(rejected.who).toEqual({ name: upv.acronym });
+    expect(rejected.tone).toBe("error");
+    expect(
+      key({ type: "acceptance_recorded", value: "rejected", by: null }),
+    ).toBe("home.news.mesa.rejected");
+
+    const withdrawn = homeWorkNewsItem(
+      news("n", {
+        ...asMesa,
+        amendment: { id: "e5", code: "UCM5", kind: "partial" },
+        type: "amendment_withdrawn",
+        value: null,
+        by: upv,
+      }),
+    );
+    expect(withdrawn.sentence.key).toBe("home.news.mesa.withdrawnByAuthor");
+    expect(withdrawn.who).toEqual({ name: upv.acronym });
+    expect(key({ type: "amendment_withdrawn", value: null })).toBe(
+      "home.news.amendment.withdrawn",
+    );
+  });
+
+  it("says a run of the Mesa's rows in one row, never as the presenters'", () => {
+    const group = (over: Partial<MeWorkNewsDto>) =>
+      homeWorkNewsItem(
+        news("g", {
+          ...asMesa,
+          amendment: null,
+          count: 12,
+          amendments: [
+            { id: "a1", code: "UGR1", kind: "partial" },
+            { id: "a2", code: "UGR2", kind: "partial" },
+            { id: "a3", code: "UGR3", kind: "partial" },
+          ],
+          ...over,
+        }),
+      );
+    const validated = group({ type: "amendment_validated", value: "admitted" });
+    expect(validated.sentence.key).toBe("home.news.mesa.group.validated");
+    expect(validated.phrase).toEqual({
+      key: "home.news.group.amendments",
+      params: { count: "12" },
+    });
+    expect(validated.codes).toEqual({
+      key: "home.news.group.codesMore",
+      params: { codes: "UGR1, UGR2, UGR3", rest: "9" },
+    });
+    expect(homeWorkNewsLink(validated)).toBe("");
+    // Late validations group apart (newsRunKey) and say so.
+    expect(
+      group({ type: "amendment_validated", value: "pending" }).sentence.key,
+    ).toBe("home.news.mesa.group.validatedLate");
+    expect(
+      group({ type: "amendment_withdrawn", value: null }).sentence.key,
+    ).toBe("home.news.mesa.group.withdrawn");
+    const transactionals = [
+      { id: "t1", code: "T1", kind: "transactional" as const },
+      { id: "t2", code: "T2", kind: "transactional" as const },
+    ];
+    const ready = group({
+      type: "acceptance_recorded",
+      value: "ready",
+      count: 2,
+      amendments: transactionals,
+    });
+    expect(ready.sentence.key).toBe("home.news.mesa.group.ready");
+    expect(ready.phrase?.key).toBe("home.news.group.transactionals");
+    expect(
+      group({
+        type: "transactional_revision_ready",
+        value: null,
+        count: 2,
+        amendments: transactionals,
+      }).sentence.key,
+    ).toBe("home.news.mesa.group.revisionReady");
   });
 });

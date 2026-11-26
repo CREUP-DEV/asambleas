@@ -134,6 +134,21 @@ export function seesAllPresentedAmendments(actor: Actor): boolean {
 }
 
 /**
+ * Whether the actor reads an amendment it is no insider of once validated,
+ * before its publication, whatever its kind (canSeeAmendment): the
+ * Secretaría and the Mesa, the CEA's accounts and the control sheet's
+ * readers. A document's presenters read a transactional then as well
+ * (presentsTransactionalDocument), and nothing else.
+ */
+export function seesOthersValidatedAmendments(actor: Actor): boolean {
+  return (
+    seesAllPresentedAmendments(actor) ||
+    seesPresentedAmendments(actor) ||
+    seesValidatedAmendments(actor)
+  );
+}
+
+/**
  * Who reads who gave the main presenter's answer to an amendment and when
  * (PositionDto.recordedBy, recorder, updatedAt; user's decision of
  * 2026-11-18): its authors, the presenters of its document, the CEA's
@@ -401,9 +416,20 @@ export function canSeePositions(
   actor: Actor,
   options: { document: PositionsPublication; isPresenter: boolean },
 ): boolean {
-  if (options.isPresenter || canModerate(actor) || canReviewAmendments(actor))
-    return true;
+  if (seesUnpublishedPositions(actor, options.isPresenter)) return true;
   return positionsArePublic(options.document);
+}
+
+/**
+ * Whether the actor reads a document's answers before they are public
+ * (canSeePositions): its presenters, the Mesa and whoever reviews
+ * amendments. Everyone else reads them from positionsPublicSince on.
+ */
+export function seesUnpublishedPositions(
+  actor: Actor,
+  isPresenter: boolean,
+): boolean {
+  return isPresenter || canModerate(actor) || canReviewAmendments(actor);
 }
 
 // Executive areas ------------------------------------------------------------

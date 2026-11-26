@@ -8093,6 +8093,9 @@ async function applyRevision(
 /**
  * Settles an inclusion after an answer or its proposal: rejected, applied,
  * or on to the Secretaría, as revisionAfterAnswers says.
+ * `recordedForMemberId`: the answer that settles it was recorded by the
+ * Mesa for that party, from the console; a transactional_revision_ready
+ * says so, so the Mesa's notices leave it out (news.ts, mesaNewsKind).
  */
 async function settleRevision(
   tx: Tx,
@@ -8100,6 +8103,7 @@ async function settleRevision(
   revision: RevisionRow,
   locks: Awaited<ReturnType<typeof lockForRevision>>,
   parties: { memberId: string; decision: AcceptanceDecision }[],
+  recordedForMemberId: string | null = null,
 ): Promise<void> {
   const next = revisionAfterAnswers(
     parties.map((party) => party.decision),
@@ -8132,7 +8136,10 @@ async function settleRevision(
     await recordEvent(tx, {
       ...base,
       type: "transactional_revision_ready",
-      payload: { revisionId: revision.id },
+      payload: {
+        revisionId: revision.id,
+        ...(recordedForMemberId ? { recordedForMemberId } : {}),
+      },
     });
   }
 }
@@ -8343,6 +8350,7 @@ export async function answerTransactionalRevision(
       parties.map((party) =>
         party.id === row.id ? { ...party, decision: body.decision } : party,
       ),
+      memberId !== actor.memberId ? memberId : null,
     );
   });
 

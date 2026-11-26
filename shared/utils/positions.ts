@@ -55,6 +55,27 @@ export function positionsArePublic(document: PositionsPublication): boolean {
 }
 
 /**
+ * Since when the answers are public (positionsArePublic): the earlier of
+ * the publication and the start of the debate, among those set. Null while
+ * they are not public. A publication taken back and made again counts from
+ * the new one, since the answers were hidden in between.
+ */
+export function positionsPublicSince(
+  document: PositionsPublication,
+): Date | null {
+  let since: number | null = null;
+  for (const value of [
+    document.positionsPublishedAt,
+    document.positionsDebateStartedAt,
+  ]) {
+    if (value === null) continue;
+    const ms = new Date(value).getTime();
+    if (!Number.isNaN(ms) && (since === null || ms < since)) since = ms;
+  }
+  return since === null ? null : new Date(since);
+}
+
+/**
  * Whether the Secretaría may take the publication back: only what it
  * published itself, and only until the debate starts.
  */

@@ -178,6 +178,9 @@ const tabListFade = computed(() => {
   <UDashboardPanel id="my-activity">
     <template #header>
       <UDashboardNavbar :title="t('activity.me.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

@@ -21,14 +21,25 @@ import { useSessionPillHeight } from "~/components/shell/SessionBanner.vue";
  *
  * It also holds the welcome (ShellWelcome), which opens by itself the first
  * time in a browser, and again from "Ayuda" in the user menu. The welcome is client only: nothing of it is server-rendered.
+ *
+ * And the notices' panel («Avisos», ShellNotices), once for every page,
+ * client only too: the sidebar's entry opens it, and on phones the menu
+ * button of each page's navbar (ShellNavbarToggle) carries its dot.
  */
 const { t } = useI18n();
 const bannerOffset = useImpersonationBannerOffset();
 const sessionPillHeight = useSessionPillHeight();
 const sessionPillShown = computed(() => sessionPillHeight.value !== "0px");
 
-const sidebarOpen = ref(false);
+const sidebarOpen = useShellSidebarOpen();
 const welcomeOpen = ref(false);
+
+// On phones the sidebar is a drawer: «Avisos» opens over the page, so the
+// drawer it was chosen from closes.
+const { open: noticesOpen } = useNotices();
+watch(noticesOpen, (value) => {
+  if (value) sidebarOpen.value = false;
+});
 
 /** On phones the sidebar is a drawer: it closes so the welcome is on top. */
 function openHelp(): void {
@@ -136,6 +147,7 @@ useHead({
 
     <ClientOnly>
       <ShellWelcome v-model:open="welcomeOpen" />
+      <ShellNotices class="print:hidden" />
     </ClientOnly>
   </div>
 </template>

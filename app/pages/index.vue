@@ -8,7 +8,6 @@ import type {
 } from "~~/shared/types/api";
 import {
   homeNextDeadline,
-  homeWorkNews,
   homeWorkReviewPending,
   homeWorkTasks,
   homeWorkUpdates,
@@ -23,20 +22,19 @@ import {
  * Home: what the signed-in user has to do (GET /api/me/work: expected
  * documents, corrections, drafts, the transactionals over their amendments
  * waiting for their answer and, for main presenters, the amendments to
- * answer), what others decided about their work ("Novedades": a main
- * presenter's answer, a main author's answer to a transactional, the
- * Secretaría or the assembly), where their documents and amendments stand,
- * the Secretaría's pending review per assembly, a live-session banner that
- * leads to the live view and the upcoming assemblies.
+ * answer), where their documents and amendments stand, the Secretaría's
+ * pending review per assembly, a live-session banner that leads to the
+ * live view and the upcoming assemblies. What others decided about their
+ * work is in «Avisos» (ShellNotices), on every page, never here too.
  *
  * At most three blocks stand in first plane, for every role: "Tareas pendientes"
  * (the Secretaría's pending review and the user's tasks), "Lo siguiente"
  * (the next deadline of the calendar, one line that opens that calendar)
  * and the upcoming assemblies; with nothing to do, "Tareas pendientes"
- * goes last on the page instead. The rest stays one click away in folded
- * sections under them (HomeFold): the news, the user's documents and
- * amendments and their account; the administration pages hang from the
- * sidebar only. A read-only account (Otro, Invitado) with nothing to
+ * goes last on the page instead. The rest stays one click away in a folded
+ * section under them (HomeFold): the user's documents and amendments; the
+ * administration pages hang from the sidebar only. A read-only account
+ * (Otro, Invitado) with nothing to
  * do reads one sentence saying the account can only read, with the account
  * in use and «Cambiar de cuenta», instead of an empty "Tareas pendientes".
  */
@@ -108,7 +106,6 @@ const tasks = computed(() =>
   work.value ? homeWorkTasks(work.value, now.value) : [],
 );
 const updates = computed(() => (work.value ? homeWorkUpdates(work.value) : []));
-const news = computed(() => (work.value ? homeWorkNews(work.value) : []));
 const review = computed(() =>
   work.value ? homeWorkReviewPending(work.value.review) : [],
 );
@@ -207,6 +204,9 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
   <UDashboardPanel id="home">
     <template #header>
       <UDashboardNavbar :title="t('home.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
@@ -551,17 +551,6 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
 
         <!-- The rest, folded: one click away -->
         <div class="flex flex-col gap-3" data-testid="home-more">
-          <!-- What others decided about the user's work -->
-          <HomeFold
-            v-if="news.length > 0"
-            id="news"
-            :title="t('home.news.title')"
-            icon="i-lucide-bell"
-            :count="news.length"
-          >
-            <HomeNewsList :news="news" />
-          </HomeFold>
-
           <!-- Where the rest stands -->
           <HomeFold
             v-if="updates.length > 0"

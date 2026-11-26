@@ -32,6 +32,9 @@ export {
  * Folded, the theme hides every label, so each link takes it as its
  * accessible name (namedWhenCollapsed); unfolded, the "now" mark never
  * squeezes the label it follows.
+ *
+ * «Avisos», right after Inicio, is the one entry that is no page: it opens
+ * the notices' panel (ShellNotices) wherever the user is.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
@@ -39,6 +42,7 @@ const { t } = useI18n();
 const localePath = useLocalePath();
 const route = useRoute();
 const { can, isAdmin } = useMe();
+const { unread: noticesUnread, open: noticesOpen, openPanel } = useNotices();
 
 const currentAssembly = useState<AssemblyDto | null>(
   "current-assembly",
@@ -69,6 +73,44 @@ const assembly = computed<AssemblyDto | null>(() => {
     : null;
 });
 
+/**
+ * «Avisos»: opens the notices' panel over the page (ShellNotices), never a
+ * route. Its number shows only while there are new ones, primary and soft:
+ * solid yellow stays «Validación»'s; folded, where the theme hides the
+ * badge, a primary dot on its icon and its tooltip say it instead. Its
+ * accessible name says how many («Avisos, 3 nuevos»), folded or not. The
+ * count is read on the client
+ * only (useNotices), so the server and the first client render show none.
+ */
+const noticesItem = computed<NavigationMenuItem>(() => {
+  const count = noticesUnread.value ?? 0;
+  const item: NavigationMenuItem = {
+    label: t("shell.nav.notices"),
+    icon: "i-lucide-bell",
+    active: noticesOpen.value,
+    onSelect: () => {
+      void openPanel();
+    },
+  };
+  if (count > 0) {
+    item.badge = {
+      label: String(count),
+      color: "primary",
+      variant: "soft",
+      size: "md",
+    };
+    item["aria-label"] = t("shell.nav.noticesNew", { count }, count);
+    if (props.collapsed) {
+      // Folded, the theme hides the badge: a dot on the bell says it (the
+      // phone's menu button carries the same one), and the tooltip the
+      // number.
+      item.chip = { color: "primary" };
+      item.tooltip = { text: t("shell.nav.noticesNew", { count }, count) };
+    }
+  }
+  return item;
+});
+
 const mainItems = computed<NavigationMenuItem[]>(() => {
   const home = localePath("/");
   const assemblies = localePath("/asambleas");
@@ -79,6 +121,7 @@ const mainItems = computed<NavigationMenuItem[]>(() => {
       to: home,
       active: currentPath.value === normalize(home),
     },
+    noticesItem.value,
     {
       label: t("shell.nav.assemblies"),
       icon: "i-lucide-landmark",

@@ -98,6 +98,8 @@ place it is written.
 | ------ | ----------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below). `image` is the URL of the stored photo (`/api/uploads/avatars/[file]`), never the Google picture, or null until one is stored.                                                   |
 | GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                                                                                                                    |
+| GET    | `/api/me/notices`                   | any                       | `MeNoticesDto`, the notices («Avisos»), see "Notices" below.                                                                                                                                                                                                                 |
+| PUT    | `/api/me/notices/seen`              | any                       | `MeNoticesSeenBody`. Marks the notices seen up to `at`; 204. See "Notices" below.                                                                                                                                                                                            |
 | GET    | `/api/uploads/avatars/[file]`       | any                       | An account's stored photo (`user_avatars`): a 192 × 192 WebP, served only while its account's row names that file (404 otherwise), `private, max-age=31536000, immutable`, `nosniff`, in a rate limiter bucket of its own (`AVATAR_IMAGE_RATE_LIMIT`). See "Account photos". |
 | GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by kind (asociados, sectorials, others, offices) and acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below.                                              |
 | POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                                                                                                                    |
@@ -144,8 +146,9 @@ gets the generic presenter
   as one party: rejected if any did, pending while any is);
 - both histories: `actorMember`, and `actorName` is null when the member
   acted for is an office; member ids in `payload` become the generic id;
-- `/api/me/work`: `acceptances[].proposedBy`, `news[].by` and every document
-  and amendment in it;
+- `/api/me/work`: `acceptances[].proposedBy` and every document and
+  amendment in it;
+- `/api/me/notices`: `items[].by` and every document and amendment in it;
 - `/api/me/activity`: `actor.member`, and `actor.id` and `actor.name` are
   the generic id and name unless the act is the account's own; member ids
   in `payload`; a member target that is an office has the generic id, the
@@ -178,7 +181,7 @@ once it is no longer a draft (one sent back for correction is a draft);
 the assembly closed). It does not ask for `canNameExecutiveAuthors`: an
 author that lost its member still edits its draft. It carries members
 only. What that account reads anywhere else, its own draft included (the
-list, the detail, history, news, activity, PDFs), is the generic
+list, the detail, history, notices, activity, PDFs), is the generic
 presenter.
 
 `MeDto.member` is always the account's real member, and
@@ -1011,7 +1014,7 @@ otherwise.
 | PUT    | `/[amendment]`                                 | author while the amendment is a draft                            | `AmendmentUpdateBody`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | DELETE | `/[amendment]`                                 | author while the amendment is a draft                            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/submit`                          | author                                                           | See submission rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it. A transactional already in force over amendments of members other than the author's is the Mesa's to withdraw: 409 to its authors (`withdrawNeedsMesa`). Records `amendment_withdrawn` with `{ by: "author" \| "moderator", replacedSources?: true, replacedSourceIds? }`, both set when it withdraws a transactional in force (`replacesSourcesNow`) that replaced sources (`transactedSourceIds`): those stay `transacted`; their authors read it in their news.          |
+| POST   | `/[amendment]/withdraw`                        | author or moderator                                              | Allowed until the amendment is decided. Closes the pending transactionals over it. A transactional already in force over amendments of members other than the author's is the Mesa's to withdraw: 409 to its authors (`withdrawNeedsMesa`). Records `amendment_withdrawn` with `{ by: "author" \| "moderator", replacedSources?: true, replacedSourceIds? }`, both set when it withdraws a transactional in force (`replacesSourcesNow`) that replaced sources (`transactedSourceIds`): those stay `transacted`; their authors read it in their notices.       |
 | POST   | `/validate`                                    | `amendment:review`                                               | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | POST   | `/publish`                                     | `amendment:review`                                               | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/[amendment]/correction`                      | `amendment:review`                                               | `AmendmentCorrectionBody`. See validation below. Returns `AmendmentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -1021,7 +1024,7 @@ otherwise.
 | POST   | `/[amendment]/authors`                         | `amendment:review`                                               | `AmendmentAuthorsBody`. See correcting who presents an amendment below. Returns `AmendmentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/admission`                                   | `amendment:review` or moderator                                  | See admission rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | PUT    | `/[amendment]/position`                        | main presenter or moderator                                      | `PositionBody`. See the main presenter's answer below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| POST   | `/[amendment]/outcome`                         | moderator or `assembly:vote_result`                              | See outcome rules below. A vote with `project: false` (the control sheet), or by whoever only holds `assembly:vote_result`, is not projected. A `withdraw` or `lapse` of a transactional in force records `{ by: "moderator", replacedSources: true, replacedSourceIds }`, news for the authors of the sources it replaced and never an email to them.                                                                                                                                                                                                         |
+| POST   | `/[amendment]/outcome`                         | moderator or `assembly:vote_result`                              | See outcome rules below. A vote with `project: false` (the control sheet), or by whoever only holds `assembly:vote_result`, is not projected. A `withdraw` or `lapse` of a transactional in force records `{ by: "moderator", replacedSources: true, replacedSourceIds }`, notices for the authors of the sources it replaced and never an email to them.                                                                                                                                                                                                      |
 | POST   | `/assent`                                      | moderator or `assembly:vote_result`                              | `BulkAssentBody` (`items`: id and `updatedAt`, up to 500, unique) → `BulkAssentDto`: a bloc approved by assent in one request, each through the single `approve`/`assent` outcome in order; `failed` lists those it could not approve with the reason, and the rest go on. Live notices go out together at the end. Only while the session is open.                                                                                                                                                                                                            |
 | POST   | `/bloc-vote`                                   | moderator or `assembly:vote_result`                              | `BlocVoteBody` → `BlocVoteDto`: one counted vote on two or more amendments (no assent: that is `/assent`), under the document's amendment majority; carried, every one approved, else every one rejected, in one transaction. 409 `{ tie: true }` under `tieRule: "repeat"`. Reopening one needs `wholeVote: true` and reopens them all.                                                                                                                                                                                                                       |
 | POST   | `/lapse`                                       | moderator or `assembly:vote_result`                              | `BulkLapseBody` (as `BulkAssentBody`) → `BulkLapseDto` (as `BulkAssentDto`): the lapse offer's amendments marked as lapsed in one request, each through the single `lapse` outcome in order; `failed` lists those it could not mark, and the rest go on. Live notices go out together at the end. Only while the session is open.                                                                                                                                                                                                                              |
@@ -1248,7 +1251,7 @@ onReview: true }`, plus `afterValidation`, `published`, `afterCorrection`
   transactional, a `kind` that is not the other one of the two, a draft,
   any other decided amendment and a voted document all return 409. Records
   `amendment_reclassified` (`{ from, to }`), shown in the amendment's
-  history and in its authors' news. Only the answer may change with it
+  history and in its authors' notices («Avisos»). Only the answer may change with it
   (`reclassifyPositionPlan`): made `formal` while it can be answered and
   nobody answered it, it is accepted by itself (see the automatic answer
   below); made `partial` while its answer is still that automatic
@@ -1292,7 +1295,7 @@ onReview: true }`, plus `afterValidation`, `published`, `afterCorrection`
   (`{ from: { authorMemberIds, mainAuthorId }, to: { ... }, code?, previousCode? }`,
   the codes only when the code changes), shown in the amendment's history
   with the members before and after (member ids masked as everywhere, the
-  generic id always last in a list) and in the news of its authors after
+  generic id always last in a list) and in the notices of its authors after
   the change. A member taken out is not told.
 - `reviewState` on `AmendmentDto` tells where it stands:
   - `correction_requested`: a draft the Secretaría sent back;
@@ -1384,7 +1387,7 @@ reject, transact, or back to pending, with an optional comment). Returns the
   answer it is (`memberId`: the presenter the actor acts for, or the main
   presenter when the Mesa records it, with `by: "moderator"`), and so do
   the `amendment_approved` and `amendment_reopened` it sets off, which the
-  home page's news credit. `PositionDto.answeredBy` gives that member for a
+  notices credit. `PositionDto.answeredBy` gives that member for a
   presenter's answer to the readers of `recordedBy` (the generic `CEA` id
   for an office the reader does not see).
   `PositionDto.recorder` names who recorded it on the presenter's behalf
@@ -1463,7 +1466,7 @@ memberId, reason: "formal" }`) that closes the pending transactionals
   (`recordedBy: "auto"`) and change it with this endpoint like any answer
   until the final vote. `position_changed` sends no email; the
   `amendment_approved` email says it was accepted automatically, and the
-  news name nobody for it (`automatic`).
+  notices name nobody for it (`automatic`).
 - A transactional a presenter presented (user's decision of 2026-11-21): when
   the member stored as its proposer (`meta.proposerMemberId`) is the
   document's main presenter or a co-presenter, the moment it can be answered
@@ -1525,7 +1528,7 @@ memberId }`, what waited on it closed). Rejected that way
   force (validated and accepted by every main author,
   `replacesSourcesNow`) that replaced sources (`transactedSourceIds`) they
   add `replacedSources: true` and `replacedSourceIds`. Those sources stay
-  `transacted`, and their authors read it in their news (home page), never
+  `transacted`, and their authors read it in their notices («Avisos»), never
   by email: the email (`presenter_decided`) goes only to the
   transactional's own authors. The bulk lapse (`POST .../lapse`) records
   it the same way.
@@ -1626,7 +1629,7 @@ propose one over published amendments, before or during the session
   one does, every other submitted transactional over any of those
   amendments lapses: `status: "lapsed"`, `decidedAt`, and `amendment_lapsed`
   with `{ reason: "sources_transacted", transactionalId, code }` (the one
-  that replaced them), which its authors see in their news. Validating, in
+  that replaced them), which its authors see in their notices. Validating, in
   one request, two transactionals that group the same amendment returns 409:
   the Secretaría validates one, and the other lapses.
 - A transactional that has not replaced its sources yet (waiting for its
@@ -1644,7 +1647,7 @@ propose one over published amendments, before or during the session
   clients put that reason into words in the viewer's language, and
   `outcomeNote` stays empty, for the Mesa's own words (a Spanish note would
   reach English readers untranslated). Its authors and its parties (every
-  author of what it groups) read it in their news, also when their own act
+  author of what it groups) read it in their notices, also when their own act
   closed it. One left behind because another transactional replaced its
   sources is not withdrawn but `lapsed`, with the reason
   `sources_transacted` (above): it lost its object, as the assembly calls
@@ -1657,7 +1660,7 @@ propose one over published amendments, before or during the session
   transactionals its settling closed come back: `submitted` again,
   `decidedAt` cleared, and `amendment_reopened` with
   `{ previousStatus: "withdrawn", reason: "source_reopened", sourceId,
-sourceCode }`, read in the news like the closure (nobody named, its
+sourceCode }`, read in the notices like the closure (nobody named, its
   parties too). Only one whose latest withdrawal is such a closure, whose
   amendments are all open again and that no main author rejected
   (`reopenTransactionalsClosedBy`); the others stay as they are. The order
@@ -1710,7 +1713,7 @@ the room (403 for anyone else; 404 when that member is not a party).
   final (409): the originals are gone.
 - Any rejection closes it: `status: "withdrawn"`, `decidedAt` and
   `amendment_withdrawn` (`{ by: "author_rejection", memberId }`) after
-  `acceptance_recorded`. The home page's news tell it through the
+  `acceptance_recorded`. The notices («Avisos») tell it through the
   rejection only. The originals carry on. Who rejected it is in its
   `acceptances` (decision `rejected`, member, `decidedAt`) and in that
   event; `outcomeNote` stays empty, for the Mesa's own words, so clients put
@@ -1876,93 +1879,224 @@ managers and the Mesa), soonest first:
   open, the document published and not voted), in assembly and document
   order, each with `replaces`: the member's amendments it would replace,
   and `proposedBy`: its main author (null when the Mesa presented it on
-  nobody's behalf);
-- `news` ("Novedades"): what others decided about the member's work in the
-  last 30 days, newest first, at most 30 (`MeWorkNewsDto`):
-  - for the presenters of a document (main and co-presenters), the answers
-    another presenter, or the Mesa for them, gave to its amendments
-    (`position_changed`);
-  - for the authors of an amendment, the presenters' answer to it
-    (`position_changed`), once the document's answers are public to them
-    (`canSeePositions`);
-  - for the authors of an amendment, the main authors' answers to the
-    transactionals over it, and to the transactionals the member proposed
-    (`acceptance_recorded`);
-  - for the authors of an amendment, what was settled about it:
-    `amendment_validated`, `amendment_published`,
-    `amendment_correction_requested`, `amendment_reclassified` (the value
-    is the kind it became), `amendment_authors_changed` (the value is
-    its new code, when it changed), `amendment_admitted`,
-    `amendment_inadmissible`, `amendment_approved`, `amendment_rejected`,
-    `amendment_withdrawn`, `amendment_lapsed` (with
-    `reason: "sources_transacted"` for a transactional closed because
-    another one replaced what it grouped), `amendment_transacted` and
-    `amendment_reopened`. A transactional a main author's rejection closed
-    is told by that rejection (`acceptance_recorded`): its
-    `amendment_withdrawn` with `by: "author_rejection"` is left out;
-  - for the authors of the amendments a transactional groups (its parties
-    among them), that transactional closing by itself:
-    `amendment_withdrawn` with `by: "sources_closed"` and
-    `amendment_lapsed` with `reason: "sources_transacted"`, and coming back
-    by itself: `amendment_reopened` with `reason: "source_reopened"`;
-  - for the authors of the amendments a transactional replaced, that
-    transactional withdrawn or lapsed once in force (validated and
-    accepted by every main author, `replacesSourcesNow`):
-    `amendment_withdrawn` or `amendment_lapsed` with
-    `replacedSources: true` and `replacedSourceIds`, the sources it
-    replaced (`transacted`; a late one still waiting for admission is not
-    among them, and one presented under the earlier rule replaced none
-    before its approval, so it records neither), told only to those
-    amendments' authors, recorded when an author withdraws it
-    (`POST .../withdraw`, which leaves it to the Mesa while other members'
-    amendments are among them) or the Mesa does, from that endpoint or the
-    session console, and when the Mesa lapses it, from the console or in
-    bulk (`POST .../lapse`); their amendments stay `transacted`. Its value
-    is `replaced`. Only in the news: no email reaches them;
-  - for the presenters of a document (main and co-presenters), what was
-    settled about it, with `amendment: null`: `document_published` (the
-    Secretaría's validation), `document_correction_requested`,
-    `document_voted` and `document_status_changed`.
-
-  `by` is the member that decided: null for a transactional that closed by
-  itself or came back by itself (`amendment_withdrawn` with
-  `by: "sources_closed"`, `amendment_lapsed` with
-  `reason: "sources_transacted"`, `amendment_reopened` with
-  `reason: "source_reopened"`) and for the automatic answer to a formal
-  amendment (`position_changed` or `amendment_reopened` with `by: "auto"`,
-  `amendment_approved` with `reason: "formal"`, which also carry
-  `automatic: true`), which nobody decided; the party, for an answer to a transactional; the main
-  presenter, also when the Mesa recorded it, for an answer to an amendment
-  (`position_changed`), for an amendment its acceptance incorporated
-  (`amendment_approved` with method `proponent`) and for one a new answer
-  took out again (`amendment_reopened` with
-  `reason: "position_changed"`): the event's `memberId`, or the document's
-  current main presenter for older events without it; otherwise the member
-  the actor acted for, or null. `value` is the decision in short: the
-  position (`position_changed`), the answer (`acceptance_recorded`), the
-  admission left by a validation (`amendment_validated`), the approval
-  method (`amendment_approved`, `proponent` when it was incorporated), the
-  code of the transactional that replaced the amendment
-  (`amendment_transacted`) or that replaced first what a lapsed
-  transactional grouped (`amendment_lapsed` with
-  `reason: "sources_transacted"`), the code of the amendment whose fate
-  closed a transactional (`amendment_withdrawn` with
-  `by: "sources_closed"`) or whose reopening brought it back
-  (`amendment_reopened` with `reason: "source_reopened"`), `replaced` for a
-  transactional in force withdrawn or lapsed (`amendment_withdrawn` or
-  `amendment_lapsed` with `replacedSources`), the result of the final vote (`document_voted`)
-  or the new status (`document_status_changed`); null otherwise.
-  `ownAmendment` is true when the amendment is one the member wrote (main
-  author or co-author), false for document news and for transactionals it
-  is only a party to. Decisions taken by the user, or for the user's
-  member, are left out (an incorporation the member's own acceptance
-  caused, too), and so is anything the actor cannot see (the document and
-  the amendment, as their endpoints decide). A transactional that closed by
-  itself is not a decision, so it stays, also when the user's own act on
-  what it grouped (withdrawing it, say) closed it.
+  nobody's behalf).
 
 An account without a member gets empty `documents`, `amendments`,
-`proponent`, `acceptances` and `news`.
+`proponent` and `acceptances`. What others decided about the member's work
+is not here: it is in the notices (`GET /api/me/notices`, below). `news` is
+always empty, kept for one release so that pages loaded before the notices
+keep working; it goes in the release after.
+
+**Notices.** `GET /api/me/notices` returns a `MeNoticesDto` («Avisos»,
+`server/utils/domain/notices.ts`) over the same assemblies as the home page
+(not closed, seen by the actor):
+
+- `items`: what others decided about the member's work in the last 30 days,
+  and, for an account that moderates, the Mesa's notices (below), newest
+  first, at most 30 (`MeWorkNewsDto`, `loadWorkNews` in
+  `server/utils/domain/news.ts`), without the rows one decision produced
+  twice (`dedupeNews` in `shared/utils/notices.ts`, which the client applies
+  too);
+- `seenAt`: the account's mark (`notice_seen`, one row per account, never
+  one per notice), null without one. Every account that existed when the
+  table was created got one at that moment, so the notices from before
+  «Avisos» read as earlier ones;
+- `unread`: how many `items` are later than `seenAt` (all of them without
+  a mark), counted on those same rows, so the number never counts a row
+  the list leaves out. An item counts from its `visibleAt` when it has one,
+  else from its `at` (`noticeMoment`): an answer to the member's amendment
+  recorded while the document's answers were not public to the member
+  carries `visibleAt`, the moment they became public (the earlier of their
+  publication and the start of the debate, `positionsPublicSince`), so it
+  is new once the member can read it, whenever it was recorded. `at` stays
+  the moment shown and sorted by;
+- `watchDocumentIds`: the documents a notice may come from: the ones the
+  member presents (main or co-presenter) and those of the amendments it
+  wrote, read by `loadWorkNews` with the same queries as the items. Inside an assembly the client reads the notices again on a live
+  event about one of them (`documentId`, or the entity of a document
+  event), on an amendment event that names no document and on a `poll`, at
+  most every 30 s;
+- `watchAssemblyIds`: for an account with the Mesa's scope, every assembly
+  the notices cover; empty otherwise. Inside one of them the client reads
+  the notices again on any document or amendment event (and on a `poll`),
+  still at most every 30 s.
+
+An account without a member gets empty `watchDocumentIds`, and empty
+`items` unless it moderates.
+Nothing here goes through the email outbox: the notices are computed when
+read, from `events`, and never send anything.
+
+`PUT /api/me/notices/seen` takes `{ at }` (an instant, `noticesSeenBodySchema`)
+and moves the account's mark to `greatest(seenAt, least(at, now()))`: never
+back and never past the present. The client sends the newest moment its
+panel listed (`newestNoticeAt`, by `visibleAt` or `at`), never its clock, so
+a notice that arrived after its read stays new; it sends it again for each
+read that lands while the panel stays open, whose new rows are in front of
+the user. A read that left before the write landed keeps the later mark on
+the client (`withNoticeMark`), so the count does not come back.
+While an Admin acts as the account nothing is written. It answers 204 either
+way, takes no `updatedAt` (the mark is the account's own and only moves
+forward) and records no event or audit row: the row is the record
+(`NON_RECORDING_MUTATIONS`).
+
+What the items carry, by whom (the Mesa's scope is the last one):
+
+- for the presenters of a document (main and co-presenters), the answers
+  another presenter, or the Mesa for them, gave to its amendments
+  (`position_changed`);
+- for the authors of an amendment, the presenters' answer to it
+  (`position_changed`), once the document's answers are public to them
+  (`canSeePositions`);
+- for the authors of an amendment, the main authors' answers to the
+  transactionals over it, and to the transactionals the member proposed
+  (`acceptance_recorded`);
+- for the authors of an amendment, what was settled about it:
+  `amendment_validated`, `amendment_published`,
+  `amendment_correction_requested`, `amendment_reclassified` (the value
+  is the kind it became), `amendment_authors_changed` (the value is
+  its new code, when it changed), `amendment_admitted`,
+  `amendment_inadmissible`, `amendment_approved`, `amendment_rejected`,
+  `amendment_withdrawn`, `amendment_lapsed` (with
+  `reason: "sources_transacted"` for a transactional closed because
+  another one replaced what it grouped), `amendment_transacted` and
+  `amendment_reopened`. A transactional a main author's rejection closed
+  is told by that rejection (`acceptance_recorded`): its
+  `amendment_withdrawn` with `by: "author_rejection"` is left out;
+- for the authors of the amendments a transactional groups (its parties
+  among them), that transactional closing by itself:
+  `amendment_withdrawn` with `by: "sources_closed"` and
+  `amendment_lapsed` with `reason: "sources_transacted"`, and coming back
+  by itself: `amendment_reopened` with `reason: "source_reopened"`;
+- for the authors of the amendments a transactional replaced, that
+  transactional withdrawn or lapsed once in force (validated and
+  accepted by every main author, `replacesSourcesNow`):
+  `amendment_withdrawn` or `amendment_lapsed` with
+  `replacedSources: true` and `replacedSourceIds`, the sources it
+  replaced (`transacted`; a late one still waiting for admission is not
+  among them, and one presented under the earlier rule replaced none
+  before its approval, so it records neither), told only to those
+  amendments' authors, recorded when an author withdraws it
+  (`POST .../withdraw`, which leaves it to the Mesa while other members'
+  amendments are among them) or the Mesa does, from that endpoint or the
+  session console, and when the Mesa lapses it, from the console or in
+  bulk (`POST .../lapse`); their amendments stay `transacted`. Its value
+  is `replaced`. Only in the notices: no email reaches them;
+- for the presenters of a document (main and co-presenters), what was
+  settled about it, with `amendment: null`: `document_published` (the
+  Secretaría's validation), `document_correction_requested`,
+  `document_voted` and `document_status_changed`;
+- for the presenters of a document (main and co-presenters), about the
+  amendments to it they did not write, with `asPresenter: true`: each
+  amendment new to the document, once, by the first event that let them
+  read it (`amendment_validated` when they read it validated and
+  unpublished, as an office of the CEA does and as every presenter reads
+  a transactional, or when it published the amendment at once
+  (`publish: true`); `amendment_published` otherwise, and never after a
+  validation that already told them), except a
+  transactional one of them proposed, which was their answer (as the
+  `presenter_transactional` email; its closure and the
+  `amendment_transacted` of what it replaced still reach them); and one
+  they could read while it was open that was then
+  `amendment_withdrawn`, `amendment_lapsed` or `amendment_transacted`,
+  by its latest such event and only while it stays so (one the Mesa
+  reopened is no longer told as closed). A withdrawn amendment never
+  reaches whoever may not read it, plain presenters included, neither
+  its withdrawal nor its earlier arrival. These events are read apart
+  from the rest, up to 300 candidates, and of each amendment's arrivals
+  only the one that can tell this reader (so a plain presenter's query
+  never reads the validations it cannot see): room for the arrival and
+  a closure of each of 150 amendments, so the ones published at a
+  deadline reach no group cut short. When either query fills its room,
+  nothing older than its oldest event is kept from the other, so the
+  list never skips a stretch of time; a wave of more than that pushes
+  the older notices out. For the
+  main presenter, `awaitsAnswer: true` says the amendment still waits
+  for its answer (presented, undecided, unanswered and answerable now,
+  the document not voted); on a grouped row, that at least one of the
+  group still waits. The client leads the row to the review
+  (`/revisar`). Rows of the same kind about one document (a new
+  amendment, or the same closure with the same value) at most 10
+  minutes apart become one, before the cut to 30: `count` is how many,
+  `amendments` the first three by code (`{ id, code, kind }`),
+  `amendment`, `by` and `impersonatedBy` are null, and `id`, `at`,
+  `type` and `value` are the newest event's. An ordinary amendment
+  reaches the presenters only in the notices; a member's transactional also
+  reaches them by email (`presenter_transactional`) when it is
+  validated, unless one of them proposed it;
+- for an account that moderates (`session:moderate`, `mesaNewsScope`: the
+  Mesa, and the Secretaría and the Presidencia, which hold every key), with
+  or without a member, about the amendments of every assembly read, with
+  `asMesa: true`: an `amendment_validated` (unless the account validates
+  amendments itself, `amendment:review` or `amendment:manage`, which
+  «Validación» already shows it; and only while the validation stands); a
+  transactional every party accepted, with `value: "ready"`, told by the
+  `acceptance_recorded` of the party that answered last
+  (`completesAcceptance`) or by its `amendment_submitted` when its proposer
+  was its only party, while the transactional is undecided; a
+  `transactional_revision_ready` (an inclusion every party accepted), while
+  the transactional is undecided and that inclusion (`payload.revisionId`)
+  still waits for the Secretaría's validation, so one applied, cancelled
+  or gone is no longer told; a party's rejection (`acceptance_recorded`, `value: "rejected"`); and an
+  `amendment_withdrawn` with `by: "author"`, while it stays withdrawn.
+  What the Mesa records from its console is left out, so its accounts are
+  not told each other's clicks: a validation with `method: "mesa"` (its
+  own transactional), a withdrawal or lapse with `by: "moderator"`, an
+  answer it recorded for a party (`recordedForMemberId`) and an inclusion
+  such an answer made ready (`transactional_revision_ready` carries
+  `recordedForMemberId` then; one recorded before 2026-11-26 does not, and
+  is told); so are the
+  account's own acts, as everywhere. An event the member's scopes tell
+  above is told that way (`asMesa` absent), and a validation of an
+  amendment the member presents a document of, or wrote, is not told
+  again. These events are read apart, up to 300 candidates
+  (`NEWS_MESA_CANDIDATES`); when that room fills, only the Mesa's older
+  events are left out, never the member's (a full member query still cuts
+  the Mesa's older rows). Each amendment's latest row of each kind only,
+  and rows of the same kind about one document at most 10 minutes apart
+  become one, as the presenters' (`asMesa` and `count`); validations
+  also by the admission they left, so late ones (`value: "pending"`)
+  group apart and say the assembly still has to decide; a rejection
+  names its party and stays alone. None of this reaches anyone by email:
+  the email rules are unchanged.
+
+`by` is the member that decided: null for a transactional that closed by
+itself or came back by itself (`amendment_withdrawn` with
+`by: "sources_closed"`, `amendment_lapsed` with
+`reason: "sources_transacted"`, `amendment_reopened` with
+`reason: "source_reopened"`) and for the automatic answer to a formal
+amendment (`position_changed` or `amendment_reopened` with `by: "auto"`,
+`amendment_approved` with `reason: "formal"`, which also carry
+`automatic: true`), which nobody decided; the party, for an answer to a transactional; the main
+presenter, also when the Mesa recorded it, for an answer to an amendment
+(`position_changed`), for an amendment its acceptance incorporated
+(`amendment_approved` with method `proponent`) and for one a new answer
+took out again (`amendment_reopened` with
+`reason: "position_changed"`): the event's `memberId`, or the document's
+current main presenter for older events without it; otherwise the member
+the actor acted for, or null. `value` is the decision in short: the
+position (`position_changed`), the answer (`acceptance_recorded`), the
+admission left by a validation (`amendment_validated`), the approval
+method (`amendment_approved`, `proponent` when it was incorporated), the
+code of the transactional that replaced the amendment
+(`amendment_transacted`) or that replaced first what a lapsed
+transactional grouped (`amendment_lapsed` with
+`reason: "sources_transacted"`), the code of the amendment whose fate
+closed a transactional (`amendment_withdrawn` with
+`by: "sources_closed"`) or whose reopening brought it back
+(`amendment_reopened` with `reason: "source_reopened"`), `replaced` for a
+transactional in force withdrawn or lapsed (`amendment_withdrawn` or
+`amendment_lapsed` with `replacedSources`), `ready` for a transactional
+every party accepted told to the Mesa, the result of the final vote
+(`document_voted`) or the new status (`document_status_changed`); null
+otherwise.
+`ownAmendment` is true when the amendment is one the member wrote (main
+author or co-author), false for document notices and for transactionals it
+is only a party to. Decisions taken by the user, or for the user's
+member, are left out (an incorporation the member's own acceptance
+caused, too), and so is anything the actor cannot see (the document and
+the amendment, as their endpoints decide). A transactional that closed by
+itself is not a decision, so it stays, also when the user's own act on
+what it grouped (withdrawing it, say) closed it.
 
 ## Votes, decisions and live session
 
@@ -2716,7 +2850,7 @@ AND.
 **Cursors** are opaque (base64url of the UTC time with microseconds and the
 id); order is newest first.
 
-**Histories and news.** `EventDto.impersonatedBy` (document and amendment
+**Histories and notices.** `EventDto.impersonatedBy` (document and amendment
 histories) and `MeWorkNewsDto.impersonatedBy` name the Admin who acted as the
 actor's account, only for that account and for Admins.
 `document_updated.changes` is removed from the document history for anyone

@@ -2,7 +2,7 @@
 /**
  * A section of the home page or the assembly overview that stays folded
  * until the reader opens it: what is worth having at hand but is not the
- * next thing to do (news, the reader's documents and amendments, the full
+ * next thing to do (the reader's documents and amendments, the full
  * calendar, figures, administration shortcuts). Closed by default; each
  * browser remembers what its user keeps open. The stored state is read
  * after mounting, so the server and the first client render agree. Folded

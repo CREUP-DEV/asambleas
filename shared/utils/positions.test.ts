@@ -4,6 +4,7 @@ import {
   amendmentRule,
   answerableAfterDecision,
   positionsArePublic,
+  positionsPublicSince,
   positionsUnpublishable,
 } from "./positions";
 
@@ -85,5 +86,18 @@ describe("alwaysPublishedOnValidation", () => {
     expect(alwaysPublishedOnValidation("transactional")).toBe(true);
     expect(alwaysPublishedOnValidation("formal")).toBe(true);
     expect(alwaysPublishedOnValidation("partial")).toBe(false);
+  });
+});
+
+describe("positionsPublicSince", () => {
+  it("is the earlier of the publication and the debate, null before", () => {
+    expect(positionsPublicSince(reserved)).toBeNull();
+    expect(positionsPublicSince(published)).toEqual(
+      new Date("2026-11-18T10:00Z"),
+    );
+    expect(positionsPublicSince(debated)).toEqual(
+      new Date("2026-11-19T10:00Z"),
+    );
+    expect(positionsPublicSince(both)).toEqual(new Date("2026-11-18T10:00Z"));
   });
 });

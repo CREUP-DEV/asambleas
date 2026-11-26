@@ -211,6 +211,9 @@ useLeaveGuard(
   <UDashboardPanel id="admin-notifications">
     <template #header>
       <UDashboardNavbar :title="t('admin.notifications.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

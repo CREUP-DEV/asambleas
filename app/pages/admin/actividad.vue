@@ -142,6 +142,9 @@ const sectionTitleId = useId();
   <UDashboardPanel id="admin-activity">
     <template #header>
       <UDashboardNavbar :title="t('activity.admin.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

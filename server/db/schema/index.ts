@@ -10,6 +10,7 @@ export * from "./amendment";
 export * from "./impersonation";
 export * from "./session";
 export * from "./readMarks";
+export * from "./noticeSeen";
 export * from "./documentNotes";
 export * from "./amendmentNotes";
 export * from "./documentViews";

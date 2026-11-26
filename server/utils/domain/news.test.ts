@@ -14,20 +14,48 @@ vi.mock("./visibility", () => ({
   canSeeDocument: vi.fn(),
   canSeePositions: vi.fn(),
   isDocumentPresenter: vi.fn(),
+  seesUnpublishedPositions: vi.fn(),
 }));
 
 const {
   NEWS_DOCUMENT_TYPES,
+  NEWS_GROUP_CODES,
   NEWS_OUTCOME_TYPES,
+  NEWS_PRESENTER_CANDIDATES,
+  NEWS_PRESENTER_TYPES,
+  NEWS_RUN_MS,
+  awaitsMainPresenterAnswer,
+  groupNewsRuns,
   isAutomaticAnswer,
   isAutomaticChange,
   isAutomaticClosure,
   isAutomaticRestore,
   isNewsEvent,
   isOthersDecision,
+  isPresenterCandidate,
+  isPresenterNews,
+  isPresentersOwnTransactional,
+  isRepeatedArrival,
+  mergeNewsRows,
   newsByMemberId,
+  newsRunKey,
   newsValue,
+  newsVisibleAt,
+  presenterClosureStands,
+  presenterNewsState,
+  presenterRowsOnce,
+  NEWS_LIMIT,
+  NEWS_MESA_CANDIDATES,
+  completesAcceptance,
+  isMesaOthersAct,
+  mesaNewsKind,
+  mesaNewsScope,
+  mesaNewsStands,
+  mesaRowRepeatsMember,
+  mesaRowsOnce,
+  newsRowRole,
 } = await import("./news");
+const { PERMISSION_KEYS } = await import("~~/shared/constants/permissions");
 
 describe("news types", () => {
   it("covers what the home page puts into words, documents included", () => {
@@ -775,5 +803,1098 @@ describe("automatic answer to formal amendments", () => {
         "presenter",
       ),
     ).toBe(true);
+  });
+});
+
+describe("presenters' news about new amendments", () => {
+  const none = {
+    presented: false,
+    answered: false,
+    authored: false,
+    overOwn: false,
+    ownSourceIds: [] as string[],
+  };
+  const presenter = { ...none, answered: true };
+  const onAmendment = (
+    type: string,
+    payload: Record<string, unknown> = {},
+  ) => ({ entityType: "amendment", type, payload });
+
+  it("tells the presenters an amendment new to their document and its closure", () => {
+    for (const type of NEWS_PRESENTER_TYPES) {
+      expect(isNewsEvent(onAmendment(type), presenter), type).toBe(true);
+      expect(isPresenterNews(onAmendment(type), presenter), type).toBe(true);
+    }
+    // Not what only its authors read.
+    for (const type of [
+      "amendment_correction_requested",
+      "amendment_reclassified",
+      "amendment_admitted",
+      "amendment_approved",
+    ]) {
+      expect(isNewsEvent(onAmendment(type), presenter), type).toBe(false);
+    }
+    // A transactional closed because a main author rejected it: the
+    // rejection says it, never the withdrawal.
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", { by: "author_rejection" }),
+        presenter,
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves the presenters' rows to the other rules on what the member wrote", () => {
+    const published = onAmendment("amendment_published");
+    expect(isPresenterNews(published, { ...presenter, authored: true })).toBe(
+      false,
+    );
+    // A transactional over the member's own amendment that closed by itself
+    // is the party's news, not the presenter's.
+    const closed = onAmendment("amendment_withdrawn", {
+      by: "sources_closed",
+      sourceCode: "UGR1",
+    });
+    expect(
+      isPresenterNews(closed, {
+        ...presenter,
+        overOwn: true,
+        ownSourceIds: ["a"],
+      }),
+    ).toBe(false);
+    // The Mesa's lapse of one that replaced nothing of the member's: the
+    // presenter's.
+    expect(
+      isPresenterNews(onAmendment("amendment_lapsed", { by: "moderator" }), {
+        ...presenter,
+        overOwn: true,
+        ownSourceIds: ["a"],
+      }),
+    ).toBe(true);
+    // Document news are never a presenter's amendment row.
+    expect(
+      isPresenterNews(
+        { entityType: "document", type: "amendment_published", payload: {} },
+        presenter,
+      ),
+    ).toBe(false);
+  });
+
+  it("checks a validation against the amendment still unpublished", () => {
+    const validatedAt = new Date("2026-11-04T10:00:00Z");
+    const publishedAt = new Date("2026-11-05T10:00:00Z");
+    expect(
+      presenterNewsState(
+        "amendment_validated",
+        { publish: false },
+        { validatedAt, publishedAt },
+        validatedAt,
+      ),
+    ).toEqual({ status: "submitted", validatedAt, publishedAt: null });
+    // Validated and published at once: no amendment_published follows.
+    expect(
+      presenterNewsState(
+        "amendment_validated",
+        { publish: true },
+        { validatedAt, publishedAt: validatedAt },
+        validatedAt,
+      ),
+    ).toEqual({ status: "submitted", validatedAt, publishedAt: validatedAt });
+    expect(
+      presenterNewsState(
+        "amendment_published",
+        {},
+        { validatedAt, publishedAt },
+        publishedAt,
+      ),
+    ).toEqual({ status: "submitted", validatedAt, publishedAt });
+    // A closure: what the reader saw while it was open.
+    expect(
+      presenterNewsState(
+        "amendment_lapsed",
+        {},
+        { validatedAt, publishedAt: null },
+        publishedAt,
+      ),
+    ).toEqual({ status: "submitted", validatedAt, publishedAt: null });
+  });
+
+  it("reads only the arrival an amendment can have for the reader", () => {
+    const validated = { type: "amendment_validated", payload: {} };
+    const validatedPublished = {
+      type: "amendment_validated",
+      payload: { publish: true },
+    };
+    const published = { type: "amendment_published", payload: {} };
+    const lapsed = { type: "amendment_lapsed", payload: {} };
+    // Read validated (a transactional, an office of the CEA): told then,
+    // so its publication is no arrival.
+    expect(isPresenterCandidate(validated, true)).toBe(true);
+    expect(isPresenterCandidate(validatedPublished, true)).toBe(true);
+    expect(isPresenterCandidate(published, true)).toBe(false);
+    // A plain presenter: told at publication, by either event.
+    expect(isPresenterCandidate(validated, false)).toBe(false);
+    expect(isPresenterCandidate(validatedPublished, false)).toBe(true);
+    expect(isPresenterCandidate(published, false)).toBe(true);
+    // Closures always; nothing outside the presenters' types.
+    expect(isPresenterCandidate(lapsed, false)).toBe(true);
+    expect(isPresenterCandidate(lapsed, true)).toBe(true);
+    expect(
+      isPresenterCandidate({ type: "position_changed", payload: {} }, true),
+    ).toBe(false);
+  });
+
+  it("keeps the general rows when the reader's validations fill no room", () => {
+    const at = (minutes: number) =>
+      new Date(Date.UTC(2026, 10, 20, 10, 0) - minutes * 60 * 1000);
+    // A plain presenter: 300 amendments validated and kept private for
+    // later, newest first, and its own news older than all of them.
+    const validations = Array.from(
+      { length: NEWS_PRESENTER_CANDIDATES },
+      (_, index) => ({
+        id: `v${index}`,
+        createdAt: at(index),
+        type: "amendment_validated",
+        payload: { publish: false },
+      }),
+    );
+    const general = [
+      {
+        id: "answer",
+        createdAt: at(NEWS_PRESENTER_CANDIDATES + 60),
+        type: "position_changed",
+        payload: {},
+      },
+    ];
+    // Read as before, the room is full and its cut drops the member's own
+    // news for rows it can never see.
+    expect(
+      mergeNewsRows(
+        { rows: general, limit: 90 },
+        { rows: validations, limit: NEWS_PRESENTER_CANDIDATES },
+      ).map((row) => row.id),
+    ).not.toContain("answer");
+    // The query reads none of them, so nothing is cut.
+    const presenters = validations.filter((row) =>
+      isPresenterCandidate(row, false),
+    );
+    expect(presenters).toEqual([]);
+    expect(
+      mergeNewsRows(
+        { rows: general, limit: 90 },
+        { rows: presenters, limit: NEWS_PRESENTER_CANDIDATES },
+      ).map((row) => row.id),
+    ).toEqual(["answer"]);
+  });
+
+  it("does not tell again at publication what was told at validation", () => {
+    const validatedAt = new Date("2026-10-01T10:00:00Z");
+    const publishedAt = new Date("2026-11-02T10:00:00Z");
+    const amendment = { validatedAt };
+    // Only the publication loaded (the validation left the window).
+    expect(
+      isRepeatedArrival(
+        "amendment_published",
+        amendment,
+        publishedAt,
+        () => true,
+      ),
+    ).toBe(true);
+    // A reader that could not read it validated is told now.
+    expect(
+      isRepeatedArrival(
+        "amendment_published",
+        amendment,
+        publishedAt,
+        () => false,
+      ),
+    ).toBe(false);
+    // Validated at that very moment, never validated, or not a publication.
+    expect(
+      isRepeatedArrival(
+        "amendment_published",
+        { validatedAt: publishedAt },
+        publishedAt,
+        () => true,
+      ),
+    ).toBe(false);
+    expect(
+      isRepeatedArrival(
+        "amendment_published",
+        { validatedAt: null },
+        publishedAt,
+        () => true,
+      ),
+    ).toBe(false);
+    expect(
+      isRepeatedArrival(
+        "amendment_validated",
+        amendment,
+        validatedAt,
+        () => true,
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves out a transactional one of the presenters proposed", () => {
+    const document = {
+      proponentMemberId: "main",
+      coProponentMemberIds: ["co"],
+    };
+    const transactional = (proposerMemberId?: string) => ({
+      kind: "transactional",
+      meta: proposerMemberId ? { proposerMemberId } : {},
+    });
+    expect(isPresentersOwnTransactional(transactional("main"), document)).toBe(
+      true,
+    );
+    expect(isPresentersOwnTransactional(transactional("co"), document)).toBe(
+      true,
+    );
+    // Another member's, or the Mesa's on nobody's behalf: news.
+    expect(isPresentersOwnTransactional(transactional("other"), document)).toBe(
+      false,
+    );
+    expect(isPresentersOwnTransactional(transactional(), document)).toBe(false);
+    expect(
+      isPresentersOwnTransactional(
+        { kind: "partial", meta: { proposerMemberId: "main" } },
+        document,
+      ),
+    ).toBe(false);
+  });
+
+  it("tells each new amendment once, from the first event that showed it", () => {
+    const row = (
+      id: string,
+      entityId: string,
+      type: string,
+      presenter = true,
+    ) => ({ id, entityId, type, presenter });
+    // Newest first: validated and published in one request, an older
+    // validation of the same amendment, another amendment, an author's rows.
+    const rows = [
+      row("p1", "a", "amendment_published"),
+      row("v1", "a", "amendment_validated"),
+      row("p2", "b", "amendment_published"),
+      row("l1", "a", "amendment_lapsed"),
+      row("v0", "a", "amendment_validated"),
+      row("own", "c", "amendment_published", false),
+      row("own0", "c", "amendment_validated", false),
+    ];
+    expect(presenterRowsOnce(rows).map((item) => item.id)).toEqual([
+      "p2",
+      "l1",
+      "v0",
+      "own",
+      "own0",
+    ]);
+  });
+
+  it("tells a closure the Mesa undid and recorded again once", () => {
+    const row = (id: string, entityId: string, type: string) => ({
+      id,
+      entityId,
+      type,
+      presenter: true,
+    });
+    // Lapsed, reopened (no presenter row) and lapsed again in one run.
+    const rows = [
+      row("l2", "a", "amendment_lapsed"),
+      row("lb", "b", "amendment_lapsed"),
+      row("l1", "a", "amendment_lapsed"),
+      row("p", "a", "amendment_published"),
+    ];
+    expect(presenterRowsOnce(rows).map((item) => item.id)).toEqual([
+      "l2",
+      "lb",
+      "p",
+    ]);
+    // One back in debate is no longer told as closed.
+    expect(presenterClosureStands("amendment_lapsed", "lapsed")).toBe(true);
+    expect(presenterClosureStands("amendment_lapsed", "submitted")).toBe(false);
+    expect(presenterClosureStands("amendment_withdrawn", "withdrawn")).toBe(
+      true,
+    );
+    expect(presenterClosureStands("amendment_transacted", "submitted")).toBe(
+      false,
+    );
+    expect(presenterClosureStands("amendment_published", "lapsed")).toBe(true);
+  });
+
+  it("leads only the main presenter to the review, while the answer is due", () => {
+    const open = {
+      kind: "partial" as "partial" | "transactional",
+      acceptances: [] as { role: "author"; decision: "pending" }[],
+      status: "submitted" as "submitted" | "lapsed",
+      admission: "admitted" as const,
+      validatedAt: new Date("2026-11-04T10:00:00Z"),
+      publishedAt: new Date("2026-11-04T10:00:00Z") as Date | null,
+      approvalMethod: null,
+      position: null as { position: "pending" | "accept" } | null,
+    };
+    const document = {
+      proponentMemberId: "main",
+      proponentKind: "asociado" as string | null,
+      finalVoteId: null as string | null,
+      acceptedAmendments: "vote" as const,
+    };
+    expect(awaitsMainPresenterAnswer(open, document, "main")).toBe(true);
+    expect(
+      awaitsMainPresenterAnswer(
+        { ...open, position: { position: "pending" } },
+        document,
+        "main",
+      ),
+    ).toBe(true);
+    // A co-presenter reads the answers, never gives them.
+    expect(awaitsMainPresenterAnswer(open, document, "co")).toBe(false);
+    // Answered, decided, or the document voted.
+    expect(
+      awaitsMainPresenterAnswer(
+        { ...open, position: { position: "accept" } },
+        document,
+        "main",
+      ),
+    ).toBe(false);
+    expect(
+      awaitsMainPresenterAnswer(
+        { ...open, status: "lapsed" as const },
+        document,
+        "main",
+      ),
+    ).toBe(false);
+    expect(
+      awaitsMainPresenterAnswer(
+        open,
+        { ...document, finalVoteId: "vote-1" },
+        "main",
+      ),
+    ).toBe(false);
+    // Validated, not published: only an office of the CEA answers it.
+    const unpublished = { ...open, publishedAt: null };
+    expect(awaitsMainPresenterAnswer(unpublished, document, "main")).toBe(
+      false,
+    );
+    expect(
+      awaitsMainPresenterAnswer(
+        unpublished,
+        { ...document, proponentKind: "executive" },
+        "main",
+      ),
+    ).toBe(true);
+    // A transactional still waiting for its main authors.
+    expect(
+      awaitsMainPresenterAnswer(
+        {
+          ...open,
+          kind: "transactional",
+          acceptances: [{ role: "author", decision: "pending" }],
+        },
+        document,
+        "main",
+      ),
+    ).toBe(false);
+  });
+
+  it("groups a run of the same kind on one document", () => {
+    const at = (minutes: number) =>
+      new Date(Date.UTC(2026, 10, 4, 10, 0) - minutes * 60 * 1000);
+    const row = (
+      id: string,
+      minutes: number,
+      over: Partial<{
+        type: string;
+        payload: Record<string, unknown>;
+        presenter: boolean;
+        documentId: string;
+        transactional: boolean;
+      }> = {},
+    ) => ({
+      id,
+      createdAt: at(minutes),
+      type: "amendment_published",
+      payload: {},
+      presenter: true,
+      documentId: "d1",
+      transactional: false,
+      ...over,
+    });
+    const transacted = (code: string) => ({
+      type: "amendment_transacted",
+      payload: { code },
+    });
+    const rows = [
+      row("a", 0),
+      // Validated where the reader reads it then: a new amendment too.
+      row("b", 4, { type: "amendment_validated" }),
+      row("other-doc", 5, { documentId: "d2" }),
+      row("t", 6, { transactional: true }),
+      row("own", 7, { presenter: false }),
+      row("c", 9),
+      row("d", 19),
+      // More than NEWS_RUN_MS after "d": a new run.
+      row("e", 19 + NEWS_RUN_MS / 60000 + 1),
+      row("by-t1", 40, transacted("T1")),
+      row("by-t1b", 41, transacted("T1")),
+      row("by-t2", 42, transacted("T2")),
+    ];
+    expect(
+      groupNewsRuns(rows, newsRunKey).map((group) =>
+        group.map((item) => item.id),
+      ),
+    ).toEqual([
+      ["a", "b", "c", "d"],
+      ["other-doc"],
+      ["t"],
+      ["own"],
+      ["e"],
+      ["by-t1", "by-t1b"],
+      ["by-t2"],
+    ]);
+    expect(NEWS_GROUP_CODES).toBe(3);
+  });
+
+  it("merges both queries, newest first, each event once", () => {
+    const at = (iso: string) => new Date(iso);
+    const general = [
+      { id: "g2", createdAt: at("2026-11-04T10:00:00Z") },
+      { id: "both", createdAt: at("2026-11-04T09:00:00Z") },
+    ];
+    const presenters = [
+      { id: "p1", createdAt: at("2026-11-04T11:00:00Z") },
+      { id: "both", createdAt: at("2026-11-04T09:00:00Z") },
+      { id: "p0", createdAt: at("2026-11-04T09:00:00Z") },
+    ];
+    const merged = (generalLimit: number) =>
+      mergeNewsRows(
+        { rows: general, limit: generalLimit },
+        { rows: presenters, limit: 10 },
+      ).map((row) => row.id);
+    expect(merged(10)).toEqual(["p1", "g2", "p0", "both"]);
+    // The general query filled its room: what it left out before its oldest
+    // row is not skipped silently, so nothing older is kept.
+    const older = { id: "old", createdAt: at("2026-11-04T08:00:00Z") };
+    presenters.push(older);
+    expect(merged(10)).toContain("old");
+    expect(merged(2)).toEqual(["p1", "g2", "p0", "both"]);
+  });
+});
+
+describe("newsVisibleAt", () => {
+  const answeredAt = new Date("2026-11-20T09:00:00.000Z");
+  const answer = { type: "position_changed", createdAt: answeredAt };
+  const reserved = {
+    positionsPublishedAt: null,
+    positionsDebateStartedAt: null,
+  };
+
+  it("is the publication when an author could only read the answer then", () => {
+    const published = new Date("2026-11-25T10:00:00.000Z");
+    expect(
+      newsVisibleAt(
+        answer,
+        { ...reserved, positionsPublishedAt: published },
+        false,
+      ),
+    ).toEqual(published);
+    // The debate started first: the answers were public from then on.
+    const debate = new Date("2026-11-24T10:00:00.000Z");
+    expect(
+      newsVisibleAt(
+        answer,
+        { positionsPublishedAt: published, positionsDebateStartedAt: debate },
+        false,
+      ),
+    ).toEqual(debate);
+  });
+
+  it("is null when the answer was readable from the start", () => {
+    const earlier = new Date("2026-11-19T10:00:00.000Z");
+    // Public already when it was recorded.
+    expect(
+      newsVisibleAt(
+        answer,
+        { ...reserved, positionsPublishedAt: earlier },
+        false,
+      ),
+    ).toBeNull();
+    // A presenter, the Mesa or a reviewer reads it before publication.
+    expect(
+      newsVisibleAt(
+        answer,
+        { ...reserved, positionsPublishedAt: new Date("2026-11-25T10:00Z") },
+        true,
+      ),
+    ).toBeNull();
+    // Not public yet (the row is not shown then either), or not an answer.
+    expect(newsVisibleAt(answer, reserved, false)).toBeNull();
+    expect(
+      newsVisibleAt(
+        { type: "amendment_validated", createdAt: answeredAt },
+        { ...reserved, positionsPublishedAt: new Date("2026-11-25T10:00Z") },
+        false,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("the Mesa's scope", () => {
+  const keys =
+    (...held: string[]) =>
+    (key: string) =>
+      held.includes(key);
+  const mesa = { validated: true };
+  const validating = { validated: false };
+  const amendmentEvent = (type: string, payload: Record<string, unknown>) => ({
+    entityType: "amendment",
+    entityId: "am1",
+    type,
+    payload,
+  });
+  const emptyScope = {
+    presented: false,
+    answered: false,
+    authored: false,
+    overOwn: false,
+    ownSourceIds: [],
+  };
+  const noMember = {
+    answeredIds: new Set<string>(),
+    authoredIds: new Set<string>(),
+  };
+  type Kind = "validated" | "ready" | "rejected" | "withdrawn" | null;
+
+  it("reaches whoever moderates, and the validations only those who do not validate", () => {
+    expect(mesaNewsScope({ can: keys() })).toBeNull();
+    expect(
+      mesaNewsScope({ can: keys(PERMISSION_KEYS.AMENDMENT_REVIEW) }),
+    ).toBeNull();
+    expect(
+      mesaNewsScope({ can: keys(PERMISSION_KEYS.SESSION_MODERATE) }),
+    ).toEqual({ validated: true });
+    // The Secretaría and the Presidencia hold every key: «Validación» is
+    // theirs, so no validations here.
+    expect(
+      mesaNewsScope({
+        can: keys(
+          PERMISSION_KEYS.SESSION_MODERATE,
+          PERMISSION_KEYS.AMENDMENT_REVIEW,
+        ),
+      }),
+    ).toEqual({ validated: false });
+    // amendment:manage holds amendment:review.
+    expect(
+      mesaNewsScope({
+        can: keys(
+          PERMISSION_KEYS.SESSION_MODERATE,
+          PERMISSION_KEYS.AMENDMENT_MANAGE,
+        ),
+      }),
+    ).toEqual({ validated: false });
+    // An Admin passes every `can`.
+    expect(mesaNewsScope({ can: () => true })).toEqual({ validated: false });
+  });
+
+  it("tells validations, ready transactionals, rejections and authors' withdrawals", () => {
+    // A late validation carries no `method`.
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_validated", { admission: "pending" }),
+        mesa,
+      ),
+    ).toBe("validated");
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_validated", { method: "secretaria" }),
+        mesa,
+      ),
+    ).toBe("validated");
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_validated", { method: "secretaria" }),
+        validating,
+      ),
+    ).toBeNull();
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_withdrawn", { by: "author" }),
+        mesa,
+      ),
+    ).toBe("withdrawn");
+    expect(
+      mesaNewsKind(
+        amendmentEvent("acceptance_recorded", {
+          memberId: "m2",
+          decision: "rejected",
+        }),
+        validating,
+      ),
+    ).toBe("rejected");
+    expect(
+      mesaNewsKind(
+        amendmentEvent("acceptance_recorded", {
+          memberId: "m2",
+          decision: "accepted",
+        }),
+        validating,
+      ),
+    ).toBe("ready");
+    // Its proposer was the only party: straight to the Secretaría.
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_submitted", { admission: "pending" }),
+        mesa,
+      ),
+    ).toBe("ready");
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_submitted", {
+          admission: "pending",
+          awaitsAuthors: true,
+        }),
+        mesa,
+      ),
+    ).toBeNull();
+    expect(
+      mesaNewsKind(
+        amendmentEvent("transactional_revision_ready", { revisionId: "r" }),
+        mesa,
+      ),
+    ).toBe("revision_ready");
+    expect(
+      mesaNewsKind(
+        { entityType: "document", type: "document_published", payload: {} },
+        mesa,
+      ),
+    ).toBeNull();
+  });
+
+  it("leaves out what the Mesa records from the console", () => {
+    // Its own transactional, validated as it presents it.
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_validated", {
+          publish: true,
+          admission: "admitted",
+          method: "mesa",
+        }),
+        mesa,
+      ),
+    ).toBeNull();
+    // Presented by the Mesa: admitted at once, nothing to validate.
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_submitted", { admission: "admitted" }),
+        mesa,
+      ),
+    ).toBeNull();
+    for (const by of ["moderator", "author_rejection", "sources_closed"]) {
+      expect(
+        mesaNewsKind(amendmentEvent("amendment_withdrawn", { by }), mesa),
+      ).toBeNull();
+    }
+    expect(
+      mesaNewsKind(
+        amendmentEvent("amendment_lapsed", { by: "moderator" }),
+        mesa,
+      ),
+    ).toBeNull();
+    // An inclusion made ready by an answer the Mesa recorded for a party.
+    expect(
+      mesaNewsKind(
+        amendmentEvent("transactional_revision_ready", {
+          revisionId: "r",
+          recordedForMemberId: "m2",
+        }),
+        mesa,
+      ),
+    ).toBeNull();
+    // A party's answer the Mesa recorded for it.
+    for (const decision of ["accepted", "rejected"]) {
+      expect(
+        mesaNewsKind(
+          amendmentEvent("acceptance_recorded", {
+            memberId: "m2",
+            decision,
+            recordedForMemberId: "m2",
+          }),
+          mesa,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("takes only the acceptance that completed a transactional as ready", () => {
+    const party = (
+      memberId: string,
+      decision: "accepted" | "pending",
+      minute: number | null,
+    ) => ({
+      memberId,
+      role: "author" as const,
+      decision,
+      decidedAt:
+        minute === null ? null : new Date(Date.UTC(2026, 10, 25, 10, minute)),
+    });
+    const transactional = (...acceptances: ReturnType<typeof party>[]) => ({
+      kind: "transactional" as const,
+      acceptances,
+    });
+    const done = transactional(
+      party("m1", "accepted", 0),
+      party("m2", "accepted", 5),
+    );
+    expect(completesAcceptance({ memberId: "m2" }, done)).toBe(true);
+    // An earlier party's acceptance, also when the last was left out.
+    expect(completesAcceptance({ memberId: "m1" }, done)).toBe(false);
+    expect(
+      completesAcceptance(
+        { memberId: "m1" },
+        transactional(party("m1", "accepted", 0), party("m2", "pending", null)),
+      ),
+    ).toBe(false);
+    expect(completesAcceptance({ memberId: "m1" }, transactional())).toBe(
+      false,
+    );
+
+    const row = (type: string, payload: Record<string, unknown> = {}) => ({
+      type,
+      payload,
+    });
+    const amendment = {
+      ...done,
+      status: "submitted" as const,
+      validatedAt: null,
+    };
+    expect(
+      mesaNewsStands(
+        "ready",
+        row("acceptance_recorded", { memberId: "m2", decision: "accepted" }),
+        amendment,
+      ),
+    ).toBe(true);
+    expect(
+      mesaNewsStands(
+        "ready",
+        row("acceptance_recorded", { memberId: "m1", decision: "accepted" }),
+        amendment,
+      ),
+    ).toBe(false);
+    // Decided since: no longer ready.
+    expect(
+      mesaNewsStands("ready", row("amendment_submitted"), {
+        ...amendment,
+        status: "withdrawn",
+      }),
+    ).toBe(false);
+    expect(
+      mesaNewsStands("ready", row("amendment_submitted"), {
+        ...amendment,
+        kind: "partial",
+      }),
+    ).toBe(false);
+    // A validation undone, a withdrawal reopened.
+    expect(
+      mesaNewsStands("validated", row("amendment_validated"), amendment),
+    ).toBe(false);
+    expect(
+      mesaNewsStands("withdrawn", row("amendment_withdrawn"), amendment),
+    ).toBe(false);
+    expect(
+      mesaNewsStands("rejected", row("acceptance_recorded"), {
+        ...amendment,
+        status: "withdrawn",
+      }),
+    ).toBe(true);
+    // An inclusion ready stands only while it waits for the Secretaría,
+    // though the transactional stays undecided once it is applied or
+    // cancelled.
+    const ready = row("transactional_revision_ready", { revisionId: "r1" });
+    expect(
+      mesaNewsStands("revision_ready", ready, amendment, "pending_validation"),
+    ).toBe(true);
+    for (const status of ["applied", "cancelled", "rejected", undefined]) {
+      expect(mesaNewsStands("revision_ready", ready, amendment, status)).toBe(
+        false,
+      );
+    }
+    expect(
+      mesaNewsStands(
+        "revision_ready",
+        ready,
+        { ...amendment, status: "withdrawn" },
+        "pending_validation",
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves out the account's own acts, with or without a member", () => {
+    const event = (over: Record<string, unknown> = {}) => ({
+      type: "amendment_withdrawn",
+      payload: { by: "author" } as Record<string, unknown>,
+      actorUserId: "other" as string | null,
+      actorMemberId: "m9" as string | null,
+      impersonationId: null as string | null,
+      ...over,
+    });
+    const noMemberActor = { userId: "me", memberId: null };
+    expect(isMesaOthersAct(event(), noMemberActor)).toBe(true);
+    expect(isMesaOthersAct(event({ actorUserId: "me" }), noMemberActor)).toBe(
+      false,
+    );
+    // An Admin acting as this account: the account did not do it.
+    expect(
+      isMesaOthersAct(
+        event({ actorUserId: "me", impersonationId: "imp" }),
+        noMemberActor,
+      ),
+    ).toBe(true);
+    // Another account of the reader's member.
+    expect(
+      isMesaOthersAct(event({ actorMemberId: "m1" }), {
+        userId: "me",
+        memberId: "m1",
+      }),
+    ).toBe(false);
+    // A party's answer is its member's.
+    expect(
+      isMesaOthersAct(
+        event({
+          type: "acceptance_recorded",
+          payload: { memberId: "m1", decision: "rejected" },
+        }),
+        { userId: "me", memberId: "m1" },
+      ),
+    ).toBe(false);
+  });
+
+  it("reaches an account without a member, and tells the member's news its own way", () => {
+    const validated = amendmentEvent("amendment_validated", {
+      admission: "admitted",
+      method: "secretaria",
+    });
+    // No member: empty scopes, the Mesa's only.
+    expect(newsRowRole(validated, emptyScope, mesa, noMember)).toEqual({
+      presenter: false,
+      mesa: "validated",
+    });
+    expect(newsRowRole(validated, emptyScope, null, noMember)).toBeNull();
+    // The reader's own amendment: its own news, never the Mesa's.
+    expect(
+      newsRowRole(validated, { ...emptyScope, authored: true }, mesa, {
+        answeredIds: new Set(),
+        authoredIds: new Set(["am1"]),
+      }),
+    ).toEqual({ presenter: false, mesa: null });
+    // An amendment to the reader's document: its arrival tells it (by this
+    // event or its publication), so the Mesa's validation does not.
+    const asPresenter = {
+      answeredIds: new Set(["am1"]),
+      authoredIds: new Set<string>(),
+    };
+    expect(
+      newsRowRole(
+        validated,
+        { ...emptyScope, answered: true },
+        mesa,
+        asPresenter,
+      ),
+    ).toEqual({ presenter: true, mesa: null });
+    expect(newsRowRole(validated, emptyScope, mesa, asPresenter)).toBeNull();
+    // A party's rejection over the reader's own amendment: its own news.
+    const rejection = amendmentEvent("acceptance_recorded", {
+      memberId: "m2",
+      decision: "rejected",
+    });
+    expect(
+      newsRowRole(
+        rejection,
+        { ...emptyScope, overOwn: true, ownSourceIds: ["s1"] },
+        mesa,
+        noMember,
+      ),
+    ).toEqual({ presenter: false, mesa: null });
+    expect(newsRowRole(rejection, emptyScope, mesa, noMember)).toEqual({
+      presenter: false,
+      mesa: "rejected",
+    });
+  });
+
+  it("merges the Mesa's query with the member's, each event once", () => {
+    const at = (iso: string) => new Date(iso);
+    const member = [
+      { id: "shared", createdAt: at("2026-11-04T10:00:00Z") },
+      { id: "m", createdAt: at("2026-11-04T09:00:00Z") },
+    ];
+    const mesaRows = [
+      { id: "x", createdAt: at("2026-11-04T11:00:00Z") },
+      { id: "shared", createdAt: at("2026-11-04T10:00:00Z") },
+    ];
+    expect(
+      mergeNewsRows(
+        { rows: member, limit: 90 },
+        { rows: [], limit: 300 },
+        { rows: mesaRows, limit: NEWS_MESA_CANDIDATES },
+      ).map((row) => row.id),
+    ).toEqual(["x", "shared", "m"]);
+  });
+
+  it("never lets a full Mesa query cut the member's older news", () => {
+    const at = (iso: string) => new Date(iso);
+    const member = [{ id: "own", createdAt: at("2026-11-01T09:00:00Z") }];
+    // A deadline's validations fill the Mesa's room, all newer.
+    const mesaRows = [
+      { id: "v2", createdAt: at("2026-11-04T11:00:00Z") },
+      { id: "v1", createdAt: at("2026-11-04T10:00:00Z") },
+    ];
+    const merged = (cutsOthers?: boolean) =>
+      mergeNewsRows(
+        { rows: member, limit: 90 },
+        { rows: mesaRows, limit: mesaRows.length, cutsOthers },
+      ).map((row) => row.id);
+    expect(merged(false)).toEqual(["v2", "v1", "own"]);
+    // A query that cuts the others (the default) would drop it.
+    expect(merged()).toEqual(["v2", "v1"]);
+    // A full member query still cuts the Mesa's older rows.
+    expect(
+      mergeNewsRows(
+        { rows: member, limit: 1 },
+        {
+          rows: [{ id: "old", createdAt: at("2026-10-30T09:00:00Z") }],
+          limit: NEWS_MESA_CANDIDATES,
+          cutsOthers: false,
+        },
+      ).map((row) => row.id),
+    ).toEqual(["own"]);
+  });
+
+  it("keeps each amendment's latest row of each kind", () => {
+    const rows: { id: string; entityId: string; mesa: Kind }[] = [
+      { id: "v2", entityId: "a", mesa: "validated" },
+      { id: "w", entityId: "a", mesa: "withdrawn" },
+      { id: "v1", entityId: "a", mesa: "validated" },
+      { id: "own1", entityId: "a", mesa: null },
+      { id: "own2", entityId: "a", mesa: null },
+      { id: "vb", entityId: "b", mesa: "validated" },
+    ];
+    expect(mesaRowsOnce(rows).map((row) => row.id)).toEqual([
+      "v2",
+      "w",
+      "own1",
+      "own2",
+      "vb",
+    ]);
+    // Only a validation repeats the member's news.
+    expect(
+      mesaRowRepeatsMember("ready", "a", {
+        answeredIds: new Set(["a"]),
+        authoredIds: new Set(),
+      }),
+    ).toBe(false);
+  });
+
+  it("groups the Mesa's runs by document and kind before the cut", () => {
+    const at = (minutes: number) =>
+      new Date(Date.UTC(2026, 10, 25, 12, 0) - minutes * 60 * 1000);
+    const row = (
+      id: string,
+      minutes: number,
+      over: Partial<{
+        type: string;
+        mesa: Kind;
+        presenter: boolean;
+        documentId: string;
+        transactional: boolean;
+      }> = {},
+    ) => ({
+      id,
+      createdAt: at(minutes),
+      type: "amendment_validated",
+      payload: {},
+      presenter: false,
+      mesa: "validated" as Kind,
+      documentId: "d1",
+      transactional: false,
+      ...over,
+    });
+    // A deadline: 40 validations to one document in a few minutes, then
+    // older news that must survive the cut to NEWS_LIMIT.
+    const wave = Array.from({ length: 40 }, (_, index) =>
+      row(`v${index}`, index * 0.1),
+    );
+    const rows = [
+      ...wave,
+      row("other-doc", 5, { documentId: "d2" }),
+      row("ready1", 6, {
+        type: "acceptance_recorded",
+        mesa: "ready",
+        transactional: true,
+      }),
+      row("ready2", 7, {
+        type: "amendment_submitted",
+        mesa: "ready",
+        transactional: true,
+      }),
+      // Each rejection names its party: alone.
+      row("rej1", 8, {
+        type: "acceptance_recorded",
+        mesa: "rejected",
+        transactional: true,
+      }),
+      row("rej2", 8.5, {
+        type: "acceptance_recorded",
+        mesa: "rejected",
+        transactional: true,
+      }),
+      // The presenters' arrivals on the same document never join the
+      // Mesa's validations.
+      row("arrival", 9, { mesa: null, presenter: true }),
+      ...Array.from({ length: 30 }, (_, index) =>
+        row(`old${index}`, 60 + index * 30, { mesa: null }),
+      ),
+    ];
+    const groups = groupNewsRuns(rows, newsRunKey).slice(0, NEWS_LIMIT);
+    expect(groups[0]).toHaveLength(40);
+    expect(
+      groups.slice(1, 7).map((group) => group.map((item) => item.id)),
+    ).toEqual([
+      ["other-doc"],
+      ["ready1", "ready2"],
+      ["rej1"],
+      ["rej2"],
+      ["arrival"],
+      ["old0"],
+    ]);
+    expect(groups).toHaveLength(NEWS_LIMIT);
+  });
+
+  it("keeps late validations apart from on-time ones in the Mesa's runs", () => {
+    const at = (minutes: number) =>
+      new Date(Date.UTC(2026, 10, 25, 12, 0) - minutes * 60 * 1000);
+    const row = (id: string, minutes: number, admission: string) => ({
+      id,
+      createdAt: at(minutes),
+      type: "amendment_validated",
+      payload: { admission } as Record<string, unknown>,
+      presenter: false,
+      mesa: "validated" as Kind,
+      documentId: "d1",
+      transactional: false,
+    });
+    const rows = [
+      row("on1", 1, "admitted"),
+      row("late1", 2, "pending"),
+      row("on2", 3, "admitted"),
+      row("late2", 4, "pending"),
+    ];
+    expect(
+      groupNewsRuns(rows, newsRunKey).map((group) =>
+        group.map((item) => item.id),
+      ),
+    ).toEqual([
+      ["on1", "on2"],
+      ["late1", "late2"],
+    ]);
   });
 });

@@ -154,6 +154,9 @@ const createOpen = ref(false);
   <UDashboardPanel id="assemblies">
     <template #header>
       <UDashboardNavbar :title="t('assemblies.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

@@ -2079,7 +2079,7 @@
       "current": "La presenta {members}. Si se presentó mal, puedes cambiarlo.",
       "action": "Cambiar quién la presenta",
       "title": "Cambiar quién la presenta",
-      "description": "Corrige quién firma esta enmienda si se presentó mal. Queda en el historial y quien la firma lo verá en sus novedades.",
+      "description": "Corrige quién firma esta enmienda si se presentó mal. Queda en el historial y quien la firma lo verá en sus avisos.",
       "authors": "La presentan",
       "authorsPlaceholder": "Elige los miembros",
       "authorsRequired": "Elige al menos un miembro.",
@@ -2106,7 +2106,7 @@
         "formal": "Ahora es una enmienda de forma",
         "partial": "Ahora es una enmienda de contenido"
       },
-      "doneDescription": "Queda en el historial y quien la firma lo verá en sus novedades.",
+      "doneDescription": "Queda en el historial y quien la firma lo verá en sus avisos.",
       "failed": "No se ha podido cambiar el tipo de la enmienda",
       "changed": {
         "formal": "Pasa de enmienda de contenido a enmienda de forma",
@@ -2140,7 +2140,7 @@
       "undoneHidden": "Ha dejado de ser visible para todos.",
       "failed": "No se ha podido deshacer la validación",
       "confirmTitle": "¿Deshacer la validación?",
-      "confirmDescription": "Volverá a estar por revisar y sus autores lo verán en sus novedades.",
+      "confirmDescription": "Volverá a estar por revisar y sus autores lo verán en sus avisos.",
       "hides": "Está publicada: dejará de verse en la asamblea.",
       "clearsAnswer": "Se borrará la respuesta de quien presenta el documento.",
       "errors": {
@@ -2926,7 +2926,29 @@
       "activity": "Actividad",
       "calendarRules": "Plazos del reglamento",
       "stats": "Estadísticas",
-      "notifications": "Avisos por correo"
+      "notifications": "Avisos por correo",
+      "notices": "Avisos",
+      "noticesNew": "Avisos, {count} nuevo | Avisos, {count} nuevos"
+    },
+    "notices": {
+      "title": "Avisos",
+      "description": "Lo que otros han decidido sobre tus documentos y enmiendas en los últimos 30 días.",
+      "fresh": "Nuevos",
+      "earlier": "Anteriores",
+      "loading": "Cargando avisos",
+      "loadError": "No se han podido cargar los avisos",
+      "retry": "Reintentar",
+      "empty": "No tienes avisos",
+      "emptyDescription": "Aquí verás cuando alguien responda a tus enmiendas, decida sobre ellas o presente enmiendas a tus documentos.",
+      "descriptionMesa": "Lo que otros han decidido sobre tus documentos y enmiendas y lo último de las enmiendas de las asambleas, en los últimos 30 días.",
+      "descriptionMesaNoMember": "Lo último de las enmiendas de las asambleas en los últimos 30 días.",
+      "emptyDescriptionMesa": "Aquí verás las transaccionales que aceptan todas sus partes, las enmiendas que aceptan incluir en ellas, los rechazos de las partes y las enmiendas que retiran sus autores.",
+      "emptyDescriptionMesaValidated": "Aquí verás las enmiendas que valida Secretaría, las transaccionales que aceptan todas sus partes, las enmiendas que aceptan incluir en ellas, los rechazos de las partes y las enmiendas que retiran sus autores.",
+      "emptyDescriptionMesaMember": "También verás lo que se decida sobre tus documentos y enmiendas.",
+      "announce": "Tienes {count} aviso nuevo | Tienes {count} avisos nuevos",
+      "openMenu": "Abrir menú",
+      "openMenuNew": "Abrir menú, {count} aviso nuevo | Abrir menú, {count} avisos nuevos",
+      "closeMenu": "Cerrar menú"
     },
     "assembly": {
       "navLabel": "Secciones de la {assembly}",
@@ -3211,7 +3233,6 @@
       "transactionalNoCodeBy": "Transaccional de {member}"
     },
     "news": {
-      "title": "Novedades",
       "who": {
         "mainPresenter": "{member}, proponente principal,",
         "mainPresenterUnknown": "Quien presenta el documento",
@@ -3268,7 +3289,37 @@
         "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas.",
         "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante.",
         "restoredBy": "Vuelve a estar en curso {amendment}: se ha reabierto la enmienda {code} y todas las que agrupa vuelven a estar abiertas.",
-        "validationUndone": "Secretaría ha deshecho la validación de {amendment}: vuelve a revisarla."
+        "validationUndone": "Secretaría ha deshecho la validación de {amendment}: vuelve a revisarla.",
+        "arrived": "Ha llegado {amendment} a tu documento.",
+        "arrivedAwaiting": "Ha llegado {amendment} a tu documento y espera respuesta."
+      },
+      "group": {
+        "amendments": "{count} enmiendas",
+        "transactionals": "{count} transaccionales",
+        "codesMore": "{codes} y {rest} más",
+        "codesNone": "sin número",
+        "arrived": "Han llegado {amendment} a tu documento: {codes}.",
+        "arrivedAwaiting": "Han llegado {amendment} a tu documento: {codes}. Alguna espera respuesta.",
+        "withdrawn": "Se han retirado {amendment}: {codes}. Ya no se debatirán.",
+        "closedBy": "Se han cerrado {amendment}: {codes}. La enmienda {code}, que agrupaban, ya se decidió o se retiró.",
+        "lapsed": "Han decaído {amendment}: {codes}. Ya no se votan.",
+        "lapsedBy": "Han decaído {amendment}: {codes}. La transaccional {code} ya sustituye a esas enmiendas.",
+        "transacted": "Una transaccional sustituye a {amendment}: {codes}.",
+        "transactedBy": "La transaccional {code} sustituye a {amendment}: {codes}.",
+        "other": "Hay cambios en {amendment}: {codes}."
+      },
+      "mesa": {
+        "ready": "Todas las partes han aceptado {amendment}.",
+        "revisionReady": "Todas las partes han aceptado incluir más enmiendas en {amendment}: falta que Secretaría lo valide.",
+        "rejected": "Una parte ha rechazado {amendment}: se cierra y siguen las enmiendas originales.",
+        "withdrawnByAuthor": "{who} ha retirado {amendment}: ya no se debatirá.",
+        "group": {
+          "validated": "Se han validado {amendment}: {codes}.",
+          "validatedLate": "Se han validado {amendment} que llegaron fuera de plazo: {codes}. Falta que la asamblea decida tratarlas.",
+          "ready": "Todas las partes han aceptado {amendment}: {codes}.",
+          "revisionReady": "Todas las partes han aceptado incluir más enmiendas en {amendment}: {codes}. Falta que Secretaría lo valide.",
+          "withdrawn": "Sus autores han retirado {amendment}: {codes}. Ya no se debatirán."
+        }
       },
       "document": {
         "published": "Se ha publicado el documento: ya lo puede leer toda la asamblea.",
@@ -5202,7 +5253,7 @@
       "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Sin publicar».",
       "none": "No hay enmiendas esperando tu validación.",
       "noCode": "Sin número",
-      "reclassifyHelp": "Queda en el historial y sus autores lo verán en sus novedades.",
+      "reclassifyHelp": "Queda en el historial y sus autores lo verán en sus avisos.",
       "sent": "Presentada",
       "waiting": "Espera tu validación. Hasta entonces solo la ven sus autores, la Secretaría y la Mesa.",
       "validatedHidden": "Validada, pero aún no la ve toda la asamblea. Publícala cuando quieras.",

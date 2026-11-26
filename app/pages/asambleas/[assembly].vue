@@ -221,6 +221,15 @@ current.onLive((events) => {
   }
 });
 
+// The notices («Avisos») read again on an event about a document they come
+// from (watchDocumentIds), or about any for the Mesa (watchAssemblyIds),
+// at most every 30 s (useNotices): only the few accounts concerned, never
+// the whole room on every event.
+const { followLive: followNoticesLive } = useNotices();
+current.onLive((events) =>
+  followNoticesLive(events, assembly.value?.id ?? null),
+);
+
 const reviewBadge = useState<ReviewBadgeState | null>(
   REVIEW_BADGE_STATE_KEY,
   () => null,
@@ -287,6 +296,9 @@ watch(() => route.path, revealActiveSection);
           title: assembly ? 'shrink-0 md:sr-only' : 'shrink-0',
         }"
       >
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

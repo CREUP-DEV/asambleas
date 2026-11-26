@@ -268,8 +268,48 @@ export interface MeWorkDto {
   proponent: MeWorkProponentDto[];
   /** Transactionals waiting for the user's member's answer. */
   acceptances: MeWorkAcceptanceDto[];
-  /** Recent decisions others took on the member's documents and amendments. */
+  /**
+   * Always empty: kept one release so that pages loaded before «Avisos»
+   * keep working; the news are in GET /api/me/notices (MeNoticesDto).
+   * Remove it in the release after.
+   */
   news: MeWorkNewsDto[];
+}
+
+/**
+ * GET /api/me/notices («Avisos»): recent decisions others took on the
+ * member's documents and amendments, and, for the Mesa (session:moderate),
+ * the latest about the amendments of the assembly; and the account's mark
+ * of how far it has seen them.
+ */
+export interface MeNoticesDto {
+  /** Newest first, without repeats (dedupeNews in shared/utils/notices.ts). */
+  items: MeWorkNewsDto[];
+  /**
+   * The account's mark (notice_seen): the items later than it are new.
+   * null when it has none yet, and then every item is new.
+   */
+  seenAt: IsoDate | null;
+  /** How many `items` are new (countNewNotices): never one the list leaves out. */
+  unread: number;
+  /**
+   * The documents a notice may come from (presented by the member, or with
+   * amendments it wrote): inside an assembly, a live event about one of them
+   * reads the notices again.
+   */
+  watchDocumentIds: string[];
+  /**
+   * The assemblies where any amendment may bring a notice: every one the
+   * notices cover, for an account with the Mesa's scope (session:moderate);
+   * empty otherwise. Inside one of them, any document or amendment event
+   * reads the notices again (still at most every 30 s).
+   */
+  watchAssemblyIds: string[];
+}
+
+/** PUT /api/me/notices/seen: the newest notice the panel showed. */
+export interface MeNoticesSeenBody {
+  at: IsoDate;
 }
 
 export interface MeWorkProponentDto {
@@ -303,7 +343,9 @@ export interface MeWorkAcceptanceDto {
  * Something decided about the user's member's work by someone else: the
  * main presenter answering an amendment to a document the member co-presents,
  * a main author answering a transactional over an amendment the member
- * co-authored, and the Secretaría or the assembly settling them.
+ * co-authored, the Secretaría or the assembly settling them, for the
+ * document's presenters, the amendments new to it (`asPresenter`), and,
+ * for the Mesa, the latest about the assembly's amendments (`asMesa`).
  */
 export interface MeWorkNewsDto {
   id: string;
@@ -333,7 +375,50 @@ export interface MeWorkNewsDto {
    * it stopped being formal). `by` is null then.
    */
   automatic?: boolean;
+  /**
+   * It reaches the member as a presenter of the document (main or
+   * co-presenter), about an amendment to it the member did not write: new
+   * to the document (amendment_validated or amendment_published, whichever
+   * let the member read it first), or withdrawn, lapsed or replaced by a
+   * transactional. Absent otherwise.
+   */
+  asPresenter?: boolean;
+  /**
+   * It reaches the account as the Mesa's (session:moderate), about an
+   * amendment of the assembly: validated by the Secretaría
+   * (amendment_validated, not for an account that validates amendments), a
+   * transactional every party accepted (`value: "ready"`: the last party's
+   * acceptance_recorded, or its amendment_submitted when its proposer was the
+   * only party), an inclusion every party accepted
+   * (transactional_revision_ready), a party's rejection (acceptance_recorded,
+   * `value: "rejected"`) or a withdrawal by its author (amendment_withdrawn).
+   * Absent otherwise.
+   */
+  asMesa?: boolean;
+  /**
+   * With `asPresenter`, for the main presenter: the amendment still waits
+   * for its answer, or, on a grouped row, at least one of the group does,
+   * so the row leads to the review.
+   */
+  awaitsAnswer?: boolean;
+  /**
+   * Several presenters' or Mesa's rows of one kind about the document, close
+   * in time, told as one ("12 enmiendas nuevas"): how many amendments, and the first
+   * ones by code in `amendments` (at most three). `amendment` is null then,
+   * and so are `by` and `impersonatedBy`; `id` and `at` are the newest
+   * event's. Absent on a row about one amendment.
+   */
+  count?: number;
+  amendments?: { id: string; code: string | null; kind: AmendmentKind }[];
   at: IsoDate;
+  /**
+   * When the row reached the reader, if later than `at`: an answer to the
+   * reader's amendment recorded before the document's answers were public
+   * to it, which it reads from their publication or the start of the debate
+   * on (newsVisibleAt). Whether a notice is new goes by this moment
+   * (isNewNotice); `at` stays the one shown and sorted by. Absent otherwise.
+   */
+  visibleAt?: IsoDate;
 }
 
 export interface MeWorkAssemblyRef {

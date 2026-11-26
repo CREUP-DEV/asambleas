@@ -301,6 +301,9 @@ useLeaveGuard(
   <UDashboardPanel id="admin-calendar-rules">
     <template #header>
       <UDashboardNavbar :title="t('admin.calendarRules.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

@@ -491,6 +491,9 @@ const detailSections = computed(() => {
   <UDashboardPanel id="admin-stats">
     <template #header>
       <UDashboardNavbar :title="t('admin.stats.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>

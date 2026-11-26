@@ -1001,6 +1001,9 @@ function goToPage(next: number): void {
   <UDashboardPanel id="admin-users">
     <template #header>
       <UDashboardNavbar :title="t('admin.users.title')">
+        <template #toggle>
+          <ShellNavbarToggle />
+        </template>
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
