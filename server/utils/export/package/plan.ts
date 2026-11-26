@@ -30,8 +30,9 @@ import { NameRegistry, safeName, sortableNumbering } from "./names";
 // start a new page. 7: the index of regulations, motions, executive
 // reports, accounts, budgets and positionings, the bands of executive
 // reports and accounting documents, the approval line's own size
-// (2026-11-26).
-export const PACKAGE_RENDERER_VERSION = 7;
+// (2026-11-26). 8: a list item's marker and first line stand in, its next
+// lines go back to the margin, as in CREUP's Word documents.
+export const PACKAGE_RENDERER_VERSION = 8;
 
 /** Longest folder name taken from an agenda item's title. */
 const FOLDER_TITLE_MAX = 50;

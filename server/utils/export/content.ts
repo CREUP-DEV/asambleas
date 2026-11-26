@@ -4,13 +4,8 @@ import type {
   ContentText,
   CustomTableLayout,
   Decoration,
-  OrderedListElement,
-  OrderedListElementProperties,
-  OrderedListType,
   Style,
   TableCell,
-  UnorderedListElement,
-  UnorderedListType,
 } from "pdfmake/interfaces";
 import type {
   Block,
@@ -28,7 +23,10 @@ import {
   cellFillOf,
   cellFillTextColour,
 } from "../../../shared/constants/cellFills";
-import { markerOf } from "../../../shared/utils/content/lists";
+import {
+  formatListNumber,
+  markerOf,
+} from "../../../shared/utils/content/lists";
 import {
   gridSides,
   groupTables,
@@ -113,7 +111,6 @@ export const CONTENT_STYLES: Record<string, Style> = {
   // Lists stand in from the margin and leave room between their items, as
   // CREUP's Word documents do (user's report of 2026-11-26).
   listItem: { fontSize: 11, lineHeight: 1.15, margin: [0, 0, 0, 5] },
-  list: { margin: [14, 0, 0, 7] },
   amendmentRef: { color: CREUP_RED, bold: true },
   // What a formatting change does, in words next to the text it changes.
   formatNote: { fontSize: 8, bold: false, italics: true },
@@ -479,42 +476,22 @@ type ListKind = "ol" | "ul";
 interface ListFrame {
   kind: ListKind;
   level: number;
-  depth: number;
   /** Ordered lists: how they number their items. */
   marker: ListMarker;
-  /** List items and nested lists, which pdfmake renders without a marker. */
-  items: Content[];
   counter: number;
 }
 
-/** pdfmake's list type for each number format of a marker. */
-const ORDERED_TYPES: Record<string, OrderedListType> = {
-  "1": "decimal",
-  a: "lower-alpha",
-  A: "upper-alpha",
-  i: "lower-roman",
-  I: "upper-roman",
-};
-const UNORDERED_TYPES: UnorderedListType[] = ["disc", "circle", "square"];
-
-function listNode(frame: ListFrame): Content {
-  // Only the outermost list leaves space after it.
-  const style = frame.depth === 0 ? "list" : undefined;
-  if (frame.kind === "ol") {
-    return {
-      ol: frame.items as OrderedListElement[],
-      type: ORDERED_TYPES[frame.marker[0]!] ?? "decimal",
-      separator: frame.marker[1]!,
-      style,
-    };
-  }
-  return {
-    ul: frame.items as UnorderedListElement[],
-    type: UNORDERED_TYPES[frame.depth % UNORDERED_TYPES.length],
-    markerColor: CREUP_RED,
-    style,
-  };
-}
+/**
+ * Lists as CREUP's Word documents write them (user's reports of
+ * 2026-11-26): each item is a paragraph whose marker and first line stand
+ * in from the margin (`leadingIndent`, deeper for each level) and whose
+ * next lines go back to the margin, with room after it; the last item of a
+ * list keeps a paragraph's room. Numbers are counted here, as
+ * orderedListNumbers does; bullets change with the level.
+ */
+const LIST_FIRST_LINE = 18;
+const LIST_LEVEL_STEP = 18;
+const BULLETS = ["•", "◦", "▪"];
 
 function headingLevel(level: number | undefined): number {
   return Math.max(1, Math.min(4, level ?? 1));
@@ -1072,10 +1049,20 @@ function assembleFlow(
 ): Content[] {
   const output: Content[] = [];
   const stack: ListFrame[] = [];
+  // The last item of the list being laid out: when the list ends it leaves
+  // a paragraph's room after it.
+  let lastItem: Content | null = null;
+  const closeList = () => {
+    if (lastItem && typeof lastItem === "object" && !Array.isArray(lastItem)) {
+      (lastItem as { margin?: number[] }).margin = [0, 0, 0, 12];
+    }
+    lastItem = null;
+  };
 
   for (const item of items) {
     if (item.shape.type !== "list_item") {
       stack.length = 0;
+      closeList();
       const node = tagNode(blockNode(item, ctx), item, ctx);
       // «Empezar en una página nueva» (user's decision of 2026-11-26), never
       // for the text's first block, which would leave the title alone on a
@@ -1119,33 +1106,42 @@ function assembleFlow(
       const frame: ListFrame = {
         kind,
         level,
-        depth: stack.length,
         marker,
-        items: [],
         counter: start !== undefined ? start - 1 : 0,
       };
-      const node = listNode(frame);
-      if (top) top.items.push(node);
-      else output.push(node);
       stack.push(frame);
       top = frame;
     }
 
-    const element: ContentText & OrderedListElementProperties = {
-      text: emptySafe(item.inlines),
-      style: "listItem",
-      ...textAlignment(item.shape, ctx),
-    };
+    // A struck item takes no number (and no bullet), as in a diff.
+    let label: Inline | null = null;
+    let counter: number | undefined;
     if (top.kind === "ol") {
       if (item.countable) {
         top.counter += 1;
-        element.counter = top.counter;
-      } else {
-        element.listType = "none";
+        counter = top.counter;
+        label = { text: `${formatListNumber(top.counter, top.marker)} ` };
       }
+    } else if (item.countable) {
+      label = {
+        text: `${BULLETS[level % BULLETS.length]} `,
+        color: CREUP_RED,
+      };
     }
-    top.items.push(tagNode(element, item, ctx));
+    // `counter` is the number the item shows (pdfmake reads it only in its
+    // own lists): what the checks against orderedListNumbers read.
+    const element: ContentText & { counter?: number } = {
+      text: [...(label ? [label] : []), ...emptySafe(item.inlines)],
+      style: "listItem",
+      ...(counter !== undefined ? { counter } : {}),
+      leadingIndent: LIST_FIRST_LINE + level * LIST_LEVEL_STEP,
+      ...textAlignment(item.shape, ctx),
+    };
+    const node = tagNode(element, item, ctx);
+    output.push(node);
+    lastItem = node;
   }
+  closeList();
   return output;
 }
 

@@ -2,9 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   Content,
-  ContentOrderedList,
   ContentText,
-  ContentUnorderedList,
   TDocumentDefinitions,
 } from "pdfmake/interfaces";
 import { create as createFont } from "fontkit";
@@ -118,6 +116,21 @@ const li = (
   level: number,
   list: "bullet" | "ordered",
 ): Block => ({ id, type: "list_item", level, list, text, marks: [] });
+
+/** A list item as the PDF lays it out: a paragraph with its marker first. */
+type PdfListItem = ContentText & { counter?: number; leadingIndent?: number };
+
+/** The list items among a text's nodes, in order. */
+function listItems(nodes: unknown[]): PdfListItem[] {
+  return nodes.filter(
+    (node) => (node as ContentText | null)?.style === "listItem",
+  ) as PdfListItem[];
+}
+
+/** What an item's marker reads: the first piece of its text. */
+function markerText(item: PdfListItem): string {
+  return ((item.text as ContentText[])[0]!.text as string).trim();
+}
 
 const base: Block[] = [
   {
@@ -564,10 +577,14 @@ describe("blocksToPdf", () => {
     );
     expect(links.entries).toEqual(["https://creup.es/becas"]);
 
-    const list = nodes[3] as ContentOrderedList;
-    expect(list.ol).toHaveLength(4);
-    expect((list.ol[1] as ContentUnorderedList).ul).toHaveLength(1);
-    expect((list.ol[3] as { counter?: number }).counter).toBe(3);
+    // Each item a paragraph: its marker and first line stand in, deeper by
+    // level, as CREUP's Word documents write lists.
+    const items = listItems(nodes);
+    expect(items.map(markerText)).toEqual(["1.", "◦", "2.", "3."]);
+    expect(items[1]!.leadingIndent).toBeGreaterThan(items[0]!.leadingIndent!);
+    expect(items[3]!.counter).toBe(3);
+    // The list's last item keeps a paragraph's room after it.
+    expect(items[3]!.margin).toEqual([0, 0, 0, 12]);
   });
 
   it("never turns unsafe links into references", () => {
@@ -609,8 +626,7 @@ describe("justified text", () => {
     expect((nodes[0] as ContentText).alignment).toBe("justify");
     // Aligned on purpose: kept.
     expect((nodes[1] as ContentText).alignment).toBe("center");
-    const list = nodes[2] as ContentUnorderedList;
-    expect((list.ul[0] as ContentText).alignment).toBe("justify");
+    expect(listItems(nodes)[0]!.alignment).toBe("justify");
     // A table's cells, too narrow for it, are never justified.
     expect(JSON.stringify(nodes[3])).not.toContain("justify");
   });
@@ -829,10 +845,10 @@ describe("annotatedToPdf", () => {
   });
 
   it("keeps deleted list items struck and unnumbered", () => {
-    const list = nodes[3] as ContentOrderedList;
-    const deleted = list.ol[2] as { listType?: string; counter?: number };
-    expect(deleted.listType).toBe("none");
-    expect((list.ol[3] as { counter?: number }).counter).toBe(2);
+    const items = listItems(nodes);
+    // The struck item has no number; the next one carries on from before.
+    expect(items[2]!.counter).toBeUndefined();
+    expect(items[3]!.counter).toBe(2);
   });
 
   it("says in words what a change of format does", () => {
@@ -1512,17 +1528,8 @@ describe("CREUP template", () => {
         item("e", "Cuarto", { marker: "I." }),
       ],
       { links: new LinkRegistry() },
-    ) as (ContentOrderedList & { separator?: string })[];
-    const lists = nodes.filter((node) => "ol" in node);
-    expect(lists.map((list) => [list.type, list.separator])).toEqual([
-      ["lower-alpha", ")"],
-      ["lower-alpha", ")"],
-      ["upper-roman", "."],
-    ]);
-    const counters = lists.map((list) =>
-      list.ol.map((entry) => (entry as { counter?: number }).counter),
     );
-    expect(counters).toEqual([[1, 2], [3], [1]]);
+    expect(listItems(nodes).map(markerText)).toEqual(["a)", "b)", "c)", "I."]);
   });
 
   it("draws a narrower table in its place, with its cells' sides", () => {

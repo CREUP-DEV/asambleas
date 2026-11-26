@@ -319,6 +319,34 @@ html {
 }
 
 /*
+ * Lists: the marker inside the first line, which alone stands in (by
+ * level); the lines after it start at the margin, as in CREUP's Word
+ * documents (user's report of 2026-11-26). Outside any layer, over the
+ * editor's own list utilities. In the editor an item's text is a paragraph,
+ * which reads inline so the marker stays on its first line.
+ */
+:is(.rich-text, .content-editor) :is(ul, ol) {
+  list-style-position: inside;
+}
+
+:is(.rich-text, .content-editor) li {
+  padding-inline-start: 0;
+  text-indent: 1.5rem;
+}
+
+:is(.rich-text, .content-editor) li li {
+  text-indent: 3.25rem;
+}
+
+:is(.rich-text, .content-editor) li li li {
+  text-indent: 5rem;
+}
+
+.content-editor li > p:first-child {
+  display: inline;
+}
+
+/*
  * An ordered item an amendment deletes takes no number in a diff, as in the
  * PDF: no marker, and the next item carries its own number (`value`).
  */
@@ -1065,17 +1093,21 @@ html {
   }
 
   /*
-   * Lists stand in from the margin and leave room between their items, as
-   * the PDF and CREUP's Word documents do (user's report of 2026-11-26).
+   * Lists as CREUP's Word documents write them (user's reports of
+   * 2026-11-26): the marker and the first line of each item stand in from
+   * the margin, the lines after it go back to the margin, and items leave
+   * room between them, as the PDF does. The marker sits inside the first
+   * line (list-style-position), moved in by the item's text-indent, deeper
+   * for each level.
    */
   .rich-text ul,
   .rich-text ol {
     margin: 1.5rem 0 0;
-    padding-left: 2.75rem;
+    padding-left: 0;
   }
 
   .content-editor :is(ul, ol) {
-    padding-inline-start: 2.75rem;
+    padding-inline-start: 0;
   }
 
   .content-editor li + li {
@@ -1090,11 +1122,11 @@ html {
   }
 
   .rich-text ul {
-    list-style: disc;
+    list-style: disc inside;
   }
 
   .rich-text ol {
-    list-style: decimal;
+    list-style: decimal inside;
   }
 
   .rich-text li + li {

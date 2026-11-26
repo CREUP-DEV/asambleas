@@ -858,8 +858,10 @@ describe("buildDocumentDocx", () => {
       .file("word/_rels/document.xml.rels")!
       .async("string");
     expect(xml).toContain("Reglamento interno");
-    expect(xml).toContain("c)\t");
-    expect(xml).toContain("d)\t");
+    // Marker and first line in, the next lines at the margin (firstLine).
+    expect(xml).toContain('<w:t xml:space="preserve">c) </w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">d) </w:t>');
+    expect(xml).toContain('<w:ind w:firstLine="360"/>');
     expect(xml).toContain("<w:tbl>");
     expect(xml).toContain('w:fill="F5EEE6"');
     expect(rels).toContain("https://creup.es");
