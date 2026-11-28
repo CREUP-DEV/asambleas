@@ -32,7 +32,9 @@ import { NameRegistry, safeName, sortableNumbering } from "./names";
 // reports and accounting documents, the approval line's own size
 // (2026-11-26). 8: a list item's marker and first line stand in, its next
 // lines go back to the margin, as in CREUP's Word documents.
-export const PACKAGE_RENDERER_VERSION = 8;
+// 9: a positioning's approval line reads as running text, not centred
+// (2026-11-28).
+export const PACKAGE_RENDERER_VERSION = 9;
 
 /** Longest folder name taken from an agenda item's title. */
 const FOLDER_TITLE_MAX = 50;

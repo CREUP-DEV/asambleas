@@ -663,8 +663,6 @@ function documentHeading(input: {
   title?: boolean;
   /** False when the text's own approval line already says it. */
   vote?: boolean;
-  /** Centred: a positioning's, on the page after its cover. */
-  centered?: boolean;
   outlineId?: string;
   pageBreak?: boolean;
 }): Content[] {
@@ -686,11 +684,7 @@ function documentHeading(input: {
   }
   const vote =
     input.vote === false ? null : finalVoteLine(meta, assembly, locale, t);
-  if (vote) {
-    lines.push(
-      input.centered ? { ...(vote as ContentText), alignment: "center" } : vote,
-    );
-  }
+  if (vote) lines.push(vote);
   // Never as the final text while a passage waits (even when the text's
   // own approval line says it was approved).
   const pending = pendingConciliationLine(meta, locale, t);
@@ -1103,7 +1097,6 @@ export function buildDocumentPdf(
     t,
     title: !cover,
     vote: !clean?.filled && !meta.generated,
-    centered: cover,
   });
   if (body.variant === "clean") {
     content.push(
