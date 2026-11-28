@@ -147,6 +147,7 @@ interface FormState {
   amendable: boolean;
   acceptedAmendments: AcceptedAmendmentRule;
   voted: boolean;
+  signed: boolean;
   majority: Majority;
   windowOverride: boolean;
   opensAt: string | null;
@@ -201,6 +202,11 @@ function snapshot(document: DocumentDto): FormState {
       document.acceptedAmendments ??
       DOCUMENT_KIND_DEFAULTS[document.kind].acceptedAmendments,
     voted: document.voted,
+    // Older servers omit it: the kind's rule, never for a PDF.
+    signed:
+      document.signed ??
+      (document.format !== "file" &&
+        DOCUMENT_KIND_DEFAULTS[document.kind].signed),
     majority: document.majority,
     windowOverride: opensAt !== null || closesAt !== null,
     opensAt,
@@ -270,6 +276,8 @@ function buildBody(): DocumentUpdateBody {
     )
       body.coProponentMemberIds = presenters.coProponentMemberIds;
   }
+  const signed = isFile.value ? false : state.signed;
+  if (signed !== before.signed) body.signed = signed;
   if (!manager.value) return body;
 
   const amendable = isFile.value ? false : state.amendable;
@@ -369,6 +377,7 @@ const effective = computed(() => {
       amendable: isFile.value ? false : state.amendable,
       acceptedAmendments: state.acceptedAmendments,
       voted: state.voted,
+      signed: isFile.value ? false : state.signed,
       majority: state.majority,
     };
   }
@@ -376,6 +385,7 @@ const effective = computed(() => {
     amendable: isFile.value ? false : kindDefaults.value.amendable,
     acceptedAmendments: kindDefaults.value.acceptedAmendments,
     voted: kindDefaults.value.voted,
+    signed: isFile.value ? false : kindDefaults.value.signed,
     majority: kindDefaults.value.majority,
   };
 });
@@ -388,6 +398,7 @@ const differsFromDefaults = computed(
         !ruleLocked.value &&
         state.acceptedAmendments !== kindDefaults.value.acceptedAmendments) ||
       state.voted !== kindDefaults.value.voted ||
+      (!isFile.value && state.signed !== kindDefaults.value.signed) ||
       state.majority !== kindDefaults.value.majority),
 );
 
@@ -396,6 +407,7 @@ function applyKindDefaults(): void {
   if (!ruleLocked.value)
     state.acceptedAmendments = kindDefaults.value.acceptedAmendments;
   state.voted = kindDefaults.value.voted;
+  if (!isFile.value) state.signed = kindDefaults.value.signed;
   state.majority = kindDefaults.value.majority;
 }
 
@@ -1015,6 +1027,22 @@ defineExpose({ reset: resetForm, check, save, saving });
                 }}
               </p>
             </UFormField>
+
+            <!-- Whether it is signed: its presenters choose it too -->
+            <UFormField
+              name="signed"
+              :description="
+                isFile
+                  ? t('document.metadata.fileNotSigned')
+                  : t('document.metadata.signedDescription')
+              "
+            >
+              <USwitch
+                v-model="state.signed"
+                :disabled="isFile"
+                :label="t('document.metadata.signed')"
+              />
+            </UFormField>
           </div>
         </template>
       </UCollapsible>
@@ -1202,6 +1230,21 @@ defineExpose({ reset: resetForm, check, save, saving });
                   variant="card"
                   size="sm"
                   :ui="majorityCardsUi"
+                />
+              </UFormField>
+
+              <UFormField
+                name="signed"
+                :description="
+                  isFile
+                    ? t('document.metadata.fileNotSigned')
+                    : t('document.metadata.signedDescription')
+                "
+              >
+                <USwitch
+                  v-model="state.signed"
+                  :disabled="isFile"
+                  :label="t('document.metadata.signed')"
                 />
               </UFormField>
             </div>

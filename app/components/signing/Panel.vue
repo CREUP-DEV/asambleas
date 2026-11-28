@@ -7,10 +7,11 @@ import {
 } from "~/composables/agreements-record/autofirma";
 
 /**
- * Signing an approved text (user's decisions of 2026-11-23 and 2026-11-26):
- * the acta de acuerdos on its page, an acta on its «Consolidado». Prepare
- * its PDF (with the visible signature of the Secretaría Ejecutiva from the
- * Intranet), sign it with AutoFirma or outside the platform, and publish
+ * Signing a text (user's decisions of 2026-11-23, 2026-11-26 and
+ * 2026-11-28): the acta de acuerdos on its page, a voted document on its
+ * «Consolidado», one nothing votes on its own page. Prepare its PDF (with
+ * the visible signature of whoever signs from the Intranet, when there is
+ * one), sign it with AutoFirma or outside the platform, and publish
  * the signed PDF, which then leads the document. A correction after that
  * takes it away, and it is signed again. Each step answers what the page
  * shows (`T`: the record or the document), handed up by `update`.
@@ -33,6 +34,16 @@ const props = defineProps<{
   outdated?: boolean;
   /** The acta de acuerdos only: the route that writes them in. */
   regenerateUrl?: string | null;
+  /**
+   * Where its texts are: an acta's (the default, «el acta») or any other
+   * document's («el documento»), user's decisions of 2026-11-28.
+   */
+  texts?: "agreementsRecord.signing" | "documentSigning.panel";
+  /**
+   * Whether its PDF looks for a visible signature: not when a council or
+   * a sectorial signs, whose account is no person's.
+   */
+  image?: boolean;
 }>();
 const emit = defineEmits<{
   update: [value: T];
@@ -43,6 +54,7 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 
+const texts = computed(() => props.texts ?? "agreementsRecord.signing");
 const headingId = useId();
 const signing = computed(() => props.signing);
 const prepared = computed(() =>
@@ -102,16 +114,16 @@ function failed(error: unknown, key: string): void {
 async function prepare(): Promise<void> {
   if (busy.value) return;
   busy.value = "prepare";
-  announcement.value = t("agreementsRecord.signing.preparing");
+  announcement.value = t(`${texts.value}.preparing`);
   try {
     done(
       await api.send<T>(props.base, {
         method: "POST",
       }),
-      "agreementsRecord.signing.prepared",
+      `${texts.value}.prepared`,
     );
   } catch (error) {
-    failed(error, "agreementsRecord.signing.prepareFailed");
+    failed(error, `${texts.value}.prepareFailed`);
   } finally {
     busy.value = null;
   }
@@ -125,14 +137,14 @@ async function upload(file: Blob, name: string): Promise<void> {
     await api.send<T>(`${props.base}/signed`, {
       body,
     }),
-    "agreementsRecord.signing.published",
+    `${texts.value}.published`,
   );
 }
 
 async function signHere(): Promise<void> {
   if (busy.value || !prepared.value) return;
   busy.value = "sign";
-  announcement.value = t("agreementsRecord.signing.signing");
+  announcement.value = t(`${texts.value}.signing`);
   try {
     const pdf = await $fetch<ArrayBuffer>(`${props.base}/prepared`, {
       responseType: "arrayBuffer",
@@ -146,8 +158,8 @@ async function signHere(): Promise<void> {
       announcement.value = "";
       if (error instanceof AutoFirmaCancelledError) return;
       toast.add({
-        title: t("agreementsRecord.signing.autofirmaFailed"),
-        description: t("agreementsRecord.signing.autofirmaHint"),
+        title: t(`${texts.value}.autofirmaFailed`),
+        description: t(`${texts.value}.autofirmaHint`),
         color: "error",
         icon: "i-lucide-circle-alert",
       });
@@ -158,7 +170,7 @@ async function signHere(): Promise<void> {
       `${props.title || "acta"}.pdf`,
     );
   } catch (error) {
-    failed(error, "agreementsRecord.signing.uploadFailed");
+    failed(error, `${texts.value}.uploadFailed`);
   } finally {
     busy.value = null;
   }
@@ -174,7 +186,7 @@ async function onFileChosen(event: Event): Promise<void> {
   if (!selected || busy.value) return;
   const reject = (key: string) =>
     toast.add({
-      title: t("agreementsRecord.signing.uploadFailed"),
+      title: t(`${texts.value}.uploadFailed`),
       description: t(key),
       color: "error",
       icon: "i-lucide-circle-alert",
@@ -195,7 +207,7 @@ async function onFileChosen(event: Event): Promise<void> {
     const status = api.errorStatus(error);
     if (status === 415) reject("document.file.invalidType");
     else if (status === 413) reject("document.file.tooLarge");
-    else failed(error, "agreementsRecord.signing.uploadFailed");
+    else failed(error, `${texts.value}.uploadFailed`);
   } finally {
     busy.value = null;
   }
@@ -210,11 +222,11 @@ async function removeSigned(): Promise<void> {
       await api.send<T>(`${props.base}/signed`, {
         method: "DELETE",
       }),
-      "agreementsRecord.signing.removed",
+      `${texts.value}.removed`,
     );
     confirmRemove.value = false;
   } catch (error) {
-    failed(error, "agreementsRecord.signing.removeFailed");
+    failed(error, `${texts.value}.removeFailed`);
   } finally {
     busy.value = null;
   }
@@ -249,19 +261,19 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
   if (prepared.value) {
     items.push(
       {
-        label: t("agreementsRecord.signing.download"),
+        label: t(`${texts.value}.download`),
         icon: "i-lucide-download",
         to: `${props.base}/prepared`,
         external: true,
         download: "",
       },
       {
-        label: t("agreementsRecord.signing.upload"),
+        label: t(`${texts.value}.upload`),
         icon: "i-lucide-file-up",
         onSelect: () => fileInput.value?.click(),
       },
       {
-        label: t("agreementsRecord.signing.prepareAgain"),
+        label: t(`${texts.value}.prepareAgain`),
         icon: "i-lucide-refresh-cw",
         onSelect: () => void prepare(),
       },
@@ -269,7 +281,7 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
   }
   if (signed.value) {
     items.push({
-      label: t("agreementsRecord.signing.remove"),
+      label: t(`${texts.value}.remove`),
       icon: "i-lucide-file-x",
       color: "error",
       onSelect: () => {
@@ -296,7 +308,7 @@ function at(value: string): string {
       tabindex="-1"
       class="text-highlighted font-semibold outline-none"
     >
-      {{ t("agreementsRecord.signing.title") }}
+      {{ t(`${texts}.title`) }}
     </h3>
 
     <p v-if="!approved" class="text-muted text-sm">
@@ -339,7 +351,7 @@ function at(value: string): string {
             class="text-success size-4 shrink-0"
           />
           {{
-            t("agreementsRecord.signing.signedAt", {
+            t(`${texts}.signedAt`, {
               date: at(signed.signedAt),
             })
           }}
@@ -349,15 +361,16 @@ function at(value: string): string {
             name="i-lucide-file-clock"
             class="text-muted size-4 shrink-0"
           />
-          {{
-            t("agreementsRecord.signing.preparedAt", { date: at(prepared.at) })
-          }}
+          {{ t(`${texts}.preparedAt`, { date: at(prepared.at) }) }}
         </p>
         <p v-else class="text-muted">
           {{ intro }}
         </p>
-        <p v-if="prepared && !prepared.withImage && !signed" class="text-muted">
-          {{ t("agreementsRecord.signing.noImage") }}
+        <p
+          v-if="prepared && !prepared.withImage && !signed && image !== false"
+          class="text-muted"
+        >
+          {{ t(`${texts}.noImage`) }}
         </p>
       </div>
 
@@ -368,7 +381,7 @@ function at(value: string): string {
           icon="i-lucide-file-text"
           color="neutral"
           variant="outline"
-          :label="t('agreementsRecord.signing.view')"
+          :label="t(`${texts}.view`)"
           :to="signed.url"
           external
           target="_blank"
@@ -377,7 +390,7 @@ function at(value: string): string {
           v-else-if="prepared"
           ref="mainButton"
           icon="i-lucide-signature"
-          :label="t('agreementsRecord.signing.sign')"
+          :label="t(`${texts}.sign`)"
           :loading="busy === 'sign' || busy === 'upload'"
           :disabled="busy !== null || outdated"
           @click="signHere"
@@ -386,7 +399,7 @@ function at(value: string): string {
           v-else
           ref="mainButton"
           icon="i-lucide-file-pen-line"
-          :label="t('agreementsRecord.signing.prepare')"
+          :label="t(`${texts}.prepare`)"
           :loading="busy === 'prepare'"
           :disabled="busy !== null || outdated"
           @click="prepare"
@@ -401,7 +414,7 @@ function at(value: string): string {
             variant="outline"
             icon="i-lucide-ellipsis"
             trailing-icon="i-lucide-chevron-down"
-            :label="t('agreementsRecord.signing.more')"
+            :label="t(`${texts}.more`)"
             :loading="busy === 'prepare' && prepared !== null"
             :disabled="busy !== null"
           />
@@ -423,8 +436,8 @@ function at(value: string): string {
     <UModal
       v-model:open="confirmRemove"
       :content="dialogContent"
-      :title="t('agreementsRecord.signing.removeTitle')"
-      :description="t('agreementsRecord.signing.removeDescription')"
+      :title="t(`${texts}.removeTitle`)"
+      :description="t(`${texts}.removeDescription`)"
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
@@ -438,7 +451,7 @@ function at(value: string): string {
           <UButton
             color="error"
             icon="i-lucide-file-x"
-            :label="t('agreementsRecord.signing.remove')"
+            :label="t(`${texts}.remove`)"
             :loading="busy === 'remove'"
             @click="removeSigned"
           />

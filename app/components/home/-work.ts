@@ -773,10 +773,10 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
       }
       return make("home.news.document.other");
     case "document_signature_voided":
-      // For whoever signs: the acta lost its signed PDF, and why. It leads
-      // to where it is signed again.
+      // For whoever signs: the acta (or the document its presenter signs)
+      // lost its signed PDF, and why. It leads to where it is signed again.
       return make(
-        `home.news.document.signAgain.${SIGN_AGAIN_REASONS.get(news.value ?? "") ?? "other"}`,
+        `home.news.document.${news.signedDocument ? "signAgainDocument" : "signAgain"}.${SIGN_AGAIN_REASONS.get(news.value ?? "") ?? "other"}`,
         "neutral",
         null,
         null,

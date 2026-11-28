@@ -74,6 +74,11 @@ export const documents = pgTable(
     }),
     amendable: boolean("amendable").notNull().default(false),
     voted: boolean("voted").notNull().default(true),
+    /**
+     * «Se firma»: a signed PDF is made from its text (documentSigning).
+     * Defaults from the kind; never for a document in `file` format.
+     */
+    signed: boolean("signed").notNull().default(false),
     majority: majorityEnum("majority").notNull().default("simple"),
     /**
      * What an amendment the presenter accepts becomes: incorporated without

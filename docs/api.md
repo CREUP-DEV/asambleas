@@ -782,6 +782,16 @@ presenter; up to 20, no repeats). The rules (`planPresenters` in
 The change is recorded in `document_created` and `document_updated`
 (`proponentMemberId`, `coProponentMemberIds`).
 
+**«Se firma».** `signed` (`DocumentDto`, create and update bodies) says a
+signed PDF is made from the document's text. It defaults from the kind
+(`DOCUMENT_KIND_DEFAULTS`: `minutes`, `budget` and `report`). Managers
+change it, and so do its presenters while they edit it (user's decision of
+2026-11-28): a presenter's value is ignored on create, and a presenter
+changing the kind gets the kind's default unless the same body sets it. A
+`file` document is never signed: a create, a switch to
+`file` or a kind change on a PDF store false whatever the body says, and a
+switch back to text takes the kind's default.
+
 **Accepted amendments.** `acceptedAmendments` (`DocumentSummaryDto`, create
 and update bodies) says what an amendment the main presenter accepts
 becomes: `incorporate` approves it at once, `vote` leaves it to the assembly
@@ -2058,21 +2068,26 @@ What the items carry, by whom (the Mesa's scope is the last one):
   group apart and say the assembly still has to decide; a rejection
   names its party and stays alone. None of this reaches anyone by email:
   the email rules are unchanged;
-- for an account that manages documents (`document:manage`,
-  `signingNewsScope`: the Secretaría and the Presidencia by default), with
-  or without a member: a `document_signature_voided` (an approved acta
-  whose signed PDF a correction of form, the annulment of its final vote
-  or a change of that vote's unanimity took away; `value` is the reason,
-  `form_correction`, `final_vote_annulled` or `unanimity_changed`), with
-  `amendment: null`, the latest one per document, and only while the
+- for whoever signs a document (`signsDocument`): an account that manages
+  documents (`document:manage`, `signingNewsScope`: the Secretaría and the
+  Presidencia by default), with or without a member, for the actas; the
+  main presenter's accounts for any other signed document (user's
+  decisions of 2026-11-28; `signedDocument: true`, so the notice names a
+  document, not an acta): a `document_signature_voided` (a signed
+  document whose signed PDF a correction of form, the annulment of its
+  final vote or a change of that vote's unanimity took away; `value` is the
+  reason, `form_correction`, `final_vote_annulled` or `unanimity_changed`),
+  with `amendment: null`, the latest one per document, and only while the
   document is not signed again for its text in force (a signed PDF whose
-  `signedVersionId` is the document's `consolidatedVersionId`,
+  `signedVersionId` is the text in force, `signedTextVersionId`:
+  the consolidated version, or the base of a document nothing votes;
   `signatureVoidStands`). It is a pending task, not someone else's act, so
   the account's own correction or vote change brings it too. The client
   leads it to the consolidated text, where the acta is signed, or to the
   acta de acuerdos' page (`agreementsRecord: true`). Read apart, up to 60
   candidates (`NEWS_SIGNING_CANDIDATES`), cutting only themselves; every
-  document of these assemblies with a signing joins `watchDocumentIds`.
+  document of these assemblies with a signing joins a manager's
+  `watchDocumentIds`, and its own signed documents a main presenter's.
   Never by email.
 
 `by` is the member that decided: null for a transactional that closed by
@@ -2214,30 +2229,42 @@ record in `agreement_record_signings`.
 
 ### Signing an approved acta
 
-An acta (`kind = 'minutes'`, structured, not the acta de acuerdos) is signed
-the same way once its final vote approved it and no passage is left to
-conciliate (user's decisions of 2026-11-26, `server/utils/domain/documentSigning.ts`).
-Its text never holds the signature: the PDF made to be signed ends with the
-acuerdos' closing (`signatureClosingBlocks`: «Para que conste…», the visible
-signature from the Intranet, the name of whoever holds the Secretaría
-Ejecutiva in the roster and the office), and an acta written with a closing
-of its own has it taken out with a correction of form first
-(`DocumentSigningDto.closingInText` warns). Without anyone in the Secretaría
-Ejecutiva the preparation answers 409. A correction of form or a
+A signed document (`DocumentDto.signed`: by default the actas, budgets and
+reports; structured, not the acta de acuerdos) is signed the same way once
+its text is in force (`signedTextVersionId`): approved by its final vote
+with no passage left to conciliate, or published when nothing votes it (a
+report) (user's decisions of 2026-11-26 and 2026-11-28,
+`server/utils/domain/documentSigning.ts`). An acta is signed by its
+managers for the Secretaría Ejecutiva; any other document by its main
+presenter's accounts (`canSignDocument`), co-presenters never; the document
+managers may also withdraw a signed PDF. Its text never holds the
+signature: the PDF made to be signed ends with a closing
+(`signatureClosingBlocks`, `loadSigningCloser`): an acta's «Para que
+conste…», with the name of whoever holds the Secretaría Ejecutiva in the
+roster, the office and the visible signature of the Intranet's
+`firma-secretaria`; any other's «Y por tanto firmo…», with a CEA office's
+holder, the office as the roster names it and that account's visible
+signature (`GET firma/{intranetId}`), or a council's or a sectorial's own
+name with no office and no image (`DocumentSigningDto.image`). A signed
+budget or report keeps its index. A text written with a closing of its own
+has it taken out first (on a Word import, or with a correction of form;
+`DocumentSigningDto.closingInText` warns). Without a signer (nobody in the
+Secretaría Ejecutiva, no presenter) the preparation answers 409. A correction of form or a
 conciliation (`applyText`), annulling the final vote or changing its
 unanimity takes both PDFs away and deletes their files (`voidSigning`); a
 published signature leaves `document_signature_voided`
 (`{ reason, fileName }`), which the managers read in «Avisos», never by
-email. The document's managers read `DocumentDto.signing` (null for anyone
-else and for an acta not approved); the signed PDF is `DocumentDto.signedFile`
-for everyone, as the record's. Each route returns the `DocumentDto`.
+email. Whoever signs it reads `DocumentDto.signing` (null for anyone else,
+for a voted document not approved and for one not published); the signed
+PDF is `DocumentDto.signedFile` for everyone, as the record's, and stands
+for its text in force in the package. Each route returns the `DocumentDto`.
 
-| Method | Path                                                               | Who               | Notes                                                                                                                                     |
-| ------ | ------------------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/assemblies/[assembly]/documents/[document]/signing`          | `document:manage` | Renders the PDF to sign (`document_signing_prepared`); the one prepared before goes. 404 for another document, 409 before it is approved. |
-| GET    | `/api/assemblies/[assembly]/documents/[document]/signing/prepared` | `document:manage` | The PDF prepared to sign, for the text in force; 404 without one.                                                                         |
-| POST   | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | `document:manage` | Multipart `file` (PDF up to 20 MB with a digital signature) and `updatedAt` of the signing. Publishes it (`document_signed`).             |
-| DELETE | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | `document:manage` | Withdraws the signed PDF (`document_signature_removed`).                                                                                  |
+| Method | Path                                                               | Who    | Notes                                                                                                                                                                    |
+| ------ | ------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/signing`          | signer | Renders the PDF to sign (`document_signing_prepared`); the one prepared before goes. 404 for a document not signed, 409 before its text is in force or without a signer. |
+| GET    | `/api/assemblies/[assembly]/documents/[document]/signing/prepared` | signer | The PDF prepared to sign, for the text in force; 404 without one.                                                                                                        |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | signer | Multipart `file` (PDF up to 20 MB with a digital signature) and `updatedAt` of the signing. Publishes it (`document_signed`).                                            |
+| DELETE | `/api/assemblies/[assembly]/documents/[document]/signing/signed`   | signer | Withdraws the signed PDF (`document_signature_removed`); the document managers too.                                                                                      |
 
 ## Headcounts
 

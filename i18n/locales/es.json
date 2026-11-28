@@ -967,7 +967,8 @@
         "description": "La plataforma ya muestra el título y la aprobación del documento. Se quitará esta línea del principio: | La plataforma ya muestra el título y la aprobación del documento. Se quitarán estas {count} líneas del principio:"
       },
       "placeholders": "Quedan marcadores por rellenar en el texto: {list}. Complétalos antes de enviar el documento.",
-      "approvalLine": "«{line}» se completará con el resultado de la votación en el PDF del texto aprobado."
+      "approvalLine": "«{line}» se completará con el resultado de la votación en el PDF del texto aprobado.",
+      "writtenClosing": "Se ha quitado la firma escrita del final: se añade sola al firmar el documento."
     },
     "file": {
       "title": "Documento en PDF",
@@ -1045,6 +1046,9 @@
       "amendable": "Admite enmiendas",
       "fileNotAmendable": "Los documentos en PDF no admiten enmiendas.",
       "voted": "Se vota",
+      "signed": "Se firma",
+      "signedDescription": "Se genera un PDF para firmar con la firma de quien lo presenta (en un acta, la Secretaría Ejecutiva).",
+      "fileNotSigned": "Los documentos en PDF no se firman.",
       "majority": "Mayoría necesaria",
       "windowOverride": "Plazo de enmiendas propio",
       "windowOverrideDescription": "Sin activarlo, se sigue el calendario de la asamblea.",
@@ -3343,6 +3347,12 @@
           "finalVoteAnnulled": "Hay que volver a firmar el acta: se ha anulado su votación final.",
           "unanimityChanged": "Hay que volver a firmar el acta: ha cambiado la unanimidad de su votación final.",
           "other": "Hay que volver a firmar el acta: se ha retirado el PDF firmado."
+        },
+        "signAgainDocument": {
+          "formCorrection": "Hay que volver a firmar el documento: se ha corregido su texto.",
+          "finalVoteAnnulled": "Hay que volver a firmar el documento: se ha anulado su votación final.",
+          "unanimityChanged": "Hay que volver a firmar el documento: ha cambiado la unanimidad de su votación final.",
+          "other": "Hay que volver a firmar el documento: se ha retirado el PDF firmado."
         }
       }
     }
@@ -3574,6 +3584,9 @@
       "amendable": "Admite enmiendas",
       "fileNotAmendable": "Los documentos en PDF no admiten enmiendas.",
       "voted": "Se vota",
+      "signed": "Se firma",
+      "signedDescription": "Se genera un PDF para firmar con la firma de quien lo presenta (en un acta, la Secretaría Ejecutiva).",
+      "fileNotSigned": "Los documentos en PDF no se firman.",
       "majority": "Mayoría necesaria",
       "create": "Crear",
       "createAndUpload": "Crear y abrir",
@@ -3904,6 +3917,8 @@
       "openPdfTab": "Abrir en una pestaña nueva",
       "openSignedRecord": "Acta firmada",
       "signedRecordAt": "Firmada digitalmente el {date}",
+      "openSignedDocument": "Documento firmado",
+      "signedDocumentAt": "Firmado digitalmente el {date}",
       "pdfFrame": "PDF de «{title}»",
       "unpublished": "Documento sin publicar",
       "unpublishedDescription": "Se podrán presentar enmiendas cuando Secretaría lo publique.",
@@ -3989,7 +4004,8 @@
       },
       "correctedText": "Texto con correcciones de forma posteriores a la votación. Debajo están las correcciones y sus cambios.",
       "tableLookOnly": "Solo cambia el aspecto de las tablas: color, bordes, ancho o posición. Se ve en el texto consolidado.",
-      "voidsSignature": "El acta está firmada: al aplicar la corrección se retira el PDF firmado y habrá que volver a firmarla."
+      "voidsSignature": "El acta está firmada: al aplicar la corrección se retira el PDF firmado y habrá que volver a firmarla.",
+      "voidsDocumentSignature": "El documento está firmado: al aplicar la corrección se retira el PDF firmado y habrá que volver a firmarlo."
     },
     "export": {
       "clean": "PDF limpio",
@@ -7472,6 +7488,7 @@
           "format": "Formato",
           "amendable": "Admite enmiendas",
           "voted": "Se vota",
+          "signed": "Se firma",
           "majority": "Mayoría necesaria",
           "amendmentsOpenAt": "Apertura del plazo de enmiendas",
           "amendmentsCloseAt": "Cierre del plazo de enmiendas",
@@ -7554,6 +7571,39 @@
     "notYet": "Se firma cuando su votación final la aprueba y no le queda ningún pasaje por conciliar.",
     "intro": "Prepárala para firmar: el PDF acaba con la fórmula de cierre, la firma visual de la Secretaría Ejecutiva que hay en la Intranet y el nombre de {name}. Una vez firmada, se publica en lugar del PDF generado.",
     "noSigner": "El censo no tiene a nadie en la Secretaría Ejecutiva: sin su nombre no se puede preparar el acta para firmar.",
-    "closingInText": "El texto ya acaba con su propia fórmula de firma. Quítala con una corrección de forma antes de prepararla: el PDF para firmar la añade con el nombre de quien firma."
+    "closingInText": "El texto ya acaba con su propia fórmula de firma. Quítala con una corrección de forma antes de prepararla: el PDF para firmar la añade con el nombre de quien firma.",
+    "panel": {
+      "title": "Firma del documento",
+      "prepare": "Preparar para firmar",
+      "preparing": "Preparando el documento para firmar",
+      "prepared": "Documento preparado para firmar",
+      "prepareFailed": "No se ha podido preparar el documento para firmar",
+      "preparedAt": "Preparado para firmar el {date}.",
+      "noImage": "Sin firma visual: la Intranet no tiene tu firma. Súbela en el perfil de tu cuenta en la Intranet y vuelve a prepararlo, o fírmalo igualmente.",
+      "sign": "Firmar con AutoFirma",
+      "signing": "Firmando el documento con AutoFirma",
+      "autofirmaFailed": "No se ha podido firmar con AutoFirma",
+      "autofirmaHint": "Comprueba que AutoFirma está instalado en este equipo, o descarga el PDF, fírmalo fuera y súbelo desde «Más».",
+      "published": "Documento firmado publicado",
+      "uploadFailed": "No se ha podido publicar el documento firmado",
+      "signedAt": "Firmado y publicado el {date}.",
+      "view": "Ver el documento firmado",
+      "more": "Más",
+      "download": "Descargar para firmar",
+      "upload": "Subir el PDF firmado",
+      "prepareAgain": "Volver a preparar",
+      "remove": "Retirar el documento firmado",
+      "removeTitle": "¿Retirar el documento firmado?",
+      "removeDescription": "Deja de publicarse y vuelve a verse el PDF generado. Podrás firmarlo de nuevo.",
+      "removed": "Documento firmado retirado",
+      "removeFailed": "No se ha podido retirar el documento firmado"
+    },
+    "document": {
+      "notYet": "Se firma cuando su votación final lo aprueba y no le queda ningún pasaje por conciliar.",
+      "intro": "Prepáralo para firmar: el PDF acaba con «Y por tanto firmo», la firma visual que tengas en la Intranet y el nombre de {name}. Una vez firmado, se publica en lugar del PDF generado.",
+      "introNoImage": "Prepáralo para firmar: el PDF acaba con «Y por tanto firmo» y el nombre de {name}. Una vez firmado, se publica en lugar del PDF generado.",
+      "noSigner": "El documento no tiene presentador: sin su nombre no se puede preparar para firmar.",
+      "closingInText": "El texto ya acaba con su propia fórmula de firma, que el PDF para firmar repetiría con el nombre de quien firma: quítala antes de prepararlo."
+    }
   }
 }

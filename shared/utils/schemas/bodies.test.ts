@@ -48,6 +48,15 @@ describe("document bodies", () => {
     expect(update.acceptedAmendments).toBe("vote");
   });
 
+  it("keeps «Se firma»", () => {
+    expect(documentCreateSchema.parse({ ...create, signed: true }).signed).toBe(
+      true,
+    );
+    expect(
+      documentUpdateSchema.parse({ signed: false, updatedAt: at }).signed,
+    ).toBe(false);
+  });
+
   it("refuses repeated co-presenters and unknown rules", () => {
     expect(
       documentCreateSchema.safeParse({

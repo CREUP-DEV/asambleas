@@ -25,6 +25,7 @@ import {
 import { getUploadDir } from "../../../utils/core/uploadPaths";
 import { requireActor } from "../../../utils/domain/actor";
 import { AGREEMENTS_URL_PREFIX } from "../../../utils/domain/agreementsSignedFile";
+import { signedTextVersionId } from "../../../utils/domain/signedText";
 import {
   cleanFileName,
   STORED_PDF_NAME,
@@ -68,6 +69,8 @@ export default defineEventHandler(async (event) => {
       proponentMemberId: documents.proponentMemberId,
       submittedByUserId: documents.submittedByUserId,
       consolidatedVersionId: documents.consolidatedVersionId,
+      baseVersionId: documents.baseVersionId,
+      voted: documents.voted,
       assemblyStatus: assemblies.status,
       fileName: agreementRecordSignings.signedFileName,
       signedVersionId: agreementRecordSignings.signedVersionId,
@@ -85,7 +88,7 @@ export default defineEventHandler(async (event) => {
 
   if (
     !row ||
-    row.signedVersionId !== row.consolidatedVersionId ||
+    row.signedVersionId !== signedTextVersionId(row) ||
     !canSeeAssembly(actor, { status: row.assemblyStatus }) ||
     !canSeeDocument(actor, (await withCoProponentIds([row]))[0]!)
   ) {

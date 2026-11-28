@@ -119,6 +119,12 @@ export type AcceptedAmendmentRule = (typeof ACCEPTED_AMENDMENT_RULES)[number];
 export interface DocumentKindDefaults {
   amendable: boolean;
   voted: boolean;
+  /**
+   * «Se firma»: a signed PDF is made from its text, with the signature of
+   * whoever presents it (the Secretaría Ejecutiva for an acta). Never for a
+   * document in `file` format.
+   */
+  signed: boolean;
   majority: Majority;
   acceptedAmendments: AcceptedAmendmentRule;
   /** Prefix of the reference assigned on admission, e.g. "RES 012/2026". */
@@ -159,6 +165,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   positioning: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "POS",
@@ -166,6 +173,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   resolution: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "RES",
@@ -173,6 +181,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   internal_motion: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "MI",
@@ -180,6 +189,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   executive_report: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "IEJ",
@@ -187,36 +197,42 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   regulation: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "incorporate",
     majority: "two_thirds",
   },
   statutes: {
     amendable: true,
     voted: true,
+    signed: false,
     acceptedAmendments: "incorporate",
     majority: "two_thirds",
   },
   budget: {
     amendable: true,
     voted: true,
+    signed: true,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   accounts: {
     amendable: false,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   work_plan: {
     amendable: false,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   agreement: {
     amendable: false,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     // RFAG 2025 art. 23.1: two thirds of the valid votes. The 77.ª AGO
     // rejected the CANAE agreement with 18 for, 2 against and 10 abstentions.
@@ -225,12 +241,14 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   report: {
     amendable: false,
     voted: false,
+    signed: true,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   minutes: {
     amendable: false,
     voted: true,
+    signed: true,
     acceptedAmendments: "vote",
     majority: "simple",
   },
@@ -239,18 +257,21 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   candidacy: {
     amendable: false,
     voted: false,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   venue: {
     amendable: false,
     voted: true,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },
   other: {
     amendable: false,
     voted: false,
+    signed: false,
     acceptedAmendments: "vote",
     majority: "simple",
   },

@@ -102,8 +102,22 @@ const acta = {
   acceptedAmendments: "vote",
   finalVoteId: "v1",
   consolidatedVersionId: "ver2",
+  baseVersionId: "ver0",
+  voted: true,
+  kind: "minutes",
   generated: null,
   proponentKind: null,
+};
+
+/** A budget its treasurer signs, voted and approved. */
+const budget = {
+  ...acta,
+  id: "d3",
+  slug: "presupuesto",
+  title: "Presupuesto",
+  kind: "budget",
+  proponentMemberId: "m-t",
+  proponentKind: "executive",
 };
 
 function voided(
@@ -153,7 +167,11 @@ describe("the signers' rules", () => {
   });
 
   it("stands until a signature signs the text in force", () => {
-    const document = { consolidatedVersionId: "ver2" };
+    const document = {
+      consolidatedVersionId: "ver2",
+      baseVersionId: "ver0",
+      voted: true,
+    };
     const signedAt = new Date("2026-11-26T11:00:00Z");
     expect(signatureVoidStands(document, undefined)).toBe(true);
     // The row emptied by clearSigning.
@@ -183,12 +201,29 @@ describe("the signers' rules", () => {
     // to sign yet, so it waits hidden.
     expect(
       signatureVoidStands(
-        { consolidatedVersionId: null },
+        { consolidatedVersionId: null, baseVersionId: "ver0", voted: true },
         { url: "/api/files/x.pdf", signedAt, versionId: null },
       ),
     ).toBe(false);
     expect(
-      signatureVoidStands({ consolidatedVersionId: null }, undefined),
+      signatureVoidStands(
+        { consolidatedVersionId: null, baseVersionId: "ver0", voted: true },
+        undefined,
+      ),
+    ).toBe(false);
+    // A text nothing votes (a report): its published one is signed.
+    const report = {
+      consolidatedVersionId: null,
+      baseVersionId: "ver0",
+      voted: false,
+    };
+    expect(signatureVoidStands(report, undefined)).toBe(true);
+    expect(
+      signatureVoidStands(report, {
+        url: "/api/files/x.pdf",
+        signedAt,
+        versionId: "ver0",
+      }),
     ).toBe(false);
   });
 
@@ -284,6 +319,47 @@ describe("loadWorkNews, the signers' scope", () => {
       value: "final_vote_annulled",
       agreementsRecord: true,
     });
+  });
+
+  it("tells a manager nothing of a document its presenter signs", async () => {
+    reads.queue = [
+      [{ id: "d3" }],
+      [voided("budget", 2, { entityId: "d3" })],
+      [],
+      [budget],
+    ];
+    const result = await loadWorkNews(signer(), [assembly], NOW);
+    expect(result.news).toEqual([]);
+  });
+
+  it("tells the main presenter to sign its own document again", async () => {
+    reads.queue = [
+      // The member's scope: presented, answered, authored, over its own.
+      [{ id: "d3" }],
+      [],
+      [],
+      [],
+      // Its own signed documents.
+      [{ id: "d3" }],
+      // The general events, then the signers' ones.
+      [],
+      [voided("budget", 2, { entityId: "d3" })],
+      // The signings, then the documents.
+      [],
+      [budget],
+    ];
+    const result = await loadWorkNews(
+      testActor({ memberId: "m-t" }),
+      [assembly],
+      NOW,
+    );
+    expect(result.news.map((item) => item.id)).toEqual(["budget"]);
+    expect(result.watchDocumentIds).toEqual(["d3"]);
+    // Read only for its own documents.
+    const query = reads.wheres
+      .map((where) => render(where))
+      .find((rendered) => rendered.params.includes(NEWS_SIGNATURE_VOIDED));
+    expect(query!.params).toContain("d3");
   });
 
   it("reads nothing of it for an account that does not manage documents", async () => {

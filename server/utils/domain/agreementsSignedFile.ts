@@ -7,17 +7,27 @@ import type {
   DocumentSigningDto,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
+import {
+  annexStart,
+  isClosingFormula,
+} from "~~/shared/utils/content/writtenClosing";
 import { db } from "../../db";
 import {
   agreementRecordSignings,
   type documentVersions,
   members,
 } from "../../db/schema";
+import {
+  ACTA_CLOSING_FORMULA,
+  DEFAULT_SECRETARY_TITLE,
+  SIGNED_CLOSING_FORMULA,
+} from "~~/shared/utils/agreementsRecord";
 import { STORED_PDF_NAME, type DocumentRow } from "./documents";
 import { logError } from "../core/logger";
 import { getUploadDir } from "../core/uploadPaths";
-import type { Actor } from "./actor";
+import { actsFor, canManageDocuments, type Actor } from "./actor";
 import { recordEvent, type Executor } from "./events";
+import { signedTextVersionId } from "./signedText";
 
 type VersionRow = typeof documentVersions.$inferSelect;
 
@@ -37,12 +47,18 @@ export function signedRecordStoredName(
   return STORED_PDF_NAME.test(name) ? name : null;
 }
 
-/** The record's signed PDF for the text in force, or null. */
+export { signedTextVersionId };
+
+/** The signed PDF of a document for its text in force, or null. */
 export async function loadSignedRecordFile(
-  document: { id: string; consolidatedVersionId: string | null },
+  document: Pick<
+    DocumentRow,
+    "id" | "consolidatedVersionId" | "baseVersionId" | "voted"
+  >,
   executor: Executor = db,
 ): Promise<AgreementsRecordSignedFileDto | null> {
-  if (!document.consolidatedVersionId) return null;
+  const inForce = signedTextVersionId(document);
+  if (!inForce) return null;
   const [row] = await executor
     .select({
       url: agreementRecordSignings.signedFileUrl,
@@ -52,45 +68,57 @@ export async function loadSignedRecordFile(
     })
     .from(agreementRecordSignings)
     .where(eq(agreementRecordSignings.documentId, document.id));
-  if (
-    !row?.url ||
-    !row.signedAt ||
-    row.versionId !== document.consolidatedVersionId
-  ) {
+  if (!row?.url || !row.signedAt || row.versionId !== inForce) {
     return null;
   }
   return {
     url: row.url,
-    name: row.name ?? "acta-de-acuerdos.pdf",
+    name: row.name ?? "documento-firmado.pdf",
     signedAt: row.signedAt.toISOString(),
   };
 }
 
 /**
- * An acta Secretaría may sign once approved (user's decision of
- * 2026-11-26; documentSigning.ts): a text of kind `minutes` the platform
- * did not write. The acta de acuerdos signs on its own page.
+ * A document signed in the platform (documentSigning.ts; user's decisions
+ * of 2026-11-26 and 2026-11-28): one marked so (`signed`, by default the
+ * actas, budgets and reports), as text, the platform did not write. The
+ * acta de acuerdos signs on its own page.
  */
-export function isSignableActa(
-  document: Pick<DocumentRow, "kind" | "generated" | "format">,
+export function isSignedDocument(
+  document: Pick<DocumentRow, "generated" | "format" | "signed">,
 ): boolean {
   return (
-    document.kind === "minutes" &&
+    document.signed === true &&
     document.generated === null &&
     document.format === "structured"
   );
 }
 
+/**
+ * Whether the actor signs this document (documentSigning.ts): an acta, its
+ * managers; anything else, its main presenter's accounts.
+ */
+export function canSignDocument(
+  actor: Actor,
+  document: Pick<DocumentRow, "kind" | "proponentMemberId">,
+): boolean {
+  return document.kind === "minutes"
+    ? canManageDocuments(actor)
+    : actsFor(actor, [document.proponentMemberId]);
+}
+
 /** Whether a document may carry a signed PDF that leads it. */
 export function hasSigning(
-  document: Pick<DocumentRow, "kind" | "generated" | "format">,
+  document: Pick<DocumentRow, "generated" | "format" | "signed">,
 ): boolean {
-  return document.generated === "agreements_record" || isSignableActa(document);
+  return (
+    document.generated === "agreements_record" || isSignedDocument(document)
+  );
 }
 
 type SigningRow = typeof agreementRecordSignings.$inferSelect;
 
-/** A signing as the Secretaría's panel reads it, against the text in force. */
+/** A signing as its signers' panel reads it, against the text in force. */
 export function toSigningDto(
   row: SigningRow,
   inForce: string | null,
@@ -108,7 +136,7 @@ export function toSigningDto(
       row.signedFileUrl && row.signedAt
         ? {
             url: row.signedFileUrl,
-            name: row.signedFileName ?? "acta-de-acuerdos.pdf",
+            name: row.signedFileName ?? "documento-firmado.pdf",
             signedAt: row.signedAt.toISOString(),
             current: inForce !== null && row.signedVersionId === inForce,
           }
@@ -117,72 +145,135 @@ export function toSigningDto(
   };
 }
 
-/** The name of whoever holds the Secretaría Ejecutiva, as the roster has it. */
-export async function loadSecretaryName(
-  executor: Executor = db,
-): Promise<string | null> {
-  const [row] = await executor
-    .select({ holderName: members.holderName })
-    .from(members)
-    .where(and(eq(members.kind, "executive"), eq(members.acronym, "SE")));
-  return row?.holderName?.trim() || null;
+/**
+ * Who signs a document and how its PDF closes (user's decisions of
+ * 2026-11-28): an acta, the Secretaría Ejecutiva of the roster; any other,
+ * its main presenter. A CEA office signs as whoever holds it, under the
+ * office's name as the roster has it («Tesorería de la Coordinadora…»);
+ * a council or a sectorial, whose Intranet account is no person's, under
+ * its own name and with no office line. `intranetId` is the Intranet
+ * account whose signature image goes above the name, when it has one.
+ * Null when nobody can sign: an acta with nobody in the Secretaría, a
+ * document with no presenter.
+ */
+export interface SigningCloser {
+  name: string;
+  office: string | null;
+  formula: string;
+  intranetId: number | null;
+  /** The acta's: the Secretaría Ejecutiva's signature, as before. */
+  secretary: boolean;
 }
 
-/** «Para que conste…», the formula a signed text closes with. */
-const CLOSING_FORMULA = /para\s+que\s+conste/i;
+export async function loadSigningCloser(
+  document: Pick<DocumentRow, "kind" | "proponentMemberId">,
+  executor: Executor = db,
+): Promise<SigningCloser | null> {
+  const columns = {
+    kind: members.kind,
+    name: members.name,
+    holderName: members.holderName,
+    intranetId: members.intranetId,
+  };
+  if (document.kind === "minutes") {
+    const [office] = await executor
+      .select(columns)
+      .from(members)
+      .where(and(eq(members.kind, "executive"), eq(members.acronym, "SE")));
+    const name = office?.holderName?.trim();
+    if (!name) return null;
+    return {
+      name,
+      office: DEFAULT_SECRETARY_TITLE,
+      formula: ACTA_CLOSING_FORMULA,
+      intranetId: office!.intranetId ?? null,
+      secretary: true,
+    };
+  }
+  if (!document.proponentMemberId) return null;
+  const [member] = await executor
+    .select(columns)
+    .from(members)
+    .where(eq(members.id, document.proponentMemberId));
+  if (!member) return null;
+  const holder =
+    member.kind === "executive" ? member.holderName?.trim() || null : null;
+  return {
+    name: holder ?? member.name,
+    office: holder ? member.name : null,
+    formula: SIGNED_CLOSING_FORMULA,
+    // Only a person signs with an image: a CEA office's holder.
+    intranetId: holder ? (member.intranetId ?? null) : null,
+    secretary: false,
+  };
+}
+
 /** How far from its end a text is read for a closing of its own. */
 const CLOSING_TAIL = 12;
 
 /**
- * Whether a text already ends with a signing formula of its own: an acta
- * written before 2026-11-26 closes with it and its signer's name, which the
- * Secretaría takes out with a correction of form, as the PDF made to be
- * signed adds them (user's decision of 2026-11-26).
+ * Whether a text already ends with a signing formula of its own (the ones
+ * a Word import takes out, isClosingFormula): one written before the
+ * platform signed it (an acta of 2026-11-26, say), which a correction of
+ * form takes out, as the PDF made to be signed adds it.
  */
 export function endsWithClosing(blocks: readonly Block[]): boolean {
-  // An acta's annexes come after its signature: the text ends before them.
-  const annex = blocks.findIndex((block) => block.annex && !block.cell);
-  return (annex < 0 ? blocks : blocks.slice(0, annex))
+  // The annexes come after the signature: the text ends before them.
+  return blocks
+    .slice(0, annexStart(blocks))
     .slice(-CLOSING_TAIL)
-    .some((block) => CLOSING_FORMULA.test(block.text));
+    .some((block) => !block.cell && isClosingFormula(block.text));
 }
 
 /**
- * The signing of an acta for the document's managers: whether it can be
- * prepared (approved by its final vote, no passage pending conciliation),
- * who will certify it, whether its text has a closing of its own, and the
- * signing so far.
+ * A document's signing for whoever may sign it: whether it can be prepared
+ * (its text in force exists: approved by its final vote, or published when
+ * nothing votes it; no passage pending conciliation; somebody to sign it),
+ * who signs, whether its text has a closing of its own, and the signing so
+ * far.
  */
-export async function loadActaSigning(
-  document: Pick<DocumentRow, "id" | "consolidatedVersionId" | "status">,
-  consolidated: Pick<VersionRow, "blocks" | "pendingPassages"> | null,
+export async function loadDocumentSigning(
+  document: Pick<
+    DocumentRow,
+    | "id"
+    | "kind"
+    | "status"
+    | "voted"
+    | "proponentMemberId"
+    | "consolidatedVersionId"
+    | "baseVersionId"
+  >,
+  /** The version in force (signedTextVersionId), when loaded. */
+  text: Pick<VersionRow, "blocks" | "pendingPassages"> | null,
   finalVote: { result: string | null; voidedAt?: Date | null } | null,
   executor: Executor = db,
 ): Promise<DocumentSigningDto> {
-  const [rows, signer] = await Promise.all([
+  const [rows, closer] = await Promise.all([
     executor
       .select()
       .from(agreementRecordSignings)
       .where(eq(agreementRecordSignings.documentId, document.id)),
-    loadSecretaryName(executor),
+    loadSigningCloser(document, executor),
   ]);
-  const approved =
-    consolidated !== null &&
-    finalVote?.result === "approved" &&
-    !finalVote.voidedAt;
+  const inForce = signedTextVersionId(document);
+  const textReady = document.voted
+    ? inForce !== null &&
+      finalVote?.result === "approved" &&
+      !finalVote.voidedAt
+    : inForce !== null;
   return {
     // What preparing it checks (documentSigning.ts), so the panel never
     // offers a step that is refused.
     ready:
-      approved &&
+      textReady &&
+      text !== null &&
       document.status === "published" &&
-      signer !== null &&
-      !(consolidated.pendingPassages?.length ?? 0),
-    closingInText: consolidated ? endsWithClosing(consolidated.blocks) : false,
-    signer,
-    state: rows[0]
-      ? toSigningDto(rows[0], document.consolidatedVersionId)
-      : null,
+      closer !== null &&
+      !(text.pendingPassages?.length ?? 0),
+    closingInText: text ? endsWithClosing(text.blocks) : false,
+    signer: closer?.name ?? null,
+    image: closer ? closer.secretary || closer.intranetId !== null : false,
+    state: rows[0] ? toSigningDto(rows[0], inForce) : null,
   };
 }
 

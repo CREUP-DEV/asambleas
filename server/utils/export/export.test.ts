@@ -69,6 +69,10 @@ import {
   withRenderSlot,
 } from "./pdfRender";
 import { serializePdfDefinition } from "./pdfSerial";
+import {
+  ACTA_CLOSING_FORMULA,
+  SIGNED_CLOSING_FORMULA,
+} from "../../../shared/utils/agreementsRecord";
 
 const FONTS_DIR = resolve(__dirname, "../../assets/fonts");
 const ASSETS_DIR = resolve(__dirname, "../../assets");
@@ -790,6 +794,7 @@ describe("an approved acta prepared to be signed", () => {
       signingClosing: {
         name: "Nombre Apellido",
         office: "Secretaría Ejecutiva",
+        formula: ACTA_CLOSING_FORMULA,
       },
     });
     const stack = closingStack(definition)!;
@@ -2126,7 +2131,11 @@ describe("an acta's annexes", () => {
           blocks: [p("a", "Se levanta la sesión."), annex, p("t", "Tabla")],
         },
         generatedAt: new Date("2026-11-26T10:00:00Z"),
-        signingClosing: { name: "Nombre Apellido", office: "Secretaría" },
+        signingClosing: {
+          name: "Nombre Apellido",
+          office: "Secretaría",
+          formula: ACTA_CLOSING_FORMULA,
+        },
       },
       "es",
     );
@@ -2185,5 +2194,31 @@ describe("the index a text opens with", () => {
 
   it("is left out of a resolution", () => {
     expect(json("resolution")).not.toContain('"toc"');
+  });
+
+  it("stays in a signed budget, which closes as its presenter signs", () => {
+    const out = JSON.stringify(
+      buildDocumentPdf(
+        {
+          assembly,
+          document: { ...meta, kind: "budget" },
+          body: { variant: "clean", source: "consolidated", blocks: text },
+          generatedAt: new Date("2026-11-26T10:00:00Z"),
+          signingClosing: {
+            name: "Nombre Apellido",
+            office: null,
+            formula: SIGNED_CLOSING_FORMULA,
+          },
+        },
+        "es",
+      ).content,
+    );
+    expect(out).toContain('"toc"');
+    expect(out).toContain("Y por tanto firmo, a fecha de la firma digital.");
+    expect(out).not.toContain("Para que conste");
+    // A council or a sectorial signs under its own name: no office line.
+    expect(out).toContain("Nombre Apellido");
+    expect(out).not.toContain(" de la Coordinadora");
+    expect(out.indexOf('"toc"')).toBeLessThan(out.indexOf("Y por tanto"));
   });
 });

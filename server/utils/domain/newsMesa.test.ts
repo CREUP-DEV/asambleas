@@ -297,6 +297,8 @@ describe("loadWorkNews, the Mesa's scope", () => {
       [],
       [{ id: "mine", documentId: "d1" }],
       [],
+      // The documents the member signs: none.
+      [],
       // The member's query and the Mesa's both read the same event.
       [own],
       [own, event("other", 4, { entityId: "am2" })],

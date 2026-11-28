@@ -967,7 +967,8 @@
         "description": "The platform already shows the document's title and approval. This line at the start will be removed: | The platform already shows the document's title and approval. These {count} lines at the start will be removed:"
       },
       "placeholders": "The text still has placeholders to fill in: {list}. Complete them before sending the document.",
-      "approvalLine": "“{line}” will be filled in with the result of the vote in the PDF of the approved text."
+      "approvalLine": "“{line}” will be filled in with the result of the vote in the PDF of the approved text.",
+      "writtenClosing": "The written signature at the end has been removed: it is added on its own when the document is signed."
     },
     "file": {
       "title": "PDF document",
@@ -1045,6 +1046,9 @@
       "amendable": "Accepts amendments",
       "fileNotAmendable": "PDF documents do not accept amendments.",
       "voted": "Voted on",
+      "signed": "Signed",
+      "signedDescription": "A PDF is made from it to sign with the signature of whoever presents it (for minutes, the Executive Secretariat).",
+      "fileNotSigned": "PDF documents are not signed.",
       "majority": "Required majority",
       "windowOverride": "Own amendment period",
       "windowOverrideDescription": "When off, the assembly calendar applies.",
@@ -3343,6 +3347,12 @@
           "finalVoteAnnulled": "The minutes must be signed again: their final vote was annulled.",
           "unanimityChanged": "The minutes must be signed again: the unanimity of their final vote changed.",
           "other": "The minutes must be signed again: the signed PDF was withdrawn."
+        },
+        "signAgainDocument": {
+          "formCorrection": "The document must be signed again: its text was corrected.",
+          "finalVoteAnnulled": "The document must be signed again: its final vote was annulled.",
+          "unanimityChanged": "The document must be signed again: the unanimity of its final vote changed.",
+          "other": "The document must be signed again: the signed PDF was withdrawn."
         }
       }
     }
@@ -3574,6 +3584,9 @@
       "amendable": "Accepts amendments",
       "fileNotAmendable": "PDF documents cannot be amended.",
       "voted": "Put to a vote",
+      "signed": "Signed",
+      "signedDescription": "A PDF is made from it to sign with the signature of whoever presents it (for minutes, the Executive Secretariat).",
+      "fileNotSigned": "PDF documents are not signed.",
       "majority": "Required majority",
       "create": "Create",
       "createAndUpload": "Create and open",
@@ -3904,6 +3917,8 @@
       "openPdfTab": "Open in a new tab",
       "openSignedRecord": "Signed record",
       "signedRecordAt": "Digitally signed on {date}",
+      "openSignedDocument": "Signed document",
+      "signedDocumentAt": "Digitally signed on {date}",
       "pdfFrame": "PDF of “{title}”",
       "unpublished": "Unpublished document",
       "unpublishedDescription": "Amendments can be submitted once the Secretariat publishes it.",
@@ -3989,7 +4004,8 @@
       },
       "correctedText": "Text with corrections of form after the vote. The corrections and their changes are below.",
       "tableLookOnly": "Only how the tables look changes: colour, borders, width or position. The consolidated text shows it.",
-      "voidsSignature": "These minutes are signed: applying the correction withdraws the signed PDF, and they must be signed again."
+      "voidsSignature": "These minutes are signed: applying the correction withdraws the signed PDF, and they must be signed again.",
+      "voidsDocumentSignature": "The document is signed: applying the correction withdraws the signed PDF and it will have to be signed again."
     },
     "export": {
       "clean": "Clean PDF",
@@ -7472,6 +7488,7 @@
           "format": "Format",
           "amendable": "Open to amendments",
           "voted": "Put to a vote",
+          "signed": "Signed",
           "majority": "Majority required",
           "amendmentsOpenAt": "Amendment period opens",
           "amendmentsCloseAt": "Amendment period closes",
@@ -7554,6 +7571,39 @@
     "notYet": "They are signed once their final vote approves them and no passage is left to conciliate.",
     "intro": "Prepare them for signing: the PDF ends with the closing formula, the visible signature of the Secretaría Ejecutiva held in the Intranet and the name of {name}. Once signed, it is published instead of the generated PDF.",
     "noSigner": "The roster has no one in the Secretaría Ejecutiva: without their name the minutes cannot be prepared for signing.",
-    "closingInText": "The text already ends with its own signing formula. Remove it with a correction of form before preparing them: the PDF to sign adds it with the signer's name."
+    "closingInText": "The text already ends with its own signing formula. Remove it with a correction of form before preparing them: the PDF to sign adds it with the signer's name.",
+    "panel": {
+      "title": "Signing the document",
+      "prepare": "Prepare for signing",
+      "preparing": "Preparing the document for signing",
+      "prepared": "Document prepared for signing",
+      "prepareFailed": "The document could not be prepared for signing",
+      "preparedAt": "Prepared for signing on {date}.",
+      "noImage": "No visible signature: the Intranet does not have your signature. Upload it in your Intranet account's profile and prepare it again, or sign it anyway.",
+      "sign": "Sign with AutoFirma",
+      "signing": "Signing the document with AutoFirma",
+      "autofirmaFailed": "Could not sign with AutoFirma",
+      "autofirmaHint": "Check that AutoFirma is installed on this computer, or download the PDF, sign it elsewhere and upload it from «More».",
+      "published": "Signed document published",
+      "uploadFailed": "The signed document could not be published",
+      "signedAt": "Signed and published on {date}.",
+      "view": "View the signed document",
+      "more": "More",
+      "download": "Download to sign",
+      "upload": "Upload the signed PDF",
+      "prepareAgain": "Prepare again",
+      "remove": "Withdraw the signed document",
+      "removeTitle": "Withdraw the signed document?",
+      "removeDescription": "It is no longer published and the generated PDF shows again. You can sign it again.",
+      "removed": "Signed document withdrawn",
+      "removeFailed": "The signed document could not be withdrawn"
+    },
+    "document": {
+      "notYet": "It is signed once its final vote approves it and no passage is left to reconcile.",
+      "intro": "Prepare it for signing: the PDF ends with «Y por tanto firmo», the visible signature you have in the Intranet and the name of {name}. Once signed, it is published instead of the generated PDF.",
+      "introNoImage": "Prepare it for signing: the PDF ends with «Y por tanto firmo» and the name of {name}. Once signed, it is published instead of the generated PDF.",
+      "noSigner": "The document has no presenter: without its name it cannot be prepared for signing.",
+      "closingInText": "The text already ends with a signing formula of its own, which the PDF to sign would repeat with the signer's name: take it out before preparing it."
+    }
   }
 }

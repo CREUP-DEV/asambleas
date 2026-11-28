@@ -67,8 +67,9 @@ import { DOCUMENTS_DEADLINE_PASSED_MESSAGE } from "./documentRefusals";
 import { recordEvent } from "./events";
 import {
   hasSigning,
-  isSignableActa,
-  loadActaSigning,
+  canSignDocument,
+  isSignedDocument,
+  loadDocumentSigning,
   loadSignedRecordFile,
   removeAllSigningFiles,
   voidSigning,
@@ -734,6 +735,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       pendingConciliation: pendingPassages,
     }),
     summary: document.summary,
+    signed: document.signed,
     // A PDF left behind by a switch to text is not the document's.
     fileUrl: document.format === "file" ? document.fileUrl : null,
     fileName: document.format === "file" ? document.fileName : null,
@@ -1222,11 +1224,22 @@ export async function loadDocumentDto(
     hasSigning(document)
       ? loadSignedRecordFile(document, executor)
       : Promise.resolve(null),
-    // Only an approved acta is signed: a rejected one shows no signing.
-    isSignableActa(document) &&
-    finalVote?.result === "approved" &&
-    canManageDocuments(actor)
-      ? loadActaSigning(document, consolidatedVersion, finalVote, executor)
+    // Only whoever signs it reads its signing, and only once its text can
+    // be in force: a voted text once approved (a rejected one shows none),
+    // any other once published.
+    isSignedDocument(document) &&
+    canSignDocument(actor, document) &&
+    (document.voted
+      ? finalVote?.result === "approved"
+      : document.status === "published")
+      ? loadDocumentSigning(
+          document,
+          document.voted
+            ? consolidatedVersion
+            : (consolidatedVersion ?? baseVersion),
+          finalVote,
+          executor,
+        )
       : Promise.resolve(null),
   ]);
   return toDocumentDto({
@@ -1490,6 +1503,7 @@ function changedFields(
     "proponentMemberId",
     "amendable",
     "voted",
+    "signed",
     "majority",
     "acceptedAmendments",
     "status",
@@ -1916,6 +1930,7 @@ export async function updateDocument(
         const defaults = DOCUMENT_KIND_DEFAULTS[body.kind!];
         patch.amendable = format === "file" ? false : defaults.amendable;
         patch.voted = defaults.voted;
+        patch.signed = format === "file" ? false : defaults.signed;
         patch.majority = defaults.majority;
         patch.acceptedAmendments = defaults.acceptedAmendments;
       }
@@ -1956,6 +1971,9 @@ export async function updateDocument(
         tx,
       );
     }
+    // Whether it is signed: its presenters choose it too while they edit it
+    // (user's decision of 2026-11-28), after the defaults of a new kind.
+    if (changed.includes("signed")) patch.signed = body.signed;
     if (manager) {
       if (changed.includes("amendable")) patch.amendable = body.amendable;
       if (changed.includes("acceptedAmendments")) {
@@ -1996,9 +2014,11 @@ export async function updateDocument(
       patch.format = format;
       if (format === "file") {
         patch.amendable = false;
-      } else if (patch.amendable === undefined) {
-        patch.amendable =
-          DOCUMENT_KIND_DEFAULTS[patch.kind ?? current.kind].amendable;
+        patch.signed = false;
+      } else {
+        const defaults = DOCUMENT_KIND_DEFAULTS[patch.kind ?? current.kind];
+        if (patch.amendable === undefined) patch.amendable = defaults.amendable;
+        if (patch.signed === undefined) patch.signed = defaults.signed;
       }
       if (format === "structured" && !current.workingVersionId) {
         const [version] = await tx
@@ -2018,6 +2038,10 @@ export async function updateDocument(
 
     if (format === "file" && (patch.amendable ?? current.amendable)) {
       fail(422, "Un documento en PDF no puede ser enmendable");
+    }
+    // A PDF is never signed (it is not made from a text).
+    if (format === "file" && (patch.signed ?? current.signed)) {
+      patch.signed = false;
     }
     const opensAt =
       patch.amendmentsOpenAt !== undefined

@@ -38,6 +38,10 @@ vi.mock("./presenters", () => ({
 
 const documentHelpers = await import("./documents");
 const { resolveBodyMembers } = await import("./executiveMembers");
+const { planPresenters } = await import("./presenters");
+const { canManageDocuments } = await import("./actor");
+const { db } = await import("../../db");
+const { documents } = await import("../../db/schema");
 const { createDocuments } = await import("./documentCreate");
 const { ASSEMBLY_CLOSED_REASON, DOCUMENTS_DEADLINE_PASSED_REASON } =
   await import("~~/shared/constants/errorReasons");
@@ -133,5 +137,82 @@ describe("createDocuments by a member", () => {
       statusCode: 409,
       data: { reason: DOCUMENTS_DEADLINE_PASSED_REASON, index: 1 },
     });
+  });
+});
+
+describe("createDocuments: «Se firma»", () => {
+  /** The values of the documents row each create inserts. */
+  let inserted: Record<string, unknown>[];
+
+  beforeEach(() => {
+    inserted = [];
+    vi.mocked(documentHelpers.loadMilestones).mockResolvedValue({});
+    vi.mocked(resolveBodyMembers).mockResolvedValue({
+      named: "member-1",
+      listed: [],
+    } as never);
+    vi.mocked(planPresenters).mockReturnValue({
+      proponentMemberId: "member-1",
+      coProponentMemberIds: [],
+    });
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: async () => [{ id: "i1", acceptsSubmissions: false }],
+        }),
+      }),
+      insert: (table: unknown) => ({
+        values: (values: Record<string, unknown>) => {
+          if (table === documents) inserted.push(values);
+          return { returning: async () => [{ id: "d1" }] };
+        },
+      }),
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
+    };
+    (db as { transaction?: unknown }).transaction = (
+      run: (executor: typeof tx) => unknown,
+    ) => run(tx);
+  });
+
+  function createAs(manager: boolean, input: Partial<Input>) {
+    vi.mocked(canManageDocuments).mockReturnValue(manager);
+    return createDocuments(
+      {
+        actor: { ...member, user: { id: "u1" } } as Ctx["actor"],
+        assembly: { id: "a1", status: "published" },
+        agendaItemId: "i1",
+      },
+      [{ title: "Documento", format: "structured", ...input } as Input],
+    );
+  }
+
+  it("takes the kind's default", async () => {
+    await createAs(false, { kind: "minutes" });
+    await createAs(false, { kind: "budget" });
+    await createAs(false, { kind: "report" });
+    await createAs(false, { kind: "resolution" });
+    expect(inserted.map((row) => row.signed)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it("ignores a presenter's value", async () => {
+    await createAs(false, { kind: "resolution", signed: true });
+    await createAs(false, { kind: "minutes", signed: false });
+    expect(inserted.map((row) => row.signed)).toEqual([false, true]);
+  });
+
+  it("keeps a manager's value", async () => {
+    await createAs(true, { kind: "resolution", signed: true });
+    await createAs(true, { kind: "minutes", signed: false });
+    expect(inserted.map((row) => row.signed)).toEqual([true, false]);
+  });
+
+  it("never signs a PDF", async () => {
+    await createAs(true, { kind: "report", format: "file", signed: true });
+    expect(inserted[0]?.signed).toBe(false);
   });
 });

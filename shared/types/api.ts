@@ -405,6 +405,12 @@ export interface MeWorkNewsDto {
    */
   agreementsRecord?: boolean;
   /**
+   * On a `document_signature_voided` row for its main presenter: the
+   * document is not an acta (a budget, a report), so the notice names it
+   * as a document. Absent otherwise.
+   */
+  signedDocument?: boolean;
+  /**
    * With `asPresenter`, for the main presenter: the amendment still waits
    * for its answer, or, on a grouped row, at least one of the group does,
    * so the row leads to the review.
@@ -1138,6 +1144,11 @@ export interface FormCorrectionWithdrawBody {
 
 export interface DocumentDto extends DocumentSummaryDto {
   summary: string | null;
+  /**
+   * «Se firma»: a signed PDF is made from its text. Defaults from the kind
+   * (DOCUMENT_KIND_DEFAULTS); never for a document in `file` format.
+   */
+  signed: boolean;
   fileUrl: string | null;
   fileName: string | null;
   /**
@@ -1175,17 +1186,29 @@ export interface DocumentDto extends DocumentSummaryDto {
   can: DocumentCapabilities;
 }
 
-/** The signing of an approved acta, as its managers read it. */
+/**
+ * The signing of a signed document, as whoever signs it reads it: an
+ * acta's managers, any other's main presenter (documentSigning.ts).
+ */
 export interface DocumentSigningDto {
-  /** Approved, with no passage pending conciliation: it can be prepared. */
+  /**
+   * Its text in force exists (approved by its final vote, or published when
+   * nothing votes it), with no passage pending conciliation, and somebody
+   * signs it: it can be prepared.
+   */
   ready: boolean;
   /**
    * Its text ends with a signing formula of its own, which the PDF made to
    * be signed would repeat: a correction of form takes it out first.
    */
   closingInText: boolean;
-  /** Who certifies, as the roster names the Secretaría Ejecutiva. */
+  /**
+   * Who signs, as the roster names them: the Secretaría Ejecutiva's holder
+   * (an acta), a CEA office's holder, or a council or a sectorial.
+   */
   signer: string | null;
+  /** Whether its PDF looks for a visible signature in the Intranet. */
+  image: boolean;
   state: AgreementsRecordSigningDto | null;
 }
 
@@ -1219,6 +1242,8 @@ export interface DocumentCreateBody {
   amendable?: boolean;
   acceptedAmendments?: AcceptedAmendmentRule;
   voted?: boolean;
+  /** Managers only; forced false for a `file` document. */
+  signed?: boolean;
   majority?: Majority;
   blocks?: Block[];
   /** Managers only: internal deadline for an expected document. */
@@ -1344,6 +1369,8 @@ export interface DocumentUpdateBody {
   coProponentMemberIds?: string[];
   amendable?: boolean;
   voted?: boolean;
+  /** Managers only; forced false for a `file` document. */
+  signed?: boolean;
   majority?: Majority;
   acceptedAmendments?: AcceptedAmendmentRule;
   amendmentsOpenAt?: IsoDate | null;

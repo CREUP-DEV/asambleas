@@ -71,6 +71,7 @@ interface PlannedDocument {
   coProponentMemberIds: string[];
   amendable: boolean;
   voted: boolean;
+  signed: boolean;
   majority: Majority;
   acceptedAmendments: AcceptedAmendmentRule;
   blocks: Block[];
@@ -186,6 +187,12 @@ async function planDocument(
         ? (input.amendable ?? defaults.amendable)
         : defaults.amendable,
     voted: manager ? (input.voted ?? defaults.voted) : defaults.voted,
+    // A PDF is never signed (it is not made from a text).
+    signed: isFile
+      ? false
+      : manager
+        ? (input.signed ?? defaults.signed)
+        : defaults.signed,
     majority: manager
       ? (input.majority ?? defaults.majority)
       : defaults.majority,
@@ -298,6 +305,7 @@ export async function createDocuments(
           amendable: plan.amendable,
           acceptedAmendments: plan.acceptedAmendments,
           voted: plan.voted,
+          signed: plan.signed,
           majority: plan.majority,
           dueAt: plan.dueAt,
         })

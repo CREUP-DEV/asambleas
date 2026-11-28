@@ -38,6 +38,7 @@ import {
   AGREEMENTS_URL_PREFIX,
   removeStoredSigningFile as removeStored,
   signedRecordStoredName,
+  signedTextVersionId,
   toSigningDto,
 } from "./agreementsSignedFile";
 import type { AssemblyRow } from "./assemblies";
@@ -75,7 +76,10 @@ import { recordEvent, type Executor } from "./events";
  * Secretaría, the signed one by /api/uploads/agreements/[filename].
  */
 
-const SIGNATURE_PATH = "firma-secretaria";
+/** The Secretaría Ejecutiva's signature: the account the Intranet marks. */
+const SECRETARY_SIGNATURE_PATH = "firma-secretaria";
+/** Any individual account's signature, by its Intranet id (2026-11-28). */
+const signaturePathOf = (intranetId: number) => `firma/${intranetId}`;
 /** The largest image read from the Intranet. */
 const SIGNATURE_MAX_BYTES = 3_000_000;
 const SIGNATURE_MAX_INPUT_PIXELS = 25_000_000;
@@ -84,22 +88,38 @@ const SIGNATURE_BOX = { width: 800, height: 320 };
 /** What a PDF needs to carry a digital signature. */
 const SIGNATURE_DICTIONARY = /\/ByteRange\s*\[/;
 const STALE_MESSAGE =
-  "El acta ha cambiado mientras tanto. Recarga e inténtalo de nuevo";
+  "El documento ha cambiado mientras tanto. Recarga e inténtalo de nuevo";
 
 type SigningRow = typeof agreementRecordSignings.$inferSelect;
 
 /**
- * The visible signature of the Secretaría Ejecutiva, from the Intranet, as
- * a PNG for the PDF (pdfmake draws PNG and JPEG only), or null when there
- * is none or it cannot be read: the PDF then keeps the space blank. Never
- * follows a redirect, never logs the image.
+ * Whose visible signature a signing's PDF carries: the Secretaría
+ * Ejecutiva's (the acta de acuerdos, an acta), an individual Intranet
+ * account's (a CEA office's holder), or none (a council, a sectorial).
  */
-export async function fetchSecretarySignature(): Promise<ExportImage | null> {
+export type SignatureSource = "secretary" | number | null;
+
+function fetchSignatureOf(
+  source: SignatureSource,
+): Promise<ExportImage | null> {
+  if (source === null) return Promise.resolve(null);
+  return fetchSignature(
+    source === "secretary" ? SECRETARY_SIGNATURE_PATH : signaturePathOf(source),
+  );
+}
+
+/**
+ * A visible signature from the Intranet, as a PNG for the PDF (pdfmake
+ * draws PNG and JPEG only), or null when there is none or it cannot be
+ * read: the PDF then keeps the space blank. Never follows a redirect, never
+ * logs the image.
+ */
+async function fetchSignature(path: string): Promise<ExportImage | null> {
   const base = getIntranetApiBaseUrl();
   if (!base) return null;
   let response: Response;
   try {
-    response = await fetch(intranetUrl(base, SIGNATURE_PATH), {
+    response = await fetch(intranetUrl(base, path), {
       headers: { Accept: "image/*", ...intranetAuthHeaders() },
       redirect: "manual",
       signal: AbortSignal.timeout(INTRANET_TIMEOUT_MS),
@@ -200,15 +220,17 @@ async function signableRecord(assembly: AssemblyRow): Promise<DocumentRow> {
 
 /**
  * What a signing is about: the acta de acuerdos, whose text ends with its
- * own closing, or an approved acta (documentSigning.ts), whose PDF gets
- * that closing for whoever certifies (user's decision of 2026-11-26). The
- * events each one records.
+ * own closing, or a signed document (documentSigning.ts), whose PDF gets
+ * that closing for whoever signs it (user's decisions of 2026-11-26 and
+ * 2026-11-28). Whose visible signature it carries, and the events each one
+ * records.
  */
 export interface SigningSubject {
   /** The document, already checked as signable by the caller. */
   document: DocumentRow;
   /** The closing the PDF adds after the text; null when it has its own. */
-  closing: { name: string; office: string } | null;
+  closing: { name: string; office: string | null; formula: string } | null;
+  signature: SignatureSource;
   events: { prepared: string; signed: string; removed: string };
 }
 
@@ -229,7 +251,7 @@ export async function prepareForSigning(
   subject: SigningSubject,
 ): Promise<void> {
   const { document } = subject;
-  const versionId = document.consolidatedVersionId!;
+  const versionId = signedTextVersionId(document)!;
   // The PDF words its approval from the final vote (by assent, unanimous):
   // a change to it while this renders makes the PDF stale.
   const voteStamp = await finalVoteStamp(db, document.finalVoteId);
@@ -243,7 +265,7 @@ export async function prepareForSigning(
       justified: true,
       variant: "clean",
     }),
-    fetchSecretarySignature(),
+    fetchSignatureOf(subject.signature),
     loadBrand(),
     loadPdfFonts(),
   ]);
@@ -265,7 +287,7 @@ export async function prepareForSigning(
     previous = await db.transaction(async (tx) => {
       const current = await lockDocument(tx, document.id);
       if (
-        current.consolidatedVersionId !== versionId ||
+        signedTextVersionId(current) !== versionId ||
         current.finalVoteId !== document.finalVoteId ||
         (await finalVoteStamp(tx, current.finalVoteId, true)) !== voteStamp
       ) {
@@ -334,13 +356,14 @@ export async function prepareRecordForSigning(
   await prepareForSigning(actor, assembly, {
     document,
     closing: null,
+    signature: "secretary",
     events: RECORD_EVENTS,
   });
   return loadAgreementsRecordDto(assembly);
 }
 
 /**
- * The PDF prepared to sign a document, for the Secretaría to download or
+ * The PDF prepared to sign a document, for whoever signs it to download or
  * sign; a refusal when there is none for its text in force.
  */
 export async function preparedSigningFile(
@@ -351,9 +374,9 @@ export async function preparedSigningFile(
     !document ||
     !row?.preparedFile ||
     !STORED_PDF_NAME.test(row.preparedFile) ||
-    row.versionId !== document.consolidatedVersionId
+    row.versionId !== signedTextVersionId(document)
   ) {
-    fail(404, "No hay ningún acta preparada para firmar");
+    fail(404, "No hay nada preparado para firmar");
   }
   return {
     path: join(getUploadDir(), row.preparedFile),
@@ -415,8 +438,11 @@ export async function attachSigned(
         .from(agreementRecordSignings)
         .where(eq(agreementRecordSignings.documentId, document.id))
         .for("update");
-      if (!row?.preparedFile) fail(409, "Prepara primero el acta para firmar");
-      if (row.versionId !== current.consolidatedVersionId) {
+      if (!row?.preparedFile) {
+        fail(409, "Prepara primero el documento para firmar");
+      }
+      const inForce = signedTextVersionId(current);
+      if (!inForce || row.versionId !== inForce) {
         fail(409, STALE_MESSAGE, STALE_WRITE_DATA);
       }
       // The multipart `updatedAt` field may come empty: the page sends ""
@@ -429,7 +455,7 @@ export async function attachSigned(
         .set({
           signedFileUrl: fileUrl,
           signedFileName: stored.fileName,
-          signedVersionId: current.consolidatedVersionId,
+          signedVersionId: inForce,
           signedAt: sql`now()`,
           signedByUserId: actor.user.id,
           updatedAt: sql`now()`,
@@ -466,7 +492,7 @@ export async function attachSignedRecord(
   await attachSigned(
     actor,
     assembly,
-    { document, closing: null, events: RECORD_EVENTS },
+    { document, closing: null, signature: "secretary", events: RECORD_EVENTS },
     file,
   );
   return loadAgreementsRecordDto(assembly);

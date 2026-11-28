@@ -366,7 +366,13 @@ function when(value: string | null): string {
           v-if="editing && mode === 'direct' && document.signedFile"
           class="text-warning text-sm"
         >
-          {{ t("workspace.formCorrections.voidsSignature") }}
+          {{
+            t(
+              document.kind === "minutes"
+                ? "workspace.formCorrections.voidsSignature"
+                : "workspace.formCorrections.voidsDocumentSignature",
+            )
+          }}
         </p>
       </div>
     </div>
@@ -614,7 +620,13 @@ function when(value: string | null): string {
                 : t("workspace.formCorrections.applyAsk")
             }}
             <template v-if="document.signedFile">
-              {{ t("workspace.formCorrections.voidsSignature") }}
+              {{
+                t(
+                  document.kind === "minutes"
+                    ? "workspace.formCorrections.voidsSignature"
+                    : "workspace.formCorrections.voidsDocumentSignature",
+                )
+              }}
             </template>
           </p>
           <div class="flex flex-wrap justify-end gap-2">

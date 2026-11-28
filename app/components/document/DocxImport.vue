@@ -11,13 +11,15 @@ import {
   findPlaceholders,
   isUnfilledApprovalLine,
 } from "~~/shared/utils/content/approvalLine";
+import { withoutWrittenClosing } from "~~/shared/utils/content/writtenClosing";
 
 /**
  * DOCX import for the working draft: pick a .docx, the server converts it
  * (POST .../import, nothing is stored), the user reviews the text and the
  * warnings, and confirming emits `import` with the blocks to use as the new
  * draft. The parent replaces and saves. `prominent` turns the button into the
- * main call to action of an empty draft.
+ * main call to action of an empty draft. A document signed in the platform
+ * (`signed`) leaves out the file's written closing: signing adds its own.
  */
 const props = withDefaults(
   defineProps<{
@@ -34,6 +36,11 @@ const props = withDefaults(
     documentTitle?: string;
     /** The document's kind: in a reform the approval line is content. */
     documentKind?: DocumentKind | null;
+    /**
+     * The document is signed in the platform, which adds its closing and
+     * signature to the PDF to sign: the file's own written closing goes.
+     */
+    signed?: boolean;
   }>(),
   {
     currentCount: 0,
@@ -42,6 +49,7 @@ const props = withDefaults(
     prominent: false,
     documentTitle: "",
     documentKind: null,
+    signed: false,
   },
 );
 
@@ -146,15 +154,30 @@ const dropByDefault = computed(
 const dropHeader = ref(dropByDefault.value);
 
 /**
+ * The text without the template header, when dropped, and, in a document
+ * signed in the platform, without its written closing («Para que conste…»,
+ * «Y por tanto firmo…», the signer's name and office): the PDF to sign adds
+ * them (user's decisions of 2026-11-28).
+ */
+const trimmed = computed(() => {
+  const kept =
+    dropHeader.value && headerLength.value > 0
+      ? imported.value.slice(headerLength.value)
+      : imported.value;
+  return props.signed
+    ? withoutWrittenClosing(kept)
+    : { blocks: kept, removed: 0 };
+});
+/** The written closing was left out. */
+const closingRemoved = computed(() => trimmed.value.removed > 0);
+
+/**
  * What the import brings in. The text's first block never starts a new page:
  * the template's break after its cover, or after the header just dropped,
  * would open the text on an empty page.
  */
 const blocks = computed(() => {
-  const kept =
-    dropHeader.value && headerLength.value > 0
-      ? imported.value.slice(headerLength.value)
-      : imported.value;
+  const kept = trimmed.value.blocks;
   const [first, ...rest] = kept;
   if (!first?.pageBreak) return kept;
   const { pageBreak: _dropped, ...opening } = first;
@@ -287,6 +310,15 @@ watch(open, (isOpen) => {
             icon="i-lucide-stamp"
             :title="t('document.import.approvalLine', { line })"
             data-testid="docx-import-approval-line"
+          />
+
+          <UAlert
+            v-if="closingRemoved"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-signature"
+            :title="t('document.import.writtenClosing')"
+            data-testid="docx-import-written-closing"
           />
 
           <UAlert

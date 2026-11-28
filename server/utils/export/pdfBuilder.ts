@@ -31,6 +31,7 @@ import {
   RECORD_SIGNATURE_ROOM_IDS,
   RECORD_SIGNATURE_SPACER,
 } from "../../../shared/utils/agreementsRecord";
+import { annexStart } from "../../../shared/utils/content/writtenClosing";
 import { thirdCount, voteTextKey } from "../../../shared/utils/votes";
 import {
   BRAND_RED,
@@ -206,7 +207,11 @@ export interface DocumentExportData {
    * the closing the acta de acuerdos ends with (signatureClosingBlocks),
    * worded for whoever certifies, follows its text in this PDF only.
    */
-  signingClosing?: { name: string; office: string } | null;
+  signingClosing?: {
+    name: string;
+    office: string | null;
+    formula: string;
+  } | null;
 }
 
 export interface ExportAgendaNode {
@@ -839,6 +844,8 @@ function agreementsRecordBody(
   ctx: PdfContentContext,
   t: Translate,
   signature: ExportImage | null | undefined,
+  /** A signed document whose kind opens with an index keeps it. */
+  index?: { kind: DocumentKind; cover: boolean },
 ): Content[] {
   const closingIds = new Set<string>(RECORD_CLOSING_BLOCK_IDS);
   const roomIds = new Set<string>(RECORD_SIGNATURE_ROOM_IDS);
@@ -855,7 +862,16 @@ function agreementsRecordBody(
     if (closingIds.has(block.id)) closing.push(block);
     else (closing.length > 0 ? annexes : body).push(block);
   }
-  const content = body.length > 0 ? blocksToPdf(body, ctx) : [];
+  const indexed =
+    index !== undefined &&
+    hasIndex(index.kind) &&
+    body.filter(isIndexEntry).length >= 2;
+  const content =
+    body.length === 0
+      ? []
+      : indexed
+        ? indexedBody(body, ctx, t, index.kind, index.cover)
+        : blocksToPdf(body, ctx);
   if (closing.length === 0) {
     return content.length > 0 ? content : cleanBody([], ctx, t);
   }
@@ -879,20 +895,25 @@ function agreementsRecordBody(
     : { text: "", margin: [0, 0, 0, SIGNATURE_HEIGHT + 6] };
   content.push({ stack: [...before, mark, ...after], unbreakable: true });
   if (annexes.length > 0) {
-    content.push(...blocksToPdf(annexes, ctx, undefined, true));
+    content.push(
+      ...blocksToPdf(
+        annexes,
+        indexed ? { ...ctx, tocId: INDEX_ID } : ctx,
+        undefined,
+        true,
+      ),
+    );
   }
   return content;
 }
 
 /**
- * An acta's text with the closing of its signing (signatureClosingBlocks)
- * where it is signed: before its first annex (Block.annex), else at its end.
+ * A signed text with the closing of its signing (signatureClosingBlocks)
+ * where it is signed: before its annexes (annexStart), else at its end.
  */
 function withClosingBeforeAnnexes(blocks: Block[], closing: Block[]): Block[] {
-  const at = blocks.findIndex((block) => block.annex && !block.cell);
-  return at < 0
-    ? [...blocks, ...closing]
-    : [...blocks.slice(0, at), ...closing, ...blocks.slice(at)];
+  const at = annexStart(blocks);
+  return [...blocks.slice(0, at), ...closing, ...blocks.slice(at)];
 }
 
 // Annex -------------------------------------------------------------------
@@ -1109,12 +1130,14 @@ export function buildDocumentPdf(
                   signatureClosingBlocks(
                     data.signingClosing.name,
                     data.signingClosing.office,
+                    data.signingClosing.formula,
                   ),
                 )
               : (clean?.blocks ?? body.blocks),
             ctx,
             t,
             data.signature,
+            data.signingClosing ? { kind: meta.kind, cover } : undefined,
           )
         : indexedBody(
             clean?.blocks ?? body.blocks,

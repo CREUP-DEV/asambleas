@@ -861,20 +861,30 @@ export function agreementsRecordBlocks(
   return blocks;
 }
 
+/** How an acta closes: the Secretaría certifies it. */
+export const ACTA_CLOSING_FORMULA =
+  "Para que conste a los efectos oportunos, a fecha de la firma digital.";
+/** How any other signed document closes: its presenter signs it. */
+export const SIGNED_CLOSING_FORMULA =
+  "Y por tanto firmo, a fecha de la firma digital.";
+
 /**
- * The closing of a text Secretaría signs: the formula, the room for the
- * signature, then the name and office of whoever certifies in the
- * signature's box (RECORD_CLOSING_BLOCK_IDS). The acta de acuerdos ends its
- * own text with it; an approved acta gets it only in the PDF made to be
- * signed (documentSigning.ts, user's decision of 2026-11-26).
+ * The closing of a signed text: the formula, the room for the signature,
+ * then the name of whoever signs and, when they sign for a CEA office, the
+ * office, in the signature's box (RECORD_CLOSING_BLOCK_IDS). The acta de
+ * acuerdos ends its own text with it; any other signed document gets it
+ * only in the PDF made to be signed (documentSigning.ts, user's decisions
+ * of 2026-11-26 and 2026-11-28): an acta with the Secretaría's formula,
+ * the rest with «Y por tanto firmo…».
  */
-export function signatureClosingBlocks(name: string, office: string): Block[] {
-  const signatureOffice = `${office} de la ${CREUP_LEGAL.name}`;
+export function signatureClosingBlocks(
+  name: string,
+  office: string | null,
+  formula: string = ACTA_CLOSING_FORMULA,
+): Block[] {
+  const signatureOffice = office ? `${office} de la ${CREUP_LEGAL.name}` : null;
   return [
-    paragraph(
-      "ar-closing",
-      "Para que conste a los efectos oportunos, a fecha de la firma digital.",
-    ),
+    paragraph("ar-closing", formula),
     ...RECORD_SIGNATURE_ROOM_IDS.map((id) => paragraph(id, "")),
     {
       ...paragraph(
@@ -885,15 +895,19 @@ export function signatureClosingBlocks(name: string, office: string): Block[] {
       ),
       cell: { ...SIGNATURE_CELL },
     },
-    {
-      ...paragraph(
-        "ar-signer-office",
-        signatureOffice,
-        [{ type: "italic", from: 0, to: signatureOffice.length }],
-        "center",
-      ),
-      cell: { ...SIGNATURE_CELL },
-    },
+    ...(signatureOffice
+      ? [
+          {
+            ...paragraph(
+              "ar-signer-office",
+              signatureOffice,
+              [{ type: "italic", from: 0, to: signatureOffice.length }],
+              "center",
+            ),
+            cell: { ...SIGNATURE_CELL },
+          },
+        ]
+      : []),
   ];
 }
 

@@ -46,6 +46,7 @@ import { toMemberRef } from "../members/dto";
 import type { Actor } from "./actor";
 import { canSeeLoadedAmendment, findAmendmentsByIds } from "./amendments";
 import type { SIGNATURE_VOIDED_EVENT } from "./agreementsSignedFile";
+import { signedTextVersionId } from "./signedText";
 import {
   impersonatedByFor,
   loadImpersonators,
@@ -128,10 +129,12 @@ import {
  *   from the others, newsRunKey). An event the member's
  *   scopes tell is told that way, and a validation the member is told as a
  *   presenter or an author is not told again (mesaRowRepeatsMember).
- * - For an account that manages documents (document:manage, signingNewsScope:
- *   the Secretaría and the Presidencia by default), with or without a
- *   member: an acta whose signed PDF was taken away
- *   (document_signature_voided: a correction of form, its final vote
+ * - For whoever signs a document (documentSigning.ts): an account that
+ *   manages documents (document:manage, signingNewsScope: the Secretaría
+ *   and the Presidencia by default), with or without a member, for the
+ *   actas; the main presenter's accounts for any other signed document
+ *   (user's decisions of 2026-11-28). A document whose signed PDF was taken
+ *   away (document_signature_voided: a correction of form, its final vote
  *   annulled or that vote's unanimity changed) must be signed again. Read
  *   apart (NEWS_SIGNING_CANDIDATES), once per document (signingRowsOnce),
  *   only while it is not signed again for its text in force
@@ -930,26 +933,46 @@ export function isSigningNews(
   );
 }
 
-/** The events isSigningNews keeps. */
-function signingCandidatesWhere(): SQL {
+/**
+ * The events isSigningNews keeps: on any document for an account with the
+ * signers' scope (signingNewsScope; the actas are told apart later,
+ * signsDocument), on these only for a member that signs its own.
+ */
+function signingCandidatesWhere(all: boolean, documentIds: string[]): SQL {
   return and(
     eq(events.entityType, "document"),
     eq(events.type, NEWS_SIGNATURE_VOIDED),
+    all ? undefined : inArray(events.entityId, documentIds),
   )!;
 }
 
 /**
+ * Whether the reader signs this document, as canSignDocument
+ * (agreementsSignedFile.ts) decides: an acta, an account with the signers'
+ * scope; anything else, its main presenter's.
+ */
+export function signsDocument(
+  document: { kind: string; proponentMemberId: string | null },
+  reader: { manager: boolean; memberId: string | null },
+): boolean {
+  return document.kind === "minutes"
+    ? reader.manager
+    : reader.memberId !== null &&
+        document.proponentMemberId === reader.memberId;
+}
+
+/**
  * Whether a signers' notice still stands: the document is not signed again
- * for its text in force, as loadSignedRecordFile (agreementsSignedFile.ts)
- * reads a signature: a signed PDF, its moment, and the version it signed
- * being the document's consolidated one. With no signing row it stands.
- * Only an approved text is signed (only an approving final vote writes a
- * consolidated version): with none in force (the final vote annulled, or a
- * new one rejected it) there is nothing to sign, and it waits hidden until
- * a new approval.
+ * for its text in force (signedTextVersionId), as loadSignedRecordFile
+ * (agreementsSignedFile.ts) reads a signature: a signed PDF, its moment,
+ * and the version it signed being the text in force. With no signing row
+ * it stands. A voted text is signed once approved (only an approving final
+ * vote writes a consolidated version): with none in force (the final vote
+ * annulled, or a new one rejected it) there is nothing to sign, and it
+ * waits hidden until a new approval.
  */
 export function signatureVoidStands(
-  document: { consolidatedVersionId: string | null },
+  document: Parameters<typeof signedTextVersionId>[0],
   signed:
     | {
         url: string | null;
@@ -958,13 +981,9 @@ export function signatureVoidStands(
       }
     | undefined,
 ): boolean {
-  if (document.consolidatedVersionId === null) return false;
-  return !(
-    signed?.url &&
-    signed.signedAt &&
-    document.consolidatedVersionId !== null &&
-    signed.versionId === document.consolidatedVersionId
-  );
+  const inForce = signedTextVersionId(document);
+  if (inForce === null) return false;
+  return !(signed?.url && signed.signedAt && signed.versionId === inForce);
 }
 
 /**
@@ -1394,6 +1413,28 @@ async function readSigningDocumentIds(inAssemblies: SQL): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
+/**
+ * The signed documents of these assemblies the member presents as main
+ * presenter, an acta aside (its managers sign it): those it signs.
+ */
+async function readOwnSignedDocumentIds(
+  memberId: string,
+  inAssemblies: SQL,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(
+        inAssemblies,
+        eq(documents.proponentMemberId, memberId),
+        eq(documents.signed, true),
+        ne(documents.kind, "minutes"),
+      ),
+    );
+  return rows.map((row) => row.id);
+}
+
 type MemberScopeRows = Awaited<ReturnType<typeof readMemberScope>>;
 
 /** No member: none of the member's scopes. */
@@ -1420,8 +1461,8 @@ export async function loadWorkNews(
 ): Promise<WorkNews> {
   const memberId = actor.memberId;
   const mesa = mesaNewsScope(actor);
-  const signing = signingNewsScope(actor);
-  if ((!memberId && !mesa && !signing) || newsAssemblies.length === 0) {
+  const manager = signingNewsScope(actor);
+  if ((!memberId && !mesa && !manager) || newsAssemblies.length === 0) {
     return { news: [], watchDocumentIds: [], watchAssemblyIds: [] };
   }
   const assemblyIds = newsAssemblies.map((assembly) => assembly.ref.id);
@@ -1431,11 +1472,18 @@ export async function loadWorkNews(
   const inAssemblies = inArray(documents.assemblyId, assemblyIds);
   const watchAssemblyIds = mesa ? assemblyIds : [];
 
-  const [{ presented, answered, authored, overOwn }, signingDocumentIds] =
-    await Promise.all([
-      memberId ? readMemberScope(memberId, inAssemblies) : NO_MEMBER_SCOPE,
-      signing ? readSigningDocumentIds(inAssemblies) : [],
-    ]);
+  const [
+    { presented, answered, authored, overOwn },
+    signingDocumentIds,
+    ownSignedIds,
+  ] = await Promise.all([
+    memberId ? readMemberScope(memberId, inAssemblies) : NO_MEMBER_SCOPE,
+    manager ? readSigningDocumentIds(inAssemblies) : [],
+    memberId ? readOwnSignedDocumentIds(memberId, inAssemblies) : [],
+  ]);
+  // The signers' scope: the actas for a manager, its own signed documents
+  // for a main presenter.
+  const signing = manager || ownSignedIds.length > 0;
   const presentedIds = new Set(presented.map((row) => row.id));
   const answeredIds = new Set(answered.map((row) => row.id));
   const authoredIds = new Set(authored.map((row) => row.id));
@@ -1445,6 +1493,7 @@ export async function loadWorkNews(
       ...presentedIds,
       ...authored.map((row) => row.documentId),
       ...signingDocumentIds,
+      ...ownSignedIds,
     ]),
   ];
   const none: WorkNews = { news: [], watchDocumentIds, watchAssemblyIds };
@@ -1573,7 +1622,11 @@ export async function loadWorkNews(
       : [],
     mesa ? readEvents(mesaCandidatesWhere(mesa), NEWS_MESA_CANDIDATES) : [],
     signing
-      ? readEvents(signingCandidatesWhere(), NEWS_SIGNING_CANDIDATES, true)
+      ? readEvents(
+          signingCandidatesWhere(manager, ownSignedIds),
+          NEWS_SIGNING_CANDIDATES,
+          true,
+        )
       : [],
   ]);
   const candidates = mergeNewsRows(
@@ -1666,8 +1719,12 @@ export async function loadWorkNews(
         acceptedAmendments: documents.acceptedAmendments,
         finalVoteId: documents.finalVoteId,
         // The text in force a signature must sign (signatureVoidStands),
-        // and whether it is the acta de acuerdos, signed on its own page.
+        // who signs it (signsDocument), and whether it is the acta de
+        // acuerdos, signed on its own page.
         consolidatedVersionId: documents.consolidatedVersionId,
+        baseVersionId: documents.baseVersionId,
+        voted: documents.voted,
+        kind: documents.kind,
         generated: documents.generated,
         // An office of the CEA answers once validated (positionBlocker).
         proponentKind: members.kind,
@@ -1702,6 +1759,7 @@ export async function loadWorkNews(
       // vote change), until the acta is signed for its text in force.
       return (
         assemblyById.has(row.assemblyId) &&
+        signsDocument(document, { manager, memberId: memberId ?? null }) &&
         signatureVoidStands(document, signedById.get(row.entityId))
       );
     }
@@ -1909,6 +1967,10 @@ export async function loadWorkNews(
       ...(row.mesa !== null ? { asMesa: true } : {}),
       ...(row.signing && document.generated === "agreements_record"
         ? { agreementsRecord: true }
+        : {}),
+      // Any document but an acta: its presenter signs it, as a document.
+      ...(row.signing && document.kind !== "minutes"
+        ? { signedDocument: true }
         : {}),
       ...(row.presenter && amendment && awaitsAnswer(amendment)
         ? { awaitsAnswer: true }

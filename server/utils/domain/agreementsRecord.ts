@@ -570,6 +570,8 @@ export async function createAgreementsRecord(
       title: record.title,
       amendable: false,
       voted: true,
+      // It is signed on its own page, not as an acta (documentSigning.ts).
+      signed: false,
       blocks,
       ...(office ? { proponentMemberId: office.id } : {}),
     },

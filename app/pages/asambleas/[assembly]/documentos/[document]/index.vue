@@ -203,7 +203,15 @@ const {
   pending,
   errorStatusCode,
   refreshAll,
+  refreshDocument,
 } = workspace;
+
+/** Base url of this document's API, by ids (its signing's routes). */
+const documentApi = computed(() =>
+  assembly.value && document.value
+    ? `/api/assemblies/${encodeURIComponent(assembly.value.id)}/documents/${encodeURIComponent(document.value.id)}`
+    : "",
+);
 
 useHead({
   title: () => document.value?.title ?? t("workspace.title"),
@@ -2046,7 +2054,7 @@ const filteredBlockLabel = computed(() =>
               :label="t('workspace.text.openPdfTab')"
               data-testid="document-open-pdf"
             />
-            <!-- The signed acta de acuerdos, once published: it leads. -->
+            <!-- The signed PDF, once published: it leads. -->
             <UButton
               v-if="document.signedFile"
               :to="document.signedFile.url"
@@ -2055,13 +2063,22 @@ const filteredBlockLabel = computed(() =>
               color="neutral"
               variant="outline"
               icon="i-lucide-file-signature"
-              :label="t('workspace.text.openSignedRecord')"
+              :label="
+                document.kind === 'minutes'
+                  ? t('workspace.text.openSignedRecord')
+                  : t('workspace.text.openSignedDocument')
+              "
             />
             <span v-if="document.signedFile" class="text-muted text-xs">
               {{
-                t("workspace.text.signedRecordAt", {
-                  date: formatDate(document.signedFile.signedAt, { locale }),
-                })
+                t(
+                  document.kind === "minutes"
+                    ? "workspace.text.signedRecordAt"
+                    : "workspace.text.signedDocumentAt",
+                  {
+                    date: formatDate(document.signedFile.signedAt, { locale }),
+                  },
+                )
               }}
             </span>
             <!-- Asked for from "Más"; it shows only once the PDF is on its
@@ -2120,6 +2137,16 @@ const filteredBlockLabel = computed(() =>
           </div>
         </div>
       </DocumentHeader>
+
+      <!-- A signed document nothing votes (a report), once published: its
+           main presenter signs it here (user's decisions of 2026-11-28).
+           A voted one is signed from its «Consolidado». -->
+      <DocumentSigning
+        v-if="document.signing && !document.voted && !composer"
+        :document="document"
+        :document-api="documentApi"
+        @changed="refreshDocument()"
+      />
 
       <CommonCollapse
         v-if="document.summary && !composer"

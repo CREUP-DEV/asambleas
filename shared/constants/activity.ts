@@ -770,6 +770,7 @@ export const CHANGE_FIELDS: Record<
     format: "values",
     amendable: "values",
     voted: "values",
+    signed: "values",
     majority: "values",
     acceptedAmendments: "values",
     amendmentsOpenAt: "values",

@@ -168,6 +168,7 @@ const schema = computed(() =>
     amendable: z.boolean(),
     acceptedAmendments: z.enum(ACCEPTED_AMENDMENT_RULES),
     voted: z.boolean(),
+    signed: z.boolean(),
     majority: z.enum(MAJORITIES),
   }),
 );
@@ -283,6 +284,9 @@ function initialState(): DocumentFormState {
     amendable: true,
     acceptedAmendments: "vote",
     voted: true,
+    signed: proposal.kind
+      ? DOCUMENT_KIND_DEFAULTS[proposal.kind].signed
+      : false,
     majority: "simple",
   };
 }
@@ -433,6 +437,7 @@ watch(
     state.amendable = state.format === "file" ? false : defaults.amendable;
     state.acceptedAmendments = defaults.acceptedAmendments;
     state.voted = defaults.voted;
+    state.signed = state.format === "file" ? false : defaults.signed;
     state.majority = defaults.majority;
   },
 );
@@ -441,6 +446,8 @@ watch(
   (format) => {
     state.amendable =
       format === "file" ? false : (kindDefaults.value?.amendable ?? true);
+    state.signed =
+      format === "file" ? false : (kindDefaults.value?.signed ?? false);
   },
 );
 
@@ -662,6 +669,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           amendable,
           ...(amendable ? { acceptedAmendments: data.acceptedAmendments } : {}),
           voted: data.voted,
+          signed: data.format === "file" ? false : data.signed,
           majority: data.majority,
           dueAt: data.dueAt,
         }
@@ -1091,6 +1099,16 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
                   :ui="majorityCardsUi"
                 />
               </UFormField>
+              <USwitch
+                v-model="state.signed"
+                :disabled="state.format === 'file'"
+                :label="t('agenda.newDocument.signed')"
+                :description="
+                  state.format === 'file'
+                    ? t('agenda.newDocument.fileNotSigned')
+                    : t('agenda.newDocument.signedDescription')
+                "
+              />
             </div>
           </template>
         </UCollapsible>

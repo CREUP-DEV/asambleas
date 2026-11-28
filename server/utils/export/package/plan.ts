@@ -402,10 +402,13 @@ export function planPackage(
           ? ["pdf", "docx"]
           : ["pdf"];
         for (const format of formats) {
+          // The signed PDF signs the text in force: the consolidated one,
+          // or the base one of a text nothing votes (a report).
           if (
             format === "pdf" &&
-            entry.version === "consolidated" &&
-            document.signedStoredFile
+            document.signedStoredFile &&
+            (entry.version === "consolidated" ||
+              !document.consolidatedVersionId)
           ) {
             add(
               `${folder}/${names.claim(entry.name, ".pdf")}`,

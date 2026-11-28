@@ -1,12 +1,17 @@
 import { eq } from "drizzle-orm";
 import { fail } from "../core/http";
 import type { DocumentDto } from "~~/shared/types/api";
-import { DEFAULT_SECRETARY_TITLE } from "~~/shared/utils/agreementsRecord";
 import { db } from "../../db";
 import { documentVersions } from "../../db/schema";
-import { canManageDocuments, type Actor } from "./actor";
+import { canManageDocuments } from "./actor";
 import { isApproved } from "./agreementsRecord";
-import { isSignableActa, loadSecretaryName } from "./agreementsSignedFile";
+import {
+  canSignDocument,
+  isSignedDocument,
+  loadSigningCloser,
+  signedTextVersionId,
+  type SigningCloser,
+} from "./agreementsSignedFile";
 import {
   attachSigned,
   prepareForSigning,
@@ -17,120 +22,154 @@ import {
 import {
   loadDocumentDto,
   type DocumentRouteContext,
+  type DocumentRow,
   type UploadedFile,
 } from "./documents";
 
 /**
- * Signing an approved acta (user's decisions of 2026-11-26), as the acta de
- * acuerdos is signed (agreementsSigning.ts): once its final vote approved
- * it, the Secretaría prepares a PDF of the text in force followed by the
- * acuerdos' closing («Para que conste…», the visible signature from the
- * Intranet, the name of whoever holds the Secretaría Ejecutiva in the
- * roster and the office), signs it with AutoFirma or outside the platform
- * and uploads it; the signed PDF then leads the document and stands for
- * the generated one in the package. The closing is never stored in the
- * text: an acta written with one of its own has it taken out with a
- * correction of form first. A correction of form, or anything else that
- * changes the text in force or its approval, takes both PDFs away
- * (voidSigning), and the document's managers are told in «Avisos» to sign
- * it again, never by email.
+ * Signing a document in the platform (user's decisions of 2026-11-26 and
+ * 2026-11-28), as the acta de acuerdos is signed (agreementsSigning.ts).
+ * A document is signed when marked so (`signed`: by default the actas, the
+ * budgets and the reports written as text), and once its text is in force:
+ * the approved one when the assembly votes it, the published one when it
+ * does not (a report). Whoever signs prepares a PDF of that text followed
+ * by the closing (the formula, the visible signature from the Intranet,
+ * the name and the office), signs it with AutoFirma or outside the
+ * platform and uploads it; the signed PDF then leads the document and
+ * stands for the generated one in the package.
+ *
+ * An acta is certified by the Secretaría Ejecutiva of the roster («Para
+ * que conste…»), and its managers sign it; any other document by its main
+ * presenter («Y por tanto firmo…»), whose accounts sign it: a CEA office as
+ * whoever holds it, with their signature; a council or a sectorial under
+ * its own name, with none. Co-presenters do not sign. The closing is never
+ * stored in the text: one written in it is taken out (on import, or with a
+ * correction of form). A correction of form, or anything else that changes
+ * the text in force or its approval, takes both PDFs away (voidSigning),
+ * and whoever signs is told in «Avisos» to sign it again, never by email.
  */
 
-const ACTA_EVENTS: SigningSubject["events"] = {
+const SIGNING_EVENTS: SigningSubject["events"] = {
   prepared: "document_signing_prepared",
   signed: "document_signed",
   removed: "document_signature_removed",
 };
 
-/** Refused before anything is read: only the document managers sign. */
-export function requireActaManager(actor: Actor): void {
-  if (!canManageDocuments(actor)) {
-    fail(403, "No tienes permiso para firmar las actas");
-  }
-}
-
-function requireActa(ctx: DocumentRouteContext): void {
-  requireActaManager(ctx.actor);
-  if (!isSignableActa(ctx.document)) {
-    fail(404, "Este documento no es un acta que se firme");
-  }
-}
-
-/** The acta approved, with no passage pending: or a refusal. */
-async function signableActa(ctx: DocumentRouteContext): Promise<void> {
-  requireActa(ctx);
-  const { document } = ctx;
+/**
+ * Refused before anything is read: a document that is not signed, or an
+ * actor who does not sign it. A signed PDF may also be taken away by the
+ * document managers.
+ */
+export function requireDocumentSigner(
+  ctx: DocumentRouteContext,
+  removing = false,
+): void {
+  const { actor, document } = ctx;
   if (
-    document.status !== "published" ||
-    !(await isApproved(db, document)) ||
-    !document.consolidatedVersionId
+    !canSignDocument(actor, document) &&
+    !(removing && canManageDocuments(actor))
   ) {
-    fail(409, "El acta se firma una vez aprobada en su votación final");
+    fail(403, "No tienes permiso para firmar este documento");
+  }
+  if (!isSignedDocument(document)) {
+    fail(404, "Este documento no se firma");
+  }
+}
+
+/** Its text in force, with no passage pending, and its signer: or a refusal. */
+async function signableDocument(
+  ctx: DocumentRouteContext,
+): Promise<SigningCloser> {
+  requireDocumentSigner(ctx);
+  const { document } = ctx;
+  const inForce = signedTextVersionId(document);
+  if (document.status !== "published" || !inForce) {
+    fail(
+      409,
+      document.voted
+        ? "El documento se firma una vez aprobado en su votación final"
+        : "El documento se firma una vez publicado",
+    );
+  }
+  if (document.voted && !(await isApproved(db, document))) {
+    fail(409, "El documento se firma una vez aprobado en su votación final");
   }
   const [version] = await db
     .select({ pending: documentVersions.pendingPassages })
     .from(documentVersions)
-    .where(eq(documentVersions.id, document.consolidatedVersionId));
+    .where(eq(documentVersions.id, inForce));
   if (version?.pending?.length) {
-    fail(409, "Concilia antes los pasajes pendientes del acta");
+    fail(409, "Concilia antes los pasajes pendientes del documento");
   }
-}
-
-/** Who certifies the acta: the Secretaría Ejecutiva of the roster. */
-async function actaClosing(): Promise<{ name: string; office: string }> {
-  const name = await loadSecretaryName();
-  if (!name) {
+  const closer = await loadSigningCloser(document);
+  if (!closer) {
     fail(
       409,
-      "El censo no tiene a nadie en la Secretaría Ejecutiva: sin su nombre no se puede preparar el acta",
+      document.kind === "minutes"
+        ? "El censo no tiene a nadie en la Secretaría Ejecutiva: sin su nombre no se puede preparar el acta"
+        : "El documento no tiene presentador que lo firme",
     );
   }
-  return { name, office: DEFAULT_SECRETARY_TITLE };
+  return closer;
 }
 
-export async function prepareActaForSigning(
+function subjectOf(
+  document: DocumentRow,
+  closer: SigningCloser | null,
+): SigningSubject {
+  return {
+    document,
+    closing: closer
+      ? { name: closer.name, office: closer.office, formula: closer.formula }
+      : null,
+    signature: closer?.secretary ? "secretary" : (closer?.intranetId ?? null),
+    events: SIGNING_EVENTS,
+  };
+}
+
+export async function prepareDocumentForSigning(
   ctx: DocumentRouteContext,
 ): Promise<DocumentDto> {
-  await signableActa(ctx);
-  await prepareForSigning(ctx.actor, ctx.assembly, {
-    document: ctx.document,
-    closing: await actaClosing(),
-    events: ACTA_EVENTS,
-  });
+  const closer = await signableDocument(ctx);
+  await prepareForSigning(
+    ctx.actor,
+    ctx.assembly,
+    subjectOf(ctx.document, closer),
+  );
   return loadDocumentDto(ctx.assembly, ctx.document.id, ctx.actor);
 }
 
-/** The acta prepared to sign, for the Secretaría to download or sign. */
-export async function preparedActaFile(
+/** The document prepared to sign, for whoever signs it to download. */
+export async function preparedDocumentFile(
   ctx: DocumentRouteContext,
 ): Promise<{ path: string; filename: string }> {
-  requireActa(ctx);
+  requireDocumentSigner(ctx);
   return preparedSigningFile(ctx.document);
 }
 
-export async function attachSignedActa(
+export async function attachSignedDocument(
   ctx: DocumentRouteContext,
   file: UploadedFile,
 ): Promise<DocumentDto> {
-  await signableActa(ctx);
+  await signableDocument(ctx);
   await attachSigned(
     ctx.actor,
     ctx.assembly,
-    { document: ctx.document, closing: null, events: ACTA_EVENTS },
+    subjectOf(ctx.document, null),
     file,
   );
   return loadDocumentDto(ctx.assembly, ctx.document.id, ctx.actor);
 }
 
-export async function removeSignedActa(
+export async function removeSignedDocument(
   ctx: DocumentRouteContext,
 ): Promise<DocumentDto> {
-  requireActa(ctx);
+  requireDocumentSigner(ctx, true);
   await removeSigned(
     ctx.actor,
     ctx.assembly,
     ctx.document,
-    ACTA_EVENTS.removed,
+    SIGNING_EVENTS.removed,
   );
   return loadDocumentDto(ctx.assembly, ctx.document.id, ctx.actor);
 }
