@@ -963,7 +963,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ),
     // An annex's heading: a page of its own, centred (PageBreakExtension).
     {
-      icon: "i-lucide-paperclip",
+      icon: "i-lucide-file-stack",
       "aria-label": t("common.editor.annex"),
       "aria-pressed": annex.value === true,
       tooltip: { text: t("common.editor.annex") },
@@ -1200,7 +1200,7 @@ function buildContextItems(): void {
     if (annexed !== null) {
       block.push({
         label: t("common.editor.annex"),
-        icon: "i-lucide-paperclip",
+        icon: "i-lucide-file-stack",
         type: "checkbox" as const,
         checked: annexed,
         onSelect: () => run((c) => c.toggleAnnex()),
